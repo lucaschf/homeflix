@@ -122,3 +122,6 @@ frontend/out/
 tmp/
 temp/
 *.tmp
+
+# Claude Code context
+CLAUDE.md
