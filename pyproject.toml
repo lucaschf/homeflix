@@ -1,0 +1,139 @@
+[tool.poetry]
+name = "homeflix"
+version = "0.1.0"
+description = "Personal streaming platform for local media"
+authors = ["Lucas"]
+license = "MIT"
+readme = "README.md"
+packages = [{ include = "src" }]
+keywords = ["streaming", "media", "fastapi", "clean-architecture"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+]
+
+[tool.poetry.urls]
+Homepage = "https://github.com/yourusername/homeflix"
+Documentation = "https://github.com/yourusername/homeflix#readme"
+Repository = "https://github.com/yourusername/homeflix"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+# Web Framework
+fastapi = "^0.109.0"
+uvicorn = { extras = ["standard"], version = "^0.27.0" }
+
+# Data Validation
+pydantic = "^2.6.0"
+pydantic-settings = "^2.1.0"
+
+# Database
+sqlalchemy = "^2.0.25"
+alembic = "^1.13.0"
+aiosqlite = "^0.19.0"
+
+# HTTP Client (for TMDB/OMDb)
+httpx = "^0.26.0"
+
+# Resilience (retry, circuit breaker)
+tenacity = "^8.2.0"
+
+# Dependency Injection
+dependency-injector = "^4.41.0"
+
+# Utilities
+python-multipart = "^0.0.6"
+python-jose = { extras = ["cryptography"], version = "^3.3.0" }
+structlog = "^24.1.0"
+
+[tool.poetry.group.dev.dependencies]
+# Testing
+pytest = "^8.0.0"
+pytest-asyncio = "^0.23.0"
+pytest-cov = "^4.1.0"
+factory-boy = "^3.3.0"
+faker = "^22.0.0"
+
+# Code Quality
+ruff = "^0.2.0"
+mypy = "^1.8.0"
+pre-commit = "^3.6.0"
+
+# Database types
+types-sqlalchemy = "^1.4.0"
+
+[tool.poetry.group.postgres]
+optional = true
+
+[tool.poetry.group.postgres.dependencies]
+asyncpg = "^0.29.0"
+psycopg = { extras = ["binary"], version = "^3.1.0" }
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+# =============================================================================
+# MyPy (Type Checking)
+# =============================================================================
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+# =============================================================================
+# Pytest
+# =============================================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "e2e: End-to-end tests",
+    "slow: Slow tests",
+]
+
+# =============================================================================
+# Coverage
+# =============================================================================
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = [
+    "*/migrations/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+fail_under = 80
+show_missing = true
