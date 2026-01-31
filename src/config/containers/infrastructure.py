@@ -16,49 +16,11 @@ class InfrastructureContainer(containers.DeclarativeContainer):
     - Database connections
     - External API clients (TMDB, OMDb)
     - File system services
+
+    Note:
+        Database, external API clients, and file system services
+        will be added as providers when their implementations are ready.
     """
 
     # Settings is provided by parent container
     config = providers.Dependency(instance_of=Settings)
-
-    # =========================================================================
-    # Database
-    # =========================================================================
-
-    # TODO: Uncomment when Database class is implemented
-    # database = providers.Singleton(
-    #     Database,
-    #     url=config.provided.database_url,
-    # )
-
-    # =========================================================================
-    # External API Clients
-    # =========================================================================
-
-    # TODO: Uncomment when TMDBClient is implemented
-    # tmdb_client = providers.Singleton(
-    #     TMDBClient,
-    #     api_key=config.provided.tmdb_api_key,
-    #     base_url=config.provided.tmdb_base_url,
-    # )
-
-    # TODO: Uncomment when OMDbClient is implemented
-    # omdb_client = providers.Singleton(
-    #     OMDbClient,
-    #     api_key=config.provided.omdb_api_key,
-    # )
-
-    # =========================================================================
-    # File System
-    # =========================================================================
-
-    # TODO: Uncomment when FileScanner is implemented
-    # file_scanner = providers.Factory(
-    #     FileScanner,
-    #     media_directories=config.provided.media_directories,
-    # )
-    #
-    # thumbnail_generator = providers.Factory(
-    #     ThumbnailGenerator,
-    #     output_directory=config.provided.thumbnails_path,
-    # )

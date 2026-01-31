@@ -67,7 +67,8 @@ class AggregateRoot(DomainEntity):
 
     @property
     def has_pending_events(self) -> bool:
+        """Return True if there are pending domain events."""
         return len(self._events) > 0
 
 
-__all__ = ["DomainEntity", "AggregateRoot", "utc_now"]
+__all__ = ["AggregateRoot", "DomainEntity", "utc_now"]

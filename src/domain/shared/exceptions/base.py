@@ -11,7 +11,7 @@ See exception-hierarchy-clean-architecture.md for full documentation.
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from enum import Enum
@@ -164,7 +164,7 @@ class CoreException(Exception):
     def _get_error_type(self) -> str:
         """Get the error type for API response.
 
-        Maps to standard error types like 'validation_error', 
+        Maps to standard error types like 'validation_error',
         'not_found_error', etc.
         """
         # Default mapping based on http_status
@@ -196,7 +196,6 @@ class CoreException(Exception):
             New exception instance with translated message
         """
         # Create a shallow copy with new message
-        from dataclasses import replace
         return replace(self, message=translated_message)
 
     def add_detail(
@@ -227,7 +226,7 @@ class CoreException(Exception):
 
 
 __all__ = [
-    "Severity",
-    "ExceptionDetail",
     "CoreException",
+    "ExceptionDetail",
+    "Severity",
 ]

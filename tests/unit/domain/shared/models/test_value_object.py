@@ -57,7 +57,7 @@ class TestValueObjectCreation:
     def test_should_be_immutable(self):
         vo = SampleValueObject(name="Test", code=123)
 
-        with pytest.raises(Exception):  # ValidationError or similar
+        with pytest.raises(DomainValidationError):
             vo.name = "Changed"
 
 

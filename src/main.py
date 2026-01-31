@@ -24,7 +24,6 @@ def create_container() -> ApplicationContainer:
     """
     container = ApplicationContainer()
     # Wiring is configured per bounded context as they are implemented
-    # container.wire(modules=["src.presentation.api.v1.routes..."])
     return container
 
 
@@ -49,18 +48,12 @@ async def lifespan(app: FastAPI):
     # Initialize DI container
     app.state.container = create_container()
 
-    # TODO: Initialize database connection
-    # await app.state.container.database().connect()
-
     logger.info("Application ready")
 
     yield
 
     # Shutdown
     logger.info("Application shutting down")
-
-    # TODO: Close database connections
-    # await app.state.container.database().disconnect()
 
     logger.info("Application stopped")
 
@@ -95,14 +88,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # Include routers
-    # TODO: Uncomment when routes are implemented
-    # from presentation.api.v1.routes import media, progress, collections, streaming
-    # app.include_router(media.router, prefix="/v1", tags=["Media"])
-    # app.include_router(progress.router, prefix="/v1", tags=["Progress"])
-    # app.include_router(collections.router, prefix="/v1", tags=["Collections"])
-    # app.include_router(streaming.router, prefix="/v1", tags=["Streaming"])
 
     # Register health check routes
     register_health_routes(app)

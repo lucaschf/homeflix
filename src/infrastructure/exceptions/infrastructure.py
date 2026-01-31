@@ -31,12 +31,14 @@ class InfrastructureException(CoreException):
     severity: Severity = Severity.HIGH
 
     def __post_init__(self) -> None:
+        """Initialize and add internal_message to tags if set."""
         super().__post_init__()
         if self.internal_message:
             self.tags["internal_message"] = self.internal_message
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 500 (Internal Server Error)."""
         return 500
 
 
@@ -55,6 +57,7 @@ class GatewayException(InfrastructureException):
     gateway_name: str = ""
 
     def __post_init__(self) -> None:
+        """Initialize and add gateway_name to tags if set."""
         super().__post_init__()
         if self.gateway_name:
             self.tags["gateway_name"] = self.gateway_name
@@ -77,6 +80,7 @@ class GatewayTimeoutException(GatewayException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 504 (Gateway Timeout)."""
         return 504
 
 
@@ -97,6 +101,7 @@ class GatewayUnavailableException(GatewayException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 503 (Service Unavailable)."""
         return 503
 
 
@@ -121,9 +126,11 @@ class GatewayRateLimitException(GatewayException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 429 (Too Many Requests)."""
         return 429
 
     def __post_init__(self) -> None:
+        """Initialize and add retry_after_seconds to tags and message_params."""
         super().__post_init__()
         self.tags["retry_after_seconds"] = self.retry_after_seconds
         self.message_params = {"seconds": self.retry_after_seconds}
@@ -146,6 +153,7 @@ class GatewayBadResponseException(GatewayException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 502 (Bad Gateway)."""
         return 502
 
 
@@ -174,9 +182,11 @@ class CircuitOpenException(GatewayException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 503 (Service Unavailable)."""
         return 503
 
     def __post_init__(self) -> None:
+        """Initialize and add circuit_timeout to tags."""
         super().__post_init__()
         self.tags["circuit_timeout"] = self.circuit_timeout
 
@@ -187,8 +197,7 @@ class CircuitOpenException(GatewayException):
 
 @dataclass
 class RepositoryException(InfrastructureException):
-    """Base for database/repository errors.
-    """
+    """Base for database/repository errors."""
     code: str = "REPOSITORY_ERROR"
 
 
@@ -209,6 +218,7 @@ class DatabaseConnectionException(RepositoryException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 503 (Service Unavailable)."""
         return 503
 
 
@@ -233,9 +243,11 @@ class DataIntegrityException(RepositoryException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 409 (Conflict)."""
         return 409
 
     def __post_init__(self) -> None:
+        """Initialize and add constraint_name to tags if set."""
         super().__post_init__()
         if self.constraint_name:
             self.tags["constraint_name"] = self.constraint_name
@@ -256,6 +268,7 @@ class FilesystemException(InfrastructureException):
     path: str = ""
 
     def __post_init__(self) -> None:
+        """Initialize and add path to tags if set."""
         super().__post_init__()
         if self.path:
             self.tags["path"] = self.path
@@ -277,6 +290,7 @@ class FileNotFoundException(FilesystemException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 404 (Not Found)."""
         return 404
 
 
@@ -297,24 +311,17 @@ class FileAccessException(FilesystemException):
 
 
 __all__ = [
-    # Base
-    "InfrastructureException",
-
-    # Gateway
+    "CircuitOpenException",
+    "DataIntegrityException",
+    "DatabaseConnectionException",
+    "FileAccessException",
+    "FileNotFoundException",
+    "FilesystemException",
+    "GatewayBadResponseException",
     "GatewayException",
+    "GatewayRateLimitException",
     "GatewayTimeoutException",
     "GatewayUnavailableException",
-    "GatewayRateLimitException",
-    "GatewayBadResponseException",
-    "CircuitOpenException",
-
-    # Repository
+    "InfrastructureException",
     "RepositoryException",
-    "DatabaseConnectionException",
-    "DataIntegrityException",
-
-    # Filesystem
-    "FilesystemException",
-    "FileNotFoundException",
-    "FileAccessException",
 ]
