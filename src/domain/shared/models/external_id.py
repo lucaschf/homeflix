@@ -15,9 +15,8 @@ from typing import Any, ClassVar
 
 from pydantic import ConfigDict, RootModel, ValidationError, model_validator
 
-from src.domain.shared.models.value_object import StringValueObject
 from src.domain.shared.models.domain_model import DomainValidationError
-from src.domain.shared.models.value_object import ValueObject
+from src.domain.shared.models.value_object import StringValueObject, ValueObject
 
 BASE62_ALPHABET = string.ascii_letters + string.digits
 RANDOM_PART_LENGTH = 12
@@ -76,7 +75,7 @@ class ExternalId(StringValueObject, ValueObject):
         if len(parts) != 2:
             raise ValueError(f"Invalid external ID format: {value}")
 
-        prefix, random_part = parts
+        _prefix, random_part = parts
 
         if len(random_part) != RANDOM_PART_LENGTH:
             raise ValueError(f"Random part must be {RANDOM_PART_LENGTH} characters")
@@ -92,9 +91,7 @@ class ExternalId(StringValueObject, ValueObject):
 
         This is a helper for subclasses to use in their generate() method.
         """
-        random_part = "".join(
-            secrets.choice(BASE62_ALPHABET) for _ in range(RANDOM_PART_LENGTH)
-        )
+        random_part = "".join(secrets.choice(BASE62_ALPHABET) for _ in range(RANDOM_PART_LENGTH))
         return cls(f"{prefix}_{random_part}")
 
     @property
@@ -132,7 +129,7 @@ class ExternalId(StringValueObject, ValueObject):
 
 
 __all__ = [
-    "ExternalId",
     "BASE62_ALPHABET",
     "RANDOM_PART_LENGTH",
+    "ExternalId",
 ]

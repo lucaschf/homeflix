@@ -87,9 +87,9 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
         strict: bool | None = None,
         from_attributes: bool | None = None,
         context: Any | None = None,
-        **kwargs: Any,
     ) -> Self:
-        """Validates input data and creates a new model instance.
+        """Validate input data and create a new model instance.
+
         Wraps Pydantic ValidationError in DomainValidationError.
         """
         try:
@@ -109,9 +109,9 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
         *,
         strict: bool | None = None,
         context: Any | None = None,
-        **kwargs: Any,
     ) -> Self:
-        """Validates JSON data and creates a new model instance.
+        """Validate JSON data and create a new model instance.
+
         Wraps Pydantic ValidationError in DomainValidationError.
         """
         try:

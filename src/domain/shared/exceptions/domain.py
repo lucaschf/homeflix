@@ -25,11 +25,13 @@ class DomainException(CoreException):
 
     Default HTTP status: 422 (Unprocessable Entity)
     """
+
     code: str = "DOMAIN_ERROR"
     severity: Severity = Severity.MEDIUM
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 422 (Unprocessable Entity)."""
         return 422
 
 
@@ -60,11 +62,13 @@ class DomainValidationException(DomainException):
         ...     }
         ... )
     """
+
     code: str = "DOMAIN_VALIDATION_ERROR"
     message_code: str = "VALIDATION_FAILED"
     object_type: str = ""
 
     def __post_init__(self) -> None:
+        """Initialize and add object_type to tags if set."""
         super().__post_init__()
         if self.object_type:
             self.tags["object_type"] = self.object_type
@@ -198,10 +202,12 @@ class BusinessRuleViolationException(DomainException):
         ...     tags={"file_path": "/movies/inception.mkv"}
         ... )
     """
+
     code: str = "BUSINESS_RULE_VIOLATION"
     rule_code: str = ""
 
     def __post_init__(self) -> None:
+        """Initialize and add rule_code to tags, using it as message_code if not set."""
         super().__post_init__()
         if self.rule_code:
             self.tags["rule_code"] = self.rule_code
@@ -229,6 +235,7 @@ class DomainNotFoundException(DomainException):
         ...     resource_id="mov_2xK9mPqR7nL4"
         ... )
     """
+
     code: str = "DOMAIN_NOT_FOUND"
     message_code: str = "RESOURCE_NOT_FOUND"
     resource_type: str = ""
@@ -236,9 +243,11 @@ class DomainNotFoundException(DomainException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 404 (Not Found)."""
         return 404
 
     def __post_init__(self) -> None:
+        """Initialize and add resource metadata to tags and message_params."""
         super().__post_init__()
         self.tags["resource_type"] = self.resource_type
         self.tags["resource_id"] = self.resource_id
@@ -288,18 +297,20 @@ class DomainConflictException(DomainException):
         ...     tags={"file_path": "/movies/inception.mkv"}
         ... )
     """
+
     code: str = "DOMAIN_CONFLICT"
     message_code: str = "CONFLICT"
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 409 (Conflict)."""
         return 409
 
 
 __all__ = [
-    "DomainException",
-    "DomainValidationException",
     "BusinessRuleViolationException",
-    "DomainNotFoundException",
     "DomainConflictException",
+    "DomainException",
+    "DomainNotFoundException",
+    "DomainValidationException",
 ]

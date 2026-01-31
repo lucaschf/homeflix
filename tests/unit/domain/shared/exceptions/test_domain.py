@@ -1,7 +1,5 @@
 """Tests for domain layer exceptions."""
 
-import pytest
-
 from src.domain.shared.exceptions.base import Severity
 from src.domain.shared.exceptions.domain import (
     BusinessRuleViolationException,

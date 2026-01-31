@@ -30,6 +30,7 @@ class ApplicationException(CoreException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 400 (Bad Request)."""
         return 400
 
 
@@ -154,6 +155,7 @@ class UnauthorizedOperationException(ApplicationException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 401 (Unauthorized)."""
         return 401
 
 
@@ -182,9 +184,11 @@ class ForbiddenOperationException(ApplicationException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 403 (Forbidden)."""
         return 403
 
     def __post_init__(self) -> None:
+        """Initialize and add required_permission to tags if set."""
         super().__post_init__()
         if self.required_permission:
             self.tags["required_permission"] = self.required_permission
@@ -222,9 +226,11 @@ class ResourceNotFoundException(ApplicationException):
 
     @property
     def http_status(self) -> int:
+        """Return HTTP status code 404 (Not Found)."""
         return 404
 
     def __post_init__(self) -> None:
+        """Initialize and add resource metadata to tags and message_params."""
         super().__post_init__()
         if self.resource_type:
             self.tags["resource_type"] = self.resource_type
@@ -260,8 +266,8 @@ class ResourceNotFoundException(ApplicationException):
 
 __all__ = [
     "ApplicationException",
-    "UseCaseValidationException",
-    "UnauthorizedOperationException",
     "ForbiddenOperationException",
     "ResourceNotFoundException",
+    "UnauthorizedOperationException",
+    "UseCaseValidationException",
 ]

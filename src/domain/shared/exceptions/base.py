@@ -11,7 +11,7 @@ See exception-hierarchy-clean-architecture.md for full documentation.
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from enum import Enum
@@ -23,6 +23,7 @@ class Severity(str, Enum):
 
     Used to determine log level and alert priority.
     """
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -42,6 +43,7 @@ class ExceptionDetail:
         field: Related field name (optional)
         metadata: Additional context data (optional)
     """
+
     code: str
     message: str
     field: str | None = None
@@ -87,6 +89,7 @@ class CoreException(Exception):
         ...     tags={"user_id": "123"}
         ... )
     """
+
     message: str
     code: str = "CORE_ERROR"
     message_code: str | None = None  # i18n key
@@ -164,7 +167,7 @@ class CoreException(Exception):
     def _get_error_type(self) -> str:
         """Get the error type for API response.
 
-        Maps to standard error types like 'validation_error', 
+        Maps to standard error types like 'validation_error',
         'not_found_error', etc.
         """
         # Default mapping based on http_status
@@ -196,7 +199,6 @@ class CoreException(Exception):
             New exception instance with translated message
         """
         # Create a shallow copy with new message
-        from dataclasses import replace
         return replace(self, message=translated_message)
 
     def add_detail(
@@ -217,17 +219,19 @@ class CoreException(Exception):
         Returns:
             Self for chaining
         """
-        self.details.append(ExceptionDetail(
-            code=code,
-            message=message,
-            field=field,
-            metadata=metadata or {},
-        ))
+        self.details.append(
+            ExceptionDetail(
+                code=code,
+                message=message,
+                field=field,
+                metadata=metadata or {},
+            )
+        )
         return self
 
 
 __all__ = [
-    "Severity",
-    "ExceptionDetail",
     "CoreException",
+    "ExceptionDetail",
+    "Severity",
 ]
