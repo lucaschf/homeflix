@@ -1,7 +1,6 @@
 """Tests for DomainModel base class."""
 
 import pytest
-from pydantic import ValidationError as PydanticValidationError
 
 from src.domain.shared.models import DomainModel, DomainValidationError
 

@@ -1,9 +1,6 @@
 """Tests for DomainEntity and AggregateRoot base classes."""
 
-from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
-
-import pytest
+from datetime import UTC, datetime
 
 from src.domain.shared.models import AggregateRoot, DomainEntity, utc_now
 

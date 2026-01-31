@@ -106,7 +106,7 @@ class SampleExternalIdGeneration:
 
     def test_should_generate_unique_ids(self):
         ids = [SampleExternalId.generate() for _ in range(100)]
-        unique_ids = set(id_.value for id_ in ids)
+        unique_ids = {id_.value for id_ in ids}
 
         assert len(unique_ids) == 100
 

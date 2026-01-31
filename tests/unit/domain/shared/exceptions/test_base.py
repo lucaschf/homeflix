@@ -1,9 +1,6 @@
 """Tests for base exception classes."""
 
-from dataclasses import replace
 from datetime import UTC, datetime
-
-import pytest
 
 from src.domain.shared.exceptions.base import (
     CoreException,

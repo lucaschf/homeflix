@@ -18,13 +18,14 @@ With context:
 """
 
 import logging
-import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
-from structlog.types import Processor
 
 from src.config.settings import get_settings
+
+if TYPE_CHECKING:
+    from structlog.types import Processor
 
 
 def _setup_structlog(*, json_logs: bool, log_level: str) -> None:
@@ -106,6 +107,6 @@ def get_logger(**initial_context: Any) -> structlog.stdlib.BoundLogger:
 
 
 __all__ = [
-    "setup_logging",
     "get_logger",
+    "setup_logging",
 ]
