@@ -91,9 +91,7 @@ class ExternalId(StringValueObject, ValueObject):
 
         This is a helper for subclasses to use in their generate() method.
         """
-        random_part = "".join(
-            secrets.choice(BASE62_ALPHABET) for _ in range(RANDOM_PART_LENGTH)
-        )
+        random_part = "".join(secrets.choice(BASE62_ALPHABET) for _ in range(RANDOM_PART_LENGTH))
         return cls(f"{prefix}_{random_part}")
 
     @property

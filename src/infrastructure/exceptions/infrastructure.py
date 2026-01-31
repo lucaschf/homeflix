@@ -26,6 +26,7 @@ class InfrastructureException(CoreException):
 
     Default HTTP status: 500 (Internal Server Error)
     """
+
     code: str = "INFRASTRUCTURE_ERROR"
     internal_message: str = ""  # For logs only, never exposed
     severity: Severity = Severity.HIGH
@@ -46,6 +47,7 @@ class InfrastructureException(CoreException):
 # Gateway Exceptions (External Services)
 # =============================================================================
 
+
 @dataclass
 class GatewayException(InfrastructureException):
     """Base for external service (gateway) errors.
@@ -53,6 +55,7 @@ class GatewayException(InfrastructureException):
     Attributes:
         gateway_name: Name of the external service (e.g., "TMDB", "OMDb")
     """
+
     code: str = "GATEWAY_ERROR"
     gateway_name: str = ""
 
@@ -75,6 +78,7 @@ class GatewayTimeoutException(GatewayException):
         ...     internal_message="Timeout after 30s connecting to api.themoviedb.org"
         ... )
     """
+
     code: str = "GATEWAY_TIMEOUT"
     message_code: str = "SERVICE_TIMEOUT"
 
@@ -96,6 +100,7 @@ class GatewayUnavailableException(GatewayException):
         ...     internal_message="HTTP 503 from api.themoviedb.org"
         ... )
     """
+
     code: str = "GATEWAY_UNAVAILABLE"
     message_code: str = "SERVICE_UNAVAILABLE"
 
@@ -120,6 +125,7 @@ class GatewayRateLimitException(GatewayException):
         ...     retry_after_seconds=60
         ... )
     """
+
     code: str = "GATEWAY_RATE_LIMIT"
     message_code: str = "RATE_LIMIT_EXCEEDED"
     retry_after_seconds: int = 60
@@ -148,6 +154,7 @@ class GatewayBadResponseException(GatewayException):
         ...     internal_message="Expected JSON, got HTML: <!DOCTYPE..."
         ... )
     """
+
     code: str = "GATEWAY_BAD_RESPONSE"
     message_code: str = "INVALID_GATEWAY_RESPONSE"
 
@@ -176,6 +183,7 @@ class CircuitOpenException(GatewayException):
         ...     circuit_timeout=30
         ... )
     """
+
     code: str = "CIRCUIT_OPEN"
     message_code: str = "SERVICE_CIRCUIT_OPEN"
     circuit_timeout: int = 30
@@ -195,9 +203,11 @@ class CircuitOpenException(GatewayException):
 # Repository Exceptions (Database)
 # =============================================================================
 
+
 @dataclass
 class RepositoryException(InfrastructureException):
     """Base for database/repository errors."""
+
     code: str = "REPOSITORY_ERROR"
 
 
@@ -212,6 +222,7 @@ class DatabaseConnectionException(RepositoryException):
         ...     internal_message="Connection refused: localhost:5432"
         ... )
     """
+
     code: str = "DATABASE_CONNECTION_ERROR"
     message_code: str = "DATABASE_UNAVAILABLE"
     severity: Severity = Severity.CRITICAL
@@ -237,6 +248,7 @@ class DataIntegrityException(RepositoryException):
         ...     internal_message="UNIQUE violation on movies.external_id"
         ... )
     """
+
     code: str = "DATA_INTEGRITY_ERROR"
     message_code: str = "DATA_CONFLICT"
     constraint_name: str = ""
@@ -257,6 +269,7 @@ class DataIntegrityException(RepositoryException):
 # Filesystem Exceptions
 # =============================================================================
 
+
 @dataclass
 class FilesystemException(InfrastructureException):
     """Base for filesystem errors.
@@ -264,6 +277,7 @@ class FilesystemException(InfrastructureException):
     Attributes:
         path: Path that caused the error
     """
+
     code: str = "FILESYSTEM_ERROR"
     path: str = ""
 
@@ -285,6 +299,7 @@ class FileNotFoundException(FilesystemException):
         ...     path="/movies/inception.mkv"
         ... )
     """
+
     code: str = "FILE_NOT_FOUND"
     message_code: str = "FILE_NOT_FOUND"
 
@@ -306,6 +321,7 @@ class FileAccessException(FilesystemException):
         ...     internal_message="Permission denied: read access"
         ... )
     """
+
     code: str = "FILE_ACCESS_ERROR"
     message_code: str = "FILE_ACCESS_DENIED"
 

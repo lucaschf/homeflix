@@ -73,38 +73,46 @@ def sample_api_call_id() -> ApiCallId:
 @pytest.fixture
 def movie_id_factory():
     """Factory to create MovieIds with optional custom values."""
+
     def _create(value: str | None = None) -> MovieId:
         if value:
             return MovieId(value)
         return MovieId.generate()
+
     return _create
 
 
 @pytest.fixture
 def series_id_factory():
     """Factory to create SeriesIds with optional custom values."""
+
     def _create(value: str | None = None) -> SeriesId:
         if value:
             return SeriesId(value)
         return SeriesId.generate()
+
     return _create
 
 
 @pytest.fixture
 def episode_id_factory():
     """Factory to create EpisodeIds with optional custom values."""
+
     def _create(value: str | None = None) -> EpisodeId:
         if value:
             return EpisodeId(value)
         return EpisodeId.generate()
+
     return _create
 
 
 @pytest.fixture
 def progress_id_factory():
     """Factory to create ProgressIds with optional custom values."""
+
     def _create(value: str | None = None) -> ProgressId:
         if value:
             return ProgressId(value)
         return ProgressId.generate()
+
     return _create

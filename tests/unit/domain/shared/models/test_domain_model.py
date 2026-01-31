@@ -98,7 +98,9 @@ class TestDomainValidationError:
     """Tests for DomainValidationError."""
 
     def test_should_preserve_error_details(self):
-        errors = [{"loc": ("age",), "msg": "Input should be a valid integer", "type": "int_parsing"}]
+        errors = [
+            {"loc": ("age",), "msg": "Input should be a valid integer", "type": "int_parsing"}
+        ]
         exc = DomainValidationError(errors=errors, message="Validation failed")
 
         assert exc.errors == errors

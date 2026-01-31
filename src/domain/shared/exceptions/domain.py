@@ -25,6 +25,7 @@ class DomainException(CoreException):
 
     Default HTTP status: 422 (Unprocessable Entity)
     """
+
     code: str = "DOMAIN_ERROR"
     severity: Severity = Severity.MEDIUM
 
@@ -61,6 +62,7 @@ class DomainValidationException(DomainException):
         ...     }
         ... )
     """
+
     code: str = "DOMAIN_VALIDATION_ERROR"
     message_code: str = "VALIDATION_FAILED"
     object_type: str = ""
@@ -200,6 +202,7 @@ class BusinessRuleViolationException(DomainException):
         ...     tags={"file_path": "/movies/inception.mkv"}
         ... )
     """
+
     code: str = "BUSINESS_RULE_VIOLATION"
     rule_code: str = ""
 
@@ -232,6 +235,7 @@ class DomainNotFoundException(DomainException):
         ...     resource_id="mov_2xK9mPqR7nL4"
         ... )
     """
+
     code: str = "DOMAIN_NOT_FOUND"
     message_code: str = "RESOURCE_NOT_FOUND"
     resource_type: str = ""
@@ -293,6 +297,7 @@ class DomainConflictException(DomainException):
         ...     tags={"file_path": "/movies/inception.mkv"}
         ... )
     """
+
     code: str = "DOMAIN_CONFLICT"
     message_code: str = "CONFLICT"
 
