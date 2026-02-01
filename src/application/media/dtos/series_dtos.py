@@ -8,7 +8,7 @@ class EpisodeOutput:
     """Output representation of an Episode.
 
     Attributes:
-        id: External episode ID (epi_xxx).
+        id: External episode ID (epi_xxx), None if not yet persisted.
         episode_number: Episode number within the season.
         title: Episode title.
         synopsis: Episode synopsis (optional).
@@ -21,7 +21,7 @@ class EpisodeOutput:
         air_date: Original air date (optional, ISO format).
     """
 
-    id: str
+    id: str | None
     episode_number: int
     title: str
     synopsis: str | None
@@ -39,7 +39,7 @@ class SeasonOutput:
     """Output representation of a Season.
 
     Attributes:
-        id: External season ID (ssn_xxx).
+        id: External season ID (ssn_xxx), None if not yet persisted.
         season_number: Season number (0 for specials).
         title: Season title (optional).
         synopsis: Season synopsis (optional).
@@ -49,7 +49,7 @@ class SeasonOutput:
         episodes: List of episodes in this season.
     """
 
-    id: str
+    id: str | None
     season_number: int
     title: str | None
     synopsis: str | None

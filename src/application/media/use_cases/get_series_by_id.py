@@ -93,7 +93,7 @@ class GetSeriesByIdUseCase:
             SeasonOutput with episode list.
         """
         return SeasonOutput(
-            id=str(season.id) if season.id else "",
+            id=str(season.id) if season.id else None,
             season_number=season.season_number,
             title=season.title.value if season.title else None,
             synopsis=season.synopsis,
@@ -114,7 +114,7 @@ class GetSeriesByIdUseCase:
             EpisodeOutput with all fields.
         """
         return EpisodeOutput(
-            id=str(episode.id) if episode.id else "",
+            id=str(episode.id) if episode.id else None,
             episode_number=episode.episode_number,
             title=episode.title.value,
             synopsis=episode.synopsis,
