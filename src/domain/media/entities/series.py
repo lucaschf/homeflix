@@ -52,15 +52,15 @@ class Series(AggregateRoot):
     # Composition - using string annotation to avoid circular import
     seasons: list[Season] = Field(default_factory=list)
 
+    # noinspection PyNestedDecorators
     @field_validator("id", mode="before")
     @classmethod
     def convert_id(cls, v: str | SeriesId | None) -> SeriesId | None:
         """Convert string to SeriesId if needed."""
         if v is None:
             return None
-        if isinstance(v, str):
-            return SeriesId(v)
-        return v
+        
+        return SeriesId(v) if isinstance(v, str) else v
 
     @model_validator(mode="after")
     def validate_year_range(self) -> Series:
@@ -89,7 +89,7 @@ class Series(AggregateRoot):
 
     @property
     def is_ongoing(self) -> bool:
-        """Check if series is still ongoing.
+        """Check if the series is still ongoing.
 
         Returns:
             True if series has no end_year.
@@ -119,10 +119,14 @@ class Series(AggregateRoot):
         Returns:
             The Season if found, None otherwise.
         """
-        for season in self.seasons:
-            if season.season_number == season_number:
-                return season
-        return None
+        return next(
+            (
+                season
+                for season in self.seasons
+                if season.season_number == season_number
+            ),
+            None,
+        )
 
     @classmethod
     def create(
@@ -156,6 +160,6 @@ class Series(AggregateRoot):
         )
 
 
-from src.domain.media.entities.season import Season  # noqa: E402, TC001
+from src.domain.media.entities.season import Season  # noqa: E402, TCH001
 
 __all__ = ["Series"]
