@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from src.domain.media.value_objects import FilePath, Genre, SeriesId, Title, Year
 from src.domain.shared.models import AggregateRoot
+
+if TYPE_CHECKING:
+    from src.domain.media.entities.season import Season
 
 
 class Series(AggregateRoot):
@@ -49,7 +52,7 @@ class Series(AggregateRoot):
     tmdb_id: int | None = None
     imdb_id: str | None = Field(default=None, pattern=r"^tt\d{7,}$")
 
-    # Composition - using string annotation to avoid circular import
+    # Composition
     seasons: list[Season] = Field(default_factory=list)
 
     # noinspection PyNestedDecorators
@@ -159,7 +162,5 @@ class Series(AggregateRoot):
             **kwargs,
         )
 
-
-from src.domain.media.entities.season import Season  # noqa: E402, TCH001
 
 __all__ = ["Series"]

@@ -48,7 +48,7 @@ class Season(DomainEntity):
     # Metadata
     air_date: date | None = None
 
-    # Composition - using string annotation to avoid circular import
+    # Composition
     episodes: list[Episode] = Field(default_factory=list)
 
     @field_validator("id", mode="before")
