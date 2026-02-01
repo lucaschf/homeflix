@@ -66,23 +66,21 @@ class Movie(AggregateRoot):
     tmdb_id: int | None = None
     imdb_id: str | None = Field(default=None, pattern=r"^tt\d{7,}$")
 
+    # noinspection PyNestedDecorators
     @field_validator("id", mode="before")
     @classmethod
     def convert_id(cls, v: str | MovieId | None) -> MovieId | None:
         """Convert string to MovieId if needed."""
         if v is None:
             return None
-        if isinstance(v, str):
-            return MovieId(v)
-        return v
+        return MovieId(v) if isinstance(v, str) else v
 
+    # noinspection PyNestedDecorators
     @field_validator("genres", mode="before")
     @classmethod
     def convert_genres(cls, v: list | None) -> list[Genre]:
         """Convert string list to Genre list."""
-        if v is None:
-            return []
-        return [Genre(g) if isinstance(g, str) else g for g in v]
+        return [] if v is None else [Genre(g) if isinstance(g, str) else g for g in v]
 
     def add_genre(self, genre: Genre | str) -> None:
         """Add a genre to this movie.

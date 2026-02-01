@@ -62,15 +62,14 @@ class Episode(DomainEntity):
     # Metadata
     air_date: date | None = None
 
+    # noinspection PyNestedDecorators
     @field_validator("id", mode="before")
     @classmethod
     def convert_id(cls, v: str | EpisodeId | None) -> EpisodeId | None:
         """Convert string to EpisodeId if needed."""
         if v is None:
             return None
-        if isinstance(v, str):
-            return EpisodeId(v)
-        return v
+        return EpisodeId(v) if isinstance(v, str) else v
 
 
 __all__ = ["Episode"]
