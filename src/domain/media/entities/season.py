@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import date
-from typing import ClassVar
+from datetime import date  # noqa: TCH003
+from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import ConfigDict, Field, field_validator
 
 from src.domain.media.value_objects import FilePath, SeasonId, SeriesId, Title
 from src.domain.shared.models import DomainEntity
+
+if TYPE_CHECKING:
+    from src.domain.media import Episode
 
 
 class Season(DomainEntity):
@@ -46,7 +49,7 @@ class Season(DomainEntity):
     air_date: date | None = None
 
     # Composition - using string annotation to avoid circular import
-    episodes: "list[Episode]" = Field(default_factory=list)
+    episodes: list[Episode] = Field(default_factory=list)
 
     @field_validator("id", mode="before")
     @classmethod
@@ -67,7 +70,7 @@ class Season(DomainEntity):
         """
         return len(self.episodes)
 
-    def add_episode(self, episode: "Episode") -> None:
+    def add_episode(self, episode: Episode) -> None:
         """Add an episode to this season.
 
         Args:
@@ -83,7 +86,7 @@ class Season(DomainEntity):
         self.episodes.append(episode)
         self.touch()
 
-    def get_episode(self, episode_number: int) -> "Episode | None":
+    def get_episode(self, episode_number: int) -> Episode | None:
         """Find an episode by its number.
 
         Args:
@@ -92,10 +95,10 @@ class Season(DomainEntity):
         Returns:
             The Episode if found, None otherwise.
         """
-        for ep in self.episodes:
-            if ep.episode_number == episode_number:
-                return ep
-        return None
+        return next(
+            (ep for ep in self.episodes if ep.episode_number == episode_number),
+            None,
+        )
 
 
 __all__ = ["Season"]

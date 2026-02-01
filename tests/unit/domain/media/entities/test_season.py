@@ -12,7 +12,7 @@ class TestSeasonCreation:
 
     def test_should_create_with_required_fields(self):
         from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeasonId, SeriesId
+        from src.domain.media.value_objects import SeriesId
 
         series_id = SeriesId.generate()
         season = Season(

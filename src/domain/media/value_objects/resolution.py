@@ -23,13 +23,15 @@ class Resolution(StringValueObject):
         True
     """
 
-    VALID_RESOLUTIONS: ClassVar[frozenset[str]] = frozenset({
-        "720p",
-        "1080p",
-        "2K",
-        "4K",
-        "Unknown",
-    })
+    VALID_RESOLUTIONS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "720p",
+            "1080p",
+            "2K",
+            "4K",
+            "Unknown",
+        }
+    )
 
     @model_validator(mode="before")
     @classmethod

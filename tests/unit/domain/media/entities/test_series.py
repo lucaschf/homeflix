@@ -10,7 +10,7 @@ class TestSeriesCreation:
 
     def test_should_create_with_required_fields(self):
         from src.domain.media.entities import Series
-        from src.domain.media.value_objects import SeriesId, Title, Year
+        from src.domain.media.value_objects import Title, Year
 
         series = Series(
             title=Title("Breaking Bad"),

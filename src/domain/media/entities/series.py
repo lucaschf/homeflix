@@ -50,7 +50,7 @@ class Series(AggregateRoot):
     imdb_id: str | None = Field(default=None, pattern=r"^tt\d{7,}$")
 
     # Composition - using string annotation to avoid circular import
-    seasons: "list[Season]" = Field(default_factory=list)
+    seasons: list[Season] = Field(default_factory=list)
 
     @field_validator("id", mode="before")
     @classmethod
@@ -96,7 +96,7 @@ class Series(AggregateRoot):
         """
         return self.end_year is None
 
-    def add_season(self, season: "Season") -> None:
+    def add_season(self, season: Season) -> None:
         """Add a season to this series.
 
         Args:
@@ -110,7 +110,7 @@ class Series(AggregateRoot):
         self.seasons.append(season)
         self.touch()
 
-    def get_season(self, season_number: int) -> "Season | None":
+    def get_season(self, season_number: int) -> Season | None:
         """Find a season by its number.
 
         Args:
@@ -156,7 +156,6 @@ class Series(AggregateRoot):
         )
 
 
-# Import Season at the end to avoid circular import
-from src.domain.media.entities.season import Season  # noqa: E402
+from src.domain.media.entities.season import Season  # noqa: E402, TCH001
 
 __all__ = ["Series"]

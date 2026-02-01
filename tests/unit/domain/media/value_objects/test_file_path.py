@@ -1,6 +1,5 @@
 """Tests for FilePath value object."""
 
-import os
 
 import pytest
 

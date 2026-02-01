@@ -1,7 +1,7 @@
 """Movie repository interface."""
 
 from abc import ABC, abstractmethod
-from typing import Sequence
+from collections.abc import Sequence
 
 from src.domain.media.entities.movie import Movie
 from src.domain.media.value_objects import FilePath, MovieId

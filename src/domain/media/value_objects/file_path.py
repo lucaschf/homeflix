@@ -1,6 +1,6 @@
 """FilePath value object for media content."""
 
-import os
+from pathlib import PurePath
 
 from pydantic import model_validator
 
@@ -48,11 +48,12 @@ class FilePath(StringValueObject):
             raise ValueError("FilePath cannot contain directory traversal (..)")
 
         # Check for absolute path
-        if not os.path.isabs(value):
+        path = PurePath(value)
+        if not path.is_absolute():
             raise ValueError("FilePath must be an absolute path")
 
         # Normalize the path (resolve redundant separators)
-        normalized = os.path.normpath(value)
+        normalized = str(path)
 
         # Check again for traversal after normalization
         if ".." in normalized:
@@ -67,7 +68,7 @@ class FilePath(StringValueObject):
         Returns:
             The file name without the directory path.
         """
-        return os.path.basename(self.value)
+        return PurePath(self.value).name
 
     @property
     def extension(self) -> str:
@@ -76,8 +77,7 @@ class FilePath(StringValueObject):
         Returns:
             The file extension including the dot, or empty string if none.
         """
-        _, ext = os.path.splitext(self.value)
-        return ext
+        return PurePath(self.value).suffix
 
     @property
     def directory(self) -> str:
@@ -86,7 +86,7 @@ class FilePath(StringValueObject):
         Returns:
             The directory containing this file.
         """
-        return os.path.dirname(self.value)
+        return str(PurePath(self.value).parent)
 
 
 __all__ = ["FilePath"]

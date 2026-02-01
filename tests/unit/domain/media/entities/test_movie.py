@@ -134,7 +134,6 @@ class TestMovieGenreManagement:
 
     def test_should_add_genre(self):
         from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import Genre
 
         movie = Movie.create(
             title="Inception",
