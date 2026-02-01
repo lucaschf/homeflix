@@ -123,11 +123,7 @@ class Series(AggregateRoot):
             The Season if found, None otherwise.
         """
         return next(
-            (
-                season
-                for season in self.seasons
-                if season.season_number == season_number
-            ),
+            (season for season in self.seasons if season.season_number == season_number),
             None,
         )
 
