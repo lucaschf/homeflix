@@ -1,10 +1,14 @@
 """FilePath value object for media content."""
 
-from pathlib import PurePath
+import re
+from pathlib import PurePath, PurePosixPath, PureWindowsPath
 
 from pydantic import model_validator
 
 from src.domain.shared.models import StringValueObject
+
+# Pattern to detect Windows-style paths (e.g., C:\, D:\)
+_WINDOWS_PATH_PATTERN = re.compile(r"^[a-zA-Z]:[\\\/]")
 
 
 class FilePath(StringValueObject):
@@ -47,8 +51,13 @@ class FilePath(StringValueObject):
         if ".." in value:
             raise ValueError("FilePath cannot contain directory traversal (..)")
 
-        # Check for absolute path
-        path = PurePath(value)
+        # Check for absolute path - use appropriate path class
+        # PurePath on Linux doesn't recognize Windows paths as absolute
+        if _WINDOWS_PATH_PATTERN.match(value):
+            path: PurePath = PureWindowsPath(value)
+        else:
+            path = PurePosixPath(value)
+
         if not path.is_absolute():
             raise ValueError("FilePath must be an absolute path")
 
@@ -61,6 +70,12 @@ class FilePath(StringValueObject):
 
         return normalized
 
+    def _get_path(self) -> PurePath:
+        """Get the appropriate PurePath instance for this path."""
+        if _WINDOWS_PATH_PATTERN.match(self.value):
+            return PureWindowsPath(self.value)
+        return PurePosixPath(self.value)
+
     @property
     def filename(self) -> str:
         """Get the file name from the path.
@@ -68,7 +83,7 @@ class FilePath(StringValueObject):
         Returns:
             The file name without the directory path.
         """
-        return PurePath(self.value).name
+        return self._get_path().name
 
     @property
     def extension(self) -> str:
@@ -77,7 +92,7 @@ class FilePath(StringValueObject):
         Returns:
             The file extension including the dot, or empty string if none.
         """
-        return PurePath(self.value).suffix
+        return self._get_path().suffix
 
     @property
     def directory(self) -> str:
@@ -86,7 +101,7 @@ class FilePath(StringValueObject):
         Returns:
             The directory containing this file.
         """
-        return str(PurePath(self.value).parent)
+        return str(self._get_path().parent)
 
 
 __all__ = ["FilePath"]
