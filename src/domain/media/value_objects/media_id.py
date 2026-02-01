@@ -143,10 +143,10 @@ def parse_media_id(value: str) -> MediaId:
 
 
 __all__ = [
-    "MovieId",
-    "SeriesId",
-    "SeasonId",
     "EpisodeId",
     "MediaId",
+    "MovieId",
+    "SeasonId",
+    "SeriesId",
     "parse_media_id",
 ]

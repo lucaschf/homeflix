@@ -156,6 +156,6 @@ class Series(AggregateRoot):
         )
 
 
-from src.domain.media.entities.season import Season  # noqa: E402, TCH001
+from src.domain.media.entities.season import Season  # noqa: E402, TC001
 
 __all__ = ["Series"]

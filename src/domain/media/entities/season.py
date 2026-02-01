@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date  # noqa: TCH003
+from datetime import date  # noqa: TC003
 from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import ConfigDict, Field, field_validator
