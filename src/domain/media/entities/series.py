@@ -59,7 +59,7 @@ class Series(AggregateRoot):
         """Convert string to SeriesId if needed."""
         if v is None:
             return None
-        
+
         return SeriesId(v) if isinstance(v, str) else v
 
     @model_validator(mode="after")

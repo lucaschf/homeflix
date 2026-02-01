@@ -57,9 +57,7 @@ class Season(DomainEntity):
         """Convert string to SeasonId if needed."""
         if v is None:
             return None
-        if isinstance(v, str):
-            return SeasonId(v)
-        return v
+        return SeasonId(v) if isinstance(v, str) else v
 
     @property
     def episode_count(self) -> int:
