@@ -51,6 +51,7 @@ class Season(DomainEntity):
     # Composition
     episodes: list[Episode] = Field(default_factory=list)
 
+    # noinspection PyNestedDecorators
     @field_validator("id", mode="before")
     @classmethod
     def convert_id(cls, v: str | SeasonId | None) -> SeasonId | None:
