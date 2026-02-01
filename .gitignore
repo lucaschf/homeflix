@@ -103,7 +103,8 @@ Desktop.ini
 # =============================================================================
 # Uploaded media files (test only)
 uploads/
-media/
+/media/
+!/src/domain/media/
 
 # Generated thumbnails
 thumbnails/
