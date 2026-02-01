@@ -1,7 +1,8 @@
 """Tests for ListSeriesUseCase."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 from src.application.media.dtos import ListSeriesInput, ListSeriesOutput, SeriesSummaryOutput
 from src.application.media.use_cases import ListSeriesUseCase
@@ -53,10 +54,7 @@ class TestListSeriesUseCase:
     @pytest.mark.asyncio
     async def test_should_respect_limit_parameter(self):
         mock_repo = AsyncMock(spec=SeriesRepository)
-        series_list = [
-            Series.create(title=f"Show {i}", start_year=2020)
-            for i in range(5)
-        ]
+        series_list = [Series.create(title=f"Show {i}", start_year=2020) for i in range(5)]
         mock_repo.list_all.return_value = series_list
         use_case = ListSeriesUseCase(series_repository=mock_repo)
 

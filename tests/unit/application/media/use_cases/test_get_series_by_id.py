@@ -1,14 +1,15 @@
 """Tests for GetSeriesByIdUseCase."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 from src.application.media.dtos import GetSeriesByIdInput, SeriesOutput
 from src.application.media.use_cases import GetSeriesByIdUseCase
 from src.application.shared.exceptions import ResourceNotFoundException
 from src.domain.media.entities import Episode, Season, Series
 from src.domain.media.repositories import SeriesRepository
-from src.domain.media.value_objects import SeasonId, EpisodeId
+from src.domain.media.value_objects import EpisodeId, SeasonId
 
 
 class TestGetSeriesByIdUseCase:

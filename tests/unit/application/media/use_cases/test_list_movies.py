@@ -1,7 +1,8 @@
 """Tests for ListMoviesUseCase."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 from src.application.media.dtos import ListMoviesInput, ListMoviesOutput, MovieSummaryOutput
 from src.application.media.use_cases import ListMoviesUseCase

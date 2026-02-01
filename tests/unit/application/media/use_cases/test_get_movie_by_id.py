@@ -1,7 +1,8 @@
 """Tests for GetMovieByIdUseCase."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 from src.application.media.dtos import GetMovieByIdInput, MovieOutput
 from src.application.media.use_cases import GetMovieByIdUseCase
