@@ -248,6 +248,14 @@ class TestParseMediaId:
         assert isinstance(result, EpisodeId)
         assert result.value == "epi_abc123abc123"
 
+    def test_should_parse_season_id(self):
+        from src.domain.media.value_objects import SeasonId, parse_media_id
+
+        result = parse_media_id("ssn_abc123abc123")
+
+        assert isinstance(result, SeasonId)
+        assert result.value == "ssn_abc123abc123"
+
     def test_should_raise_error_for_unknown_prefix(self):
         from src.domain.media.value_objects import parse_media_id
 
