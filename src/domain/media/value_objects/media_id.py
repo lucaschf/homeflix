@@ -107,7 +107,7 @@ class EpisodeId(ExternalId):
 
 
 # Type alias for any media ID
-MediaId = MovieId | SeriesId | EpisodeId
+MediaId = MovieId | SeriesId | SeasonId | EpisodeId
 
 
 def parse_media_id(value: str) -> MediaId:
@@ -117,7 +117,7 @@ def parse_media_id(value: str) -> MediaId:
         value: The external ID string to parse.
 
     Returns:
-        The typed MediaId (MovieId, SeriesId, or EpisodeId).
+        The typed MediaId (MovieId, SeriesId, SeasonId, or EpisodeId).
 
     Raises:
         ValueError: If the format is invalid or prefix is unknown.
@@ -136,6 +136,8 @@ def parse_media_id(value: str) -> MediaId:
             return MovieId(value)
         case "ser":
             return SeriesId(value)
+        case "ssn":
+            return SeasonId(value)
         case "epi":
             return EpisodeId(value)
         case _:
