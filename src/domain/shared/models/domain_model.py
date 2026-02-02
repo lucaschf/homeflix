@@ -5,38 +5,27 @@ See ADR-001 for context and decision details.
 
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import Any, NoReturn, Self
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from src.domain.shared.exceptions.domain import DomainValidationException
 
-class DomainValidationError(Exception):
-    """Wrapper for Pydantic validation errors in the domain layer.
 
-    This keeps Pydantic errors encapsulated within the domain,
-    not exposing pydantic.ValidationError directly.
+def _raise_domain_validation(exc: ValidationError, object_type: str) -> NoReturn:
+    """Convert Pydantic ValidationError to DomainValidationException.
 
-    Attributes:
-        errors: List of error details from Pydantic.
-        message: Human-readable error message.
+    Args:
+        exc: The Pydantic validation error.
+        object_type: Name of the type being validated.
+
+    Raises:
+        DomainValidationException: Always raised with converted error details.
     """
-
-    def __init__(self, errors: list[dict[str, Any]], message: str = "Validation failed"):
-        self.errors = errors
-        self.message = message
-        super().__init__(message)
-
-    @classmethod
-    def from_pydantic(cls, exc: ValidationError) -> DomainValidationError:
-        """Create from a Pydantic ValidationError, preserving error details."""
-        errors = exc.errors()
-        messages = [err.get("msg", "") for err in errors]
-        combined_message = "; ".join(messages) if messages else "Validation failed"
-        return cls(errors=errors, message=combined_message)
-
-    def __str__(self) -> str:
-        """Return the error message."""
-        return self.message
+    raise DomainValidationException.from_pydantic_errors(
+        object_type=object_type,
+        pydantic_errors=exc.errors(),
+    ) from exc
 
 
 class DomainModelMeta(type(BaseModel)):
@@ -52,7 +41,7 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
     """Base model for domain objects (Value Objects, Entities) using Pydantic.
 
     Features:
-    - Wraps Pydantic ValidationError in DomainValidationError
+    - Wraps Pydantic ValidationError in DomainValidationException
     - Enforces strict configuration (extra='forbid', validate_assignment=True)
     - Provides atomic update method for immutable transitions
 
@@ -68,7 +57,7 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
         try:
             super().__init__(**data)
         except ValidationError as e:
-            raise DomainValidationError.from_pydantic(e) from e
+            _raise_domain_validation(e, self.__class__.__name__)
         self._ensure_model_config()
 
     def _ensure_model_config(self) -> None:
@@ -90,7 +79,7 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
     ) -> Self:
         """Validate input data and create a new model instance.
 
-        Wraps Pydantic ValidationError in DomainValidationError.
+        Wraps Pydantic ValidationError in DomainValidationException.
         """
         try:
             return super().model_validate(
@@ -100,7 +89,7 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
                 context=context,
             )
         except ValidationError as e:
-            raise DomainValidationError.from_pydantic(e) from e
+            _raise_domain_validation(e, cls.__name__)
 
     @classmethod
     def model_validate_json(
@@ -112,7 +101,7 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
     ) -> Self:
         """Validate JSON data and create a new model instance.
 
-        Wraps Pydantic ValidationError in DomainValidationError.
+        Wraps Pydantic ValidationError in DomainValidationException.
         """
         try:
             return super().model_validate_json(
@@ -121,14 +110,14 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
                 context=context,
             )
         except ValidationError as e:
-            raise DomainValidationError.from_pydantic(e) from e
+            _raise_domain_validation(e, cls.__name__)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """Wraps attribute setting to convert ValidationError to DomainValidationError."""
+        """Wraps attribute setting to convert ValidationError to DomainValidationException."""
         try:
             super().__setattr__(name, value)
         except ValidationError as e:
-            raise DomainValidationError.from_pydantic(e) from e
+            _raise_domain_validation(e, self.__class__.__name__)
 
     def with_updates(self, **kwargs: Any) -> Self:
         """Creates a new, fully validated instance by applying updates atomically."""
@@ -138,7 +127,7 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
         try:
             return self.__class__.model_validate(current_data)
         except ValidationError as e:
-            raise DomainValidationError.from_pydantic(e) from e
+            _raise_domain_validation(e, self.__class__.__name__)
 
 
-__all__ = ["DomainModel", "DomainValidationError"]
+__all__ = ["DomainModel"]
