@@ -8,6 +8,20 @@ from src.domain.shared.exceptions.domain import DomainValidationException
 class TestResolutionCreation:
     """Tests for Resolution instantiation."""
 
+    def test_should_create_with_360p(self):
+        from src.domain.media.value_objects import Resolution
+
+        resolution = Resolution("360p")
+
+        assert resolution.value == "360p"
+
+    def test_should_create_with_480p(self):
+        from src.domain.media.value_objects import Resolution
+
+        resolution = Resolution("480p")
+
+        assert resolution.value == "480p"
+
     def test_should_create_with_720p(self):
         from src.domain.media.value_objects import Resolution
 
@@ -54,7 +68,7 @@ class TestResolutionCreation:
         from src.domain.media.value_objects import Resolution
 
         with pytest.raises(DomainValidationException, match="must be one of"):
-            Resolution("480p")
+            Resolution("240p")
 
     def test_should_raise_error_for_empty_string(self):
         from src.domain.media.value_objects import Resolution
@@ -83,6 +97,34 @@ class TestResolutionFactoryMethods:
 class TestResolutionProperties:
     """Tests for Resolution computed properties."""
 
+    def test_is_sd_should_return_true_for_360p(self):
+        from src.domain.media.value_objects import Resolution
+
+        resolution = Resolution("360p")
+
+        assert resolution.is_sd is True
+
+    def test_is_sd_should_return_true_for_480p(self):
+        from src.domain.media.value_objects import Resolution
+
+        resolution = Resolution("480p")
+
+        assert resolution.is_sd is True
+
+    def test_is_sd_should_return_false_for_720p(self):
+        from src.domain.media.value_objects import Resolution
+
+        resolution = Resolution("720p")
+
+        assert resolution.is_sd is False
+
+    def test_is_sd_should_return_false_for_unknown(self):
+        from src.domain.media.value_objects import Resolution
+
+        resolution = Resolution("Unknown")
+
+        assert resolution.is_sd is False
+
     def test_is_hd_should_return_true_for_720p(self):
         from src.domain.media.value_objects import Resolution
 
@@ -110,6 +152,20 @@ class TestResolutionProperties:
         resolution = Resolution("4K")
 
         assert resolution.is_hd is True
+
+    def test_is_hd_should_return_false_for_360p(self):
+        from src.domain.media.value_objects import Resolution
+
+        resolution = Resolution("360p")
+
+        assert resolution.is_hd is False
+
+    def test_is_hd_should_return_false_for_480p(self):
+        from src.domain.media.value_objects import Resolution
+
+        resolution = Resolution("480p")
+
+        assert resolution.is_hd is False
 
     def test_is_hd_should_return_false_for_unknown(self):
         from src.domain.media.value_objects import Resolution
