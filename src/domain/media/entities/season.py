@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, ClassVar
 from pydantic import ConfigDict, Field, field_validator
 
 from src.domain.media.value_objects import FilePath, SeasonId, SeriesId, Title
+from src.domain.shared.exceptions.domain import BusinessRuleViolationException
 from src.domain.shared.models import DomainEntity
 
 if TYPE_CHECKING:
@@ -76,12 +77,18 @@ class Season(DomainEntity):
             episode: The episode to add.
 
         Raises:
-            ValueError: If episode series_id or season_number doesn't match.
+            BusinessRuleViolationException: If episode series_id or season_number doesn't match.
         """
         if episode.series_id != self.series_id:
-            raise ValueError("Episode series_id must match Season series_id")
+            raise BusinessRuleViolationException(
+                message="Episode series_id must match Season series_id",
+                rule_code="EPISODE_SERIES_MISMATCH",
+            )
         if episode.season_number != self.season_number:
-            raise ValueError("Episode season_number must match Season")
+            raise BusinessRuleViolationException(
+                message="Episode season_number must match Season",
+                rule_code="EPISODE_SEASON_MISMATCH",
+            )
         self.episodes.append(episode)
         self.touch()
 
