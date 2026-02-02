@@ -24,6 +24,11 @@ class SampleExternalId(ExternalId):
             raise ValueError(f"SampleExternalId must have '{self.EXPECTED_PREFIX}' prefix")
         return self
 
+    @classmethod
+    def generate(cls) -> "SampleExternalId":
+        base = cls._generate_with_prefix(cls.EXPECTED_PREFIX)
+        return cls(base.value)
+
 
 class SampleExternalIdConstants:
     """Tests for ExternalId module constants."""

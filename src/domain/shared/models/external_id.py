@@ -27,7 +27,7 @@ class ExternalId(StringValueObject, ValueObject):
 
     Format: {prefix}_{base62_random_12chars}
 
-    Subclasses must define EXPECTED_PREFIX and implement generate().
+    Subclasses should define EXPECTED_PREFIX and override generate().
 
     Example:
         >>> class MovieId(ExternalId):
@@ -37,26 +37,6 @@ class ExternalId(StringValueObject, ValueObject):
         ...     def generate(cls) -> "MovieId":
         ...         return cls._generate_with_prefix(cls.EXPECTED_PREFIX)
     """
-
-    def __init_subclass__(cls, **kwargs):
-        """Verify that subclasses either define EXPECTED_PREFIX or implement generate()."""
-        super().__init_subclass__(**kwargs)
-
-        # Skip check for ExternalId itself and intermediate classes
-        if cls is ExternalId:
-            return
-
-        # Subclasses must either:
-        # 1. Define EXPECTED_PREFIX (and use default generate()), or
-        # 2. Implement their own generate() method
-        has_prefix = "EXPECTED_PREFIX" in cls.__dict__ and cls.EXPECTED_PREFIX
-        has_generate = "generate" in cls.__dict__
-
-        if not has_prefix and not has_generate:
-            raise TypeError(
-                f"Subclass {cls.__name__} must either define EXPECTED_PREFIX or "
-                f"implement the generate() class method. See ExternalId docstring for examples."
-            )
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
         frozen=True,
@@ -116,19 +96,6 @@ class ExternalId(StringValueObject, ValueObject):
         """
         random_part = "".join(secrets.choice(BASE62_ALPHABET) for _ in range(RANDOM_PART_LENGTH))
         return cls(f"{prefix}_{random_part}")
-
-    @classmethod
-    def generate(cls) -> "ExternalId":
-        """Generate a new external ID.
-
-        Base implementation uses EXPECTED_PREFIX if defined.
-        Subclasses should override this for custom generation logic.
-        """
-        if not cls.EXPECTED_PREFIX:
-            raise NotImplementedError(
-                f"{cls.__name__} must define EXPECTED_PREFIX or override generate()"
-            )
-        return cls._generate_with_prefix(cls.EXPECTED_PREFIX)
 
     @property
     def value(self) -> str:
