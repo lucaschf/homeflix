@@ -8,7 +8,8 @@ from typing import Any, ClassVar
 
 from pydantic import ConfigDict, RootModel, ValidationError
 
-from src.domain.shared.models.domain_model import DomainModel, DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
+from src.domain.shared.models.domain_model import DomainModel
 
 
 class ValueObject(DomainModel):
@@ -52,7 +53,10 @@ class StringValueObject(RootModel[str], ValueObject):
             else:
                 RootModel.__init__(self, **data)
         except ValidationError as e:
-            raise DomainValidationError.from_pydantic(e) from e
+            raise DomainValidationException.from_pydantic_errors(
+                object_type=self.__class__.__name__,
+                pydantic_errors=e.errors(),
+            ) from e
 
     @property
     def value(self) -> str:
@@ -95,7 +99,10 @@ class IntValueObject(RootModel[int], ValueObject):
             else:
                 RootModel.__init__(self, **data)
         except ValidationError as e:
-            raise DomainValidationError.from_pydantic(e) from e
+            raise DomainValidationException.from_pydantic_errors(
+                object_type=self.__class__.__name__,
+                pydantic_errors=e.errors(),
+            ) from e
 
     @property
     def value(self) -> int:
@@ -162,7 +169,10 @@ class FloatValueObject(RootModel[float], ValueObject):
             else:
                 RootModel.__init__(self, **data)
         except ValidationError as e:
-            raise DomainValidationError.from_pydantic(e) from e
+            raise DomainValidationException.from_pydantic_errors(
+                object_type=self.__class__.__name__,
+                pydantic_errors=e.errors(),
+            ) from e
 
     @property
     def value(self) -> float:
@@ -205,7 +215,10 @@ class DateValueObject(RootModel[date], ValueObject):
             else:
                 RootModel.__init__(self, **data)
         except ValidationError as e:
-            raise DomainValidationError.from_pydantic(e) from e
+            raise DomainValidationException.from_pydantic_errors(
+                object_type=self.__class__.__name__,
+                pydantic_errors=e.errors(),
+            ) from e
 
     @property
     def value(self) -> date:
