@@ -142,8 +142,13 @@ class DomainValidationException(DomainException):
             )
             for err in pydantic_errors
         ]
+
+        # Build message including Pydantic error messages for better debugging
+        error_messages = [err.get("msg", "Validation error") for err in pydantic_errors]
+        combined_message = "; ".join(error_messages) if error_messages else "Validation failed"
+
         return cls(
-            message=f"Validation failed for {object_type}",
+            message=combined_message,
             message_code="VALIDATION_FAILED_FOR_TYPE",
             message_params={"type": object_type},
             object_type=object_type,
