@@ -4,7 +4,10 @@ from datetime import date
 
 import pytest
 
-from src.domain.shared.exceptions.domain import DomainValidationException
+from src.domain.shared.exceptions.domain import (
+    BusinessRuleViolationException,
+    DomainValidationException,
+)
 
 
 class TestSeasonCreation:
@@ -200,7 +203,7 @@ class TestSeasonEpisodeManagement:
             resolution=Resolution("1080p"),
         )
 
-        with pytest.raises(ValueError, match="series_id"):
+        with pytest.raises(BusinessRuleViolationException, match="series_id"):
             season.add_episode(episode)
 
     def test_should_raise_error_when_adding_episode_with_wrong_season_number(self):
@@ -230,7 +233,7 @@ class TestSeasonEpisodeManagement:
             resolution=Resolution("1080p"),
         )
 
-        with pytest.raises(ValueError, match="season_number"):
+        with pytest.raises(BusinessRuleViolationException, match="season_number"):
             season.add_episode(episode)
 
     def test_should_get_episode_by_number(self):

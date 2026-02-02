@@ -2,7 +2,10 @@
 
 import pytest
 
-from src.domain.shared.exceptions.domain import DomainValidationException
+from src.domain.shared.exceptions.domain import (
+    BusinessRuleViolationException,
+    DomainValidationException,
+)
 
 
 class TestSeriesCreation:
@@ -106,7 +109,7 @@ class TestSeriesSeasonManagement:
             season_number=1,
         )
 
-        with pytest.raises(ValueError, match="series_id"):
+        with pytest.raises(BusinessRuleViolationException, match="series_id"):
             series.add_season(season)
 
     def test_should_get_season_by_number(self):
