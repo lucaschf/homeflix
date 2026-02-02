@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestEpisodeCreation:
@@ -120,7 +120,7 @@ class TestEpisodeCreation:
             Title,
         )
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Episode(
                 series_id=SeriesId.generate(),
                 season_number=1,
@@ -142,7 +142,7 @@ class TestEpisodeCreation:
             Title,
         )
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Episode(
                 series_id=SeriesId.generate(),
                 season_number=1,

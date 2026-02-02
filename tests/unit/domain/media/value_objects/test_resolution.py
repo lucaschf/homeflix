@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestResolutionCreation:
@@ -53,19 +53,19 @@ class TestResolutionCreation:
     def test_should_raise_error_for_invalid_resolution(self):
         from src.domain.media.value_objects import Resolution
 
-        with pytest.raises(DomainValidationError, match="must be one of"):
+        with pytest.raises(DomainValidationException, match="must be one of"):
             Resolution("480p")
 
     def test_should_raise_error_for_empty_string(self):
         from src.domain.media.value_objects import Resolution
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Resolution("")
 
     def test_should_raise_error_for_non_string_input(self):
         from src.domain.media.value_objects import Resolution
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Resolution(1080)
 
 
@@ -188,5 +188,5 @@ class TestResolutionImmutability:
 
         resolution = Resolution("1080p")
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             resolution.root = "4K"
