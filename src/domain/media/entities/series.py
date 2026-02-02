@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
+from src.domain.media.rule_codes import MediaRuleCodes
 from src.domain.media.value_objects import FilePath, Genre, SeriesId, Title, Year
 from src.domain.shared.exceptions.domain import BusinessRuleViolationException
 from src.domain.shared.models import AggregateRoot
@@ -112,7 +113,7 @@ class Series(AggregateRoot):
         if season.series_id != self.id:
             raise BusinessRuleViolationException(
                 message="Season series_id must match Series id",
-                rule_code="SEASON_SERIES_MISMATCH",
+                rule_code=MediaRuleCodes.SEASON_SERIES_MISMATCH,
             )
         self.seasons.append(season)
         self.touch()
