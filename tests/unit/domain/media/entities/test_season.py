@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestSeasonCreation:
@@ -66,7 +66,7 @@ class TestSeasonCreation:
         from src.domain.media.entities import Season
         from src.domain.media.value_objects import SeriesId
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Season(
                 series_id=SeriesId.generate(),
                 season_number=-1,

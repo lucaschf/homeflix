@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestSeriesCreation:
@@ -53,7 +53,7 @@ class TestSeriesCreation:
         from src.domain.media.entities import Series
         from src.domain.media.value_objects import Title, Year
 
-        with pytest.raises(DomainValidationError, match="end_year"):
+        with pytest.raises(DomainValidationException, match="end_year"):
             Series(
                 title=Title("Breaking Bad"),
                 start_year=Year(2013),

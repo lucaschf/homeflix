@@ -5,7 +5,7 @@ from typing import ClassVar
 import pytest
 from pydantic import model_validator
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 from src.domain.shared.models.external_id import (
     BASE62_ALPHABET,
     RANDOM_PART_LENGTH,
@@ -55,27 +55,27 @@ class SampleExternalIdCreation:
         assert ext_id.value == "tst_abc123abc123"
 
     def test_should_raise_error_when_missing_separator(self):
-        with pytest.raises(DomainValidationError, match="underscore"):
+        with pytest.raises(DomainValidationException, match="underscore"):
             SampleExternalId("tstabc123abc123")
 
     def test_should_raise_error_when_random_part_too_short(self):
-        with pytest.raises(DomainValidationError, match="12"):
+        with pytest.raises(DomainValidationException, match="12"):
             SampleExternalId("tst_abc123")
 
     def test_should_raise_error_when_random_part_too_long(self):
-        with pytest.raises(DomainValidationError, match="12"):
+        with pytest.raises(DomainValidationException, match="12"):
             SampleExternalId("tst_abc123abc123abc")
 
     def test_should_raise_error_when_random_part_has_invalid_chars(self):
-        with pytest.raises(DomainValidationError, match="Base62"):
+        with pytest.raises(DomainValidationException, match="Base62"):
             SampleExternalId("tst_abc123abc!@#")
 
     def test_should_raise_error_for_wrong_prefix(self):
-        with pytest.raises(DomainValidationError, match="prefix"):
+        with pytest.raises(DomainValidationException, match="prefix"):
             SampleExternalId("xxx_abc123abc123")
 
     def test_should_raise_error_for_non_string_input(self):
-        with pytest.raises(DomainValidationError, match="string"):
+        with pytest.raises(DomainValidationException, match="string"):
             SampleExternalId(123)
 
 

@@ -4,9 +4,9 @@ from datetime import date
 
 import pytest
 
+from src.domain.shared.exceptions.domain import DomainValidationException
 from src.domain.shared.models import (
     DateValueObject,
-    DomainValidationError,
     FloatValueObject,
     IntValueObject,
     StringValueObject,
@@ -57,7 +57,7 @@ class TestValueObjectCreation:
     def test_should_be_immutable(self):
         vo = SampleValueObject(name="Test", code=123)
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             vo.name = "Changed"
 
 
@@ -115,7 +115,7 @@ class TestStringValueObject:
         assert vo.__eq__("hello") == NotImplemented
 
     def test_should_raise_error_for_non_string_input(self):
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             SampleStringVO(123)
 
 
@@ -197,7 +197,7 @@ class TestIntValueObject:
         assert vo.__ge__(42) == NotImplemented
 
     def test_should_raise_error_for_non_integer_input(self):
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             SampleIntVO("not_an_int")
 
 
@@ -244,7 +244,7 @@ class TestFloatValueObject:
         assert vo.value == 42.0
 
     def test_should_raise_error_for_non_numeric_input(self):
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             SampleFloatVO("not_a_float")
 
 
@@ -294,5 +294,5 @@ class TestDateValueObject:
         assert vo.value == date(2024, 6, 15)
 
     def test_should_raise_error_for_invalid_date_string(self):
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             SampleDateVO("not-a-date")

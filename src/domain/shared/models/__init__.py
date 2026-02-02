@@ -11,7 +11,7 @@ Specific ID types (MovieId, SeriesId, etc.) are defined in their
 respective bounded contexts under value_objects/.
 """
 
-from src.domain.shared.models.domain_model import DomainModel, DomainValidationError
+from src.domain.shared.models.domain_model import DomainModel
 from src.domain.shared.models.entity import AggregateRoot, DomainEntity, utc_now
 from src.domain.shared.models.external_id import ExternalId
 from src.domain.shared.models.value_object import (
@@ -28,7 +28,6 @@ __all__ = [
     "DomainEntity",
     # Base classes
     "DomainModel",
-    "DomainValidationError",
     "ExternalId",
     "FloatValueObject",
     "IntValueObject",

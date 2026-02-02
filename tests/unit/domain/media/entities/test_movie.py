@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestMovieCreation:
@@ -81,7 +81,7 @@ class TestMovieCreation:
             Year,
         )
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Movie(
                 title=Title("Inception"),
                 year=Year(2010),

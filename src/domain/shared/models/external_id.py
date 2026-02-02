@@ -15,7 +15,7 @@ from typing import Any, ClassVar
 
 from pydantic import ConfigDict, RootModel, ValidationError, model_validator
 
-from src.domain.shared.models.domain_model import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 from src.domain.shared.models.value_object import StringValueObject, ValueObject
 
 BASE62_ALPHABET = string.ascii_letters + string.digits
@@ -57,7 +57,10 @@ class ExternalId(StringValueObject, ValueObject):
             else:
                 RootModel.__init__(self, **data)
         except ValidationError as e:
-            raise DomainValidationError.from_pydantic(e) from e
+            raise DomainValidationException.from_pydantic_errors(
+                object_type=self.__class__.__name__,
+                pydantic_errors=e.errors(),
+            ) from e
 
     @model_validator(mode="before")
     @classmethod

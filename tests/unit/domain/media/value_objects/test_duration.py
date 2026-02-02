@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestDurationCreation:
@@ -25,13 +25,13 @@ class TestDurationCreation:
     def test_should_raise_error_for_negative_value(self):
         from src.domain.media.value_objects import Duration
 
-        with pytest.raises(DomainValidationError, match="non-negative"):
+        with pytest.raises(DomainValidationException, match="non-negative"):
             Duration(-1)
 
     def test_should_raise_error_for_non_integer_input(self):
         from src.domain.media.value_objects import Duration
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Duration("7200")
 
 
@@ -201,5 +201,5 @@ class TestDurationImmutability:
 
         duration = Duration(7200)
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             duration.root = 3600
