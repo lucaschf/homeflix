@@ -11,6 +11,8 @@ from typing import ClassVar
 
 from pydantic import model_validator
 
+from src.domain.media.rule_codes import MediaRuleCodes
+from src.domain.shared.exceptions.domain import DomainValidationException
 from src.domain.shared.models.external_id import ExternalId
 
 
@@ -120,14 +122,18 @@ def parse_media_id(value: str) -> MediaId:
         The typed MediaId (MovieId, SeriesId, SeasonId, or EpisodeId).
 
     Raises:
-        ValueError: If the format is invalid or prefix is unknown.
+        DomainValidationException: If the format is invalid or prefix is unknown.
 
     Example:
         >>> parse_media_id("mov_2xK9mPqR7nL4")
         MovieId('mov_2xK9mPqR7nL4')
     """
     if not value or "_" not in value:
-        raise ValueError(f"Invalid media ID format: {value}")
+        raise DomainValidationException(
+            message=f"Invalid media ID format: {value}",
+            message_code=MediaRuleCodes.INVALID_MEDIA_ID_FORMAT,
+            object_type="MediaId",
+        )
 
     prefix = value.split("_")[0]
 
@@ -141,7 +147,11 @@ def parse_media_id(value: str) -> MediaId:
         case "epi":
             return EpisodeId(value)
         case _:
-            raise ValueError(f"Unknown media prefix '{prefix}'")
+            raise DomainValidationException(
+                message=f"Unknown media prefix '{prefix}'",
+                message_code=MediaRuleCodes.UNKNOWN_MEDIA_PREFIX,
+                object_type="MediaId",
+            )
 
 
 __all__ = [
