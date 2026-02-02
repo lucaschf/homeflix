@@ -4,8 +4,10 @@ Centralizes rule_code constants used in BusinessRuleViolationException
 to avoid typos and facilitate maintenance.
 """
 
+from enum import StrEnum
 
-class MediaRuleCodes:
+
+class MediaRuleCodes(StrEnum):
     """Rule codes for media domain business rule violations."""
 
     EPISODE_SERIES_MISMATCH = "EPISODE_SERIES_MISMATCH"
