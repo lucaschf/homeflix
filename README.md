@@ -1,6 +1,6 @@
 # 🎬 HomeFlix
 
-[![CI](https://github.com/yourusername/homeflix/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/homeflix/actions/workflows/ci.yml)
+[![CI](https://github.com/lucaschf/homeflix/actions/workflows/ci.yml/badge.svg)](https://github.com/lucaschf/homeflix/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
@@ -52,7 +52,7 @@ src/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/homeflix.git
+git clone https://github.com/lucaschf/homeflix.git
 cd homeflix
 
 # Install Poetry (if not installed)
@@ -156,7 +156,36 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 
 ## Project Status
 
-🚧 **Phase 1: Foundation** - Setting up core architecture
+🚧 **Phase 1: Foundation** - In Progress
+
+### Completed
+
+- [x] Project structure with Clean Architecture layers
+- [x] Domain layer
+  - [x] Base models (DomainModel, ValueObject, DomainEntity, AggregateRoot)
+  - [x] Exception hierarchy (DomainException, DomainValidationException, BusinessRuleViolationException)
+  - [x] Media entities (Movie, Series, Season, Episode)
+  - [x] Value objects (Title, Year, Duration, FilePath, Genre, Resolution)
+  - [x] External IDs with prefixes (MovieId, SeriesId, SeasonId, EpisodeId)
+  - [x] Repository interfaces (MovieRepository, SeriesRepository)
+- [x] Application layer
+  - [x] Exception hierarchy (ApplicationException, ResourceNotFoundException)
+  - [x] Use cases (GetMovieById, GetSeriesById, ListMovies, ListSeries)
+  - [x] DTOs for movies and series
+- [x] Infrastructure layer
+  - [x] Exception hierarchy (InfrastructureException, GatewayException, RepositoryException)
+- [x] Configuration and settings
+- [x] FastAPI main application
+- [x] Pre-commit hooks (ruff, mypy)
+- [x] CI pipeline
+
+### Next Steps
+
+- [ ] Repository implementations (SQLAlchemy)
+- [ ] Database migrations
+- [ ] REST API endpoints
+- [ ] Media file scanning
+- [ ] TMDB/OMDb integration
 
 See [homeflix-requirements.md](docs/homeflix-requirements.md) for the complete roadmap.
 
