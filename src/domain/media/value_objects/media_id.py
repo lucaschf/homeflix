@@ -32,12 +32,6 @@ class MovieId(ExternalId):
             raise ValueError(f"MovieId must have '{self.EXPECTED_PREFIX}' prefix")
         return self
 
-    @classmethod
-    def generate(cls) -> "MovieId":
-        """Generate a new MovieId."""
-        base = cls._generate_with_prefix(cls.EXPECTED_PREFIX)
-        return cls(base.value)
-
 
 class SeriesId(ExternalId):
     """External ID for TV series.
@@ -54,12 +48,6 @@ class SeriesId(ExternalId):
         if self.prefix != self.EXPECTED_PREFIX:
             raise ValueError(f"SeriesId must have '{self.EXPECTED_PREFIX}' prefix")
         return self
-
-    @classmethod
-    def generate(cls) -> "SeriesId":
-        """Generate a new SeriesId."""
-        base = cls._generate_with_prefix(cls.EXPECTED_PREFIX)
-        return cls(base.value)
 
 
 class SeasonId(ExternalId):
@@ -78,12 +66,6 @@ class SeasonId(ExternalId):
             raise ValueError(f"SeasonId must have '{self.EXPECTED_PREFIX}' prefix")
         return self
 
-    @classmethod
-    def generate(cls) -> "SeasonId":
-        """Generate a new SeasonId."""
-        base = cls._generate_with_prefix(cls.EXPECTED_PREFIX)
-        return cls(base.value)
-
 
 class EpisodeId(ExternalId):
     """External ID for episodes.
@@ -100,12 +82,6 @@ class EpisodeId(ExternalId):
         if self.prefix != self.EXPECTED_PREFIX:
             raise ValueError(f"EpisodeId must have '{self.EXPECTED_PREFIX}' prefix")
         return self
-
-    @classmethod
-    def generate(cls) -> "EpisodeId":
-        """Generate a new EpisodeId."""
-        base = cls._generate_with_prefix(cls.EXPECTED_PREFIX)
-        return cls(base.value)
 
 
 # Type alias for any media ID
