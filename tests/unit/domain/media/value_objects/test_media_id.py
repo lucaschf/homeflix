@@ -259,17 +259,17 @@ class TestParseMediaId:
     def test_should_raise_error_for_unknown_prefix(self):
         from src.domain.media.value_objects import parse_media_id
 
-        with pytest.raises(ValueError, match="Unknown media prefix"):
+        with pytest.raises(DomainValidationException, match="Unknown media prefix"):
             parse_media_id("xyz_abc123abc123")
 
     def test_should_raise_error_for_invalid_format(self):
         from src.domain.media.value_objects import parse_media_id
 
-        with pytest.raises(ValueError, match="Invalid media ID format"):
+        with pytest.raises(DomainValidationException, match="Invalid media ID format"):
             parse_media_id("invalidformat")
 
     def test_should_raise_error_for_empty_string(self):
         from src.domain.media.value_objects import parse_media_id
 
-        with pytest.raises(ValueError, match="Invalid media ID format"):
+        with pytest.raises(DomainValidationException, match="Invalid media ID format"):
             parse_media_id("")
