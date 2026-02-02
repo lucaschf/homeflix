@@ -138,4 +138,3 @@ __all__ = [
     "SeriesId",
     "parse_media_id",
 ]
-
