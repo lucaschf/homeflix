@@ -43,7 +43,7 @@ class ExternalId(StringValueObject, ValueObject):
         super().__init_subclass__(**kwargs)
 
         # Skip check for ExternalId itself and intermediate classes
-        if cls.__name__ == "ExternalId":
+        if cls is ExternalId:
             return
 
         # Subclasses must either:
