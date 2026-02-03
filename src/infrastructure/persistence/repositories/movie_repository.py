@@ -129,11 +129,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         Returns:
             Sequence of all movies ordered by title.
         """
-        stmt = (
-            select(MovieModel)
-            .where(MovieModel.deleted_at.is_(None))
-            .order_by(MovieModel.title)
-        )
+        stmt = select(MovieModel).where(MovieModel.deleted_at.is_(None)).order_by(MovieModel.title)
         result = await self._session.execute(stmt)
         models = result.scalars().all()
 

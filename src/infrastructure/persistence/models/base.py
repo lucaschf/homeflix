@@ -49,8 +49,8 @@ class Base(DeclarativeBase):
         if table_name.endswith("s"):
             return table_name  # series -> series
         if table_name.endswith("y"):
-            return table_name[:-1] + "ies"  # category -> categories
-        return table_name + "s"  # movie -> movies
+            return f"{table_name[:-1]}ies"  # category -> categories
+        return f"{table_name}s"  # movie -> movies
 
     # Primary key (internal, never exposed via API)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -86,7 +86,7 @@ class Base(DeclarativeBase):
 
     @property
     def is_deleted(self) -> bool:
-        """Check if the record has been soft deleted."""
+        """Check if the record has been softly deleted."""
         return self.deleted_at is not None
 
     def soft_delete(self) -> None:
@@ -107,7 +107,7 @@ class Base(DeclarativeBase):
         Returns:
             Dictionary with column values.
         """
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns.values()}
 
 
 __all__ = ["Base"]
