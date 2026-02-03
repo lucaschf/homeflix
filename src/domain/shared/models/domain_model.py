@@ -5,7 +5,7 @@ See ADR-001 for context and decision details.
 
 from __future__ import annotations
 
-from typing import Any, Literal, NoReturn, Self
+from typing import Any, Literal, NoReturn, Self, Unpack
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -44,23 +44,25 @@ class DomainModel(BaseModel):
         extra="forbid",
     )
 
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        """Validate model_config at class definition time."""
+    def __init_subclass__(cls, **kwargs: Unpack[ConfigDict]) -> None:
+        """Validate model_config at class definition time.
+
+        Ensures all DomainModel subclasses use:
+        - extra='forbid' to prevent unknown attributes
+        - validate_assignment=True to validate on attribute changes
+        """
         super().__init_subclass__(**kwargs)
 
         config = cls.model_config
         extra = config.get("extra")
         validate_assignment = config.get("validate_assignment")
 
-        # RootModel-based classes use extra=None
-        if extra not in ("forbid", None):
+        if extra != "forbid":
             raise TypeError(
-                f"Domain model {cls.__name__} must use extra='forbid' or extra=None, "
-                f"got extra={extra!r}"
+                f"Domain model {cls.__name__} must use extra='forbid', got extra={extra!r}"
             )
 
-        # RootModel-based classes don't need validate_assignment
-        if extra == "forbid" and validate_assignment is not True:
+        if validate_assignment is not True:
             raise TypeError(f"Domain model {cls.__name__} must use validate_assignment=True")
 
     def __init__(self, **data: Any) -> None:
@@ -143,4 +145,4 @@ class DomainModel(BaseModel):
             _raise_domain_validation(e, self.__class__.__name__)
 
 
-__all__ = ["DomainModel"]
+__all__ = ["DomainModel", "_raise_domain_validation"]

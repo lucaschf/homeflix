@@ -8,8 +8,7 @@ from typing import Any, ClassVar
 
 from pydantic import ConfigDict, RootModel, ValidationError
 
-from src.domain.shared.exceptions.domain import DomainValidationException
-from src.domain.shared.models.domain_model import DomainModel
+from src.domain.shared.models.domain_model import DomainModel, _raise_domain_validation
 
 
 class ValueObject(DomainModel):
@@ -43,19 +42,13 @@ class StringValueObject(RootModel[str]):
             else:
                 super().__init__(**data)
         except ValidationError as e:
-            raise DomainValidationException.from_pydantic_errors(
-                object_type=self.__class__.__name__,
-                pydantic_errors=list(e.errors()),
-            ) from e
+            _raise_domain_validation(e, self.__class__.__name__)
 
     def __setattr__(self, name: str, value: Any) -> None:
         try:
             super().__setattr__(name, value)
         except ValidationError as e:
-            raise DomainValidationException.from_pydantic_errors(
-                object_type=self.__class__.__name__,
-                pydantic_errors=list(e.errors()),
-            ) from e
+            _raise_domain_validation(e, self.__class__.__name__)
 
     @property
     def value(self) -> str:
@@ -97,19 +90,13 @@ class IntValueObject(RootModel[int]):
             else:
                 super().__init__(**data)
         except ValidationError as e:
-            raise DomainValidationException.from_pydantic_errors(
-                object_type=self.__class__.__name__,
-                pydantic_errors=list(e.errors()),
-            ) from e
+            _raise_domain_validation(e, self.__class__.__name__)
 
     def __setattr__(self, name: str, value: Any) -> None:
         try:
             super().__setattr__(name, value)
         except ValidationError as e:
-            raise DomainValidationException.from_pydantic_errors(
-                object_type=self.__class__.__name__,
-                pydantic_errors=list(e.errors()),
-            ) from e
+            _raise_domain_validation(e, self.__class__.__name__)
 
     @property
     def value(self) -> int:
@@ -175,19 +162,13 @@ class FloatValueObject(RootModel[float]):
             else:
                 super().__init__(**data)
         except ValidationError as e:
-            raise DomainValidationException.from_pydantic_errors(
-                object_type=self.__class__.__name__,
-                pydantic_errors=list(e.errors()),
-            ) from e
+            _raise_domain_validation(e, self.__class__.__name__)
 
     def __setattr__(self, name: str, value: Any) -> None:
         try:
             super().__setattr__(name, value)
         except ValidationError as e:
-            raise DomainValidationException.from_pydantic_errors(
-                object_type=self.__class__.__name__,
-                pydantic_errors=list(e.errors()),
-            ) from e
+            _raise_domain_validation(e, self.__class__.__name__)
 
     @property
     def value(self) -> float:
@@ -229,19 +210,13 @@ class DateValueObject(RootModel[date]):
             else:
                 super().__init__(**data)
         except ValidationError as e:
-            raise DomainValidationException.from_pydantic_errors(
-                object_type=self.__class__.__name__,
-                pydantic_errors=list(e.errors()),
-            ) from e
+            _raise_domain_validation(e, self.__class__.__name__)
 
     def __setattr__(self, name: str, value: Any) -> None:
         try:
             super().__setattr__(name, value)
         except ValidationError as e:
-            raise DomainValidationException.from_pydantic_errors(
-                object_type=self.__class__.__name__,
-                pydantic_errors=list(e.errors()),
-            ) from e
+            _raise_domain_validation(e, self.__class__.__name__)
 
     @property
     def value(self) -> date:

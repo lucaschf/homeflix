@@ -13,9 +13,8 @@ import secrets
 import string
 from typing import Any, ClassVar, Self
 
-from pydantic import ConfigDict, RootModel, ValidationError, model_validator
+from pydantic import ConfigDict, model_validator
 
-from src.domain.shared.exceptions.domain import DomainValidationException
 from src.domain.shared.models.value_object import StringValueObject
 
 BASE62_ALPHABET = string.ascii_letters + string.digits
@@ -47,19 +46,6 @@ class ExternalId(StringValueObject):
     EXPECTED_PREFIX: ClassVar[str] = ""
 
     root: str
-
-    def __init__(self, root: Any = None, /, **data: Any) -> None:
-        """Initialize an ExternalId from a string value."""
-        try:
-            if root is not None:
-                RootModel.__init__(self, root)
-            else:
-                RootModel.__init__(self, **data)
-        except ValidationError as e:
-            raise DomainValidationException.from_pydantic_errors(
-                object_type=self.__class__.__name__,
-                pydantic_errors=list(e.errors()),
-            ) from e
 
     @model_validator(mode="before")
     @classmethod
