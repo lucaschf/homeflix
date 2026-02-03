@@ -4,6 +4,7 @@ This is the main entry point for the FastAPI application.
 It serves as the Composition Root where the DI container is configured.
 """
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
@@ -28,7 +29,7 @@ def create_container() -> ApplicationContainer:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler.
 
     Handles startup and shutdown logic:

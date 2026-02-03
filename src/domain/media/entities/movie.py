@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import ConfigDict, Field, field_validator
 
@@ -18,7 +18,7 @@ from src.domain.media.value_objects import (
 from src.domain.shared.models import AggregateRoot
 
 
-class Movie(AggregateRoot):
+class Movie(AggregateRoot[MovieId]):
     """Movie aggregate root.
 
     Represents a movie with its metadata and file information.
@@ -40,7 +40,7 @@ class Movie(AggregateRoot):
         extra="forbid",
     )
 
-    # Identity - override base id type
+    # Identity
     id: MovieId | None = Field(default=None)
 
     # Core info
@@ -78,7 +78,7 @@ class Movie(AggregateRoot):
     # noinspection PyNestedDecorators
     @field_validator("genres", mode="before")
     @classmethod
-    def convert_genres(cls, v: list | None) -> list[Genre]:
+    def convert_genres(cls, v: list[Any] | None) -> list[Genre]:
         """Convert string list to Genre list."""
         return [] if v is None else [Genre(g) if isinstance(g, str) else g for g in v]
 
@@ -103,7 +103,7 @@ class Movie(AggregateRoot):
         file_path: str | FilePath,
         file_size: int,
         resolution: str | Resolution,
-        **kwargs,
+        **kwargs: Any,
     ) -> Movie:
         """Factory method with automatic ID generation.
 

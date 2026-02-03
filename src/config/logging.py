@@ -98,7 +98,7 @@ def get_logger(**initial_context: Any) -> structlog.stdlib.BoundLogger:
         >>> logger = get_logger(service="media")
         >>> logger.info("Starting scan", directory="/media/movies")
     """
-    logger = structlog.get_logger()
+    logger: structlog.stdlib.BoundLogger = structlog.get_logger()
     if initial_context:
         logger = logger.bind(**initial_context)
     return logger
