@@ -147,7 +147,11 @@ class SeasonMapper:
         """
         episode_list: list[Episode] = []
         if include_episodes and model.episodes:
-            episode_list = [EpisodeMapper.to_entity(ep) for ep in model.episodes]
+            episode_list = [
+                EpisodeMapper.to_entity(ep)
+                for ep in model.episodes
+                if not ep.is_deleted
+            ]
 
         return Season(
             id=SeasonId(model.external_id),
@@ -232,7 +236,11 @@ class SeriesMapper:
 
         season_list: list[Season] = []
         if include_seasons and model.seasons:
-            season_list = [SeasonMapper.to_entity(s) for s in model.seasons]
+            season_list = [
+                SeasonMapper.to_entity(s)
+                for s in model.seasons
+                if not s.is_deleted
+            ]
 
         return Series(
             id=SeriesId(model.external_id),
