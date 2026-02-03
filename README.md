@@ -163,6 +163,7 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 - [x] Project structure with Clean Architecture layers
 - [x] Domain layer
   - [x] Base models (DomainModel, ValueObject, DomainEntity, AggregateRoot)
+  - [x] Generic entities with typed IDs (Generic[IdT])
   - [x] Exception hierarchy (DomainException, DomainValidationException, BusinessRuleViolationException)
   - [x] Media entities (Movie, Series, Season, Episode)
   - [x] Value objects (Title, Year, Duration, FilePath, Genre, Resolution)
@@ -174,15 +175,19 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
   - [x] DTOs for movies and series
 - [x] Infrastructure layer
   - [x] Exception hierarchy (InfrastructureException, GatewayException, RepositoryException)
+  - [x] Async database connection manager (SQLite/PostgreSQL)
+  - [x] SQLAlchemy ORM models with soft delete support
+  - [x] Entity-to-ORM bidirectional mappers
+  - [x] Repository implementations (MovieRepository, SeriesRepository)
 - [x] Configuration and settings
 - [x] FastAPI main application
 - [x] Pre-commit hooks (ruff, mypy)
 - [x] CI pipeline
+- [x] Full mypy type checking (0 errors)
 
 ### Next Steps
 
-- [ ] Repository implementations (SQLAlchemy)
-- [ ] Database migrations
+- [ ] Database migrations (Alembic)
 - [ ] REST API endpoints
 - [ ] Media file scanning
 - [ ] TMDB/OMDb integration
