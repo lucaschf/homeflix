@@ -14,19 +14,17 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-002](./ADR-002-prefixed-external-ids.md) | Prefixed External IDs para Recursos da API | ✅ Aceito | 2025-01-28 |
 | [ADR-003](./ADR-003-package-structure.md) | Estrutura de Pacotes e Organização | ✅ Aceito | 2025-01-28 |
 | [ADR-004](./ADR-004-dependency-injection.md) | Injeção de Dependências com dependency-injector | ✅ Aceito | 2025-01-28 |
+| [ADR-005](./ADR-005-library-as-configuration-entity.md) | Library como Entidade de Configuração | ✅ Aceito | 2026-02-03 |
+| [ADR-006](./ADR-006-media-file-variants.md) | Variantes de Arquivo de Mídia | ✅ Aceito | 2026-02-03 |
 
 ## ADRs Planejados
 
 Os seguintes ADRs serão criados conforme o projeto avança:
 
-- **ADR-003**: Estrutura de Pastas e Organização do Projeto
-- **ADR-004**: Estratégia de Testes (Unit, Integration, E2E)
-- **ADR-005**: Padrão de Repositórios e Unit of Work
-- **ADR-006**: Injeção de Dependências
 - **ADR-007**: Streaming de Vídeo (HTTP Range Requests vs HLS)
 - **ADR-008**: Cache Strategy
 - **ADR-009**: Background Jobs (Scan, Metadata Fetch)
-- **ADR-010**: Error Handling e Exception Hierarchy
+- **ADR-010**: Estratégia de Testes (Unit, Integration, E2E)
 
 ## Como Criar um Novo ADR
 
