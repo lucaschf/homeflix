@@ -3,7 +3,7 @@
 All ORM models should inherit from Base.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import DateTime, Integer, String, func
@@ -91,7 +91,7 @@ class Base(DeclarativeBase):
 
     def soft_delete(self) -> None:
         """Mark the record as deleted."""
-        self.deleted_at = datetime.now()
+        self.deleted_at = datetime.now(UTC)
 
     def restore(self) -> None:
         """Restore a soft deleted record."""

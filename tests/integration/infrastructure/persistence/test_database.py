@@ -109,3 +109,11 @@ class TestDatabase:
         assert db._engine is not None
 
         await db.disconnect()
+
+    async def test_session_raises_when_not_connected(self) -> None:
+        """Test that session() raises error when called before connect()."""
+        db = Database("sqlite+aiosqlite:///:memory:")
+
+        with pytest.raises(RuntimeError, match="Database not connected"):
+            async with db.session():
+                pass

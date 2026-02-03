@@ -82,6 +82,14 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         existing_model = result.scalar_one_or_none()
 
         if existing_model is not None:
+            # Restore if soft-deleted (including children)
+            if existing_model.is_deleted:
+                existing_model.restore()
+                for season in existing_model.seasons:
+                    season.restore()
+                    for episode in season.episodes:
+                        episode.restore()
+
             return await self._update_series(existing_model, series)
 
         return await self._create_series(series)

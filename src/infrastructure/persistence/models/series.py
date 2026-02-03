@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 class SeriesModel(Base):
     """SQLAlchemy model for Series aggregate.
 
-    Maps to the 'series' table. Usaae external_id (ser_xxx) for API exposure.
+    Maps to the 'series' table. Use external_id (ser_xxx) for API exposure.
     Contains seasons via cascade relationship.
 
     Attributes:
