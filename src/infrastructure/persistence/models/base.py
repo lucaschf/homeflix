@@ -76,6 +76,27 @@ class Base(DeclarativeBase):
         nullable=False,
     )
 
+    # Soft delete
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        index=True,
+    )
+
+    @property
+    def is_deleted(self) -> bool:
+        """Check if the record has been soft deleted."""
+        return self.deleted_at is not None
+
+    def soft_delete(self) -> None:
+        """Mark the record as deleted."""
+        self.deleted_at = datetime.now()
+
+    def restore(self) -> None:
+        """Restore a soft deleted record."""
+        self.deleted_at = None
+
     def __repr__(self) -> str:
         """Return string representation with key fields."""
         return f"<{self.__class__.__name__}(id={self.id}, external_id={self.external_id!r})>"
