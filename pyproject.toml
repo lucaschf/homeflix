@@ -64,9 +64,6 @@ ruff = "^0.2.0"
 mypy = "^1.8.0"
 pre-commit = "^3.6.0"
 
-# Database types
-types-sqlalchemy = "^1.4.0"
-
 [tool.poetry.group.postgres]
 optional = true
 
@@ -89,7 +86,7 @@ warn_unused_ignores = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 check_untyped_defs = true
-plugins = ["pydantic.mypy"]
+plugins = ["pydantic.mypy", "sqlalchemy.ext.mypy.plugin"]
 
 [[tool.mypy.overrides]]
 module = "tests.*"

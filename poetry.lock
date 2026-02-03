@@ -1931,18 +1931,6 @@ doc = ["reno", "sphinx"]
 test = ["pytest", "tornado (>=4.5)", "typeguard"]
 
 [[package]]
-name = "types-sqlalchemy"
-version = "1.4.53.38"
-description = "Typing stubs for SQLAlchemy"
-optional = false
-python-versions = "*"
-groups = ["dev"]
-files = [
-    {file = "types-SQLAlchemy-1.4.53.38.tar.gz", hash = "sha256:5bb7463537e04e1aa5a3557eb725930df99226dcfd3c9bf93008025bfe5c169e"},
-    {file = "types_SQLAlchemy-1.4.53.38-py3-none-any.whl", hash = "sha256:7e60e74f823931cc9a9e8adb0a4c05e5533e6708b8a266807893a739faf4eaaa"},
-]
-
-[[package]]
 name = "typing-extensions"
 version = "4.15.0"
 description = "Backported and Experimental Type Hints for Python 3.9+"
@@ -2291,4 +2279,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "11eb992de43d36ff65ed84f3423dad639146b28cb736572a74acae06d14b98c9"
+content-hash = "168d274e20170c57d9d09294859126b2fea05a01b806e68229e029f4a2eba2e4"
