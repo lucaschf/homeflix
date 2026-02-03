@@ -309,8 +309,8 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         # Soft delete removed seasons and their episodes
         for season_model in existing_seasons.values():
             season_model.soft_delete()
-            for episode in season_model.episodes:
-                episode.soft_delete()
+            for ep_model in season_model.episodes:
+                ep_model.soft_delete()
 
         await self._session.flush()
 
