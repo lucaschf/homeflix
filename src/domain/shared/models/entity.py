@@ -1,11 +1,14 @@
 """Base classes for Domain Entities and Aggregate Roots."""
 
 from datetime import UTC, datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Generic, TypeVar
 
 from pydantic import ConfigDict, Field, PrivateAttr
 
 from src.domain.shared.models.domain_model import DomainModel
+
+# Type variable for entity ID
+IdT = TypeVar("IdT")
 
 
 def utc_now() -> datetime:
@@ -13,7 +16,7 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-class DomainEntity(DomainModel):
+class DomainEntity(DomainModel, Generic[IdT]):
     """Base class for Domain Entities.
 
     Entities have identity (id) that persists over time and lifecycle timestamps.
@@ -24,7 +27,7 @@ class DomainEntity(DomainModel):
         extra="forbid",
     )
 
-    id: str | None = Field(default=None)
+    id: IdT | None = Field(default=None)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -43,7 +46,7 @@ class DomainEntity(DomainModel):
         self.updated_at = utc_now()
 
 
-class AggregateRoot(DomainEntity):
+class AggregateRoot(DomainEntity[IdT]):
     """Base class for Aggregate Roots.
 
     Includes domain events collection.
