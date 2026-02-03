@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from src.domain.media.entities.season import Season
 
 
-class Series(AggregateRoot):
+class Series(AggregateRoot[SeriesId]):
     """Series aggregate root containing Seasons and Episodes.
 
     Represents a TV series with its metadata and season/episode structure.
@@ -33,7 +33,7 @@ class Series(AggregateRoot):
         extra="forbid",
     )
 
-    # Identity - override base id type
+    # Identity
     id: SeriesId | None = Field(default=None)
 
     # Core info
@@ -137,7 +137,7 @@ class Series(AggregateRoot):
         cls,
         title: str | Title,
         start_year: int | Year,
-        **kwargs,
+        **kwargs: Any,
     ) -> Series:
         """Factory method with automatic ID generation.
 

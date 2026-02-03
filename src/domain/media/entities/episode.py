@@ -16,7 +16,7 @@ from src.domain.media.value_objects import (
 from src.domain.shared.models import DomainEntity
 
 
-class Episode(DomainEntity):
+class Episode(DomainEntity[EpisodeId]):
     """Episode entity belonging to a Season of a Series.
 
     Represents a single episode of a TV series with its metadata
@@ -40,7 +40,7 @@ class Episode(DomainEntity):
         extra="forbid",
     )
 
-    # Identity - override base id type
+    # Identity
     id: EpisodeId | None = Field(default=None)
 
     # Relationship

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from src.domain.media import Episode
 
 
-class Season(DomainEntity):
+class Season(DomainEntity[SeasonId]):
     """Season entity belonging to a Series, containing Episodes.
 
     Represents a season of a TV series with its metadata
