@@ -11,18 +11,18 @@ respective bounded contexts under value_objects/ids.py.
 
 import secrets
 import string
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 from pydantic import ConfigDict, RootModel, ValidationError, model_validator
 
 from src.domain.shared.exceptions.domain import DomainValidationException
-from src.domain.shared.models.value_object import StringValueObject, ValueObject
+from src.domain.shared.models.value_object import StringValueObject
 
 BASE62_ALPHABET = string.ascii_letters + string.digits
 RANDOM_PART_LENGTH = 12
 
 
-class ExternalId(StringValueObject, ValueObject):
+class ExternalId(StringValueObject):
     """Base class for prefixed external IDs.
 
     Format: {prefix}_{base62_random_12chars}
@@ -41,7 +41,6 @@ class ExternalId(StringValueObject, ValueObject):
     model_config: ClassVar[ConfigDict] = ConfigDict(
         frozen=True,
         str_strip_whitespace=True,
-        extra=None,
     )
 
     # Subclasses should override this
@@ -59,7 +58,7 @@ class ExternalId(StringValueObject, ValueObject):
         except ValidationError as e:
             raise DomainValidationException.from_pydantic_errors(
                 object_type=self.__class__.__name__,
-                pydantic_errors=e.errors(),
+                pydantic_errors=list(e.errors()),
             ) from e
 
     @model_validator(mode="before")
@@ -86,10 +85,10 @@ class ExternalId(StringValueObject, ValueObject):
         if any(c not in BASE62_ALPHABET for c in random_part):
             raise ValueError("Random part must only contain Base62 characters")
 
-        return value
+        return str(value)
 
     @classmethod
-    def _generate_with_prefix(cls, prefix: str) -> "ExternalId":
+    def _generate_with_prefix(cls, prefix: str) -> Self:
         """Generate a new external ID with the given prefix.
 
         This is a helper for subclasses to use in their generate() method.

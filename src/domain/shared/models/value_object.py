@@ -13,9 +13,10 @@ from src.domain.shared.models.domain_model import DomainModel
 
 
 class ValueObject(DomainModel):
-    """Base class for Value Objects.
+    """Base class for composite Value Objects (multiple fields).
 
     Value Objects MUST be immutable (frozen=True).
+    For single-value wrappers, use StringValueObject, IntValueObject, etc.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
@@ -24,24 +25,13 @@ class ValueObject(DomainModel):
         extra="forbid",
     )
 
-    def __init__(self, /, **data: Any) -> None:
-        super().__init__(**data)
-        self._ensure_immutability()
 
-    def _ensure_immutability(self) -> None:
-        """Ensure the Value Object is frozen (immutable)."""
-        frozen_config = self.model_config.get("frozen", False)
-        if not isinstance(frozen_config, bool) or not frozen_config:
-            raise ValueError("Value Objects must be immutable (frozen=True)")
-
-
-class StringValueObject(RootModel[str], ValueObject):
+class StringValueObject(RootModel[str]):
     """Base class for Value Objects wrapping a single string value."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
         frozen=True,
         str_strip_whitespace=True,
-        extra=None,
     )
 
     root: str
@@ -49,13 +39,22 @@ class StringValueObject(RootModel[str], ValueObject):
     def __init__(self, root: Any = None, /, **data: Any) -> None:
         try:
             if root is not None:
-                RootModel.__init__(self, root)
+                super().__init__(root)
             else:
-                RootModel.__init__(self, **data)
+                super().__init__(**data)
         except ValidationError as e:
             raise DomainValidationException.from_pydantic_errors(
                 object_type=self.__class__.__name__,
-                pydantic_errors=e.errors(),
+                pydantic_errors=list(e.errors()),
+            ) from e
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        try:
+            super().__setattr__(name, value)
+        except ValidationError as e:
+            raise DomainValidationException.from_pydantic_errors(
+                object_type=self.__class__.__name__,
+                pydantic_errors=list(e.errors()),
             ) from e
 
     @property
@@ -82,12 +81,11 @@ class StringValueObject(RootModel[str], ValueObject):
         return hash((self.__class__, self.value))
 
 
-class IntValueObject(RootModel[int], ValueObject):
+class IntValueObject(RootModel[int]):
     """Base class for Value Objects wrapping a single integer value."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
         frozen=True,
-        extra=None,
     )
 
     root: int
@@ -95,13 +93,22 @@ class IntValueObject(RootModel[int], ValueObject):
     def __init__(self, root: Any = None, /, **data: Any) -> None:
         try:
             if root is not None:
-                RootModel.__init__(self, root)
+                super().__init__(root)
             else:
-                RootModel.__init__(self, **data)
+                super().__init__(**data)
         except ValidationError as e:
             raise DomainValidationException.from_pydantic_errors(
                 object_type=self.__class__.__name__,
-                pydantic_errors=e.errors(),
+                pydantic_errors=list(e.errors()),
+            ) from e
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        try:
+            super().__setattr__(name, value)
+        except ValidationError as e:
+            raise DomainValidationException.from_pydantic_errors(
+                object_type=self.__class__.__name__,
+                pydantic_errors=list(e.errors()),
             ) from e
 
     @property
@@ -152,12 +159,11 @@ class IntValueObject(RootModel[int], ValueObject):
         return self.value >= other.value
 
 
-class FloatValueObject(RootModel[float], ValueObject):
+class FloatValueObject(RootModel[float]):
     """Base class for Value Objects wrapping a single float value."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
         frozen=True,
-        extra=None,
     )
 
     root: float
@@ -165,13 +171,22 @@ class FloatValueObject(RootModel[float], ValueObject):
     def __init__(self, root: Any = None, /, **data: Any) -> None:
         try:
             if root is not None:
-                RootModel.__init__(self, root)
+                super().__init__(root)
             else:
-                RootModel.__init__(self, **data)
+                super().__init__(**data)
         except ValidationError as e:
             raise DomainValidationException.from_pydantic_errors(
                 object_type=self.__class__.__name__,
-                pydantic_errors=e.errors(),
+                pydantic_errors=list(e.errors()),
+            ) from e
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        try:
+            super().__setattr__(name, value)
+        except ValidationError as e:
+            raise DomainValidationException.from_pydantic_errors(
+                object_type=self.__class__.__name__,
+                pydantic_errors=list(e.errors()),
             ) from e
 
     @property
@@ -198,12 +213,11 @@ class FloatValueObject(RootModel[float], ValueObject):
         return hash((self.__class__, self.value))
 
 
-class DateValueObject(RootModel[date], ValueObject):
+class DateValueObject(RootModel[date]):
     """Base class for Value Objects wrapping a date value."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
         frozen=True,
-        extra=None,
     )
 
     root: date
@@ -211,13 +225,22 @@ class DateValueObject(RootModel[date], ValueObject):
     def __init__(self, root: Any = None, /, **data: Any) -> None:
         try:
             if root is not None:
-                RootModel.__init__(self, root)
+                super().__init__(root)
             else:
-                RootModel.__init__(self, **data)
+                super().__init__(**data)
         except ValidationError as e:
             raise DomainValidationException.from_pydantic_errors(
                 object_type=self.__class__.__name__,
-                pydantic_errors=e.errors(),
+                pydantic_errors=list(e.errors()),
+            ) from e
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        try:
+            super().__setattr__(name, value)
+        except ValidationError as e:
+            raise DomainValidationException.from_pydantic_errors(
+                object_type=self.__class__.__name__,
+                pydantic_errors=list(e.errors()),
             ) from e
 
     @property
