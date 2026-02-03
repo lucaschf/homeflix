@@ -1,5 +1,7 @@
 """Tests for DomainModel base class."""
 
+from typing import ClassVar
+
 import pytest
 
 from src.domain.shared.exceptions.domain import DomainValidationException
@@ -123,9 +125,25 @@ class TestDomainValidationException:
         assert "age" in field_names
 
 
-class TestDomainModelConfigImmutability:
-    """Tests for model_config immutability."""
+class TestDomainModelConfigValidation:
+    """Tests for model_config validation at class definition time."""
 
-    def test_should_not_allow_model_config_modification(self):
-        with pytest.raises(AttributeError, match="immutable"):
-            SampleModel.model_config = {"extra": "allow"}
+    def test_should_reject_subclass_with_invalid_extra_config(self):
+        with pytest.raises(TypeError, match="extra='forbid'"):
+            # This class definition should fail because extra="allow" is not permitted
+            class InvalidExtraModel(DomainModel):
+                model_config: ClassVar[dict[str, object]] = {
+                    "extra": "allow",
+                    "validate_assignment": True,
+                }
+                name: str
+
+    def test_should_reject_subclass_without_validate_assignment(self):
+        with pytest.raises(TypeError, match="validate_assignment=True"):
+
+            class InvalidValidationModel(DomainModel):
+                model_config: ClassVar[dict[str, object]] = {
+                    "extra": "forbid",
+                    "validate_assignment": False,
+                }
+                name: str
