@@ -51,7 +51,7 @@ class ExceptionDetail:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary, excluding None values."""
-        result = {"code": self.code, "message": self.message}
+        result: dict[str, Any] = {"code": self.code, "message": self.message}
         if self.field is not None:
             result["field"] = self.field
         if self.metadata:

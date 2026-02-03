@@ -120,7 +120,7 @@ class DomainValidationException(DomainException):
     def from_pydantic_errors(
         cls,
         object_type: str,
-        pydantic_errors: list[dict[str, Any]],
+        pydantic_errors: list[Any],
         **kwargs: Any,
     ) -> "DomainValidationException":
         """Factory to create exception from Pydantic validation errors.
