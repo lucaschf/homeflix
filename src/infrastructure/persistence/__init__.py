@@ -1,23 +1,23 @@
-"""Infrastructure layer for HomeFlix.
+"""Persistence layer for HomeFlix.
 
-Contains implementations of domain interfaces including:
-- Database and ORM models
-- Repository implementations
-- External API clients
-- File system services
+Contains SQLAlchemy ORM models, mappers, and repository implementations.
 """
 
-from src.infrastructure.persistence import (
-    Base,
-    Database,
+from src.infrastructure.persistence.database import Database
+from src.infrastructure.persistence.mappers import (
     EpisodeMapper,
-    EpisodeModel,
     MovieMapper,
-    MovieModel,
     SeasonMapper,
-    SeasonModel,
     SeriesMapper,
+)
+from src.infrastructure.persistence.models import (
+    Base,
+    EpisodeModel,
+    MovieModel,
+    SeasonModel,
     SeriesModel,
+)
+from src.infrastructure.persistence.repositories import (
     SQLAlchemyMovieRepository,
     SQLAlchemySeriesRepository,
 )
@@ -25,8 +25,8 @@ from src.infrastructure.persistence import (
 __all__ = [
     # Database
     "Database",
-    "Base",
     # Models
+    "Base",
     "EpisodeModel",
     "MovieModel",
     "SeasonModel",
