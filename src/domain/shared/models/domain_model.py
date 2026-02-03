@@ -5,7 +5,7 @@ See ADR-001 for context and decision details.
 
 from __future__ import annotations
 
-from typing import Any, NoReturn, Self
+from typing import Any, Literal, NoReturn, Self
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -24,20 +24,11 @@ def _raise_domain_validation(exc: ValidationError, object_type: str) -> NoReturn
     """
     raise DomainValidationException.from_pydantic_errors(
         object_type=object_type,
-        pydantic_errors=exc.errors(),
+        pydantic_errors=list(exc.errors()),
     ) from exc
 
 
-class DomainModelMeta(type(BaseModel)):
-    """Metaclass that ensures model_config cannot be modified after class definition."""
-
-    def __setattr__(self, key: str, value: Any) -> None:
-        if key == "model_config":
-            raise AttributeError("The model_config attribute is immutable and cannot be changed.")
-        super().__setattr__(key, value)
-
-
-class DomainModel(BaseModel, metaclass=DomainModelMeta):
+class DomainModel(BaseModel):
     """Base model for domain objects (Value Objects, Entities) using Pydantic.
 
     Features:
@@ -53,20 +44,30 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
         extra="forbid",
     )
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Validate model_config at class definition time."""
+        super().__init_subclass__(**kwargs)
+
+        config = cls.model_config
+        extra = config.get("extra")
+        validate_assignment = config.get("validate_assignment")
+
+        # RootModel-based classes use extra=None
+        if extra not in ("forbid", None):
+            raise TypeError(
+                f"Domain model {cls.__name__} must use extra='forbid' or extra=None, "
+                f"got extra={extra!r}"
+            )
+
+        # RootModel-based classes don't need validate_assignment
+        if extra == "forbid" and validate_assignment is not True:
+            raise TypeError(f"Domain model {cls.__name__} must use validate_assignment=True")
+
     def __init__(self, **data: Any) -> None:
         try:
             super().__init__(**data)
         except ValidationError as e:
             _raise_domain_validation(e, self.__class__.__name__)
-        self._ensure_model_config()
-
-    def _ensure_model_config(self) -> None:
-        """Validate that required config options are set."""
-        if self.model_config.get("extra") != "forbid":
-            raise ValueError("Domain objects must forbid extra attributes")
-
-        if self.model_config.get("validate_assignment") is not True:
-            raise ValueError("Domain objects must validate on assignment")
 
     @classmethod
     def model_validate(
@@ -76,6 +77,9 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
         strict: bool | None = None,
         from_attributes: bool | None = None,
         context: Any | None = None,
+        extra: Literal["allow", "ignore", "forbid"] | None = None,
+        by_alias: bool | None = None,
+        by_name: bool | None = None,
     ) -> Self:
         """Validate input data and create a new model instance.
 
@@ -87,6 +91,9 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
                 strict=strict,
                 from_attributes=from_attributes,
                 context=context,
+                extra=extra,
+                by_alias=by_alias,
+                by_name=by_name,
             )
         except ValidationError as e:
             _raise_domain_validation(e, cls.__name__)
@@ -98,6 +105,9 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
         *,
         strict: bool | None = None,
         context: Any | None = None,
+        extra: Literal["allow", "ignore", "forbid"] | None = None,
+        by_alias: bool | None = None,
+        by_name: bool | None = None,
     ) -> Self:
         """Validate JSON data and create a new model instance.
 
@@ -108,6 +118,9 @@ class DomainModel(BaseModel, metaclass=DomainModelMeta):
                 json_data,
                 strict=strict,
                 context=context,
+                extra=extra,
+                by_alias=by_alias,
+                by_name=by_name,
             )
         except ValidationError as e:
             _raise_domain_validation(e, cls.__name__)
