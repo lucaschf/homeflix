@@ -1,11 +1,11 @@
 """Base classes for Domain Entities and Aggregate Roots."""
 
 from datetime import UTC, datetime
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import Any, ClassVar, Generic, Self, TypeVar
 
-from pydantic import ConfigDict, Field, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr, ValidationError
 
-from src.domain.shared.models.domain_model import DomainModel
+from src.domain.shared.models.domain_model import DomainModel, _raise_domain_validation
 
 # Type variable for entity ID
 IdT = TypeVar("IdT")
@@ -20,6 +20,7 @@ class DomainEntity(DomainModel, Generic[IdT]):
     """Base class for Domain Entities.
 
     Entities have identity (id) that persists over time and lifecycle timestamps.
+    Provides with_updates() for creating modified copies.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
@@ -44,6 +45,26 @@ class DomainEntity(DomainModel, Generic[IdT]):
     def touch(self) -> None:
         """Update the updated_at timestamp."""
         self.updated_at = utc_now()
+
+    def with_updates(self, **kwargs: Any) -> Self:
+        """Create a new, fully validated instance by applying updates atomically.
+
+        Args:
+            **kwargs: Fields to update with their new values.
+
+        Returns:
+            A new instance with the updates applied.
+
+        Raises:
+            DomainValidationException: If the resulting state is invalid.
+        """
+        current_data = self.model_dump()
+        current_data.update(kwargs)
+
+        try:
+            return self.__class__.model_validate(current_data)
+        except ValidationError as e:
+            _raise_domain_validation(e, self.__class__.__name__)
 
 
 class AggregateRoot(DomainEntity[IdT]):

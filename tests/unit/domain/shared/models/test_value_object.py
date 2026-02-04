@@ -6,16 +6,16 @@ import pytest
 
 from src.domain.shared.exceptions.domain import DomainValidationException
 from src.domain.shared.models import (
+    CompoundValueObject,
     DateValueObject,
     FloatValueObject,
     IntValueObject,
     StringValueObject,
-    ValueObject,
 )
 
 
-class SampleValueObject(ValueObject):
-    """Sample value object for testing."""
+class SampleCompoundVO(CompoundValueObject):
+    """Sample compound value object for testing."""
 
     name: str
     code: int
@@ -45,20 +45,29 @@ class SampleDateVO(DateValueObject):
     pass
 
 
-class TestValueObjectCreation:
-    """Tests for ValueObject instantiation."""
+class TestCompoundValueObject:
+    """Tests for CompoundValueObject instantiation."""
 
     def test_should_create_with_valid_data(self):
-        vo = SampleValueObject(name="Test", code=123)
+        vo = SampleCompoundVO(name="Test", code=123)
 
         assert vo.name == "Test"
         assert vo.code == 123
 
     def test_should_be_immutable(self):
-        vo = SampleValueObject(name="Test", code=123)
+        vo = SampleCompoundVO(name="Test", code=123)
 
         with pytest.raises(DomainValidationException):
             vo.name = "Changed"
+
+    def test_should_support_with_updates(self):
+        original = SampleCompoundVO(name="Test", code=123)
+
+        updated = original.with_updates(code=456)
+
+        assert updated.code == 456
+        assert updated.name == "Test"
+        assert original.code == 123  # Original unchanged
 
 
 class TestStringValueObject:
