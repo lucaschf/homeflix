@@ -119,19 +119,20 @@ class Resolution(ValueObject):
     height: int
     name: str
 
-    # Constantes comuns
-    SD_480P = Resolution(854, 480, "480p")
-    HD_720P = Resolution(1280, 720, "720p")
-    FHD_1080P = Resolution(1920, 1080, "1080p")
-    UHD_4K = Resolution(3840, 2160, "4K")
-    UHD_8K = Resolution(7680, 4320, "8K")
-
     def __gt__(self, other: "Resolution") -> bool:
         return (self.width * self.height) > (other.width * other.height)
 
     @property
     def total_pixels(self) -> int:
         return self.width * self.height
+
+
+# Constantes comuns (definidas após a classe)
+Resolution.SD_480P = Resolution(854, 480, "480p")
+Resolution.HD_720P = Resolution(1280, 720, "720p")
+Resolution.FHD_1080P = Resolution(1920, 1080, "1080p")
+Resolution.UHD_4K = Resolution(3840, 2160, "4K")
+Resolution.UHD_8K = Resolution(7680, 4320, "8K")
 ```
 
 ### Entidade Movie Atualizada

@@ -385,10 +385,11 @@ domain/
 │       └── library_repository.py
 ├── media/             # Media Catalog (existente)
 │   ├── entities/
-│   │   ├── movie.py   # Agora tem library_id, audio_tracks, subtitle_tracks
+│   │   ├── movie.py   # Agora tem library_id e files: list[MediaFile]
 │   │   └── ...
 │   └── value_objects/
-│       └── tracks.py  # NOVO: AudioTrack, SubtitleTrack
+│       ├── media_file.py  # NOVO: MediaFile, Resolution, VideoCodec
+│       └── tracks.py      # NOVO: AudioTrack, SubtitleTrack
 └── ...
 ```
 

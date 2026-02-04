@@ -194,7 +194,7 @@ Responsável por gerenciar o catálogo de mídia.
 **Agregados:**
 - `MediaAggregate` (root: Movie ou Series)
 
-**ADRs:** [ADR-005](adr/ADR-005-library-as-configuration-entity.md), [ADR-006](adr/ADR-006-media-file-variants.md)
+**ADR:** [ADR-006](adr/ADR-006-media-file-variants.md)
 
 ### 3.3 Watch Progress (Progresso de Visualização)
 
