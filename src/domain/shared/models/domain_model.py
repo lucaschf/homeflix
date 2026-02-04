@@ -5,11 +5,28 @@ See ADR-001 for context and decision details.
 
 from __future__ import annotations
 
-from typing import Any, Literal, NoReturn, Self, Unpack
+from typing import Any, Literal, NoReturn, Protocol, Self, Unpack, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, RootModel, ValidationError
 
 from src.domain.shared.exceptions.domain import DomainValidationException
+
+
+@runtime_checkable
+class SupportsUpdates(Protocol):
+    """Protocol for domain objects that support atomic updates.
+
+    Classes implementing this protocol provide a with_updates() method
+    that creates a new instance with modified field values.
+
+    Example:
+        >>> def apply_discount(obj: SupportsUpdates) -> SupportsUpdates:
+        ...     return obj.with_updates(price=obj.price * 0.9)
+    """
+
+    def with_updates(self, **kwargs: Any) -> Self:
+        """Create a new instance with the specified updates applied."""
+        ...
 
 
 def _raise_domain_validation(exc: ValidationError, object_type: str) -> NoReturn:
@@ -34,7 +51,6 @@ class DomainModel(BaseModel):
     Features:
     - Wraps Pydantic ValidationError in DomainValidationException
     - Enforces strict configuration (extra='forbid', validate_assignment=True)
-    - Provides atomic update method for immutable transitions
 
     See ADR-001 for context and decision details.
     """
@@ -56,8 +72,7 @@ class DomainModel(BaseModel):
         config = cls.model_config
         extra = config.get("extra")
         validate_assignment = config.get("validate_assignment")
-
-        if extra != "forbid":
+        if not (extra == "forbid" or (extra is None and issubclass(cls, RootModel))):
             raise TypeError(
                 f"Domain model {cls.__name__} must use extra='forbid', got extra={extra!r}"
             )
@@ -134,15 +149,5 @@ class DomainModel(BaseModel):
         except ValidationError as e:
             _raise_domain_validation(e, self.__class__.__name__)
 
-    def with_updates(self, **kwargs: Any) -> Self:
-        """Creates a new, fully validated instance by applying updates atomically."""
-        current_data = self.model_dump()
-        current_data.update(kwargs)
 
-        try:
-            return self.__class__.model_validate(current_data)
-        except ValidationError as e:
-            _raise_domain_validation(e, self.__class__.__name__)
-
-
-__all__ = ["DomainModel", "_raise_domain_validation"]
+__all__ = ["DomainModel", "SupportsUpdates", "_raise_domain_validation"]

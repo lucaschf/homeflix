@@ -4,7 +4,7 @@ Value Objects are immutable objects identified by their value, not identity.
 """
 
 from datetime import date
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 from pydantic import ConfigDict, RootModel, ValidationError
 
@@ -12,10 +12,14 @@ from src.domain.shared.models.domain_model import DomainModel, _raise_domain_val
 
 
 class ValueObject(DomainModel):
-    """Base class for composite Value Objects (multiple fields).
+    """Abstract base class for all Value Objects.
 
-    Value Objects MUST be immutable (frozen=True).
-    For single-value wrappers, use StringValueObject, IntValueObject, etc.
+    Do not instantiate directly.
+
+    Value Objects are immutable objects identified by their value, not identity.
+    All subclasses MUST be immutable (frozen=True).
+
+    This class can be used for type checking: isinstance(obj, ValueObject)
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
@@ -25,12 +29,50 @@ class ValueObject(DomainModel):
     )
 
 
-class StringValueObject(RootModel[str]):
+class CompoundValueObject(ValueObject):
+    """Base class for Value Objects with multiple fields.
+
+    Use this class when your Value Object has multiple attributes that
+    together represent a single concept (e.g., Address, DateRange, Money).
+
+    Provides with_updates() for creating modified copies.
+
+    Example:
+        >>> class Address(CompoundValueObject):
+        ...     street: str
+        ...     city: str
+        ...     zip_code: str
+        ...
+        >>> addr = Address(street="123 Main", city="NYC", zip_code="10001")
+        >>> new_addr = addr.with_updates(city="LA", zip_code="90001")
+    """
+
+    def with_updates(self, **kwargs: Any) -> Self:
+        """Create a new, fully validated instance by applying updates atomically.
+
+        Args:
+            **kwargs: Fields to update with their new values.
+
+        Returns:
+            A new instance with the updates applied.
+
+        Raises:
+            DomainValidationException: If the resulting state is invalid.
+        """
+        current_data = self.model_dump()
+        current_data.update(kwargs)
+
+        try:
+            return self.__class__.model_validate(current_data)
+        except ValidationError as e:
+            _raise_domain_validation(e, self.__class__.__name__)
+
+
+class StringValueObject(RootModel[str], ValueObject):
     """Base class for Value Objects wrapping a single string value."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
-        frozen=True,
-        str_strip_whitespace=True,
+        frozen=True, str_strip_whitespace=True, extra=None
     )
 
     root: str
@@ -74,12 +116,10 @@ class StringValueObject(RootModel[str]):
         return hash((self.__class__, self.value))
 
 
-class IntValueObject(RootModel[int]):
+class IntValueObject(RootModel[int], ValueObject):
     """Base class for Value Objects wrapping a single integer value."""
 
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        frozen=True,
-    )
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra=None)
 
     root: int
 
@@ -146,12 +186,10 @@ class IntValueObject(RootModel[int]):
         return self.value >= other.value
 
 
-class FloatValueObject(RootModel[float]):
+class FloatValueObject(RootModel[float], ValueObject):
     """Base class for Value Objects wrapping a single float value."""
 
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        frozen=True,
-    )
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra=None)
 
     root: float
 
@@ -194,12 +232,10 @@ class FloatValueObject(RootModel[float]):
         return hash((self.__class__, self.value))
 
 
-class DateValueObject(RootModel[date]):
+class DateValueObject(RootModel[date], ValueObject):
     """Base class for Value Objects wrapping a date value."""
 
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        frozen=True,
-    )
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra=None)
 
     root: date
 
@@ -243,9 +279,9 @@ class DateValueObject(RootModel[date]):
 
 
 __all__ = [
+    "CompoundValueObject",
     "DateValueObject",
     "FloatValueObject",
     "IntValueObject",
     "StringValueObject",
-    "ValueObject",
 ]

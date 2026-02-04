@@ -61,25 +61,6 @@ class TestDomainModelValidation:
             SampleModel.model_validate_json('{"name": "John", "age": "invalid"}')
 
 
-class TestDomainModelWithUpdates:
-    """Tests for DomainModel.with_updates() method."""
-
-    def test_should_create_new_instance_with_updates(self):
-        original = SampleModel(name="John", age=30)
-
-        updated = original.with_updates(age=31)
-
-        assert updated.age == 31
-        assert updated.name == "John"
-        assert original.age == 30  # Original unchanged
-
-    def test_should_raise_domain_validation_error_for_invalid_updates(self):
-        original = SampleModel(name="John", age=30)
-
-        with pytest.raises(DomainValidationException):
-            original.with_updates(age="invalid")
-
-
 class TestDomainModelAssignment:
     """Tests for DomainModel attribute assignment validation."""
 
