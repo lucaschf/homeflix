@@ -169,6 +169,12 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
   - [x] Value objects (Title, Year, Duration, FilePath, Genre, Resolution)
   - [x] External IDs with prefixes (MovieId, SeriesId, SeasonId, EpisodeId)
   - [x] Repository interfaces (MovieRepository, SeriesRepository)
+  - [x] Library bounded context (ADR-005)
+    - [x] Library entity with path and metadata provider configuration
+    - [x] Value objects (LibraryId, LibraryName, LanguageCode, AudioTrack, SubtitleTrack)
+    - [x] LibrarySettings for playback preferences
+    - [x] TrackSelector domain service
+    - [x] LibraryRepository interface
 - [x] Application layer
   - [x] Exception hierarchy (ApplicationException, ResourceNotFoundException)
   - [x] Use cases (GetMovieById, GetSeriesById, ListMovies, ListSeries)
@@ -187,6 +193,7 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 
 ### Next Steps
 
+- [ ] MediaFile variants with multiple resolutions (ADR-006)
 - [ ] Database migrations (Alembic)
 - [ ] REST API endpoints
 - [ ] Media file scanning
