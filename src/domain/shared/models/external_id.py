@@ -26,15 +26,16 @@ class ExternalId(StringValueObject):
 
     Format: {prefix}_{base62_random_12chars}
 
-    Subclasses should define EXPECTED_PREFIX and override generate().
+    Subclasses only need to define EXPECTED_PREFIX. The generate() method
+    and prefix validation are inherited from this base class.
 
     Example:
         >>> class MovieId(ExternalId):
         ...     EXPECTED_PREFIX: ClassVar[str] = "mov"
         ...
-        ...     @classmethod
-        ...     def generate(cls) -> "MovieId":
-        ...         return cls._generate_with_prefix(cls.EXPECTED_PREFIX)
+        >>> movie_id = MovieId.generate()
+        >>> movie_id.prefix
+        'mov'
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
@@ -42,7 +43,7 @@ class ExternalId(StringValueObject):
         str_strip_whitespace=True,
     )
 
-    # Subclasses should override this
+    # Subclasses must override this
     EXPECTED_PREFIX: ClassVar[str] = ""
 
     root: str
@@ -73,14 +74,27 @@ class ExternalId(StringValueObject):
 
         return str(value)
 
-    @classmethod
-    def _generate_with_prefix(cls, prefix: str) -> Self:
-        """Generate a new external ID with the given prefix.
+    @model_validator(mode="after")
+    def validate_prefix(self) -> Self:
+        """Validate that the ID has the expected prefix for this type."""
+        if self.EXPECTED_PREFIX and self.prefix != self.EXPECTED_PREFIX:
+            raise ValueError(f"{self.__class__.__name__} must have '{self.EXPECTED_PREFIX}' prefix")
+        return self
 
-        This is a helper for subclasses to use in their generate() method.
+    @classmethod
+    def generate(cls) -> Self:
+        """Generate a new external ID with the class prefix.
+
+        Returns:
+            A new instance with a unique base62 random part.
+
+        Raises:
+            ValueError: If EXPECTED_PREFIX is not defined in the subclass.
         """
+        if not cls.EXPECTED_PREFIX:
+            raise ValueError(f"{cls.__name__} must define EXPECTED_PREFIX to use generate()")
         random_part = "".join(secrets.choice(BASE62_ALPHABET) for _ in range(RANDOM_PART_LENGTH))
-        return cls(f"{prefix}_{random_part}")
+        return cls(f"{cls.EXPECTED_PREFIX}_{random_part}")
 
     @property
     def value(self) -> str:

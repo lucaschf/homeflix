@@ -9,8 +9,6 @@ Typed external IDs for the Media bounded context:
 
 from typing import ClassVar
 
-from pydantic import model_validator
-
 from src.domain.media.rule_codes import MediaRuleCodes
 from src.domain.shared.exceptions.domain import DomainValidationException
 from src.domain.shared.models.external_id import ExternalId
@@ -25,19 +23,6 @@ class MovieId(ExternalId):
 
     EXPECTED_PREFIX: ClassVar[str] = "mov"
 
-    @model_validator(mode="after")
-    def validate_prefix(self) -> "MovieId":
-        """Ensure the ID has the correct prefix."""
-        if self.prefix != self.EXPECTED_PREFIX:
-            raise ValueError(f"MovieId must have '{self.EXPECTED_PREFIX}' prefix")
-        return self
-
-    @classmethod
-    def generate(cls) -> "MovieId":
-        """Generate a new MovieId."""
-        base = cls._generate_with_prefix(cls.EXPECTED_PREFIX)
-        return cls(base.value)
-
 
 class SeriesId(ExternalId):
     """External ID for TV series.
@@ -47,19 +32,6 @@ class SeriesId(ExternalId):
     """
 
     EXPECTED_PREFIX: ClassVar[str] = "ser"
-
-    @model_validator(mode="after")
-    def validate_prefix(self) -> "SeriesId":
-        """Ensure the ID has the correct prefix."""
-        if self.prefix != self.EXPECTED_PREFIX:
-            raise ValueError(f"SeriesId must have '{self.EXPECTED_PREFIX}' prefix")
-        return self
-
-    @classmethod
-    def generate(cls) -> "SeriesId":
-        """Generate a new SeriesId."""
-        base = cls._generate_with_prefix(cls.EXPECTED_PREFIX)
-        return cls(base.value)
 
 
 class SeasonId(ExternalId):
@@ -71,19 +43,6 @@ class SeasonId(ExternalId):
 
     EXPECTED_PREFIX: ClassVar[str] = "ssn"
 
-    @model_validator(mode="after")
-    def validate_prefix(self) -> "SeasonId":
-        """Ensure the ID has the correct prefix."""
-        if self.prefix != self.EXPECTED_PREFIX:
-            raise ValueError(f"SeasonId must have '{self.EXPECTED_PREFIX}' prefix")
-        return self
-
-    @classmethod
-    def generate(cls) -> "SeasonId":
-        """Generate a new SeasonId."""
-        base = cls._generate_with_prefix(cls.EXPECTED_PREFIX)
-        return cls(base.value)
-
 
 class EpisodeId(ExternalId):
     """External ID for episodes.
@@ -93,19 +52,6 @@ class EpisodeId(ExternalId):
     """
 
     EXPECTED_PREFIX: ClassVar[str] = "epi"
-
-    @model_validator(mode="after")
-    def validate_prefix(self) -> "EpisodeId":
-        """Ensure the ID has the correct prefix."""
-        if self.prefix != self.EXPECTED_PREFIX:
-            raise ValueError(f"EpisodeId must have '{self.EXPECTED_PREFIX}' prefix")
-        return self
-
-    @classmethod
-    def generate(cls) -> "EpisodeId":
-        """Generate a new EpisodeId."""
-        base = cls._generate_with_prefix(cls.EXPECTED_PREFIX)
-        return cls(base.value)
 
 
 # Type alias for any media ID
