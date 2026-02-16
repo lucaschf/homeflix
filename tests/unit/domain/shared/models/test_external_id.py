@@ -193,7 +193,7 @@ class TestExternalIdSubclassValidation:
             class InvalidExternalId(ExternalId):
                 pass
 
-            InvalidExternalId.generate()
+            _ = InvalidExternalId
 
     def test_should_raise_type_error_when_expected_prefix_is_empty(self):
         with pytest.raises(TypeError, match="must define a non-empty EXPECTED_PREFIX"):
@@ -201,11 +201,17 @@ class TestExternalIdSubclassValidation:
             class InvalidExternalId(ExternalId):
                 EXPECTED_PREFIX: ClassVar[str] = ""
 
-            InvalidExternalId.generate()
+            _ = InvalidExternalId
 
     def test_should_allow_subclass_with_valid_expected_prefix(self):
-        # Should not raise
         class ValidExternalId(ExternalId):
             EXPECTED_PREFIX: ClassVar[str] = "val"
 
-        assert ValidExternalId.EXPECTED_PREFIX == "val"
+        generated = ValidExternalId.generate()
+
+        assert generated.value.startswith("val_")
+        assert len(generated.random_part) == RANDOM_PART_LENGTH
+
+    def test_should_raise_type_error_when_generate_called_on_base_class(self):
+        with pytest.raises(TypeError, match="generate\\(\\) must be called on a subclass"):
+            ExternalId.generate()

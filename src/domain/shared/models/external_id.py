@@ -94,9 +94,14 @@ class ExternalId(StringValueObject):
 
         Returns:
             A new instance with a unique base62 random part.
+
+        Raises:
+            TypeError: If called directly on ExternalId base class.
         """
+        if cls is ExternalId:
+            raise TypeError("generate() must be called on a subclass with EXPECTED_PREFIX defined")
         random_part = "".join(secrets.choice(BASE62_ALPHABET) for _ in range(RANDOM_PART_LENGTH))
-        return cls(f"{cls.EXPECTED_PREFIX}_{random_part}")
+        return cls(root=f"{cls.EXPECTED_PREFIX}_{random_part}")
 
     @property
     def value(self) -> str:
