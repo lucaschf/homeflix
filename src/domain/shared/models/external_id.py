@@ -26,8 +26,8 @@ class ExternalId(StringValueObject):
 
     Format: {prefix}_{base62_random_12chars}
 
-    Subclasses only need to define EXPECTED_PREFIX. The generate() method
-    and prefix validation are inherited from this base class.
+    Subclasses must define EXPECTED_PREFIX.
+    The generate() method and prefix validation are inherited from this base class.
 
     Example:
         >>> class MovieId(ExternalId):
@@ -47,6 +47,12 @@ class ExternalId(StringValueObject):
     EXPECTED_PREFIX: ClassVar[str] = ""
 
     root: str
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Ensure subclasses define EXPECTED_PREFIX."""
+        super().__init_subclass__(**kwargs)  # type: ignore[no-untyped-call]
+        if cls is not ExternalId and not cls.EXPECTED_PREFIX:
+            raise TypeError(f"{cls.__name__} must define a non-empty EXPECTED_PREFIX")
 
     @model_validator(mode="before")
     @classmethod
@@ -77,7 +83,7 @@ class ExternalId(StringValueObject):
     @model_validator(mode="after")
     def validate_prefix(self) -> Self:
         """Validate that the ID has the expected prefix for this type."""
-        if self.EXPECTED_PREFIX and self.prefix != self.EXPECTED_PREFIX:
+        if self.prefix != self.EXPECTED_PREFIX:
             raise ValueError(f"{self.__class__.__name__} must have '{self.EXPECTED_PREFIX}' prefix")
         return self
 
@@ -87,12 +93,7 @@ class ExternalId(StringValueObject):
 
         Returns:
             A new instance with a unique base62 random part.
-
-        Raises:
-            ValueError: If EXPECTED_PREFIX is not defined in the subclass.
         """
-        if not cls.EXPECTED_PREFIX:
-            raise ValueError(f"{cls.__name__} must define EXPECTED_PREFIX to use generate()")
         random_part = "".join(secrets.choice(BASE62_ALPHABET) for _ in range(RANDOM_PART_LENGTH))
         return cls(f"{cls.EXPECTED_PREFIX}_{random_part}")
 

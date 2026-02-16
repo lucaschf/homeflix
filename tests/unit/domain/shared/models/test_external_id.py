@@ -3,7 +3,6 @@
 from typing import ClassVar
 
 import pytest
-from pydantic import model_validator
 
 from src.domain.shared.exceptions.domain import DomainValidationException
 from src.domain.shared.models.external_id import (
@@ -17,17 +16,6 @@ class SampleExternalId(ExternalId):
     """Test external ID with 'tst' prefix."""
 
     EXPECTED_PREFIX: ClassVar[str] = "tst"
-
-    @model_validator(mode="after")
-    def validate_prefix(self) -> "SampleExternalId":
-        if self.prefix != self.EXPECTED_PREFIX:
-            raise ValueError(f"SampleExternalId must have '{self.EXPECTED_PREFIX}' prefix")
-        return self
-
-    @classmethod
-    def generate(cls) -> "SampleExternalId":
-        base = cls._generate_with_prefix(cls.EXPECTED_PREFIX)
-        return cls(base.value)
 
 
 class SampleExternalIdConstants:
@@ -76,7 +64,7 @@ class SampleExternalIdCreation:
 
     def test_should_raise_error_for_non_string_input(self):
         with pytest.raises(DomainValidationException, match="string"):
-            SampleExternalId(123)
+            SampleExternalId(123)  # type: ignore[arg-type]
 
 
 class SampleExternalIdGeneration:
@@ -186,17 +174,38 @@ class SampleExternalIdWithMultiplePrefixes:
         class OtherExternalId(ExternalId):
             EXPECTED_PREFIX: ClassVar[str] = "oth"
 
-            @model_validator(mode="after")
-            def validate_prefix(self) -> "OtherExternalId":
-                if self.prefix != self.EXPECTED_PREFIX:
-                    raise ValueError(f"OtherExternalId must have '{self.EXPECTED_PREFIX}' prefix")
-                return self
-
         tst_id = SampleExternalId("tst_abc123abc123")
         oth_id = OtherExternalId("oth_abc123abc123")
 
         # They have the same random part but different class and prefix
         assert tst_id.random_part == oth_id.random_part
-        # The ExternalId __eq__ compares values, not types
+        # The ExternalId __eq__ compares values, not types,
         # So these should not be equal since full values differ
         assert tst_id != oth_id
+
+
+class TestExternalIdSubclassValidation:
+    """Tests for ExternalId subclass validation via __init_subclass__."""
+
+    def test_should_raise_type_error_when_expected_prefix_not_defined(self):
+        with pytest.raises(TypeError, match="must define a non-empty EXPECTED_PREFIX"):
+
+            class InvalidExternalId(ExternalId):
+                pass
+
+            InvalidExternalId.generate()
+
+    def test_should_raise_type_error_when_expected_prefix_is_empty(self):
+        with pytest.raises(TypeError, match="must define a non-empty EXPECTED_PREFIX"):
+
+            class InvalidExternalId(ExternalId):
+                EXPECTED_PREFIX: ClassVar[str] = ""
+
+            InvalidExternalId.generate()
+
+    def test_should_allow_subclass_with_valid_expected_prefix(self):
+        # Should not raise
+        class ValidExternalId(ExternalId):
+            EXPECTED_PREFIX: ClassVar[str] = "val"
+
+        assert ValidExternalId.EXPECTED_PREFIX == "val"
