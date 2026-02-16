@@ -48,6 +48,7 @@ class ExternalId(StringValueObject):
 
     root: str
 
+    @classmethod
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Ensure subclasses define EXPECTED_PREFIX."""
         super().__init_subclass__(**kwargs)  # type: ignore[no-untyped-call]
