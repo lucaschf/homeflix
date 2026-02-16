@@ -2,10 +2,9 @@
 
 from enum import StrEnum
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
-from src.domain.library.rule_codes import LibraryRuleCodes
-from src.domain.shared.models import ValueObject
+from src.domain.shared.models import CompoundValueObject
 
 
 class MetadataProvider(StrEnum):
@@ -27,7 +26,7 @@ class MetadataProvider(StrEnum):
     TVDB = "tvdb"
 
 
-class MetadataProviderConfig(ValueObject):
+class MetadataProviderConfig(CompoundValueObject):
     """Configuration for a metadata provider within a library.
 
     Defines the priority order and enabled state for a provider in
@@ -51,23 +50,6 @@ class MetadataProviderConfig(ValueObject):
     provider: MetadataProvider
     priority: int = Field(ge=1, le=10)
     enabled: bool = True
-
-    @model_validator(mode="after")
-    def validate_priority(self) -> "MetadataProviderConfig":
-        """Validate priority is within valid range.
-
-        Returns:
-            The validated config.
-
-        Raises:
-            ValueError: If priority is out of range.
-        """
-        if not 1 <= self.priority <= 10:
-            raise ValueError(
-                f"Priority must be between 1 and 10 "
-                f"[{LibraryRuleCodes.INVALID_PROVIDER_PRIORITY}]"
-            )
-        return self
 
     @classmethod
     def tmdb(cls, priority: int = 1) -> "MetadataProviderConfig":

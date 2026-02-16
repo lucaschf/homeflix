@@ -2,10 +2,10 @@
 
 from src.domain.library.value_objects.language_code import LanguageCode
 from src.domain.library.value_objects.subtitle_mode import SubtitleMode
-from src.domain.shared.models import ValueObject
+from src.domain.shared.models import CompoundValueObject
 
 
-class LibrarySettings(ValueObject):
+class LibrarySettings(CompoundValueObject):
     """Configuration settings for a library's behavior.
 
     Controls playback preferences, scan behavior, and feature toggles

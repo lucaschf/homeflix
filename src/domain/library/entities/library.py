@@ -65,7 +65,10 @@ class Library(AggregateRoot[LibraryId]):
     metadata_providers: list[MetadataProviderConfig] = Field(default_factory=list)
 
     # Scan configuration
-    scan_schedule: str | None = Field(default=None, pattern=r"^[\d\s\*\-\,\/]+$")
+    scan_schedule: str | None = Field(
+        default=None,
+        pattern=r"^(\S+\s+){4}\S+$",
+    )
 
     # Settings
     settings: LibrarySettings = Field(default_factory=LibrarySettings.default)
@@ -108,14 +111,14 @@ class Library(AggregateRoot[LibraryId]):
         """
         if not self.paths:
             raise ValueError(
-                f"Library must have at least one path " f"[{LibraryRuleCodes.LIBRARY_NO_PATHS}]"
+                f"Library must have at least one path [{LibraryRuleCodes.LIBRARY_NO_PATHS}]"
             )
 
         # Check for duplicate paths
         path_values = [p.value for p in self.paths]
         if len(path_values) != len(set(path_values)):
             raise ValueError(
-                f"Library paths must be unique " f"[{LibraryRuleCodes.LIBRARY_DUPLICATE_PATH}]"
+                f"Library paths must be unique [{LibraryRuleCodes.LIBRARY_DUPLICATE_PATH}]"
             )
 
         # Validate metadata provider priorities are unique
@@ -143,7 +146,7 @@ class Library(AggregateRoot[LibraryId]):
 
         if path in self.paths:
             raise ValueError(
-                f"Path already exists in library " f"[{LibraryRuleCodes.LIBRARY_DUPLICATE_PATH}]"
+                f"Path already exists in library [{LibraryRuleCodes.LIBRARY_DUPLICATE_PATH}]"
             )
 
         self.paths.append(path)

@@ -2,13 +2,12 @@
 
 from pydantic import Field, model_validator
 
-from src.domain.library.rule_codes import LibraryRuleCodes
 from src.domain.library.value_objects.language_code import LanguageCode
 from src.domain.media.value_objects.file_path import FilePath
-from src.domain.shared.models import ValueObject
+from src.domain.shared.models import CompoundValueObject
 
 
-class AudioTrack(ValueObject):
+class AudioTrack(CompoundValueObject):
     """An audio track within a media file.
 
     Represents a single audio stream in a video container (MKV, MP4, etc.)
@@ -44,27 +43,6 @@ class AudioTrack(ValueObject):
     is_default: bool = False
     bitrate: int | None = Field(default=None, ge=0)
 
-    @model_validator(mode="after")
-    def validate_track(self) -> "AudioTrack":
-        """Validate track properties.
-
-        Returns:
-            The validated track.
-
-        Raises:
-            ValueError: If validation fails.
-        """
-        if self.index < 0:
-            raise ValueError(
-                f"Track index must be non-negative " f"[{LibraryRuleCodes.INVALID_TRACK_INDEX}]"
-            )
-        if not 1 <= self.channels <= 16:
-            raise ValueError(
-                f"Audio channels must be between 1 and 16 "
-                f"[{LibraryRuleCodes.INVALID_AUDIO_CHANNELS}]"
-            )
-        return self
-
     @property
     def is_stereo(self) -> bool:
         """Check if track is stereo (2 channels)."""
@@ -91,7 +69,7 @@ class AudioTrack(ValueObject):
         return layouts.get(self.channels, f"{self.channels}ch")
 
 
-class SubtitleTrack(ValueObject):
+class SubtitleTrack(CompoundValueObject):
     """A subtitle track for a media file.
 
     Can be embedded in the container or an external file.
@@ -133,8 +111,8 @@ class SubtitleTrack(ValueObject):
     file_path: FilePath | None = None
 
     @model_validator(mode="after")
-    def validate_track(self) -> "SubtitleTrack":
-        """Validate track properties.
+    def validate_external_file_path(self) -> "SubtitleTrack":
+        """Validate that external tracks have a file path.
 
         Returns:
             The validated track.
@@ -142,10 +120,6 @@ class SubtitleTrack(ValueObject):
         Raises:
             ValueError: If external track has no file_path.
         """
-        if self.index < 0:
-            raise ValueError(
-                f"Track index must be non-negative " f"[{LibraryRuleCodes.INVALID_TRACK_INDEX}]"
-            )
         if self.is_external and self.file_path is None:
             raise ValueError("External subtitle track must have a file_path")
         return self
