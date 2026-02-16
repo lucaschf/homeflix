@@ -35,9 +35,8 @@ class TrackSelector:
 
         Selection priority:
         1. Preferred language with highest channel count
-        2. Default track from file
-        3. Track with highest channel count
-        4. First available track
+        2. Default track with highest channel count
+        3. Track with highest channel count (any language)
 
         Args:
             tracks: Available audio tracks.

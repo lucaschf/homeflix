@@ -25,6 +25,7 @@ class TestTrackSelectorAudioSelection:
 
         result = self.selector.select_audio(tracks, LanguageCode("en"))
 
+        assert result is not None
         assert result.language.value == "en"
 
     def test_should_prefer_higher_channel_count_for_same_language(self):
@@ -36,6 +37,7 @@ class TestTrackSelectorAudioSelection:
 
         result = self.selector.select_audio(tracks, LanguageCode("en"))
 
+        assert result is not None
         assert result.channels == 8
 
     def test_should_fallback_to_default_track_if_no_preferred_language(self):
@@ -52,6 +54,7 @@ class TestTrackSelectorAudioSelection:
 
         result = self.selector.select_audio(tracks, LanguageCode("en"))
 
+        assert result is not None
         assert result.is_default is True
         assert result.language.value == "fr"
 
@@ -63,6 +66,7 @@ class TestTrackSelectorAudioSelection:
 
         result = self.selector.select_audio(tracks, LanguageCode("en"))
 
+        assert result is not None
         assert result.channels == 6
 
 
@@ -184,7 +188,47 @@ class TestTrackSelectorSubtitleSelection:
             SubtitleMode.ALWAYS,
         )
 
+        assert result is not None
         assert result.format == "srt"
+
+    def test_always_should_fallback_to_default_when_no_preferred_language(self):
+        tracks = [
+            SubtitleTrack(index=0, language=LanguageCode("fr"), format="srt", is_default=True),
+            SubtitleTrack(index=1, language=LanguageCode("de"), format="srt"),
+        ]
+
+        result = self.selector.select_subtitle(
+            tracks, LanguageCode("ja"), LanguageCode("en"), SubtitleMode.ALWAYS
+        )
+
+        assert result is not None
+        assert result.index == 0
+
+    def test_always_should_fallback_to_first_non_forced_when_no_default(self):
+        tracks = [
+            SubtitleTrack(index=0, language=LanguageCode("fr"), format="srt"),
+            SubtitleTrack(index=1, language=LanguageCode("de"), format="srt"),
+        ]
+
+        result = self.selector.select_subtitle(
+            tracks, LanguageCode("ja"), LanguageCode("en"), SubtitleMode.ALWAYS
+        )
+
+        assert result is not None
+        assert result.index == 0
+
+    def test_foreign_audio_only_should_fallback_to_default_when_no_preferred_language(self):
+        tracks = [
+            SubtitleTrack(index=0, language=LanguageCode("fr"), format="srt", is_default=True),
+            SubtitleTrack(index=1, language=LanguageCode("de"), format="srt"),
+        ]
+
+        result = self.selector.select_subtitle(
+            tracks, LanguageCode("ja"), LanguageCode("en"), SubtitleMode.FOREIGN_AUDIO_ONLY
+        )
+
+        assert result is not None
+        assert result.index == 0
 
     def test_should_prefer_forced_in_preferred_language(self):
         tracks = [
@@ -199,4 +243,5 @@ class TestTrackSelectorSubtitleSelection:
             SubtitleMode.FORCED_ONLY,
         )
 
+        assert result is not None
         assert result.language.value == "en"

@@ -82,6 +82,16 @@ class TestAudioTrackValidation:
                 channels=17,
             )
 
+    def test_should_raise_error_for_negative_bitrate(self):
+        with pytest.raises(DomainValidationException):
+            AudioTrack(
+                index=0,
+                language=LanguageCode("en"),
+                codec="aac",
+                channels=2,
+                bitrate=-1,
+            )
+
 
 class TestAudioTrackProperties:
     """Tests for AudioTrack properties."""

@@ -89,8 +89,12 @@ class Library(AggregateRoot[LibraryId]):
 
     @field_validator("paths", mode="before")
     @classmethod
-    def convert_paths(cls, v: list[Any]) -> list[FilePath]:
-        """Convert string list to FilePath list."""
+    def convert_paths(cls, v: Any) -> list[FilePath]:
+        """Normalize and convert input to a list of FilePath."""
+        if v is None:
+            return []
+        if isinstance(v, str | FilePath):
+            v = [v]
         return [FilePath(p) if isinstance(p, str) else p for p in v]
 
     @field_validator("language", mode="before")
