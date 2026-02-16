@@ -9,9 +9,6 @@ Base classes and utilities for domain modeling:
 - ExternalId: Base for prefixed external IDs
 - SupportsUpdates: Protocol for objects with with_updates() method
 
-For type checking all value objects, import ValueObject directly:
-    from src.domain.shared.models.value_object import ValueObject
-
 Specific ID types (MovieId, SeriesId, etc.) are defined in their
 respective bounded contexts under value_objects/.
 """
@@ -25,6 +22,7 @@ from src.domain.shared.models.value_object import (
     FloatValueObject,
     IntValueObject,
     StringValueObject,
+    ValueObject,
 )
 
 __all__ = [
@@ -38,5 +36,6 @@ __all__ = [
     "IntValueObject",
     "StringValueObject",
     "SupportsUpdates",
+    "ValueObject",
     "utc_now",
 ]
