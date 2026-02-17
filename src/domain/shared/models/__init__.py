@@ -25,6 +25,10 @@ from src.domain.shared.models.value_object import (
     ValueObject,
 )
 
+# Re-export shared value objects for convenience
+from src.domain.shared.value_objects.file_path import FilePath
+from src.domain.shared.value_objects.language_code import LanguageCode
+
 __all__ = [
     "AggregateRoot",
     "CompoundValueObject",
@@ -32,8 +36,10 @@ __all__ = [
     "DomainEntity",
     "DomainModel",
     "ExternalId",
+    "FilePath",
     "FloatValueObject",
     "IntValueObject",
+    "LanguageCode",
     "StringValueObject",
     "SupportsUpdates",
     "ValueObject",
