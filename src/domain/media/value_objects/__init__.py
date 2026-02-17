@@ -13,9 +13,11 @@ from src.domain.media.value_objects.media_id import (
 )
 from src.domain.media.value_objects.resolution import Resolution
 from src.domain.media.value_objects.title import Title
+from src.domain.media.value_objects.tracks import AudioTrack, SubtitleTrack
 from src.domain.media.value_objects.year import Year
 
 __all__ = [
+    "AudioTrack",
     "Duration",
     "EpisodeId",
     "FilePath",
@@ -25,6 +27,7 @@ __all__ = [
     "Resolution",
     "SeasonId",
     "SeriesId",
+    "SubtitleTrack",
     "Title",
     "Year",
     "parse_media_id",

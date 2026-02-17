@@ -1,8 +1,8 @@
 """Track selection domain service."""
 
-from src.domain.library.value_objects.language_code import LanguageCode
 from src.domain.library.value_objects.subtitle_mode import SubtitleMode
-from src.domain.library.value_objects.tracks import AudioTrack, SubtitleTrack
+from src.domain.media.value_objects.tracks import AudioTrack, SubtitleTrack
+from src.domain.shared.value_objects.language_code import LanguageCode
 
 
 class TrackSelector:
