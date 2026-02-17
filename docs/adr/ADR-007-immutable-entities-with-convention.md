@@ -26,16 +26,16 @@ Nós iremos:
 
 1. **Tornar `DomainEntity` frozen** adicionando `frozen=True` ao `model_config` da classe base, eliminando a necessidade de repetir a configuração em cada entidade concreta.
 
-2. **Remover `touch()`** de `DomainEntity` — cada método `with_*` inclui `updated_at=utc_now()` explicitamente.
+2. **Remover `touch()`** de `DomainEntity` — `with_updates()` agora atualiza `updated_at` automaticamente via `setdefault`.
 
-3. **Adotar a convenção `with_*`/`without_*`** para todos os métodos que modificam estado, retornando `Self`:
-   - `Movie.add_genre()` → `Movie.with_genre()` → retorna nova instância
-   - `Series.add_season()` → `Series.with_season()` → retorna nova instância
-   - `Season.add_episode()` → `Season.with_episode()` → retorna nova instância
-   - `Library.add_path()` → `Library.with_path()` → retorna nova instância
-   - `Library.remove_path()` → `Library.without_path()` → retorna self se não encontrado
+3. **`with_updates()` faz bump automático de `updated_at`** — usa `kwargs.setdefault("updated_at", utc_now())` para que chamadores não precisem lembrar de passar o timestamp. Valores explícitos ainda são respeitados.
 
-4. **`with_updates()` permanece como utilitário low-level** — não atualiza `updated_at` automaticamente.
+4. **Adotar a convenção `with_*`/`without_*`** para todos os métodos que modificam estado, retornando `Self`:
+   - `Movie.add_genre()` → `Movie.with_genre()` → retorna nova instância, ou `self` para duplicata
+   - `Series.add_season()` → `Series.with_season()` → retorna nova instância, ou `self` para duplicata
+   - `Season.add_episode()` → `Season.with_episode()` → retorna nova instância, ou `self` para duplicata
+   - `Library.add_path()` → `Library.with_path()` → retorna nova instância (erro para duplicata)
+   - `Library.remove_path()` → `Library.without_path()` → retorna nova instância, ou `self` se não encontrado
 
 ## Consequências
 
@@ -83,7 +83,7 @@ Abandonar Pydantic para entidades e usar dataclasses frozen.
 
 ## Notas de Implementação
 
-Padrão para métodos `with_*`:
+Padrão para métodos `with_*` (`with_updates` faz bump automático de `updated_at`):
 
 ```python
 def with_genre(self, genre: Genre | str) -> Self:
@@ -91,10 +91,7 @@ def with_genre(self, genre: Genre | str) -> Self:
         genre = Genre(genre)
     if genre in self.genres:
         return self  # no-op para duplicatas
-    return self.with_updates(
-        genres=[*self.genres, genre],
-        updated_at=utc_now(),
-    )
+    return self.with_updates(genres=[*self.genres, genre])
 ```
 
 Padrão para métodos `without_*`:
@@ -107,11 +104,10 @@ def without_path(self, path: FilePath | str) -> Self:
         return self  # no-op se não encontrado
     if len(self.paths) == 1:
         raise ValueError("Cannot remove the last path")
-    return self.with_updates(
-        paths=[p for p in self.paths if p != path],
-        updated_at=utc_now(),
-    )
+    return self.with_updates(paths=[p for p in self.paths if p != path])
 ```
+
+Todos os métodos `with_*`/`without_*` devem retornar `self` quando não há mudança (duplicata ou item não encontrado), garantindo comportamento uniforme.
 
 ## Historico de Revisoes
 

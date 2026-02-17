@@ -18,7 +18,6 @@ from src.domain.library.value_objects.library_type import LibraryType
 from src.domain.library.value_objects.metadata_provider import MetadataProviderConfig
 from src.domain.media.value_objects.file_path import FilePath
 from src.domain.shared.models import AggregateRoot
-from src.domain.shared.models.entity import utc_now
 
 
 class Library(AggregateRoot[LibraryId]):
@@ -152,10 +151,7 @@ class Library(AggregateRoot[LibraryId]):
                 f"Path already exists in library [{LibraryRuleCodes.LIBRARY_DUPLICATE_PATH}]"
             )
 
-        return self.with_updates(
-            paths=[*self.paths, path],
-            updated_at=utc_now(),
-        )
+        return self.with_updates(paths=[*self.paths, path])
 
     def without_path(self, path: FilePath | str) -> Self:
         """Return a copy with the path removed.
@@ -181,10 +177,7 @@ class Library(AggregateRoot[LibraryId]):
                 f"[{LibraryRuleCodes.LIBRARY_NO_PATHS}]"
             )
 
-        return self.with_updates(
-            paths=[p for p in self.paths if p != path],
-            updated_at=utc_now(),
-        )
+        return self.with_updates(paths=[p for p in self.paths if p != path])
 
     def get_enabled_providers(self) -> list[MetadataProviderConfig]:
         """Get enabled metadata providers sorted by priority.

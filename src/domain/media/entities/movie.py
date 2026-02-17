@@ -16,7 +16,6 @@ from src.domain.media.value_objects import (
     Year,
 )
 from src.domain.shared.models import AggregateRoot
-from src.domain.shared.models.entity import utc_now
 
 
 class Movie(AggregateRoot[MovieId]):
@@ -91,10 +90,7 @@ class Movie(AggregateRoot[MovieId]):
             genre = Genre(genre)
         if genre in self.genres:
             return self
-        return self.with_updates(
-            genres=[*self.genres, genre],
-            updated_at=utc_now(),
-        )
+        return self.with_updates(genres=[*self.genres, genre])
 
     @classmethod
     def create(

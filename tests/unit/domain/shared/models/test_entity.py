@@ -198,6 +198,26 @@ class TestDomainEntityFrozen:
         assert entity.tags == ["a"]
         assert updated.tags == ["a", "b"]
 
+    def test_with_updates_should_auto_bump_updated_at(self):
+        custom_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+        entity = SampleEntity(id="test_123", name="Original", updated_at=custom_time)
+
+        before = datetime.now(UTC)
+        updated = entity.with_updates(name="Changed")
+        after = datetime.now(UTC)
+
+        assert updated.name == "Changed"
+        assert before <= updated.updated_at <= after
+        assert entity.updated_at == custom_time
+
+    def test_with_updates_should_respect_explicit_updated_at(self):
+        explicit_time = datetime(2025, 6, 15, 12, 0, 0, tzinfo=UTC)
+        entity = SampleEntity(id="test_123", name="Original")
+
+        updated = entity.with_updates(name="Changed", updated_at=explicit_time)
+
+        assert updated.updated_at == explicit_time
+
     def test_aggregate_root_should_also_be_frozen(self):
         aggregate = SampleAggregateRoot(name="Test")
 

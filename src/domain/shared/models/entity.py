@@ -46,6 +46,9 @@ class DomainEntity(DomainModel, Generic[IdT]):
     def with_updates(self, **kwargs: Any) -> Self:
         """Create a new, fully validated instance by applying updates atomically.
 
+        Automatically bumps ``updated_at`` to the current UTC time unless
+        an explicit value is provided in *kwargs*.
+
         Args:
             **kwargs: Fields to update with their new values.
 
@@ -55,6 +58,8 @@ class DomainEntity(DomainModel, Generic[IdT]):
         Raises:
             DomainValidationException: If the resulting state is invalid.
         """
+        kwargs.setdefault("updated_at", utc_now())
+
         current_data = self.model_dump()
         current_data.update(kwargs)
 

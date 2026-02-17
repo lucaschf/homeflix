@@ -223,3 +223,19 @@ class TestSeriesImmutability:
         updated = series.with_season(season)
 
         assert updated == series  # same id
+
+    def test_with_season_duplicate_should_return_self(self):
+        from src.domain.media.entities import Season, Series
+        from src.domain.media.value_objects import SeasonId
+
+        series = Series.create(title="Breaking Bad", start_year=2008)
+        season = Season(
+            id=SeasonId.generate(),
+            series_id=series.id,
+            season_number=1,
+        )
+        series = series.with_season(season)
+
+        result = series.with_season(season)
+
+        assert result is series

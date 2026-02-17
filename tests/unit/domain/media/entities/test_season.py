@@ -395,3 +395,37 @@ class TestSeasonImmutability:
         updated = season.with_episode(episode)
 
         assert updated == season  # same id
+
+    def test_with_episode_duplicate_should_return_self(self):
+        from src.domain.media.entities import Episode, Season
+        from src.domain.media.value_objects import (
+            Duration,
+            EpisodeId,
+            FilePath,
+            Resolution,
+            SeriesId,
+            Title,
+        )
+
+        series_id = SeriesId.generate()
+        season = Season(
+            series_id=series_id,
+            season_number=1,
+        )
+
+        episode = Episode(
+            id=EpisodeId.generate(),
+            series_id=series_id,
+            season_number=1,
+            episode_number=1,
+            title=Title("Pilot"),
+            duration=Duration(2700),
+            file_path=FilePath("/series/show/s01e01.mkv"),
+            file_size=1_000_000_000,
+            resolution=Resolution("1080p"),
+        )
+        season = season.with_episode(episode)
+
+        result = season.with_episode(episode)
+
+        assert result is season

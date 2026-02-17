@@ -285,7 +285,7 @@ class TestMovieImmutability:
         assert len(updated.genres) == 1
         assert len(movie.genres) == 0
 
-    def test_with_genre_duplicate_should_return_self(self):
+    def test_with_genre_duplicate_string_should_return_self(self):
         from src.domain.media.entities import Movie
 
         movie = Movie.create(
@@ -299,5 +299,23 @@ class TestMovieImmutability:
         movie = movie.with_genre("Sci-Fi")
 
         result = movie.with_genre("Sci-Fi")
+
+        assert result is movie
+
+    def test_with_genre_duplicate_value_object_should_return_self(self):
+        from src.domain.media.entities import Movie
+        from src.domain.media.value_objects import Genre
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        movie = movie.with_genre(Genre("Sci-Fi"))
+
+        result = movie.with_genre(Genre("Sci-Fi"))
 
         assert result is movie

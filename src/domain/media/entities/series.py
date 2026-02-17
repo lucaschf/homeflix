@@ -10,7 +10,6 @@ from src.domain.media.rule_codes import MediaRuleCodes
 from src.domain.media.value_objects import FilePath, Genre, SeriesId, Title, Year
 from src.domain.shared.exceptions.domain import BusinessRuleViolationException
 from src.domain.shared.models import AggregateRoot
-from src.domain.shared.models.entity import utc_now
 
 if TYPE_CHECKING:
     from src.domain.media.entities.season import Season
@@ -104,7 +103,7 @@ class Series(AggregateRoot[SeriesId]):
             season: The season to add.
 
         Returns:
-            A new Series with the season added.
+            A new Series with the season added, or self if already present.
 
         Raises:
             BusinessRuleViolationException: If season series_id doesn't match.
@@ -114,10 +113,9 @@ class Series(AggregateRoot[SeriesId]):
                 message="Season series_id must match Series id",
                 rule_code=MediaRuleCodes.SEASON_SERIES_MISMATCH,
             )
-        return self.with_updates(
-            seasons=[*self.seasons, season],
-            updated_at=utc_now(),
-        )
+        if season in self.seasons:
+            return self
+        return self.with_updates(seasons=[*self.seasons, season])
 
     def get_season(self, season_number: int) -> Season | None:
         """Find a season by its number.
