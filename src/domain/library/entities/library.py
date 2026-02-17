@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
@@ -18,6 +18,7 @@ from src.domain.library.value_objects.library_type import LibraryType
 from src.domain.library.value_objects.metadata_provider import MetadataProviderConfig
 from src.domain.media.value_objects.file_path import FilePath
 from src.domain.shared.models import AggregateRoot
+from src.domain.shared.models.entity import utc_now
 
 
 class Library(AggregateRoot[LibraryId]):
@@ -136,11 +137,14 @@ class Library(AggregateRoot[LibraryId]):
 
         return self
 
-    def add_path(self, path: FilePath | str) -> None:
-        """Add a new path to the library.
+    def with_path(self, path: FilePath | str) -> Self:
+        """Return a copy with the path added.
 
         Args:
             path: Filesystem path to add.
+
+        Returns:
+            A new Library with the path added.
 
         Raises:
             ValueError: If path already exists in the library.
@@ -153,17 +157,19 @@ class Library(AggregateRoot[LibraryId]):
                 f"Path already exists in library [{LibraryRuleCodes.LIBRARY_DUPLICATE_PATH}]"
             )
 
-        self.paths.append(path)
-        self.touch()
+        return self.with_updates(
+            paths=[*self.paths, path],
+            updated_at=utc_now(),
+        )
 
-    def remove_path(self, path: FilePath | str) -> bool:
-        """Remove a path from the library.
+    def without_path(self, path: FilePath | str) -> Self:
+        """Return a copy with the path removed.
 
         Args:
             path: Filesystem path to remove.
 
         Returns:
-            True if path was removed, False if not found.
+            A new Library without the path, or self if not found.
 
         Raises:
             ValueError: If removing the last path.
@@ -172,7 +178,7 @@ class Library(AggregateRoot[LibraryId]):
             path = FilePath(path)
 
         if path not in self.paths:
-            return False
+            return self
 
         if len(self.paths) == 1:
             raise ValueError(
@@ -180,9 +186,10 @@ class Library(AggregateRoot[LibraryId]):
                 f"[{LibraryRuleCodes.LIBRARY_NO_PATHS}]"
             )
 
-        self.paths.remove(path)
-        self.touch()
-        return True
+        return self.with_updates(
+            paths=[p for p in self.paths if p != path],
+            updated_at=utc_now(),
+        )
 
     def get_enabled_providers(self) -> list[MetadataProviderConfig]:
         """Get enabled metadata providers sorted by priority.

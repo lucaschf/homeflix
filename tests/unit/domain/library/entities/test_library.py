@@ -88,19 +88,19 @@ class TestLibraryValidation:
 class TestLibraryPathManagement:
     """Tests for Library path operations."""
 
-    def test_add_path_should_add_new_path(self):
+    def test_with_path_should_add_new_path(self):
         library = Library(
             name="Movies",
             library_type=LibraryType.MOVIES,
             paths=["/media/movies"],
         )
 
-        library.add_path("/backup/movies")
+        library = library.with_path("/backup/movies")
 
         assert len(library.paths) == 2
         assert FilePath("/backup/movies") in library.paths
 
-    def test_add_path_should_raise_error_for_duplicate(self):
+    def test_with_path_should_raise_error_for_duplicate(self):
         library = Library(
             name="Movies",
             library_type=LibraryType.MOVIES,
@@ -108,32 +108,31 @@ class TestLibraryPathManagement:
         )
 
         with pytest.raises(ValueError, match="already exists"):
-            library.add_path("/media/movies")
+            library.with_path("/media/movies")
 
-    def test_remove_path_should_remove_existing_path(self):
+    def test_without_path_should_remove_existing_path(self):
         library = Library(
             name="Movies",
             library_type=LibraryType.MOVIES,
             paths=["/media/movies", "/backup/movies"],
         )
 
-        result = library.remove_path("/backup/movies")
+        library = library.without_path("/backup/movies")
 
-        assert result is True
         assert len(library.paths) == 1
 
-    def test_remove_path_should_return_false_for_nonexistent(self):
+    def test_without_path_should_return_self_for_nonexistent(self):
         library = Library(
             name="Movies",
             library_type=LibraryType.MOVIES,
             paths=["/media/movies"],
         )
 
-        result = library.remove_path("/other/path")
+        result = library.without_path("/other/path")
 
-        assert result is False
+        assert result is library
 
-    def test_remove_path_should_raise_error_for_last_path(self):
+    def test_without_path_should_raise_error_for_last_path(self):
         library = Library(
             name="Movies",
             library_type=LibraryType.MOVIES,
@@ -141,7 +140,7 @@ class TestLibraryPathManagement:
         )
 
         with pytest.raises(ValueError, match="last path"):
-            library.remove_path("/media/movies")
+            library.without_path("/media/movies")
 
 
 class TestLibraryMetadataProviders:
@@ -252,4 +251,5 @@ class TestLibrarySpecializedFactories:
         assert library.library_type == LibraryType.SERIES
         assert library.language.value == "ja"
         assert library.settings.preferred_audio_language.value == "ja"
+        assert library.settings.preferred_subtitle_language is not None
         assert library.settings.preferred_subtitle_language.value == "en"
