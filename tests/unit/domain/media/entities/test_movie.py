@@ -247,3 +247,57 @@ class TestMovieEvents:
 
         assert len(events) == 1
         assert movie.has_pending_events is False
+
+
+class TestMovieImmutability:
+    """Tests for Movie frozen (immutable) behavior."""
+
+    def test_should_reject_direct_attribute_assignment(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        with pytest.raises(DomainValidationException):
+            movie.year = 2020  # type: ignore[assignment, misc]
+
+    def test_with_genre_should_return_new_instance(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        updated = movie.with_genre("Sci-Fi")
+
+        assert updated is not movie
+        assert len(updated.genres) == 1
+        assert len(movie.genres) == 0
+
+    def test_with_genre_duplicate_should_return_self(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        movie = movie.with_genre("Sci-Fi")
+
+        result = movie.with_genre("Sci-Fi")
+
+        assert result is movie

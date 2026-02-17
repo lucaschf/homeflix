@@ -179,3 +179,47 @@ class TestSeriesEvents:
 
         assert len(events) == 1
         assert series.has_pending_events is False
+
+
+class TestSeriesImmutability:
+    """Tests for Series frozen (immutable) behavior."""
+
+    def test_should_reject_direct_attribute_assignment(self):
+        from src.domain.media.entities import Series
+
+        series = Series.create(title="Breaking Bad", start_year=2008)
+
+        with pytest.raises(DomainValidationException):
+            series.start_year = 2020  # type: ignore[assignment, misc]
+
+    def test_with_season_should_return_new_instance(self):
+        from src.domain.media.entities import Season, Series
+        from src.domain.media.value_objects import SeasonId
+
+        series = Series.create(title="Breaking Bad", start_year=2008)
+        season = Season(
+            id=SeasonId.generate(),
+            series_id=series.id,
+            season_number=1,
+        )
+
+        updated = series.with_season(season)
+
+        assert updated is not series
+        assert updated.season_count == 1
+        assert series.season_count == 0
+
+    def test_with_season_should_preserve_identity(self):
+        from src.domain.media.entities import Season, Series
+        from src.domain.media.value_objects import SeasonId
+
+        series = Series.create(title="Breaking Bad", start_year=2008)
+        season = Season(
+            id=SeasonId.generate(),
+            series_id=series.id,
+            season_number=1,
+        )
+
+        updated = series.with_season(season)
+
+        assert updated == series  # same id
