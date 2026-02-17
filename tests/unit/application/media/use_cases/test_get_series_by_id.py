@@ -45,7 +45,7 @@ class TestGetSeriesByIdUseCase:
             series_id=series.id,
             season_number=1,
         )
-        series.add_season(season)
+        series = series.with_season(season)
         mock_repo.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(series_repository=mock_repo)
 
@@ -79,7 +79,7 @@ class TestGetSeriesByIdUseCase:
             resolution="1080p",
         )
         season.add_episode(episode)
-        series.add_season(season)
+        series = series.with_season(season)
         mock_repo.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(series_repository=mock_repo)
 

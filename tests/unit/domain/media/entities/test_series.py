@@ -49,6 +49,7 @@ class TestSeriesCreation:
             end_year=Year(2013),
         )
 
+        assert series.end_year is not None
         assert series.end_year.value == 2013
         assert series.is_ongoing is False
 
@@ -93,7 +94,7 @@ class TestSeriesSeasonManagement:
             season_number=1,
         )
 
-        series.add_season(season)
+        series = series.with_season(season)
 
         assert series.season_count == 1
 
@@ -110,7 +111,7 @@ class TestSeriesSeasonManagement:
         )
 
         with pytest.raises(BusinessRuleViolationException, match="series_id"):
-            series.add_season(season)
+            series.with_season(season)
 
     def test_should_get_season_by_number(self):
         from src.domain.media.entities import Season, Series
@@ -124,7 +125,7 @@ class TestSeriesSeasonManagement:
             season_number=2,
         )
 
-        series.add_season(season)
+        series = series.with_season(season)
 
         found = series.get_season(2)
         assert found == season
