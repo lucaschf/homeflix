@@ -57,9 +57,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         Returns:
             The saved movie (with generated ID if new).
         """
-        # Generate ID if not present
-        if movie.id is None:
-            movie = movie.with_updates(id=MovieId.generate())
+        movie = movie.with_updates(id=MovieId.generate_if_absent(movie.id))
 
         # Check if the movie already exists (including soft-deleted for restore)
         stmt = select(MovieModel).where(MovieModel.external_id == str(movie.id))

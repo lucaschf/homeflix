@@ -180,20 +180,16 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         Returns:
             Series with all IDs populated.
         """
-        series_id = series.id if series.id is not None else SeriesId.generate()
+        series_id = SeriesId.generate_if_absent(series.id)
 
         updated_seasons: list[Season] = []
         for season in series.seasons:
-            season_id = season.id if season.id is not None else SeasonId.generate()
+            season_id = SeasonId.generate_if_absent(season.id)
 
             updated_episodes: list[Episode] = []
             for episode in season.episodes:
-                updated_episodes.append(
-                    episode.with_updates(
-                        id=episode.id if episode.id is not None else EpisodeId.generate(),
-                        series_id=series_id,
-                    )
-                )
+                episode_id = EpisodeId.generate_if_absent(episode.id)
+                updated_episodes.append(episode.with_updates(id=episode_id, series_id=series_id))
 
             updated_seasons.append(
                 season.with_updates(
