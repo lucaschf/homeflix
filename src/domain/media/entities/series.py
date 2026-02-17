@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, Self
+from typing import TYPE_CHECKING, Any, Self
 
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from src.domain.media.rule_codes import MediaRuleCodes
 from src.domain.media.value_objects import FilePath, Genre, SeriesId, Title, Year
@@ -28,11 +28,6 @@ class Series(AggregateRoot[SeriesId]):
         ...     start_year=2008,
         ... )
     """
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        validate_assignment=True,
-        extra="forbid",
-    )
 
     # Identity
     id: SeriesId | None = Field(default=None)

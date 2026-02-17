@@ -1,9 +1,8 @@
 """Episode entity for TV series."""
 
 from datetime import date
-from typing import ClassVar
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
 
 from src.domain.media.value_objects import (
     Duration,
@@ -34,11 +33,6 @@ class Episode(DomainEntity[EpisodeId]):
         ...     resolution=Resolution("1080p"),
         ... )
     """
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        validate_assignment=True,
-        extra="forbid",
-    )
 
     # Identity
     id: EpisodeId | None = Field(default=None)

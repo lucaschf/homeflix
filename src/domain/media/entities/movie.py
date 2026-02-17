@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Self
+from typing import Any, Self
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
 
 from src.domain.media.value_objects import (
     Duration,
@@ -35,11 +35,6 @@ class Movie(AggregateRoot[MovieId]):
         ...     resolution="1080p",
         ... )
     """
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        validate_assignment=True,
-        extra="forbid",
-    )
 
     # Identity
     id: MovieId | None = Field(default=None)

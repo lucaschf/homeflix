@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import date  # noqa: TCH003
-from typing import TYPE_CHECKING, ClassVar, Self
+from typing import TYPE_CHECKING, Self
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
 
 from src.domain.media.rule_codes import MediaRuleCodes
 from src.domain.media.value_objects import FilePath, SeasonId, SeriesId, Title
@@ -30,11 +30,6 @@ class Season(DomainEntity[SeasonId]):
         ...     title=Title("Season One"),
         ... )
     """
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        validate_assignment=True,
-        extra="forbid",
-    )
 
     # Identity - override base id type
     id: SeasonId | None = Field(default=None)

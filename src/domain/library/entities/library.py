@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, Self
+from typing import TYPE_CHECKING, Any, Self
 
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -47,11 +47,6 @@ class Library(AggregateRoot[LibraryId]):
         >>> library.name.value
         'Anime'
     """
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        validate_assignment=True,
-        extra="forbid",
-    )
 
     # Identity
     id: LibraryId | None = Field(default=None)
