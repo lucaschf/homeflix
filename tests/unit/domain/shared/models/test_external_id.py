@@ -99,6 +99,24 @@ class SampleExternalIdGeneration:
         assert len(unique_ids) == 100
 
 
+class TestExternalIdGenerateIfAbsent:
+    """Tests for ExternalId.generate_if_absent()."""
+
+    def test_should_return_existing_id_when_present(self):
+        existing = SampleExternalId("tst_abc123abc123")
+
+        result = SampleExternalId.generate_if_absent(existing)
+
+        assert result is existing
+
+    def test_should_generate_new_id_when_none(self):
+        result = SampleExternalId.generate_if_absent(None)
+
+        assert isinstance(result, SampleExternalId)
+        assert result.prefix == "tst"
+        assert len(result.random_part) == RANDOM_PART_LENGTH
+
+
 class SampleExternalIdProperties:
     """Tests for ExternalId properties."""
 

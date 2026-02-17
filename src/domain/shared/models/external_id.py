@@ -103,6 +103,22 @@ class ExternalId(StringValueObject):
         random_part = "".join(secrets.choice(BASE62_ALPHABET) for _ in range(RANDOM_PART_LENGTH))
         return cls(root=f"{cls.EXPECTED_PREFIX}_{random_part}")
 
+    @classmethod
+    def generate_if_absent(cls, existing: Self | None) -> Self:
+        """Return the existing ID if present, or generate a new one.
+
+        Standardizes the pattern of assigning IDs in repositories:
+        instead of ``id if id is not None else IdType.generate()``,
+        use ``IdType.generate_if_absent(id)``.
+
+        Args:
+            existing: An existing ID instance, or None.
+
+        Returns:
+            The existing ID unchanged, or a newly generated one.
+        """
+        return existing if existing is not None else cls.generate()
+
     @property
     def value(self) -> str:
         """Get the full ID string."""

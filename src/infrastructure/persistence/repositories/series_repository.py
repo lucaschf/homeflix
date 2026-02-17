@@ -180,60 +180,26 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         Returns:
             Series with all IDs populated.
         """
-        # Generate series ID if needed
-        series_id = series.id if series.id is not None else SeriesId.generate()
+        series_id = SeriesId.generate_if_absent(series.id)
 
-        # Process seasons and episodes
         updated_seasons: list[Season] = []
         for season in series.seasons:
-            season_id = season.id if season.id is not None else SeasonId.generate()
+            season_id = SeasonId.generate_if_absent(season.id)
 
             updated_episodes: list[Episode] = []
             for episode in season.episodes:
-                episode_id = episode.id if episode.id is not None else EpisodeId.generate()
+                episode_id = EpisodeId.generate_if_absent(episode.id)
+                updated_episodes.append(episode.with_updates(id=episode_id, series_id=series_id))
 
-                updated_episode = Episode(
-                    id=episode_id,
+            updated_seasons.append(
+                season.with_updates(
+                    id=season_id,
                     series_id=series_id,
-                    season_number=episode.season_number,
-                    episode_number=episode.episode_number,
-                    title=episode.title,
-                    synopsis=episode.synopsis,
-                    duration=episode.duration,
-                    file_path=episode.file_path,
-                    file_size=episode.file_size,
-                    resolution=episode.resolution,
-                    thumbnail_path=episode.thumbnail_path,
-                    air_date=episode.air_date,
+                    episodes=updated_episodes,
                 )
-                updated_episodes.append(updated_episode)
-
-            updated_season = Season(
-                id=season_id,
-                series_id=series_id,
-                season_number=season.season_number,
-                title=season.title,
-                synopsis=season.synopsis,
-                poster_path=season.poster_path,
-                air_date=season.air_date,
-                episodes=updated_episodes,
             )
-            updated_seasons.append(updated_season)
 
-        return Series(
-            id=series_id,
-            title=series.title,
-            original_title=series.original_title,
-            start_year=series.start_year,
-            end_year=series.end_year,
-            synopsis=series.synopsis,
-            poster_path=series.poster_path,
-            backdrop_path=series.backdrop_path,
-            genres=series.genres,
-            tmdb_id=series.tmdb_id,
-            imdb_id=series.imdb_id,
-            seasons=updated_seasons,
-        )
+        return series.with_updates(id=series_id, seasons=updated_seasons)
 
     async def _create_series(self, series: Series) -> Series:
         """Create a new series with all seasons and episodes.
