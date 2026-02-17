@@ -24,6 +24,7 @@ class DomainEntity(DomainModel, Generic[IdT]):
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
+        frozen=True,
         validate_assignment=True,
         extra="forbid",
     )
@@ -41,10 +42,6 @@ class DomainEntity(DomainModel, Generic[IdT]):
         if self.id is None:
             return hash(id(self))
         return hash((self.__class__.__name__, self.id))
-
-    def touch(self) -> None:
-        """Update the updated_at timestamp."""
-        self.updated_at = utc_now()
 
     def with_updates(self, **kwargs: Any) -> Self:
         """Create a new, fully validated instance by applying updates atomically.

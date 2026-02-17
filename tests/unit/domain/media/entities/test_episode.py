@@ -341,9 +341,7 @@ class TestEpisodeTimestamps:
 
         assert episode.created_at is not None
 
-    def test_should_update_timestamp_on_touch(self):
-        from datetime import UTC, datetime
-
+    def test_should_reject_direct_attribute_assignment(self):
         from src.domain.media.entities import Episode
         from src.domain.media.value_objects import (
             Duration,
@@ -362,10 +360,7 @@ class TestEpisodeTimestamps:
             file_path=FilePath("/series/show/s01e01.mkv"),
             file_size=1_000_000_000,
             resolution=Resolution("1080p"),
-            updated_at=datetime(2020, 1, 1, tzinfo=UTC),
         )
 
-        old_updated_at = episode.updated_at
-        episode.touch()
-
-        assert episode.updated_at > old_updated_at
+        with pytest.raises(DomainValidationException):
+            episode.season_number = 2  # type: ignore[misc]
