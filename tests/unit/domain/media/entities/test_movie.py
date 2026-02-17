@@ -122,6 +122,7 @@ class TestMovieOptionalFields:
             imdb_id="tt1375666",
         )
 
+        assert movie.original_title is not None
         assert movie.original_title.value == "Inception"
         assert movie.synopsis is not None
         assert len(movie.genres) == 2
@@ -144,7 +145,7 @@ class TestMovieGenreManagement:
             resolution="1080p",
         )
 
-        movie.add_genre("Sci-Fi")
+        movie = movie.with_genre("Sci-Fi")
 
         assert len(movie.genres) == 1
         assert movie.genres[0].value == "Sci-Fi"
@@ -162,7 +163,7 @@ class TestMovieGenreManagement:
             resolution="1080p",
         )
 
-        movie.add_genre(Genre("Action"))
+        movie = movie.with_genre(Genre("Action"))
 
         assert len(movie.genres) == 1
 
@@ -178,8 +179,8 @@ class TestMovieGenreManagement:
             resolution="1080p",
         )
 
-        movie.add_genre("Sci-Fi")
-        movie.add_genre("Sci-Fi")
+        movie = movie.with_genre("Sci-Fi")
+        movie = movie.with_genre("Sci-Fi")
 
         assert len(movie.genres) == 1
 

@@ -65,8 +65,8 @@ class TestGetMovieByIdUseCase:
             file_size=1_000_000_000,
             resolution="1080p",
         )
-        movie.add_genre("Action")
-        movie.add_genre("Sci-Fi")
+        movie = movie.with_genre("Action")
+        movie = movie.with_genre("Sci-Fi")
         mock_repo.find_by_id.return_value = movie
         use_case = GetMovieByIdUseCase(movie_repository=mock_repo)
 
