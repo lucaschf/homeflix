@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import date  # noqa: TCH003
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Self
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
 
 from src.domain.media.rule_codes import MediaRuleCodes
 from src.domain.media.value_objects import FilePath, SeasonId, SeriesId, Title
@@ -29,11 +29,6 @@ class Season(DomainEntity[SeasonId]):
         ...     title=Title("Season One"),
         ... )
     """
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        validate_assignment=True,
-        extra="forbid",
-    )
 
     # Identity - override base id type
     id: SeasonId | None = Field(default=None)
@@ -71,11 +66,14 @@ class Season(DomainEntity[SeasonId]):
         """
         return len(self.episodes)
 
-    def add_episode(self, episode: Episode) -> None:
-        """Add an episode to this season.
+    def with_episode(self, episode: Episode) -> Self:
+        """Return a copy with the episode added.
 
         Args:
             episode: The episode to add.
+
+        Returns:
+            A new Season with the episode added, or self if already present.
 
         Raises:
             BusinessRuleViolationException: If episode series_id or season_number doesn't match.
@@ -90,8 +88,9 @@ class Season(DomainEntity[SeasonId]):
                 message="Episode season_number must match Season",
                 rule_code=MediaRuleCodes.EPISODE_SEASON_MISMATCH,
             )
-        self.episodes.append(episode)
-        self.touch()
+        if episode in self.episodes:
+            return self
+        return self.with_updates(episodes=[*self.episodes, episode])
 
     def get_episode(self, episode_number: int) -> Episode | None:
         """Find an episode by its number.

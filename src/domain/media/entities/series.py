@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, Self
 
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from src.domain.media.rule_codes import MediaRuleCodes
 from src.domain.media.value_objects import FilePath, Genre, SeriesId, Title, Year
@@ -27,11 +27,6 @@ class Series(AggregateRoot[SeriesId]):
         ...     start_year=2008,
         ... )
     """
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        validate_assignment=True,
-        extra="forbid",
-    )
 
     # Identity
     id: SeriesId | None = Field(default=None)
@@ -101,11 +96,14 @@ class Series(AggregateRoot[SeriesId]):
         """
         return self.end_year is None
 
-    def add_season(self, season: Season) -> None:
-        """Add a season to this series.
+    def with_season(self, season: Season) -> Self:
+        """Return a copy with the season added.
 
         Args:
             season: The season to add.
+
+        Returns:
+            A new Series with the season added, or self if already present.
 
         Raises:
             BusinessRuleViolationException: If season series_id doesn't match.
@@ -115,8 +113,9 @@ class Series(AggregateRoot[SeriesId]):
                 message="Season series_id must match Series id",
                 rule_code=MediaRuleCodes.SEASON_SERIES_MISMATCH,
             )
-        self.seasons.append(season)
-        self.touch()
+        if season in self.seasons:
+            return self
+        return self.with_updates(seasons=[*self.seasons, season])
 
     def get_season(self, season_number: int) -> Season | None:
         """Find a season by its number.

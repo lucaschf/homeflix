@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, Self
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
 
 from src.domain.media.value_objects import (
     Duration,
@@ -34,11 +34,6 @@ class Movie(AggregateRoot[MovieId]):
         ...     resolution="1080p",
         ... )
     """
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        validate_assignment=True,
-        extra="forbid",
-    )
 
     # Identity
     id: MovieId | None = Field(default=None)
@@ -82,17 +77,20 @@ class Movie(AggregateRoot[MovieId]):
         """Convert string list to Genre list."""
         return [] if v is None else [Genre(g) if isinstance(g, str) else g for g in v]
 
-    def add_genre(self, genre: Genre | str) -> None:
-        """Add a genre to this movie.
+    def with_genre(self, genre: Genre | str) -> Self:
+        """Return a copy with the genre added.
 
         Args:
             genre: The genre to add (string or Genre object).
+
+        Returns:
+            A new Movie with the genre added, or self if duplicate.
         """
         if isinstance(genre, str):
             genre = Genre(genre)
-        if genre not in self.genres:
-            self.genres.append(genre)
-            self.touch()
+        if genre in self.genres:
+            return self
+        return self.with_updates(genres=[*self.genres, genre])
 
     @classmethod
     def create(

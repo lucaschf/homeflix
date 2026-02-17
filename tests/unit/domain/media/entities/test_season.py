@@ -89,6 +89,7 @@ class TestSeasonOptionalFields:
             title=Title("Season One"),
         )
 
+        assert season.title is not None
         assert season.title.value == "Season One"
 
     def test_should_create_with_synopsis(self):
@@ -172,7 +173,7 @@ class TestSeasonEpisodeManagement:
             resolution=Resolution("1080p"),
         )
 
-        season.add_episode(episode)
+        season = season.with_episode(episode)
 
         assert season.episode_count == 1
         assert season.episodes[0] == episode
@@ -204,7 +205,7 @@ class TestSeasonEpisodeManagement:
         )
 
         with pytest.raises(BusinessRuleViolationException, match="series_id"):
-            season.add_episode(episode)
+            season.with_episode(episode)
 
     def test_should_raise_error_when_adding_episode_with_wrong_season_number(self):
         from src.domain.media.entities import Episode, Season
@@ -234,7 +235,7 @@ class TestSeasonEpisodeManagement:
         )
 
         with pytest.raises(BusinessRuleViolationException, match="season_number"):
-            season.add_episode(episode)
+            season.with_episode(episode)
 
     def test_should_get_episode_by_number(self):
         from src.domain.media.entities import Episode, Season
@@ -265,7 +266,7 @@ class TestSeasonEpisodeManagement:
             resolution=Resolution("1080p"),
         )
 
-        season.add_episode(episode)
+        season = season.with_episode(episode)
 
         found = season.get_episode(5)
         assert found == episode
@@ -308,3 +309,123 @@ class TestSeasonEquality:
         season2 = Season(id=SeasonId.generate(), series_id=series_id, season_number=1)
 
         assert season1 != season2
+
+
+class TestSeasonImmutability:
+    """Tests for Season frozen (immutable) behavior."""
+
+    def test_should_reject_direct_attribute_assignment(self):
+        from src.domain.media.entities import Season
+        from src.domain.media.value_objects import SeriesId
+
+        season = Season(
+            series_id=SeriesId.generate(),
+            season_number=1,
+        )
+
+        with pytest.raises(DomainValidationException):
+            season.season_number = 2  # type: ignore[misc]
+
+    def test_with_episode_should_return_new_instance(self):
+        from src.domain.media.entities import Episode, Season
+        from src.domain.media.value_objects import (
+            Duration,
+            EpisodeId,
+            FilePath,
+            Resolution,
+            SeriesId,
+            Title,
+        )
+
+        series_id = SeriesId.generate()
+        season = Season(
+            series_id=series_id,
+            season_number=1,
+        )
+
+        episode = Episode(
+            id=EpisodeId.generate(),
+            series_id=series_id,
+            season_number=1,
+            episode_number=1,
+            title=Title("Pilot"),
+            duration=Duration(2700),
+            file_path=FilePath("/series/show/s01e01.mkv"),
+            file_size=1_000_000_000,
+            resolution=Resolution("1080p"),
+        )
+
+        updated = season.with_episode(episode)
+
+        assert updated is not season
+        assert updated.episode_count == 1
+        assert season.episode_count == 0
+
+    def test_with_episode_should_preserve_identity(self):
+        from src.domain.media.entities import Episode, Season
+        from src.domain.media.value_objects import (
+            Duration,
+            EpisodeId,
+            FilePath,
+            Resolution,
+            SeasonId,
+            SeriesId,
+            Title,
+        )
+
+        series_id = SeriesId.generate()
+        season = Season(
+            id=SeasonId.generate(),
+            series_id=series_id,
+            season_number=1,
+        )
+
+        episode = Episode(
+            id=EpisodeId.generate(),
+            series_id=series_id,
+            season_number=1,
+            episode_number=1,
+            title=Title("Pilot"),
+            duration=Duration(2700),
+            file_path=FilePath("/series/show/s01e01.mkv"),
+            file_size=1_000_000_000,
+            resolution=Resolution("1080p"),
+        )
+
+        updated = season.with_episode(episode)
+
+        assert updated == season  # same id
+
+    def test_with_episode_duplicate_should_return_self(self):
+        from src.domain.media.entities import Episode, Season
+        from src.domain.media.value_objects import (
+            Duration,
+            EpisodeId,
+            FilePath,
+            Resolution,
+            SeriesId,
+            Title,
+        )
+
+        series_id = SeriesId.generate()
+        season = Season(
+            series_id=series_id,
+            season_number=1,
+        )
+
+        episode = Episode(
+            id=EpisodeId.generate(),
+            series_id=series_id,
+            season_number=1,
+            episode_number=1,
+            title=Title("Pilot"),
+            duration=Duration(2700),
+            file_path=FilePath("/series/show/s01e01.mkv"),
+            file_size=1_000_000_000,
+            resolution=Resolution("1080p"),
+        )
+        season = season.with_episode(episode)
+
+        result = season.with_episode(episode)
+
+        assert result is season

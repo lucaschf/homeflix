@@ -54,7 +54,7 @@ class TestListMoviesUseCase:
             file_size=1_000_000_000,
             resolution="1080p",
         )
-        movie.add_genre("Action")
+        movie = movie.with_genre("Action")
         mock_repo.list_all.return_value = [movie]
         use_case = ListMoviesUseCase(movie_repository=mock_repo)
 

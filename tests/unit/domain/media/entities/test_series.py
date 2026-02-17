@@ -49,6 +49,7 @@ class TestSeriesCreation:
             end_year=Year(2013),
         )
 
+        assert series.end_year is not None
         assert series.end_year.value == 2013
         assert series.is_ongoing is False
 
@@ -93,7 +94,7 @@ class TestSeriesSeasonManagement:
             season_number=1,
         )
 
-        series.add_season(season)
+        series = series.with_season(season)
 
         assert series.season_count == 1
 
@@ -110,7 +111,7 @@ class TestSeriesSeasonManagement:
         )
 
         with pytest.raises(BusinessRuleViolationException, match="series_id"):
-            series.add_season(season)
+            series.with_season(season)
 
     def test_should_get_season_by_number(self):
         from src.domain.media.entities import Season, Series
@@ -124,7 +125,7 @@ class TestSeriesSeasonManagement:
             season_number=2,
         )
 
-        series.add_season(season)
+        series = series.with_season(season)
 
         found = series.get_season(2)
         assert found == season
@@ -178,3 +179,63 @@ class TestSeriesEvents:
 
         assert len(events) == 1
         assert series.has_pending_events is False
+
+
+class TestSeriesImmutability:
+    """Tests for Series frozen (immutable) behavior."""
+
+    def test_should_reject_direct_attribute_assignment(self):
+        from src.domain.media.entities import Series
+
+        series = Series.create(title="Breaking Bad", start_year=2008)
+
+        with pytest.raises(DomainValidationException):
+            series.start_year = 2020  # type: ignore[assignment, misc]
+
+    def test_with_season_should_return_new_instance(self):
+        from src.domain.media.entities import Season, Series
+        from src.domain.media.value_objects import SeasonId
+
+        series = Series.create(title="Breaking Bad", start_year=2008)
+        season = Season(
+            id=SeasonId.generate(),
+            series_id=series.id,
+            season_number=1,
+        )
+
+        updated = series.with_season(season)
+
+        assert updated is not series
+        assert updated.season_count == 1
+        assert series.season_count == 0
+
+    def test_with_season_should_preserve_identity(self):
+        from src.domain.media.entities import Season, Series
+        from src.domain.media.value_objects import SeasonId
+
+        series = Series.create(title="Breaking Bad", start_year=2008)
+        season = Season(
+            id=SeasonId.generate(),
+            series_id=series.id,
+            season_number=1,
+        )
+
+        updated = series.with_season(season)
+
+        assert updated == series  # same id
+
+    def test_with_season_duplicate_should_return_self(self):
+        from src.domain.media.entities import Season, Series
+        from src.domain.media.value_objects import SeasonId
+
+        series = Series.create(title="Breaking Bad", start_year=2008)
+        season = Season(
+            id=SeasonId.generate(),
+            series_id=series.id,
+            season_number=1,
+        )
+        series = series.with_season(season)
+
+        result = series.with_season(season)
+
+        assert result is series

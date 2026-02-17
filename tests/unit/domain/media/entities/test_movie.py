@@ -122,6 +122,7 @@ class TestMovieOptionalFields:
             imdb_id="tt1375666",
         )
 
+        assert movie.original_title is not None
         assert movie.original_title.value == "Inception"
         assert movie.synopsis is not None
         assert len(movie.genres) == 2
@@ -144,7 +145,7 @@ class TestMovieGenreManagement:
             resolution="1080p",
         )
 
-        movie.add_genre("Sci-Fi")
+        movie = movie.with_genre("Sci-Fi")
 
         assert len(movie.genres) == 1
         assert movie.genres[0].value == "Sci-Fi"
@@ -162,7 +163,7 @@ class TestMovieGenreManagement:
             resolution="1080p",
         )
 
-        movie.add_genre(Genre("Action"))
+        movie = movie.with_genre(Genre("Action"))
 
         assert len(movie.genres) == 1
 
@@ -178,8 +179,8 @@ class TestMovieGenreManagement:
             resolution="1080p",
         )
 
-        movie.add_genre("Sci-Fi")
-        movie.add_genre("Sci-Fi")
+        movie = movie.with_genre("Sci-Fi")
+        movie = movie.with_genre("Sci-Fi")
 
         assert len(movie.genres) == 1
 
@@ -246,3 +247,75 @@ class TestMovieEvents:
 
         assert len(events) == 1
         assert movie.has_pending_events is False
+
+
+class TestMovieImmutability:
+    """Tests for Movie frozen (immutable) behavior."""
+
+    def test_should_reject_direct_attribute_assignment(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        with pytest.raises(DomainValidationException):
+            movie.year = 2020  # type: ignore[assignment, misc]
+
+    def test_with_genre_should_return_new_instance(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        updated = movie.with_genre("Sci-Fi")
+
+        assert updated is not movie
+        assert len(updated.genres) == 1
+        assert len(movie.genres) == 0
+
+    def test_with_genre_duplicate_string_should_return_self(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        movie = movie.with_genre("Sci-Fi")
+
+        result = movie.with_genre("Sci-Fi")
+
+        assert result is movie
+
+    def test_with_genre_duplicate_value_object_should_return_self(self):
+        from src.domain.media.entities import Movie
+        from src.domain.media.value_objects import Genre
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        movie = movie.with_genre(Genre("Sci-Fi"))
+
+        result = movie.with_genre(Genre("Sci-Fi"))
+
+        assert result is movie
