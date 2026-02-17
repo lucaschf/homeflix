@@ -89,6 +89,7 @@ class TestSeasonOptionalFields:
             title=Title("Season One"),
         )
 
+        assert season.title is not None
         assert season.title.value == "Season One"
 
     def test_should_create_with_synopsis(self):
@@ -172,7 +173,7 @@ class TestSeasonEpisodeManagement:
             resolution=Resolution("1080p"),
         )
 
-        season.add_episode(episode)
+        season = season.with_episode(episode)
 
         assert season.episode_count == 1
         assert season.episodes[0] == episode
@@ -204,7 +205,7 @@ class TestSeasonEpisodeManagement:
         )
 
         with pytest.raises(BusinessRuleViolationException, match="series_id"):
-            season.add_episode(episode)
+            season.with_episode(episode)
 
     def test_should_raise_error_when_adding_episode_with_wrong_season_number(self):
         from src.domain.media.entities import Episode, Season
@@ -234,7 +235,7 @@ class TestSeasonEpisodeManagement:
         )
 
         with pytest.raises(BusinessRuleViolationException, match="season_number"):
-            season.add_episode(episode)
+            season.with_episode(episode)
 
     def test_should_get_episode_by_number(self):
         from src.domain.media.entities import Episode, Season
@@ -265,7 +266,7 @@ class TestSeasonEpisodeManagement:
             resolution=Resolution("1080p"),
         )
 
-        season.add_episode(episode)
+        season = season.with_episode(episode)
 
         found = season.get_episode(5)
         assert found == episode

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date  # noqa: TCH003
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Self
 
 from pydantic import ConfigDict, Field, field_validator
 
@@ -11,6 +11,7 @@ from src.domain.media.rule_codes import MediaRuleCodes
 from src.domain.media.value_objects import FilePath, SeasonId, SeriesId, Title
 from src.domain.shared.exceptions.domain import BusinessRuleViolationException
 from src.domain.shared.models import DomainEntity
+from src.domain.shared.models.entity import utc_now
 
 if TYPE_CHECKING:
     from src.domain.media import Episode
@@ -71,11 +72,14 @@ class Season(DomainEntity[SeasonId]):
         """
         return len(self.episodes)
 
-    def add_episode(self, episode: Episode) -> None:
-        """Add an episode to this season.
+    def with_episode(self, episode: Episode) -> Self:
+        """Return a copy with the episode added.
 
         Args:
             episode: The episode to add.
+
+        Returns:
+            A new Season with the episode added.
 
         Raises:
             BusinessRuleViolationException: If episode series_id or season_number doesn't match.
@@ -90,8 +94,10 @@ class Season(DomainEntity[SeasonId]):
                 message="Episode season_number must match Season",
                 rule_code=MediaRuleCodes.EPISODE_SEASON_MISMATCH,
             )
-        self.episodes.append(episode)
-        self.touch()
+        return self.with_updates(
+            episodes=[*self.episodes, episode],
+            updated_at=utc_now(),
+        )
 
     def get_episode(self, episode_number: int) -> Episode | None:
         """Find an episode by its number.

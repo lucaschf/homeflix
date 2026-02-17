@@ -78,7 +78,7 @@ class TestGetSeriesByIdUseCase:
             file_size=1_500_000_000,
             resolution="1080p",
         )
-        season.add_episode(episode)
+        season = season.with_episode(episode)
         series = series.with_season(season)
         mock_repo.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(series_repository=mock_repo)
