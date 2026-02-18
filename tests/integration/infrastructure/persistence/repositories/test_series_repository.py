@@ -9,6 +9,7 @@ from src.domain.media.value_objects import (
     EpisodeId,
     FilePath,
     Genre,
+    MediaFile,
     Resolution,
     SeasonId,
     SeriesId,
@@ -27,6 +28,7 @@ def _create_episode(
     file_path: str | None = None,
 ) -> Episode:
     """Create an Episode entity for testing."""
+    path = file_path or f"/series/s{season_number:02d}e{episode_number:02d}.mkv"
     return Episode(
         id=EpisodeId.generate(),
         series_id=series_id,
@@ -34,9 +36,14 @@ def _create_episode(
         episode_number=episode_number,
         title=Title(title),
         duration=Duration(duration),
-        file_path=FilePath(file_path or f"/series/s{season_number:02d}e{episode_number:02d}.mkv"),
-        file_size=500_000_000,
-        resolution=Resolution("1080p"),
+        files=[
+            MediaFile(
+                file_path=FilePath(path),
+                file_size=500_000_000,
+                resolution=Resolution("1080p"),
+                is_primary=True,
+            )
+        ],
     )
 
 
@@ -62,7 +69,7 @@ def _create_series(
     season_count: int = 0,
     episodes_per_season: int = 0,
     series_id: SeriesId | None = None,
-    **kwargs,
+    **kwargs: object,
 ) -> Series:
     """Create a Series entity for testing."""
     sid = series_id or SeriesId.generate()
@@ -387,7 +394,7 @@ class TestSQLAlchemySeriesRepository:
         )
         updated_season = Season(
             id=saved.seasons[0].id,
-            series_id=saved.id,  # type: ignore[arg-type]
+            series_id=saved.id,
             season_number=1,
             title=saved.seasons[0].title,
             episodes=[*saved.seasons[0].episodes, new_episode],
@@ -419,7 +426,7 @@ class TestSQLAlchemySeriesRepository:
         # Remove the second episode
         updated_season = Season(
             id=saved.seasons[0].id,
-            series_id=saved.id,  # type: ignore[arg-type]
+            series_id=saved.id,
             season_number=1,
             title=saved.seasons[0].title,
             episodes=[saved.seasons[0].episodes[0]],
@@ -452,18 +459,16 @@ class TestSQLAlchemySeriesRepository:
         original_episode = saved.seasons[0].episodes[0]
         updated_episode = Episode(
             id=original_episode.id,
-            series_id=saved.id,  # type: ignore[arg-type]
+            series_id=saved.id,
             season_number=1,
             episode_number=1,
             title=Title("Updated Episode Title"),
             duration=original_episode.duration,
-            file_path=original_episode.file_path,
-            file_size=original_episode.file_size,
-            resolution=original_episode.resolution,
+            files=original_episode.files,
         )
         updated_season = Season(
             id=saved.seasons[0].id,
-            series_id=saved.id,  # type: ignore[arg-type]
+            series_id=saved.id,
             season_number=1,
             title=saved.seasons[0].title,
             episodes=[updated_episode],

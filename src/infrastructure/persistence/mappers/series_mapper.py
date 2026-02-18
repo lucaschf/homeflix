@@ -6,6 +6,7 @@ from src.domain.media.value_objects import (
     EpisodeId,
     FilePath,
     Genre,
+    MediaFile,
     Resolution,
     SeasonId,
     SeriesId,
@@ -35,6 +36,7 @@ class EpisodeMapper:
         if entity.id is None:
             raise ValueError("Cannot map entity without ID to model")
 
+        primary = entity.primary_file
         return EpisodeModel(
             external_id=str(entity.id),
             season_id=season_id,
@@ -44,9 +46,9 @@ class EpisodeMapper:
             title=entity.title.value,
             synopsis=entity.synopsis,
             duration=entity.duration.value,
-            file_path=entity.file_path.value,
-            file_size=entity.file_size,
-            resolution=entity.resolution.value,
+            file_path=primary.file_path.value if primary else "",
+            file_size=primary.file_size if primary else 0,
+            resolution=primary.resolution.value if primary else "Unknown",
             thumbnail_path=entity.thumbnail_path.value if entity.thumbnail_path else None,
             air_date=entity.air_date,
         )
@@ -61,6 +63,17 @@ class EpisodeMapper:
         Returns:
             Domain Episode entity with reconstructed value objects.
         """
+        files: list[MediaFile] = []
+        if model.file_path:
+            files = [
+                MediaFile(
+                    file_path=FilePath(model.file_path),
+                    file_size=model.file_size,
+                    resolution=Resolution(model.resolution),
+                    is_primary=True,
+                )
+            ]
+
         return Episode(
             id=EpisodeId(model.external_id),
             series_id=SeriesId(model.series_external_id),
@@ -69,9 +82,7 @@ class EpisodeMapper:
             title=Title(model.title),
             synopsis=model.synopsis,
             duration=Duration(model.duration),
-            file_path=FilePath(model.file_path),
-            file_size=model.file_size,
-            resolution=Resolution(model.resolution),
+            files=files,
             thumbnail_path=FilePath(model.thumbnail_path) if model.thumbnail_path else None,
             air_date=model.air_date,
             created_at=model.created_at,
@@ -89,14 +100,15 @@ class EpisodeMapper:
         Returns:
             The updated EpisodeModel.
         """
+        primary = entity.primary_file
         model.season_number = entity.season_number
         model.episode_number = entity.episode_number
         model.title = entity.title.value
         model.synopsis = entity.synopsis
         model.duration = entity.duration.value
-        model.file_path = entity.file_path.value
-        model.file_size = entity.file_size
-        model.resolution = entity.resolution.value
+        model.file_path = primary.file_path.value if primary else ""
+        model.file_size = primary.file_size if primary else 0
+        model.resolution = primary.resolution.value if primary else "Unknown"
         model.thumbnail_path = entity.thumbnail_path.value if entity.thumbnail_path else None
         model.air_date = entity.air_date
 

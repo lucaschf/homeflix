@@ -6,6 +6,7 @@ from src.domain.media.entities import Movie
 from src.domain.media.value_objects import (
     Duration,
     FilePath,
+    MediaFile,
     MovieId,
     Resolution,
     Title,
@@ -21,9 +22,14 @@ def _create_movie(movie_id: MovieId | None = None) -> Movie:
         title=Title("Test Movie"),
         year=Year(2024),
         duration=Duration(7200),
-        file_path=FilePath("/movies/test.mkv"),
-        file_size=1_000_000_000,
-        resolution=Resolution("1080p"),
+        files=[
+            MediaFile(
+                file_path=FilePath("/movies/test.mkv"),
+                file_size=1_000_000_000,
+                resolution=Resolution("1080p"),
+                is_primary=True,
+            )
+        ],
     )
 
 

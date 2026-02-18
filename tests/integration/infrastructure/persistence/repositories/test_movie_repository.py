@@ -8,6 +8,7 @@ from src.domain.media.value_objects import (
     Duration,
     FilePath,
     Genre,
+    MediaFile,
     MovieId,
     Resolution,
     Title,
@@ -24,7 +25,7 @@ def _create_movie(
     file_size: int = 1_000_000_000,
     resolution: str = "1080p",
     movie_id: MovieId | None = None,
-    **kwargs,
+    **kwargs: object,
 ) -> Movie:
     """Create a Movie entity for testing."""
     return Movie(
@@ -32,9 +33,14 @@ def _create_movie(
         title=Title(title),
         year=Year(year),
         duration=Duration(duration),
-        file_path=FilePath(file_path),
-        file_size=file_size,
-        resolution=Resolution(resolution),
+        files=[
+            MediaFile(
+                file_path=FilePath(file_path),
+                file_size=file_size,
+                resolution=Resolution(resolution),
+                is_primary=True,
+            )
+        ],
         **kwargs,
     )
 
@@ -66,9 +72,7 @@ class TestSQLAlchemyMovieRepository:
             title=Title("Updated Title"),
             year=movie.year,
             duration=movie.duration,
-            file_path=movie.file_path,
-            file_size=movie.file_size,
-            resolution=movie.resolution,
+            files=movie.files,
         )
         saved = await repo.save(updated_movie)
 
