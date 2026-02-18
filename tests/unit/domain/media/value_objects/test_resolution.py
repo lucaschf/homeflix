@@ -345,16 +345,17 @@ class TestResolutionPydanticFieldValidation:
     """Tests that Resolution works as a Pydantic field with string input."""
 
     def test_string_input_in_pydantic_model(self):
-        from src.domain.media.entities import Movie
-
-        movie = Movie.create(
-            title="Test",
-            year=2024,
-            duration=7200,
-            file_path="/movies/test.mkv",
-            file_size=1_000_000_000,
-            resolution="1080p",
+        from src.domain.media.value_objects import (
+            FilePath,
+            MediaFile,
         )
 
-        assert movie.resolution.name == "1080p"
-        assert movie.resolution.width == 1920
+        file = MediaFile(
+            file_path=FilePath("/movies/test.mkv"),
+            file_size=1_000_000_000,
+            resolution="1080p",
+            is_primary=True,
+        )
+
+        assert file.resolution.name == "1080p"
+        assert file.resolution.width == 1920

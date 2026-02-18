@@ -5,7 +5,7 @@ from pathlib import PurePath, PurePosixPath, PureWindowsPath
 
 from pydantic import model_validator
 
-from src.domain.shared.models import StringValueObject
+from src.domain.shared.models.value_object import StringValueObject
 
 # Pattern to detect Windows-style paths (e.g., C:\, D:\)
 _WINDOWS_PATH_PATTERN = re.compile(r"^[a-zA-Z]:[\\/]")

@@ -5,7 +5,7 @@ from typing import ClassVar
 
 from pydantic import model_validator
 
-from src.domain.shared.models import StringValueObject
+from src.domain.shared.models.value_object import StringValueObject
 
 
 class LanguageCode(StringValueObject):

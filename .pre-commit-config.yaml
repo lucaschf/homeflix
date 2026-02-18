@@ -34,8 +34,7 @@ repos:
       - id: mypy
         additional_dependencies:
           - pydantic>=2.0
-          - sqlalchemy>=2.0
-          - types-sqlalchemy
+          - sqlalchemy[mypy]>=2.0
         args: [--ignore-missing-imports]
 
   # Conventional commits
