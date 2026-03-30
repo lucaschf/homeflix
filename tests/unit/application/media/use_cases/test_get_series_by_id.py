@@ -9,7 +9,15 @@ from src.application.media.use_cases import GetSeriesByIdUseCase
 from src.application.shared.exceptions import ResourceNotFoundException
 from src.domain.media.entities import Episode, Season, Series
 from src.domain.media.repositories import SeriesRepository
-from src.domain.media.value_objects import EpisodeId, SeasonId
+from src.domain.media.value_objects import (
+    Duration,
+    EpisodeId,
+    FilePath,
+    MediaFile,
+    Resolution,
+    SeasonId,
+    Title,
+)
 
 
 class TestGetSeriesByIdUseCase:
@@ -72,11 +80,16 @@ class TestGetSeriesByIdUseCase:
             series_id=series.id,
             season_number=1,
             episode_number=1,
-            title="Pilot",
-            duration=3600,
-            file_path="/series/bb/s01e01.mkv",
-            file_size=1_500_000_000,
-            resolution="1080p",
+            title=Title("Pilot"),
+            duration=Duration(3600),
+            files=[
+                MediaFile(
+                    file_path=FilePath("/series/bb/s01e01.mkv"),
+                    file_size=1_500_000_000,
+                    resolution=Resolution("1080p"),
+                    is_primary=True,
+                )
+            ],
         )
         season = season.with_episode(episode)
         series = series.with_season(season)

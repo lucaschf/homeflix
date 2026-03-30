@@ -64,15 +64,15 @@ class EpisodeModel(Base):
     synopsis: Mapped[str | None] = mapped_column(Text, nullable=True)
     duration: Mapped[int] = mapped_column(Integer, nullable=False)  # seconds
 
-    # File info
-    file_path: Mapped[str] = mapped_column(
+    # File info (nullable when no primary file variant exists)
+    file_path: Mapped[str | None] = mapped_column(
         String(2000),
-        nullable=False,
+        nullable=True,
         unique=True,
         index=True,
     )
-    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)  # bytes
-    resolution: Mapped[str] = mapped_column(String(20), nullable=False)
+    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # bytes
+    resolution: Mapped[str | None] = mapped_column(String(20), nullable=True)
     thumbnail_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     # Metadata

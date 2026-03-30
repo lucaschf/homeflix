@@ -7,6 +7,7 @@ from src.domain.media.value_objects import (
     Duration,
     EpisodeId,
     FilePath,
+    MediaFile,
     Resolution,
     SeasonId,
     SeriesId,
@@ -28,9 +29,14 @@ def _create_episode(
         episode_number=1,
         title=Title("Test Episode"),
         duration=Duration(2700),
-        file_path=FilePath("/series/s01e01.mkv"),
-        file_size=500_000_000,
-        resolution=Resolution("1080p"),
+        files=[
+            MediaFile(
+                file_path=FilePath("/series/s01e01.mkv"),
+                file_size=500_000_000,
+                resolution=Resolution("1080p"),
+                is_primary=True,
+            )
+        ],
     )
 
 

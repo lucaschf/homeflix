@@ -1,25 +1,28 @@
 """Episode entity for TV series."""
 
-from datetime import date
+from __future__ import annotations
+
+from datetime import date  # noqa: TCH003 - Pydantic needs this at runtime
 
 from pydantic import Field, field_validator
 
+from src.domain.media.entities.file_variant_mixin import FileVariantMixin
 from src.domain.media.value_objects import (
     Duration,
     EpisodeId,
     FilePath,
-    Resolution,
+    MediaFile,
     SeriesId,
     Title,
 )
 from src.domain.shared.models import DomainEntity
 
 
-class Episode(DomainEntity[EpisodeId]):
+class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
     """Episode entity belonging to a Season of a Series.
 
     Represents a single episode of a TV series with its metadata
-    and file information.
+    and file variants.
 
     Example:
         >>> episode = Episode(
@@ -28,9 +31,12 @@ class Episode(DomainEntity[EpisodeId]):
         ...     episode_number=1,
         ...     title=Title("Pilot"),
         ...     duration=Duration(2700),
-        ...     file_path=FilePath("/series/show/s01e01.mkv"),
-        ...     file_size=1_000_000_000,
-        ...     resolution=Resolution("1080p"),
+        ...     files=[MediaFile(
+        ...         file_path=FilePath("/series/show/s01e01.mkv"),
+        ...         file_size=1_000_000_000,
+        ...         resolution=Resolution("1080p"),
+        ...         is_primary=True,
+        ...     )],
         ... )
     """
 
@@ -47,10 +53,8 @@ class Episode(DomainEntity[EpisodeId]):
     synopsis: str | None = Field(default=None, max_length=10000)
     duration: Duration
 
-    # File info
-    file_path: FilePath
-    file_size: int = Field(ge=0)  # bytes
-    resolution: Resolution
+    # File variants
+    files: list[MediaFile] = Field(default_factory=list)
     thumbnail_path: FilePath | None = None
 
     # Metadata

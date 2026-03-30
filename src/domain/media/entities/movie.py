@@ -6,10 +6,12 @@ from typing import Any, Self
 
 from pydantic import Field, field_validator
 
+from src.domain.media.entities.file_variant_mixin import FileVariantMixin
 from src.domain.media.value_objects import (
     Duration,
     FilePath,
     Genre,
+    MediaFile,
     MovieId,
     Resolution,
     Title,
@@ -18,10 +20,10 @@ from src.domain.media.value_objects import (
 from src.domain.shared.models import AggregateRoot
 
 
-class Movie(AggregateRoot[MovieId]):
+class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     """Movie aggregate root.
 
-    Represents a movie with its metadata and file information.
+    Represents a movie with its metadata and file variants.
     This is the main entry point for movie-related operations.
 
     Example:
@@ -52,10 +54,8 @@ class Movie(AggregateRoot[MovieId]):
     # Categorization
     genres: list[Genre] = Field(default_factory=list)
 
-    # File info
-    file_path: FilePath
-    file_size: int = Field(ge=0)  # bytes
-    resolution: Resolution
+    # File variants
+    files: list[MediaFile] = Field(default_factory=list)
 
     # External IDs for metadata enrichment
     tmdb_id: int | None = None
@@ -77,6 +77,8 @@ class Movie(AggregateRoot[MovieId]):
         """Convert string list to Genre list."""
         return [] if v is None else [Genre(g) if isinstance(g, str) else g for g in v]
 
+    # ── genre helpers ─────────────────────────────────────────────────
+
     def with_genre(self, genre: Genre | str) -> Self:
         """Return a copy with the genre added.
 
@@ -91,6 +93,8 @@ class Movie(AggregateRoot[MovieId]):
         if genre in self.genres:
             return self
         return self.with_updates(genres=[*self.genres, genre])
+
+    # ── factory ───────────────────────────────────────────────────────
 
     @classmethod
     def create(
@@ -130,14 +134,19 @@ class Movie(AggregateRoot[MovieId]):
         if isinstance(resolution, str):
             resolution = Resolution(resolution)
 
+        file = MediaFile(
+            file_path=file_path,
+            file_size=file_size,
+            resolution=resolution,
+            is_primary=True,
+        )
+
         return cls(
             id=movie_id,
             title=title,
             year=year,
             duration=duration,
-            file_path=file_path,
-            file_size=file_size,
-            resolution=resolution,
+            files=[file],
             **kwargs,
         )
 

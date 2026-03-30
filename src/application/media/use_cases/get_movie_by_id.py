@@ -58,6 +58,7 @@ class GetMovieByIdUseCase:
         Returns:
             MovieOutput with all fields serialized.
         """
+        primary = movie.primary_file
         return MovieOutput(
             id=str(movie.id),
             title=movie.title.value,
@@ -69,9 +70,9 @@ class GetMovieByIdUseCase:
             poster_path=movie.poster_path.value if movie.poster_path else None,
             backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
             genres=[g.value for g in movie.genres],
-            file_path=movie.file_path.value,
-            file_size=movie.file_size,
-            resolution=movie.resolution.value,
+            file_path=primary.file_path.value if primary else None,
+            file_size=primary.file_size if primary else None,
+            resolution=primary.resolution.value if primary else None,
             tmdb_id=movie.tmdb_id,
             imdb_id=movie.imdb_id,
             created_at=movie.created_at.isoformat(),

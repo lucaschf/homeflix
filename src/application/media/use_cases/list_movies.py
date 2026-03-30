@@ -60,13 +60,14 @@ class ListMoviesUseCase:
         Returns:
             MovieSummaryOutput with essential fields.
         """
+        best = movie.best_file
         return MovieSummaryOutput(
             id=str(movie.id),
             title=movie.title.value,
             year=movie.year.value,
             duration_formatted=movie.duration.format_hms(),
             poster_path=movie.poster_path.value if movie.poster_path else None,
-            resolution=movie.resolution.value,
+            resolution=best.resolution.value if best else None,
             genres=[g.value for g in movie.genres],
         )
 

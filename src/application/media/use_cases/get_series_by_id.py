@@ -113,6 +113,7 @@ class GetSeriesByIdUseCase:
         Returns:
             EpisodeOutput with all fields.
         """
+        primary = episode.primary_file
         return EpisodeOutput(
             id=str(episode.id) if episode.id else None,
             episode_number=episode.episode_number,
@@ -120,9 +121,9 @@ class GetSeriesByIdUseCase:
             synopsis=episode.synopsis,
             duration_seconds=episode.duration.value,
             duration_formatted=episode.duration.format_hms(),
-            file_path=episode.file_path.value,
-            file_size=episode.file_size,
-            resolution=episode.resolution.value,
+            file_path=primary.file_path.value if primary else None,
+            file_size=primary.file_size if primary else None,
+            resolution=primary.resolution.value if primary else None,
             thumbnail_path=episode.thumbnail_path.value if episode.thumbnail_path else None,
             air_date=episode.air_date.isoformat() if episode.air_date else None,
         )

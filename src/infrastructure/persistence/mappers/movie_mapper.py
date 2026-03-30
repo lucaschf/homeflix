@@ -5,6 +5,7 @@ from src.domain.media.value_objects import (
     Duration,
     FilePath,
     Genre,
+    MediaFile,
     MovieId,
     Resolution,
     Title,
@@ -40,6 +41,7 @@ class MovieMapper:
         if entity.id is None:
             raise ValueError("Cannot map entity without ID to model")
 
+        primary = entity.primary_file
         return MovieModel(
             external_id=str(entity.id),
             title=entity.title.value,
@@ -50,9 +52,9 @@ class MovieMapper:
             poster_path=entity.poster_path.value if entity.poster_path else None,
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
-            file_path=entity.file_path.value,
-            file_size=entity.file_size,
-            resolution=entity.resolution.value,
+            file_path=primary.file_path.value if primary else None,
+            file_size=primary.file_size if primary else None,
+            resolution=primary.resolution.value if primary else None,
             tmdb_id=entity.tmdb_id,
             imdb_id=entity.imdb_id,
         )
@@ -71,6 +73,17 @@ class MovieMapper:
         if model.genres:
             genre_list = [Genre(g.strip()) for g in model.genres.split(",") if g.strip()]
 
+        files: list[MediaFile] = []
+        if model.file_path:
+            files = [
+                MediaFile(
+                    file_path=FilePath(model.file_path),
+                    file_size=model.file_size,
+                    resolution=Resolution(model.resolution),
+                    is_primary=True,
+                )
+            ]
+
         return Movie(
             id=MovieId(model.external_id),
             title=Title(model.title),
@@ -81,9 +94,7 @@ class MovieMapper:
             poster_path=FilePath(model.poster_path) if model.poster_path else None,
             backdrop_path=FilePath(model.backdrop_path) if model.backdrop_path else None,
             genres=genre_list,
-            file_path=FilePath(model.file_path),
-            file_size=model.file_size,
-            resolution=Resolution(model.resolution),
+            files=files,
             tmdb_id=model.tmdb_id,
             imdb_id=model.imdb_id,
             created_at=model.created_at,
@@ -101,6 +112,7 @@ class MovieMapper:
         Returns:
             The updated MovieModel.
         """
+        primary = entity.primary_file
         model.title = entity.title.value
         model.original_title = entity.original_title.value if entity.original_title else None
         model.year = entity.year.value
@@ -109,9 +121,9 @@ class MovieMapper:
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
-        model.file_path = entity.file_path.value
-        model.file_size = entity.file_size
-        model.resolution = entity.resolution.value
+        model.file_path = primary.file_path.value if primary else None
+        model.file_size = primary.file_size if primary else None
+        model.resolution = primary.resolution.value if primary else None
         model.tmdb_id = entity.tmdb_id
         model.imdb_id = entity.imdb_id
 
