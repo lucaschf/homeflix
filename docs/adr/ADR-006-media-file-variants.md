@@ -233,7 +233,7 @@ class FileSelector:
 
         Algoritmo de seleção:
         1. Filtra por max_resolution (se definido)
-        2. Se preferred_resolution definida, busca exata ou próxima inferior
+        2. Se preferred_resolution definida: exata → próxima superior → próxima inferior
         3. Se prefer_hdr, prioriza arquivos com HDR
         4. Desempata por maior bitrate
 
@@ -270,7 +270,7 @@ class FileSelector:
         if not candidates:
             return None
 
-        # Buscar resolução preferida ou próxima inferior
+        # Buscar resolução: exata → próxima superior → próxima inferior
         if preferred_resolution:
             exact_match = [
                 f for f in candidates
@@ -279,17 +279,29 @@ class FileSelector:
             if exact_match:
                 candidates = exact_match
             else:
-                # Pegar a maior resolução que seja <= preferida
-                lower = [
+                # Próxima superior (menor upgrade)
+                higher = [
                     f for f in candidates
-                    if f.resolution.total_pixels <= preferred_resolution.total_pixels
+                    if f.resolution.total_pixels > preferred_resolution.total_pixels
                 ]
-                if lower:
-                    max_lower = max(lower, key=lambda f: f.resolution.total_pixels)
+                if higher:
+                    best = min(higher, key=lambda f: f.resolution.total_pixels)
                     candidates = [
                         f for f in candidates
-                        if f.resolution == max_lower.resolution
+                        if f.resolution == best.resolution
                     ]
+                else:
+                    # Próxima inferior (maior downgrade)
+                    lower = [
+                        f for f in candidates
+                        if f.resolution.total_pixels < preferred_resolution.total_pixels
+                    ]
+                    if lower:
+                        best = max(lower, key=lambda f: f.resolution.total_pixels)
+                        candidates = [
+                            f for f in candidates
+                            if f.resolution == best.resolution
+                        ]
 
         # Priorizar HDR se desejado
         if prefer_hdr:

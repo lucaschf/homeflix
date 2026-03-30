@@ -32,7 +32,7 @@ class FileSelector:
 
         Selection priority:
         1. Filter by max_resolution (if defined)
-        2. Match preferred_resolution (exact or closest lower)
+        2. Match preferred_resolution (exact → closest higher → closest lower)
         3. Prioritize HDR (if prefer_hdr=True)
         4. Tiebreaker by highest video_bitrate
 
@@ -80,29 +80,39 @@ class FileSelector:
         files: list[MediaFile],
         preferred: Resolution,
     ) -> list[MediaFile]:
-        """Narrow candidates to preferred resolution or closest lower.
+        """Narrow candidates to the closest resolution to preferred.
+
+        Resolution matching order:
+        1. Exact match on preferred resolution
+        2. Closest higher resolution (smallest upgrade)
+        3. Closest lower resolution (largest downgrade)
 
         Args:
             files: Candidate files (already filtered by max_resolution).
             preferred: The desired resolution.
 
         Returns:
-            Files matching the exact resolution, or closest lower
-            resolution if no exact match. Returns all files unchanged
-            if none are at or below the preferred resolution.
+            Files matching the best available resolution tier.
         """
+        preferred_pixels = preferred.total_pixels
+
         # Exact match
-        exact = [f for f in files if f.resolution.total_pixels == preferred.total_pixels]
+        exact = [f for f in files if f.resolution.total_pixels == preferred_pixels]
         if exact:
             return exact
 
+        # Closest higher resolution
+        higher = [f for f in files if f.resolution.total_pixels > preferred_pixels]
+        if higher:
+            best_pixels = min(f.resolution.total_pixels for f in higher)
+            return [f for f in higher if f.resolution.total_pixels == best_pixels]
+
         # Closest lower resolution
-        lower = [f for f in files if f.resolution.total_pixels < preferred.total_pixels]
+        lower = [f for f in files if f.resolution.total_pixels < preferred_pixels]
         if lower:
             best_pixels = max(f.resolution.total_pixels for f in lower)
             return [f for f in lower if f.resolution.total_pixels == best_pixels]
 
-        # No files at or below preferred — return all (let other criteria decide)
         return files
 
     @staticmethod

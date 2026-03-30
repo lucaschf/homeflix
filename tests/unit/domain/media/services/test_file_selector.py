@@ -105,7 +105,7 @@ class TestFileSelectorPreferredResolution:
         assert result is not None
         assert result.resolution == Resolution("1080p")
 
-    def test_falls_back_to_closest_lower_resolution(self) -> None:
+    def test_falls_back_to_closest_higher_resolution(self) -> None:
         file_720 = _make_file("/m/720.mkv", "720p")
         file_4k = _make_file("/m/4k.mkv", "4K")
 
@@ -114,6 +114,33 @@ class TestFileSelectorPreferredResolution:
             preferred_resolution=Resolution("1080p"),
         )
 
+        # Closest higher (4K) preferred over closest lower (720p)
+        assert result is not None
+        assert result.resolution == Resolution("4K")
+
+    def test_picks_smallest_upgrade_when_multiple_higher(self) -> None:
+        file_2k = _make_file("/m/2k.mkv", "2K")
+        file_4k = _make_file("/m/4k.mkv", "4K")
+
+        result = self.selector.select_file(
+            files=[file_2k, file_4k],
+            preferred_resolution=Resolution("1080p"),
+        )
+
+        # 2K is closest higher to 1080p
+        assert result is not None
+        assert result.resolution == Resolution("2K")
+
+    def test_falls_back_to_closest_lower_when_no_higher(self) -> None:
+        file_480 = _make_file("/m/480.mkv", "480p")
+        file_720 = _make_file("/m/720.mkv", "720p")
+
+        result = self.selector.select_file(
+            files=[file_480, file_720],
+            preferred_resolution=Resolution("1080p"),
+        )
+
+        # No higher available, pick closest lower (720p)
         assert result is not None
         assert result.resolution == Resolution("720p")
 
