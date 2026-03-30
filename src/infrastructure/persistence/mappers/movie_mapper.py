@@ -52,9 +52,9 @@ class MovieMapper:
             poster_path=entity.poster_path.value if entity.poster_path else None,
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
-            file_path=primary.file_path.value if primary else "",
-            file_size=primary.file_size if primary else 0,
-            resolution=primary.resolution.value if primary else "Unknown",
+            file_path=primary.file_path.value if primary else None,
+            file_size=primary.file_size if primary else None,
+            resolution=primary.resolution.value if primary else None,
             tmdb_id=entity.tmdb_id,
             imdb_id=entity.imdb_id,
         )
@@ -121,9 +121,9 @@ class MovieMapper:
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
-        model.file_path = primary.file_path.value if primary else ""
-        model.file_size = primary.file_size if primary else 0
-        model.resolution = primary.resolution.value if primary else "Unknown"
+        model.file_path = primary.file_path.value if primary else None
+        model.file_size = primary.file_size if primary else None
+        model.resolution = primary.resolution.value if primary else None
         model.tmdb_id = entity.tmdb_id
         model.imdb_id = entity.imdb_id
 

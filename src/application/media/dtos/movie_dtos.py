@@ -32,9 +32,9 @@ class MovieOutput:
         poster_path: Path to poster image (optional).
         backdrop_path: Path to backdrop image (optional).
         genres: List of genre strings.
-        file_path: Path to video file.
-        file_size: File size in bytes.
-        resolution: Video resolution (720p, 1080p, 4K, etc.).
+        file_path: Path to video file (None if no primary file).
+        file_size: File size in bytes (None if no primary file).
+        resolution: Video resolution (None if no primary file).
         tmdb_id: TMDB external ID (optional).
         imdb_id: IMDB external ID (optional).
         created_at: ISO timestamp of creation.
@@ -51,9 +51,9 @@ class MovieOutput:
     poster_path: str | None
     backdrop_path: str | None
     genres: list[str]
-    file_path: str
-    file_size: int
-    resolution: str
+    file_path: str | None
+    file_size: int | None
+    resolution: str | None
     tmdb_id: int | None
     imdb_id: str | None
     created_at: str
@@ -81,7 +81,7 @@ class MovieSummaryOutput:
     year: int
     duration_formatted: str
     poster_path: str | None
-    resolution: str
+    resolution: str | None
     genres: list[str]
 
 

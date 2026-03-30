@@ -14,9 +14,9 @@ class EpisodeOutput:
         synopsis: Episode synopsis (optional).
         duration_seconds: Duration in seconds.
         duration_formatted: Duration as HH:MM:SS.
-        file_path: Path to video file.
-        file_size: File size in bytes.
-        resolution: Video resolution.
+        file_path: Path to video file (None if no primary file).
+        file_size: File size in bytes (None if no primary file).
+        resolution: Video resolution (None if no primary file).
         thumbnail_path: Path to thumbnail (optional).
         air_date: Original air date (optional, ISO format).
     """
@@ -27,9 +27,9 @@ class EpisodeOutput:
     synopsis: str | None
     duration_seconds: int
     duration_formatted: str
-    file_path: str
-    file_size: int
-    resolution: str
+    file_path: str | None
+    file_size: int | None
+    resolution: str | None
     thumbnail_path: str | None
     air_date: str | None
 

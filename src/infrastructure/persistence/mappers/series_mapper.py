@@ -46,9 +46,9 @@ class EpisodeMapper:
             title=entity.title.value,
             synopsis=entity.synopsis,
             duration=entity.duration.value,
-            file_path=primary.file_path.value if primary else "",
-            file_size=primary.file_size if primary else 0,
-            resolution=primary.resolution.value if primary else "Unknown",
+            file_path=primary.file_path.value if primary else None,
+            file_size=primary.file_size if primary else None,
+            resolution=primary.resolution.value if primary else None,
             thumbnail_path=entity.thumbnail_path.value if entity.thumbnail_path else None,
             air_date=entity.air_date,
         )
@@ -106,9 +106,9 @@ class EpisodeMapper:
         model.title = entity.title.value
         model.synopsis = entity.synopsis
         model.duration = entity.duration.value
-        model.file_path = primary.file_path.value if primary else ""
-        model.file_size = primary.file_size if primary else 0
-        model.resolution = primary.resolution.value if primary else "Unknown"
+        model.file_path = primary.file_path.value if primary else None
+        model.file_size = primary.file_size if primary else None
+        model.resolution = primary.resolution.value if primary else None
         model.thumbnail_path = entity.thumbnail_path.value if entity.thumbnail_path else None
         model.air_date = entity.air_date
 

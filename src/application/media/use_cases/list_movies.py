@@ -67,7 +67,7 @@ class ListMoviesUseCase:
             year=movie.year.value,
             duration_formatted=movie.duration.format_hms(),
             poster_path=movie.poster_path.value if movie.poster_path else None,
-            resolution=best.resolution.value if best else "Unknown",
+            resolution=best.resolution.value if best else None,
             genres=[g.value for g in movie.genres],
         )
 

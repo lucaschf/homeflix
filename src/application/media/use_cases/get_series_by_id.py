@@ -121,9 +121,9 @@ class GetSeriesByIdUseCase:
             synopsis=episode.synopsis,
             duration_seconds=episode.duration.value,
             duration_formatted=episode.duration.format_hms(),
-            file_path=primary.file_path.value if primary else "",
-            file_size=primary.file_size if primary else 0,
-            resolution=primary.resolution.value if primary else "Unknown",
+            file_path=primary.file_path.value if primary else None,
+            file_size=primary.file_size if primary else None,
+            resolution=primary.resolution.value if primary else None,
             thumbnail_path=episode.thumbnail_path.value if episode.thumbnail_path else None,
             air_date=episode.air_date.isoformat() if episode.air_date else None,
         )
