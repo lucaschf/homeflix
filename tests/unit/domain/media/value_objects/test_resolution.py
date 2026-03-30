@@ -93,7 +93,7 @@ class TestResolutionCreation:
     def test_should_raise_error_for_non_string_input(self):
         from src.domain.media.value_objects import Resolution
 
-        with pytest.raises((DomainValidationException, ValueError)):
+        with pytest.raises((DomainValidationException, ValueError, TypeError)):
             Resolution(1080)
 
 

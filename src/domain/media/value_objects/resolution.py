@@ -2,22 +2,33 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+import operator
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from pydantic import Field, model_validator
 
 from src.domain.shared.exceptions.domain import DomainValidationException
 from src.domain.shared.models import CompoundValueObject
 
-# Lookup map: resolution name → (width, height)
-_RESOLUTION_MAP: dict[str, dict[str, Any]] = {
-    "360p": {"width": 640, "height": 360, "name": "360p"},
-    "480p": {"width": 854, "height": 480, "name": "480p"},
-    "720p": {"width": 1280, "height": 720, "name": "720p"},
-    "1080p": {"width": 1920, "height": 1080, "name": "1080p"},
-    "2K": {"width": 2560, "height": 1440, "name": "2K"},
-    "4K": {"width": 3840, "height": 2160, "name": "4K"},
-    "Unknown": {"width": 0, "height": 0, "name": "Unknown"},
+
+class _ResolutionSpec(NamedTuple):
+    """Typed specification for a named resolution."""
+
+    width: int
+    height: int
+
+
+_RESOLUTION_MAP: dict[str, _ResolutionSpec] = {
+    "360p": _ResolutionSpec(640, 360),
+    "480p": _ResolutionSpec(854, 480),
+    "720p": _ResolutionSpec(1280, 720),
+    "1080p": _ResolutionSpec(1920, 1080),
+    "2K": _ResolutionSpec(2560, 1440),
+    "4K": _ResolutionSpec(3840, 2160),
+    "Unknown": _ResolutionSpec(0, 0),
 }
 
 # Resolution categories
@@ -63,34 +74,17 @@ class Resolution(CompoundValueObject):
         """Create a Resolution from a name string or explicit fields.
 
         Args:
-            name_or_data: Resolution name (e.g., "1080p") or dict of fields.
+            name_or_data: Resolution name (e.g., "1080p") or omitted for kwargs.
             **kwargs: Explicit width, height, name fields.
-
-        Raises:
-            DomainValidationException: If input is invalid.
         """
-        try:
-            if isinstance(name_or_data, str):
-                data = self._resolve_name(name_or_data.strip())
-                super().__init__(**data)
-            elif isinstance(name_or_data, dict):
-                super().__init__(**name_or_data)
-            elif name_or_data is not None:
-                raise ValueError(
-                    f"Resolution expects a string name or keyword args, "
-                    f"got {type(name_or_data)}"
-                )
-            else:
-                super().__init__(**kwargs)
-        except ValueError as e:
-            if isinstance(e, DomainValidationException):
-                raise
-            raise DomainValidationException.single_field(
-                object_type="Resolution",
-                field="name",
-                code="INVALID_RESOLUTION",
-                message=str(e),
-            ) from e
+        if isinstance(name_or_data, str):
+            super().__init__(**self._resolve_name(name_or_data.strip()))
+        elif name_or_data is not None:
+            super().__init__(**name_or_data) if isinstance(
+                name_or_data, dict
+            ) else super().__init__(**kwargs)
+        else:
+            super().__init__(**kwargs)
 
     @model_validator(mode="before")
     @classmethod
@@ -100,8 +94,8 @@ class Resolution(CompoundValueObject):
             return cls._resolve_name(data.strip())
         return data
 
-    @staticmethod
-    def _resolve_name(name: str) -> dict[str, Any]:
+    @classmethod
+    def _resolve_name(cls, name: str) -> dict[str, int | str]:
         """Look up a resolution name in the predefined map.
 
         Args:
@@ -111,12 +105,20 @@ class Resolution(CompoundValueObject):
             Dict with width, height, name.
 
         Raises:
-            ValueError: If name is not recognised.
+            DomainValidationException: If name is not recognised.
         """
-        if name in _RESOLUTION_MAP:
-            return _RESOLUTION_MAP[name]
-        valid = ", ".join(sorted(_RESOLUTION_MAP.keys()))
-        raise ValueError(f"Resolution must be one of: {valid}")
+        try:
+            spec = _RESOLUTION_MAP[name]
+        except KeyError as e:
+            valid = ", ".join(sorted(cls.VALID_NAMES))
+            raise DomainValidationException.single_field(
+                object_type="Resolution",
+                field="name",
+                code="INVALID_RESOLUTION",
+                message=f"Resolution must be one of: {valid}",
+            ) from e
+
+        return {"name": name, "width": spec.width, "height": spec.height}
 
     @classmethod
     def from_name(cls, name: str) -> Resolution:
@@ -186,25 +188,22 @@ class Resolution(CompoundValueObject):
 
     # ── comparison operators (by total_pixels) ────────────────────────
 
-    def __gt__(self, other: object) -> bool:
+    def _compare(self, other: object, op: Callable[[int, int], bool]) -> bool:
         if not isinstance(other, Resolution):
             return NotImplemented
-        return self.total_pixels > other.total_pixels
+        return op(self.total_pixels, other.total_pixels)
+
+    def __gt__(self, other: object) -> bool:
+        return self._compare(other, operator.gt)
 
     def __lt__(self, other: object) -> bool:
-        if not isinstance(other, Resolution):
-            return NotImplemented
-        return self.total_pixels < other.total_pixels
+        return self._compare(other, operator.lt)
 
     def __ge__(self, other: object) -> bool:
-        if not isinstance(other, Resolution):
-            return NotImplemented
-        return self.total_pixels >= other.total_pixels
+        return self._compare(other, operator.ge)
 
     def __le__(self, other: object) -> bool:
-        if not isinstance(other, Resolution):
-            return NotImplemented
-        return self.total_pixels <= other.total_pixels
+        return self._compare(other, operator.le)
 
     # ── string representation ─────────────────────────────────────────
 
