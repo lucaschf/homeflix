@@ -6,6 +6,7 @@ from typing import Any, Self
 
 from pydantic import Field, field_validator
 
+from src.domain.media.entities.file_variant_mixin import FileVariantMixin
 from src.domain.media.value_objects import (
     Duration,
     FilePath,
@@ -19,7 +20,7 @@ from src.domain.media.value_objects import (
 from src.domain.shared.models import AggregateRoot
 
 
-class Movie(AggregateRoot[MovieId]):
+class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     """Movie aggregate root.
 
     Represents a movie with its metadata and file variants.
@@ -75,63 +76,6 @@ class Movie(AggregateRoot[MovieId]):
     def convert_genres(cls, v: list[Any] | None) -> list[Genre]:
         """Convert string list to Genre list."""
         return [] if v is None else [Genre(g) if isinstance(g, str) else g for g in v]
-
-    # ── file variant helpers ──────────────────────────────────────────
-
-    @property
-    def primary_file(self) -> MediaFile | None:
-        """Return the primary file variant, if any."""
-        return next((f for f in self.files if f.is_primary), None)
-
-    @property
-    def best_file(self) -> MediaFile | None:
-        """Return the highest-resolution file variant."""
-        if not self.files:
-            return None
-        return max(self.files, key=lambda f: f.resolution.total_pixels)
-
-    @property
-    def available_resolutions(self) -> list[Resolution]:
-        """Return resolutions sorted highest-first."""
-        return sorted(
-            [f.resolution for f in self.files],
-            key=lambda r: r.total_pixels,
-            reverse=True,
-        )
-
-    @property
-    def total_size(self) -> int:
-        """Return total file size across all variants."""
-        return sum(f.file_size for f in self.files)
-
-    def with_file(self, file: MediaFile) -> Self:
-        """Add a file variant. No-op if same file_path exists.
-
-        Args:
-            file: The file variant to add.
-
-        Returns:
-            A new Movie with the file added, or self if duplicate path.
-        """
-        if any(f.file_path == file.file_path for f in self.files):
-            return self
-        return self.with_updates(files=[*self.files, file])
-
-    def get_file_by_resolution(self, resolution: Resolution | str) -> MediaFile | None:
-        """Find a file variant by resolution.
-
-        Args:
-            resolution: The resolution to search for (string or Resolution).
-
-        Returns:
-            The matching MediaFile, or None.
-        """
-        if isinstance(resolution, str):
-            resolution = Resolution(resolution)
-        return next(
-            (f for f in self.files if f.resolution == resolution),
-            None,
-        )
 
     # ── genre helpers ─────────────────────────────────────────────────
 
