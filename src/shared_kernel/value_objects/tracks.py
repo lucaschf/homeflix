@@ -1,10 +1,20 @@
 """Audio and subtitle track value objects."""
 
+from typing import ClassVar
+
 from pydantic import Field, model_validator
 
 from src.building_blocks.domain.value_objects import CompoundValueObject
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
+
+# Channel count to human-readable layout mapping
+CHANNEL_LAYOUTS: dict[int, str] = {
+    1: "Mono",
+    2: "Stereo",
+    6: "5.1",
+    8: "7.1",
+}
 
 
 class AudioTrack(CompoundValueObject):
@@ -60,13 +70,7 @@ class AudioTrack(CompoundValueObject):
         Returns:
             Channel layout string (e.g., "5.1", "7.1", "Stereo").
         """
-        layouts = {
-            1: "Mono",
-            2: "Stereo",
-            6: "5.1",
-            8: "7.1",
-        }
-        return layouts.get(self.channels, f"{self.channels}ch")
+        return CHANNEL_LAYOUTS.get(self.channels, f"{self.channels}ch")
 
 
 class SubtitleTrack(CompoundValueObject):
@@ -101,6 +105,9 @@ class SubtitleTrack(CompoundValueObject):
         ... )
     """
 
+    TEXT_FORMATS: ClassVar[frozenset[str]] = frozenset({"srt", "ass", "ssa", "vtt", "sub"})
+    IMAGE_FORMATS: ClassVar[frozenset[str]] = frozenset({"pgs", "sup", "vobsub", "idx"})
+
     index: int = Field(ge=0)
     language: LanguageCode
     format: str
@@ -131,8 +138,7 @@ class SubtitleTrack(CompoundValueObject):
         Returns:
             True for SRT, ASS, VTT formats; False for image-based (PGS, SUP).
         """
-        text_formats = {"srt", "ass", "ssa", "vtt", "sub"}
-        return self.format.lower() in text_formats
+        return self.format.lower() in self.TEXT_FORMATS
 
     @property
     def is_image_based(self) -> bool:
@@ -141,8 +147,7 @@ class SubtitleTrack(CompoundValueObject):
         Returns:
             True for PGS, SUP, VOBSUB formats.
         """
-        image_formats = {"pgs", "sup", "vobsub", "idx"}
-        return self.format.lower() in image_formats
+        return self.format.lower() in self.IMAGE_FORMATS
 
 
 __all__ = ["AudioTrack", "SubtitleTrack"]

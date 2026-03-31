@@ -7,8 +7,8 @@ from pydantic import model_validator
 
 from src.building_blocks.domain.value_objects import StringValueObject
 
-# Pattern to detect Windows-style paths (e.g., C:\, D:\)
-_WINDOWS_PATH_PATTERN = re.compile(r"^[a-zA-Z]:[\\/]")
+# Pattern to detect Windows-style paths (e.g., C:\, D:\) and UNC paths (e.g., \\server\share)
+_WINDOWS_PATH_PATTERN = re.compile(r"^(?:[a-zA-Z]:[\\/]|\\\\[^\\]+\\[^\\]+)")
 
 
 class FilePath(StringValueObject):

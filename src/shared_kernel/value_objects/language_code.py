@@ -86,9 +86,10 @@ class LanguageCode(StringValueObject):
         value = value.strip().lower()
 
         if not cls._PATTERN.match(value):
+            examples = ", ".join(sorted(cls.COMMON_CODES)[:5])
             raise ValueError(
                 f"Invalid ISO 639-1 language code: '{value}'. "
-                f"Must be exactly 2 lowercase letters "
+                f"Must be exactly 2 lowercase letters (e.g. {examples}) "
                 f"[{cls._RULE_CODE}]"
             )
 
