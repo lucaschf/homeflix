@@ -38,13 +38,23 @@ Implementamos uma hierarquia de classes base que:
 
 ```
 DomainModel (BaseModel encapsulado)
-├── ValueObject (frozen=True)
+├── ValueObject (frozen=True) - base abstrata, não instanciar diretamente
+│   ├── CompoundValueObject (múltiplos campos, with_updates)
 │   ├── StringValueObject (RootModel[str])
 │   ├── IntValueObject (RootModel[int])
 │   └── ... outros tipos primitivos
-├── DomainEntity (com id, created_at, updated_at)
+├── DomainEntity (com id, created_at, updated_at, with_updates)
 └── AggregateRoot (DomainEntity + domain events)
+
+SupportsUpdates (Protocol) - type checking para objetos com with_updates()
 ```
+
+**Notas sobre a hierarquia:**
+
+- **ValueObject**: Classe base abstrata para todos os Value Objects. Não deve ser instanciada diretamente.
+- **CompoundValueObject**: Para VOs com múltiplos campos (ex: Address, DateRange). Possui `with_updates()`.
+- **StringValueObject, IntValueObject, etc.**: Para VOs que encapsulam um único valor primitivo. Sem `with_updates()` - crie uma nova instância.
+- **SupportsUpdates**: Protocol que documenta a interface `with_updates()`, implementada por `CompoundValueObject` e `DomainEntity`.
 
 ### Configuração Padrão
 
@@ -168,12 +178,50 @@ from core.domain.shared.models import AggregateRoot
 
 class Series(AggregateRoot):
     """Agregado de Série com temporadas."""
-    
+
     id: MediaId
     title: str
     seasons: list[Season]
-    
+
     def add_season(self, season: Season) -> None:
         self.seasons.append(season)
         self.add_event(SeasonAddedEvent(series_id=self.id, season=season))
 ```
+
+### Criando um Compound Value Object
+
+```python
+from src.domain.shared.models import CompoundValueObject
+
+class Address(CompoundValueObject):
+    """Endereço como Value Object composto."""
+
+    street: str
+    city: str
+    zip_code: str
+    country: str = "BR"
+
+# Uso do with_updates() para criar cópia modificada
+addr = Address(street="Rua A", city="São Paulo", zip_code="01234-567")
+new_addr = addr.with_updates(city="Rio de Janeiro", zip_code="20000-000")
+```
+
+### Usando o Protocol SupportsUpdates
+
+```python
+from src.domain.shared.models import SupportsUpdates
+
+def apply_discount(obj: SupportsUpdates, field: str, factor: float) -> SupportsUpdates:
+    """Aplica desconto a qualquer objeto que suporte updates."""
+    current_value = getattr(obj, field)
+    return obj.with_updates(**{field: current_value * factor})
+```
+
+---
+
+## Histórico
+
+| Data | Mudança |
+|------|---------|
+| 2025-01-28 | Decisão inicial: Pydantic encapsulado para domain models |
+| 2025-02-04 | Refinamento: Adicionado `CompoundValueObject` e `SupportsUpdates` Protocol. `ValueObject` agora é base abstrata. `with_updates()` movido para classes específicas. |

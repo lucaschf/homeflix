@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestMovieCreation:
@@ -13,6 +13,7 @@ class TestMovieCreation:
         from src.domain.media.value_objects import (
             Duration,
             FilePath,
+            MediaFile,
             Resolution,
             Title,
             Year,
@@ -22,9 +23,14 @@ class TestMovieCreation:
             title=Title("Inception"),
             year=Year(2010),
             duration=Duration(8880),
-            file_path=FilePath("/movies/inception.mkv"),
-            file_size=4_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[
+                MediaFile(
+                    file_path=FilePath("/movies/inception.mkv"),
+                    file_size=4_000_000_000,
+                    resolution=Resolution("1080p"),
+                    is_primary=True,
+                )
+            ],
         )
 
         assert movie.id is None
@@ -48,13 +54,28 @@ class TestMovieCreation:
         assert isinstance(movie.id, MovieId)
         assert movie.id.prefix == "mov"
 
+    def test_factory_should_create_primary_file(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        assert len(movie.files) == 1
+        assert movie.files[0].is_primary is True
+        assert movie.files[0].file_path.value == "/movies/inception.mkv"
+        assert movie.files[0].resolution.name == "1080p"
+
     def test_should_accept_string_id_and_convert(self):
         from src.domain.media.entities import Movie
         from src.domain.media.value_objects import (
             Duration,
-            FilePath,
             MovieId,
-            Resolution,
             Title,
             Year,
         )
@@ -64,32 +85,9 @@ class TestMovieCreation:
             title=Title("Inception"),
             year=Year(2010),
             duration=Duration(8880),
-            file_path=FilePath("/movies/inception.mkv"),
-            file_size=4_000_000_000,
-            resolution=Resolution("1080p"),
         )
 
         assert isinstance(movie.id, MovieId)
-
-    def test_should_raise_error_for_negative_file_size(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import (
-            Duration,
-            FilePath,
-            Resolution,
-            Title,
-            Year,
-        )
-
-        with pytest.raises(DomainValidationError):
-            Movie(
-                title=Title("Inception"),
-                year=Year(2010),
-                duration=Duration(8880),
-                file_path=FilePath("/movies/inception.mkv"),
-                file_size=-1,
-                resolution=Resolution("1080p"),
-            )
 
 
 class TestMovieOptionalFields:
@@ -101,6 +99,7 @@ class TestMovieOptionalFields:
             Duration,
             FilePath,
             Genre,
+            MediaFile,
             Resolution,
             Title,
             Year,
@@ -115,13 +114,19 @@ class TestMovieOptionalFields:
             poster_path=FilePath("/posters/inception.jpg"),
             backdrop_path=FilePath("/backdrops/inception.jpg"),
             genres=[Genre("Sci-Fi"), Genre("Action")],
-            file_path=FilePath("/movies/inception.mkv"),
-            file_size=4_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[
+                MediaFile(
+                    file_path=FilePath("/movies/inception.mkv"),
+                    file_size=4_000_000_000,
+                    resolution=Resolution("1080p"),
+                    is_primary=True,
+                )
+            ],
             tmdb_id=27205,
             imdb_id="tt1375666",
         )
 
+        assert movie.original_title is not None
         assert movie.original_title.value == "Inception"
         assert movie.synopsis is not None
         assert len(movie.genres) == 2
@@ -144,7 +149,7 @@ class TestMovieGenreManagement:
             resolution="1080p",
         )
 
-        movie.add_genre("Sci-Fi")
+        movie = movie.with_genre("Sci-Fi")
 
         assert len(movie.genres) == 1
         assert movie.genres[0].value == "Sci-Fi"
@@ -162,7 +167,7 @@ class TestMovieGenreManagement:
             resolution="1080p",
         )
 
-        movie.add_genre(Genre("Action"))
+        movie = movie.with_genre(Genre("Action"))
 
         assert len(movie.genres) == 1
 
@@ -178,10 +183,189 @@ class TestMovieGenreManagement:
             resolution="1080p",
         )
 
-        movie.add_genre("Sci-Fi")
-        movie.add_genre("Sci-Fi")
+        movie = movie.with_genre("Sci-Fi")
+        movie = movie.with_genre("Sci-Fi")
 
         assert len(movie.genres) == 1
+
+
+class TestMovieFileManagement:
+    """Tests for Movie file variant management."""
+
+    def test_primary_file_should_return_primary(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        primary = movie.primary_file
+        assert primary is not None
+        assert primary.is_primary is True
+
+    def test_primary_file_should_return_none_when_no_files(self):
+        from src.domain.media.entities import Movie
+        from src.domain.media.value_objects import Duration, Title, Year
+
+        movie = Movie(
+            title=Title("Test"),
+            year=Year(2024),
+            duration=Duration(7200),
+        )
+
+        assert movie.primary_file is None
+
+    def test_best_file_should_return_highest_resolution(self):
+        from src.domain.media.entities import Movie
+        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception_720p.mkv",
+            file_size=2_000_000_000,
+            resolution="720p",
+        )
+        movie = movie.with_file(
+            MediaFile(
+                file_path=FilePath("/movies/inception_4k.mkv"),
+                file_size=20_000_000_000,
+                resolution=Resolution("4K"),
+            )
+        )
+
+        best = movie.best_file
+        assert best is not None
+        assert best.resolution.name == "4K"
+
+    def test_available_resolutions_should_be_sorted_highest_first(self):
+        from src.domain.media.entities import Movie
+        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception_720p.mkv",
+            file_size=2_000_000_000,
+            resolution="720p",
+        )
+        movie = movie.with_file(
+            MediaFile(
+                file_path=FilePath("/movies/inception_4k.mkv"),
+                file_size=20_000_000_000,
+                resolution=Resolution("4K"),
+            )
+        )
+
+        resolutions = movie.available_resolutions
+        assert [r.name for r in resolutions] == ["4K", "720p"]
+
+    def test_total_size_should_sum_all_files(self):
+        from src.domain.media.entities import Movie
+        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception_1080p.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        movie = movie.with_file(
+            MediaFile(
+                file_path=FilePath("/movies/inception_4k.mkv"),
+                file_size=20_000_000_000,
+                resolution=Resolution("4K"),
+            )
+        )
+
+        assert movie.total_size == 24_000_000_000
+
+    def test_with_file_should_add_new_variant(self):
+        from src.domain.media.entities import Movie
+        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        movie = movie.with_file(
+            MediaFile(
+                file_path=FilePath("/movies/inception_4k.mkv"),
+                file_size=20_000_000_000,
+                resolution=Resolution("4K"),
+            )
+        )
+
+        assert len(movie.files) == 2
+
+    def test_with_file_should_not_add_duplicate_path(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+
+        result = movie.with_file(
+            MediaFile(
+                file_path=FilePath("/movies/inception.mkv"),
+                file_size=4_000_000_000,
+                resolution=Resolution("1080p"),
+            )
+        )
+
+        assert result is movie  # same object, no change
+
+    def test_get_file_by_resolution_should_find_match(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        found = movie.get_file_by_resolution("1080p")
+        assert found is not None
+        assert found.resolution.name == "1080p"
+
+    def test_get_file_by_resolution_should_return_none_when_not_found(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        found = movie.get_file_by_resolution("4K")
+        assert found is None
 
 
 class TestMovieEquality:
@@ -191,9 +375,7 @@ class TestMovieEquality:
         from src.domain.media.entities import Movie
         from src.domain.media.value_objects import (
             Duration,
-            FilePath,
             MovieId,
-            Resolution,
             Title,
             Year,
         )
@@ -205,9 +387,6 @@ class TestMovieEquality:
             title=Title("Inception"),
             year=Year(2010),
             duration=Duration(8880),
-            file_path=FilePath("/movies/inception.mkv"),
-            file_size=4_000_000_000,
-            resolution=Resolution("1080p"),
         )
 
         movie2 = Movie(
@@ -215,9 +394,6 @@ class TestMovieEquality:
             title=Title("Different"),
             year=Year(2010),
             duration=Duration(8880),
-            file_path=FilePath("/movies/inception.mkv"),
-            file_size=4_000_000_000,
-            resolution=Resolution("1080p"),
         )
 
         assert movie1 == movie2
@@ -246,3 +422,100 @@ class TestMovieEvents:
 
         assert len(events) == 1
         assert movie.has_pending_events is False
+
+
+class TestMovieImmutability:
+    """Tests for Movie frozen (immutable) behavior."""
+
+    def test_should_reject_direct_attribute_assignment(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        with pytest.raises(DomainValidationException):
+            movie.year = 2020  # type: ignore[assignment, misc]
+
+    def test_with_genre_should_return_new_instance(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        updated = movie.with_genre("Sci-Fi")
+
+        assert updated is not movie
+        assert len(updated.genres) == 1
+        assert len(movie.genres) == 0
+
+    def test_with_genre_duplicate_string_should_return_self(self):
+        from src.domain.media.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        movie = movie.with_genre("Sci-Fi")
+
+        result = movie.with_genre("Sci-Fi")
+
+        assert result is movie
+
+    def test_with_genre_duplicate_value_object_should_return_self(self):
+        from src.domain.media.entities import Movie
+        from src.domain.media.value_objects import Genre
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        movie = movie.with_genre(Genre("Sci-Fi"))
+
+        result = movie.with_genre(Genre("Sci-Fi"))
+
+        assert result is movie
+
+    def test_with_file_should_return_new_instance(self):
+        from src.domain.media.entities import Movie
+        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        updated = movie.with_file(
+            MediaFile(
+                file_path=FilePath("/movies/inception_4k.mkv"),
+                file_size=20_000_000_000,
+                resolution=Resolution("4K"),
+            )
+        )
+
+        assert updated is not movie
+        assert len(updated.files) == 2
+        assert len(movie.files) == 1

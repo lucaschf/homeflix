@@ -2,16 +2,20 @@
 
 from datetime import UTC, datetime
 
+import pytest
+from pydantic import Field
+
+from src.domain.shared.exceptions.domain import DomainValidationException
 from src.domain.shared.models import AggregateRoot, DomainEntity, utc_now
 
 
-class SampleEntity(DomainEntity):
+class SampleEntity(DomainEntity[str]):
     """Sample entity for testing."""
 
     name: str
 
 
-class SampleAggregateRoot(AggregateRoot):
+class SampleAggregateRoot(AggregateRoot[str]):
     """Sample aggregate root for testing."""
 
     name: str
@@ -134,27 +138,102 @@ class TestDomainEntityHashing:
         assert hash(entity) == hash(id(entity))
 
 
-class TestDomainEntityTouch:
-    """Tests for DomainEntity.touch() method."""
+class SampleEntityWithList(DomainEntity[str]):
+    """Sample entity with a list field for testing."""
 
-    def test_should_update_updated_at_timestamp(self):
-        entity = SampleEntity(
-            name="Test",
-            updated_at=datetime(2024, 1, 1, tzinfo=UTC),
-        )
-        old_updated_at = entity.updated_at
+    name: str
+    tags: list[str] = Field(default_factory=list)
 
-        entity.touch()
 
-        assert entity.updated_at > old_updated_at
+class TestDomainEntityFrozen:
+    """Tests for DomainEntity frozen behavior."""
 
-    def test_should_not_change_created_at(self):
-        created_time = datetime(2024, 1, 1, tzinfo=UTC)
-        entity = SampleEntity(name="Test", created_at=created_time)
+    def test_should_reject_direct_attribute_assignment(self):
+        entity = SampleEntity(name="Test")
 
-        entity.touch()
+        with pytest.raises(DomainValidationException):
+            entity.name = "Changed"  # type: ignore[misc]
 
-        assert entity.created_at == created_time
+    def test_should_reject_id_assignment(self):
+        entity = SampleEntity(name="Test")
+
+        with pytest.raises(DomainValidationException):
+            entity.id = "new_id"  # type: ignore[misc]
+
+    def test_should_reject_timestamp_assignment(self):
+        entity = SampleEntity(name="Test")
+
+        with pytest.raises(DomainValidationException):
+            entity.updated_at = datetime.now(UTC)  # type: ignore[misc]
+
+    def test_with_updates_should_return_new_instance(self):
+        entity = SampleEntity(id="test_123", name="Original")
+
+        updated = entity.with_updates(name="Changed")
+
+        assert updated is not entity
+        assert updated.name == "Changed"
+        assert entity.name == "Original"
+
+    def test_with_updates_should_preserve_unchanged_fields(self):
+        entity = SampleEntity(id="test_123", name="Original")
+
+        updated = entity.with_updates(name="Changed")
+
+        assert updated.id == entity.id
+        assert updated.created_at == entity.created_at
+
+    def test_with_updates_should_preserve_identity(self):
+        entity = SampleEntity(id="test_123", name="Original")
+
+        updated = entity.with_updates(name="Changed")
+
+        assert updated == entity  # same id
+
+    def test_original_list_should_not_be_affected_by_with_updates(self):
+        entity = SampleEntityWithList(name="Test", tags=["a"])
+
+        updated = entity.with_updates(tags=[*entity.tags, "b"])
+
+        assert entity.tags == ["a"]
+        assert updated.tags == ["a", "b"]
+
+    def test_with_updates_should_auto_bump_updated_at(self):
+        custom_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+        entity = SampleEntity(id="test_123", name="Original", updated_at=custom_time)
+
+        before = datetime.now(UTC)
+        updated = entity.with_updates(name="Changed")
+        after = datetime.now(UTC)
+
+        assert updated.name == "Changed"
+        assert before <= updated.updated_at <= after
+        assert entity.updated_at == custom_time
+
+    def test_with_updates_should_respect_explicit_updated_at(self):
+        explicit_time = datetime(2025, 6, 15, 12, 0, 0, tzinfo=UTC)
+        entity = SampleEntity(id="test_123", name="Original")
+
+        updated = entity.with_updates(name="Changed", updated_at=explicit_time)
+
+        assert updated.updated_at == explicit_time
+
+    def test_aggregate_root_should_also_be_frozen(self):
+        aggregate = SampleAggregateRoot(name="Test")
+
+        with pytest.raises(DomainValidationException):
+            aggregate.name = "Changed"  # type: ignore[misc]
+
+    def test_aggregate_root_events_should_still_work_when_frozen(self):
+        aggregate = SampleAggregateRoot(name="Test")
+
+        aggregate.add_event({"type": "Created"})
+        aggregate.add_event({"type": "Updated"})
+
+        assert aggregate.has_pending_events is True
+        events = aggregate.pull_events()
+        assert len(events) == 2
+        assert aggregate.has_pending_events is False
 
 
 class TestAggregateRootCreation:

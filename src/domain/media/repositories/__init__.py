@@ -1,7 +1,6 @@
-"""Media domain repository interfaces."""
+"""Media domain repository interfaces (re-export for backwards compatibility)."""
 
-from src.domain.media.repositories.movie_repository import MovieRepository
-from src.domain.media.repositories.series_repository import SeriesRepository
+from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 
 __all__ = [
     "MovieRepository",

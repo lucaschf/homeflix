@@ -4,7 +4,45 @@ from datetime import date
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.media.entities import Episode
+from src.domain.media.value_objects import (
+    Duration,
+    EpisodeId,
+    FilePath,
+    MediaFile,
+    Resolution,
+    SeriesId,
+    Title,
+)
+from src.domain.shared.exceptions.domain import (
+    BusinessRuleViolationException,
+    DomainValidationException,
+)
+
+
+def _make_episode(
+    series_id: SeriesId,
+    season_number: int = 1,
+    episode_number: int = 1,
+    episode_id: EpisodeId | None = None,
+) -> Episode:
+    """Create an Episode for testing."""
+    return Episode(
+        id=episode_id or EpisodeId.generate(),
+        series_id=series_id,
+        season_number=season_number,
+        episode_number=episode_number,
+        title=Title(f"Episode {episode_number}"),
+        duration=Duration(2700),
+        files=[
+            MediaFile(
+                file_path=FilePath(f"/series/show/s{season_number:02d}e{episode_number:02d}.mkv"),
+                file_size=1_000_000_000,
+                resolution=Resolution("1080p"),
+                is_primary=True,
+            )
+        ],
+    )
 
 
 class TestSeasonCreation:
@@ -66,7 +104,7 @@ class TestSeasonCreation:
         from src.domain.media.entities import Season
         from src.domain.media.value_objects import SeriesId
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Season(
                 series_id=SeriesId.generate(),
                 season_number=-1,
@@ -86,6 +124,7 @@ class TestSeasonOptionalFields:
             title=Title("Season One"),
         )
 
+        assert season.title is not None
         assert season.title.value == "Season One"
 
     def test_should_create_with_synopsis(self):
@@ -141,15 +180,8 @@ class TestSeasonEpisodeManagement:
         assert season.episode_count == 0
 
     def test_should_add_episode(self):
-        from src.domain.media.entities import Episode, Season
-        from src.domain.media.value_objects import (
-            Duration,
-            EpisodeId,
-            FilePath,
-            Resolution,
-            SeriesId,
-            Title,
-        )
+        from src.domain.media.entities import Season
+        from src.domain.media.value_objects import SeriesId
 
         series_id = SeriesId.generate()
         season = Season(
@@ -157,61 +189,29 @@ class TestSeasonEpisodeManagement:
             season_number=1,
         )
 
-        episode = Episode(
-            id=EpisodeId.generate(),
-            series_id=series_id,
-            season_number=1,
-            episode_number=1,
-            title=Title("Pilot"),
-            duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
-        )
-
-        season.add_episode(episode)
+        episode = _make_episode(series_id, season_number=1, episode_number=1)
+        season = season.with_episode(episode)
 
         assert season.episode_count == 1
         assert season.episodes[0] == episode
 
     def test_should_raise_error_when_adding_episode_with_wrong_series_id(self):
-        from src.domain.media.entities import Episode, Season
-        from src.domain.media.value_objects import (
-            Duration,
-            FilePath,
-            Resolution,
-            SeriesId,
-            Title,
-        )
+        from src.domain.media.entities import Season
+        from src.domain.media.value_objects import SeriesId
 
         season = Season(
             series_id=SeriesId.generate(),
             season_number=1,
         )
 
-        episode = Episode(
-            series_id=SeriesId.generate(),  # Different series
-            season_number=1,
-            episode_number=1,
-            title=Title("Pilot"),
-            duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
-        )
+        episode = _make_episode(SeriesId.generate(), season_number=1)
 
-        with pytest.raises(ValueError, match="series_id"):
-            season.add_episode(episode)
+        with pytest.raises(BusinessRuleViolationException, match="series_id"):
+            season.with_episode(episode)
 
     def test_should_raise_error_when_adding_episode_with_wrong_season_number(self):
-        from src.domain.media.entities import Episode, Season
-        from src.domain.media.value_objects import (
-            Duration,
-            FilePath,
-            Resolution,
-            SeriesId,
-            Title,
-        )
+        from src.domain.media.entities import Season
+        from src.domain.media.value_objects import SeriesId
 
         series_id = SeriesId.generate()
         season = Season(
@@ -219,30 +219,14 @@ class TestSeasonEpisodeManagement:
             season_number=1,
         )
 
-        episode = Episode(
-            series_id=series_id,
-            season_number=2,  # Different season
-            episode_number=1,
-            title=Title("Pilot"),
-            duration=Duration(2700),
-            file_path=FilePath("/series/show/s02e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
-        )
+        episode = _make_episode(series_id, season_number=2)
 
-        with pytest.raises(ValueError, match="season_number"):
-            season.add_episode(episode)
+        with pytest.raises(BusinessRuleViolationException, match="season_number"):
+            season.with_episode(episode)
 
     def test_should_get_episode_by_number(self):
-        from src.domain.media.entities import Episode, Season
-        from src.domain.media.value_objects import (
-            Duration,
-            EpisodeId,
-            FilePath,
-            Resolution,
-            SeriesId,
-            Title,
-        )
+        from src.domain.media.entities import Season
+        from src.domain.media.value_objects import SeriesId
 
         series_id = SeriesId.generate()
         season = Season(
@@ -250,19 +234,8 @@ class TestSeasonEpisodeManagement:
             season_number=1,
         )
 
-        episode = Episode(
-            id=EpisodeId.generate(),
-            series_id=series_id,
-            season_number=1,
-            episode_number=5,
-            title=Title("Episode 5"),
-            duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e05.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
-        )
-
-        season.add_episode(episode)
+        episode = _make_episode(series_id, season_number=1, episode_number=5)
+        season = season.with_episode(episode)
 
         found = season.get_episode(5)
         assert found == episode
@@ -305,3 +278,69 @@ class TestSeasonEquality:
         season2 = Season(id=SeasonId.generate(), series_id=series_id, season_number=1)
 
         assert season1 != season2
+
+
+class TestSeasonImmutability:
+    """Tests for Season frozen (immutable) behavior."""
+
+    def test_should_reject_direct_attribute_assignment(self):
+        from src.domain.media.entities import Season
+        from src.domain.media.value_objects import SeriesId
+
+        season = Season(
+            series_id=SeriesId.generate(),
+            season_number=1,
+        )
+
+        with pytest.raises(DomainValidationException):
+            season.season_number = 2  # type: ignore[misc]
+
+    def test_with_episode_should_return_new_instance(self):
+        from src.domain.media.entities import Season
+        from src.domain.media.value_objects import SeriesId
+
+        series_id = SeriesId.generate()
+        season = Season(
+            series_id=series_id,
+            season_number=1,
+        )
+
+        episode = _make_episode(series_id, season_number=1)
+        updated = season.with_episode(episode)
+
+        assert updated is not season
+        assert updated.episode_count == 1
+        assert season.episode_count == 0
+
+    def test_with_episode_should_preserve_identity(self):
+        from src.domain.media.entities import Season
+        from src.domain.media.value_objects import SeasonId, SeriesId
+
+        series_id = SeriesId.generate()
+        season = Season(
+            id=SeasonId.generate(),
+            series_id=series_id,
+            season_number=1,
+        )
+
+        episode = _make_episode(series_id, season_number=1)
+        updated = season.with_episode(episode)
+
+        assert updated == season  # same id
+
+    def test_with_episode_duplicate_should_return_self(self):
+        from src.domain.media.entities import Season
+        from src.domain.media.value_objects import SeriesId
+
+        series_id = SeriesId.generate()
+        season = Season(
+            series_id=series_id,
+            season_number=1,
+        )
+
+        episode = _make_episode(series_id, season_number=1)
+        season = season.with_episode(episode)
+
+        result = season.with_episode(episode)
+
+        assert result is season

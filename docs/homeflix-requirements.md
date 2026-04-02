@@ -147,28 +147,56 @@ D - Dependency Inversion: Domain não conhece Infrastructure, Use Case depende d
 
 ## 3. Bounded Contexts (Domínios)
 
-### 3.1 Media Catalog (Contexto Principal)
+### 3.1 Library Management (Gestão de Bibliotecas)
+
+Responsável por gerenciar a configuração de bibliotecas de mídia.
+
+**Entidades:**
+- `Library` - Biblioteca configurada com caminhos e preferências
+
+**Value Objects:**
+- `LibraryId` - Identificador único de biblioteca (lib_xxx)
+- `LibraryName` - Nome da biblioteca
+- `LibraryType` - Tipo de conteúdo (movies, series, mixed)
+- `MetadataProviderConfig` - Configuração de provedor de metadados
+- `LibrarySettings` - Preferências de reprodução e scan
+- `CronExpression` - Expressão de agendamento
+- `LanguageCode` - Código de idioma ISO 639-1
+
+**Agregados:**
+- `LibraryAggregate` (root: Library)
+
+**ADR:** [ADR-005](adr/ADR-005-library-as-configuration-entity.md)
+
+### 3.2 Media Catalog (Catálogo de Mídia)
 
 Responsável por gerenciar o catálogo de mídia.
 
 **Entidades:**
-- `Movie` - Filme individual
+- `Movie` - Filme individual (pertence a uma Library, contém múltiplos MediaFile)
 - `Series` - Série com múltiplas temporadas
 - `Season` - Temporada de uma série
-- `Episode` - Episódio de uma temporada
+- `Episode` - Episódio de uma temporada (contém múltiplos MediaFile)
 
 **Value Objects:**
 - `MediaId` - Identificador único de mídia
+- `MediaFile` - Arquivo físico de vídeo (variante de resolução)
 - `FilePath` - Caminho do arquivo validado
 - `Duration` - Duração em segundos
-- `Resolution` - Resolução do vídeo (1080p, 4K, etc.)
+- `Resolution` - Resolução do vídeo (720p, 1080p, 4K, etc.)
+- `VideoCodec` - Codec de vídeo (H264, HEVC, AV1)
+- `HdrFormat` - Formato HDR (HDR10, Dolby Vision, etc.)
+- `AudioTrack` - Faixa de áudio com idioma, codec, canais
+- `SubtitleTrack` - Faixa de legenda (embutida ou externa)
 - `Genre` - Gênero do conteúdo
 - `Year` - Ano de lançamento
 
 **Agregados:**
 - `MediaAggregate` (root: Movie ou Series)
 
-### 3.2 Watch Progress (Progresso de Visualização)
+**ADR:** [ADR-006](adr/ADR-006-media-file-variants.md)
+
+### 3.3 Watch Progress (Progresso de Visualização)
 
 Rastreia o progresso de visualização do usuário.
 
@@ -179,8 +207,9 @@ Rastreia o progresso de visualização do usuário.
 **Value Objects:**
 - `ProgressTimestamp` - Posição no vídeo
 - `WatchStatus` - not_started | in_progress | completed
+- `TrackPreference` - Preferência de áudio/legenda salva
 
-### 3.3 Collections (Coleções)
+### 3.4 Collections (Coleções)
 
 Gerencia listas e organizações personalizadas.
 
@@ -193,12 +222,13 @@ Gerencia listas e organizações personalizadas.
 - `ListId` - Identificador de lista
 - `ListItem` - Item em uma lista (referência + ordem)
 
-### 3.4 Library Scanner (Infraestrutura)
+### 3.5 Library Scanner (Infraestrutura)
 
 Escaneia o sistema de arquivos e detecta novas mídias.
 
 **Serviços:**
 - `FileScanner` - Varre diretórios em busca de mídia
+- `MediaInfoExtractor` - Extrai informações de faixas de áudio/legenda (ffprobe)
 - `MetadataResolver` - Busca metadados via APIs externas
 - `ThumbnailGenerator` - Gera thumbnails dos vídeos
 
@@ -206,50 +236,144 @@ Escaneia o sistema de arquivos e detecta novas mídias.
 
 ## 4. Requisitos Funcionais
 
-### 4.1 Gestão de Biblioteca
+### 4.1 Gestão de Bibliotecas
 
-#### RF-001: Escanear Diretório de Mídia
-**Descrição:** O sistema deve escanear diretórios configurados e detectar arquivos de vídeo.
+#### RF-001: Criar Biblioteca
+**Descrição:** O usuário pode criar bibliotecas para organizar suas mídias.
+**Critérios de Aceite:**
+- Nome único e descritivo para a biblioteca
+- Tipo de conteúdo: filmes, séries ou misto
+- Um ou mais caminhos de diretório como fonte
+- Idioma preferido para busca de metadados (ex: pt-BR, en, ja)
+- Limite de 20 bibliotecas por instalação
+**ADR:** [ADR-005](../adr/ADR-005-library-as-configuration-entity.md)
+
+#### RF-002: Configurar Provedores de Metadados
+**Descrição:** O usuário pode definir quais provedores de metadados usar por biblioteca.
+**Critérios de Aceite:**
+- Lista ordenada de provedores (TMDB, OMDb, TVDb)
+- Ordem define prioridade de fallback
+- Habilitar/desabilitar provedores individualmente
+- Provedores default baseados no tipo de biblioteca (TMDB para filmes, TVDb para séries)
+
+#### RF-003: Configurar Preferências de Reprodução
+**Descrição:** O usuário pode definir preferências de áudio e legenda por biblioteca.
+**Critérios de Aceite:**
+- Idioma de áudio preferido (ex: pt-BR)
+- Idioma de legenda preferido (ex: pt-BR, ou desabilitado)
+- Modo de legenda: sempre, apenas se áudio estrangeiro, apenas forçadas, desligado
+- Configurações são aplicadas automaticamente ao iniciar reprodução
+
+#### RF-004: Agendar Scan Automático
+**Descrição:** O usuário pode configurar scan automático por biblioteca.
+**Critérios de Aceite:**
+- Agendamento via expressão cron ou presets (diário, semanal)
+- Opção de scan apenas manual
+- Cada biblioteca com seu próprio agendamento
+
+#### RF-005: Editar e Excluir Biblioteca
+**Descrição:** O usuário pode modificar ou remover bibliotecas existentes.
+**Critérios de Aceite:**
+- Editar nome, caminhos e configurações
+- Excluir biblioteca (soft delete)
+- Ao excluir, mídia associada é marcada como órfã (não deletada)
+- Confirmação antes de excluir
+
+### 4.2 Scan e Detecção de Mídia
+
+#### RF-006: Escanear Biblioteca
+**Descrição:** O sistema deve escanear os diretórios de uma biblioteca e detectar arquivos de vídeo.
 **Critérios de Aceite:**
 - Suporta formatos: MP4, MKV, AVI, MOV, WMV
-- Detecta novos arquivos automaticamente (manual ou agendado)
+- Detecta novos arquivos e remove entradas de arquivos deletados
 - Identifica séries por padrão de nome (S01E01, 1x01)
 - Cria registro no banco para cada mídia encontrada
+- Associa mídia à biblioteca correta
+- Extrai informações de faixas de áudio e legenda do arquivo (ffprobe)
 
-#### RF-002: Buscar Metadados Automaticamente
-**Descrição:** O sistema deve buscar metadados (título, sinopse, poster, gênero) em APIs externas.
+#### RF-007: Detectar Faixas de Áudio e Legenda
+**Descrição:** O sistema deve detectar e catalogar todas as faixas de áudio e legenda de cada arquivo.
 **Critérios de Aceite:**
-- Integração com TMDB API
-- Fallback para OMDb API
+- Detecta faixas embutidas no container (MKV, MP4)
+- Detecta legendas externas (.srt, .vtt, .ass) na mesma pasta
+- Extrai metadados: idioma, codec, canais, título
+- Identifica faixas marcadas como default ou forced
+- Atualiza automaticamente se novas legendas forem adicionadas
+
+#### RF-007.1: Detectar Variantes de Arquivo
+**Descrição:** O sistema deve identificar múltiplas versões do mesmo conteúdo (diferentes resoluções).
+**Critérios de Aceite:**
+- Agrupa arquivos que representam o mesmo filme/episódio (ex: 720p, 1080p, 4K)
+- Extrai informações de resolução, codec e HDR de cada variante
+- Uma mídia = uma entidade com múltiplos arquivos
+- Permite merge/separação manual de variantes incorretamente agrupadas
+- Marca automaticamente a melhor qualidade como versão principal
+**ADR:** [ADR-006](../adr/ADR-006-media-file-variants.md)
+
+#### RF-008: Buscar Metadados Automaticamente
+**Descrição:** O sistema deve buscar metadados usando os provedores configurados na biblioteca.
+**Critérios de Aceite:**
+- Usa provedores na ordem de prioridade da biblioteca
+- Fallback automático se provedor primário falhar
+- Usa idioma configurado na biblioteca para busca
 - Permite correção manual de matches incorretos
 - Cache de metadados para evitar requests repetidos
 
-#### RF-003: Editar Metadados Manualmente
+#### RF-009: Editar Metadados Manualmente
 **Descrição:** O usuário pode editar/corrigir metadados de qualquer mídia.
 **Critérios de Aceite:**
 - Edição de título, sinopse, ano, gênero
 - Upload de poster customizado
 - Merge de entradas duplicadas
+- Forçar re-match com provedor de metadados
 
-#### RF-004: Listar Biblioteca
-**Descrição:** O sistema deve listar todo o conteúdo da biblioteca com filtros.
+#### RF-010: Listar Conteúdo da Biblioteca
+**Descrição:** O sistema deve listar o conteúdo das bibliotecas com filtros.
 **Critérios de Aceite:**
+- Filtro por biblioteca
 - Filtros: tipo (filme/série), gênero, ano, status de visualização
 - Ordenação: título, data de adição, ano, duração
 - Paginação cursor-based
 - Busca por texto (título, sinopse)
 
-### 4.2 Reprodução de Mídia
+### 4.3 Reprodução de Mídia
 
-#### RF-005: Reproduzir Vídeo
+#### RF-011: Reproduzir Vídeo
 **Descrição:** O sistema deve reproduzir vídeos diretamente no browser.
 **Critérios de Aceite:**
 - Streaming via HTTP Range Requests
-- Suporte a legendas externas (SRT, VTT)
-- Múltiplas faixas de áudio (quando disponível)
+- Seleção automática de variante baseada nas preferências (resolução, HDR)
+- Seleção automática de faixa de áudio baseada nas preferências da biblioteca
+- Seleção automática de legenda baseada no modo configurado
 - Controles: play, pause, seek, volume, fullscreen
 
-#### RF-006: Controles Avançados de Player
+#### RF-011.1: Selecionar Variante de Arquivo
+**Descrição:** O usuário pode escolher qual versão do arquivo reproduzir.
+**Critérios de Aceite:**
+- Lista todas as variantes disponíveis com resolução, codec e tamanho
+- Indica se variante tem HDR (e qual formato)
+- Auto-seleção baseada em preferências da biblioteca
+- Opção de sempre perguntar ou usar automático
+- Lembra escolha do usuário para a mídia específica
+
+#### RF-012: Selecionar Faixa de Áudio
+**Descrição:** O usuário pode trocar a faixa de áudio durante a reprodução.
+**Critérios de Aceite:**
+- Lista todas as faixas de áudio disponíveis com idioma e formato
+- Troca de faixa em tempo real sem reiniciar o vídeo
+- Exibe informações: idioma, codec, canais (5.1, 7.1, etc.)
+- Lembra preferência do usuário para a mídia específica
+
+#### RF-013: Selecionar Legenda
+**Descrição:** O usuário pode selecionar legendas disponíveis.
+**Critérios de Aceite:**
+- Lista legendas embutidas e externas
+- Permite upload de legenda externa em tempo real
+- Ajuste de tamanho e posição da legenda
+- Sincronização de legenda (+/- segundos)
+- Opção de desativar legenda
+
+#### RF-014: Controles Avançados de Player
 **Descrição:** O player deve ter controles avançados de reprodução.
 **Critérios de Aceite:**
 - Skip intro (pular para timestamp configurado)
@@ -258,56 +382,50 @@ Escaneia o sistema de arquivos e detecta novas mídias.
 - Atalhos de teclado (espaço, setas, etc.)
 - Picture-in-Picture
 
-#### RF-007: Selecionar Legenda
-**Descrição:** O usuário pode selecionar legendas disponíveis.
-**Critérios de Aceite:**
-- Detecta arquivos .srt/.vtt na mesma pasta
-- Permite upload de legenda externa
-- Ajuste de tamanho e posição da legenda
-- Sincronização de legenda (+/- segundos)
+### 4.4 Progresso e Histórico
 
-### 4.3 Progresso e Histórico
-
-#### RF-008: Salvar Progresso Automaticamente
+#### RF-015: Salvar Progresso Automaticamente
 **Descrição:** O sistema deve salvar o progresso de visualização automaticamente.
 **Critérios de Aceite:**
 - Salva a cada 10 segundos de reprodução
 - Salva ao pausar ou fechar o player
+- Salva faixa de áudio e legenda selecionadas
 - Marca como "completo" quando ≥ 90% assistido
 - Próximo episódio auto-detectado
 
-#### RF-009: Exibir "Continue Watching"
+#### RF-016: Exibir "Continue Watching"
 **Descrição:** O sistema deve mostrar itens em progresso para continuar assistindo.
 **Critérios de Aceite:**
 - Lista ordenada por último acesso
 - Mostra thumbnail no ponto onde parou
 - Barra de progresso visual
 - Botão "Continuar" vai direto para o timestamp
+- Restaura faixa de áudio e legenda da última sessão
 
-#### RF-010: Histórico de Visualização
+#### RF-017: Histórico de Visualização
 **Descrição:** O sistema deve manter histórico completo de visualização.
 **Critérios de Aceite:**
 - Lista todos os itens assistidos com data/hora
-- Filtro por período
+- Filtro por período e por biblioteca
 - Opção de limpar histórico (individual ou total)
 
-### 4.4 Listas e Favoritos
+### 4.5 Listas e Favoritos
 
-#### RF-011: Adicionar à Watchlist
+#### RF-018: Adicionar à Watchlist
 **Descrição:** O usuário pode adicionar itens à lista "quero assistir".
 **Critérios de Aceite:**
 - Adicionar/remover de qualquer tela
 - Ordenação manual (drag & drop)
 - Contador de itens na watchlist
 
-#### RF-012: Favoritar Item
+#### RF-019: Favoritar Item
 **Descrição:** O usuário pode marcar itens como favoritos.
 **Critérios de Aceite:**
 - Toggle de favorito rápido
 - Seção dedicada de favoritos
 - Exportar lista de favoritos
 
-#### RF-013: Criar Listas Personalizadas
+#### RF-020: Criar Listas Personalizadas
 **Descrição:** O usuário pode criar listas temáticas customizadas.
 **Critérios de Aceite:**
 - Criar lista com nome e descrição
@@ -316,30 +434,34 @@ Escaneia o sistema de arquivos e detecta novas mídias.
 - Limite de 10 listas, 100 itens por lista
 - Renomear e excluir listas
 
-### 4.5 Busca e Navegação
+### 4.6 Busca e Navegação
 
-#### RF-014: Busca Global
+#### RF-021: Busca Global
 **Descrição:** O sistema deve permitir busca em toda a biblioteca.
 **Critérios de Aceite:**
 - Busca por título (fuzzy matching)
 - Busca em sinopse
+- Filtro por biblioteca específica ou todas
 - Resultados categorizados (filmes, séries, episódios)
 - Sugestões enquanto digita (debounce 300ms)
 
-#### RF-015: Navegação por Gênero
+#### RF-022: Navegação por Gênero
 **Descrição:** O sistema deve permitir navegar por gêneros.
 **Critérios de Aceite:**
 - Lista de gêneros com contagem
 - Filtragem combinada de múltiplos gêneros
 - "Descobrir" gêneros relacionados
 
-#### RF-016: Página de Detalhes
+#### RF-023: Página de Detalhes
 **Descrição:** Cada mídia deve ter página de detalhes completa.
 **Critérios de Aceite:**
 - Poster, título, ano, duração, gêneros
 - Sinopse completa
 - Para séries: lista de temporadas e episódios
 - Informações técnicas (resolução, codec, tamanho)
+- Lista de faixas de áudio disponíveis (idiomas, formatos)
+- Lista de legendas disponíveis (embutidas e externas)
+- Biblioteca à qual pertence
 - Ações: Play, Watchlist, Favorito, Editar
 
 ---
@@ -428,10 +550,10 @@ class Series:
     imdb_id: str | None
     added_at: datetime
     updated_at: datetime
-    
+
     @property
     def total_episodes(self) -> int: ...
-    
+
     @property
     def total_duration(self) -> Duration: ...
 ```
@@ -469,7 +591,7 @@ class WatchProgress:
     last_watched_at: datetime
     started_at: datetime
     completed_at: datetime | None
-    
+
     @property
     def percentage(self) -> float:
         return (self.position / self.duration) * 100
@@ -484,13 +606,24 @@ class WatchProgress:
 ```
 Application/
 ├── UseCases/
-│   ├── Media/
+│   ├── Library/
+│   │   ├── CreateLibraryUseCase
+│   │   ├── UpdateLibraryUseCase
+│   │   ├── DeleteLibraryUseCase
+│   │   ├── GetLibraryByIdUseCase
+│   │   ├── ListLibrariesUseCase
 │   │   ├── ScanLibraryUseCase
+│   │   └── GetScanStatusUseCase
+│   │
+│   ├── Media/
 │   │   ├── GetMovieByIdUseCase
 │   │   ├── ListMoviesUseCase
 │   │   ├── SearchMediaUseCase
 │   │   ├── UpdateMediaMetadataUseCase
-│   │   └── RefreshMetadataUseCase
+│   │   ├── RefreshMetadataUseCase
+│   │   ├── MergeMediaVariantsUseCase
+│   │   ├── SplitMediaVariantsUseCase
+│   │   └── SelectMediaFileUseCase
 │   │
 │   ├── Series/
 │   │   ├── GetSeriesByIdUseCase
@@ -515,6 +648,8 @@ Application/
 │   │
 │   └── Streaming/
 │       ├── GetStreamUrlUseCase
+│       ├── GetAvailableFilesUseCase
+│       ├── GetAudioTracksUseCase
 │       ├── GetSubtitlesUseCase
 │       └── GetThumbnailUseCase
 ```
@@ -545,7 +680,7 @@ class SaveProgressUseCase:
     ):
         self._progress_repo = progress_repository
         self._media_repo = media_repository
-    
+
     async def execute(self, input: SaveProgressInput) -> SaveProgressOutput:
         # 1. Validar que mídia existe
         media = await self._media_repo.find_by_id(MediaId(input.media_id))
@@ -555,11 +690,11 @@ class SaveProgressUseCase:
                 resource_type="media",
                 resource_id=input.media_id,
             )
-        
+
         # 2. Calcular status
         percentage = (input.position_seconds / input.duration_seconds) * 100
         status = self._calculate_status(percentage)
-        
+
         # 3. Criar ou atualizar progresso
         progress = WatchProgress(
             id=generate_id(),
@@ -571,15 +706,15 @@ class SaveProgressUseCase:
             last_watched_at=datetime.now(UTC),
             # ...
         )
-        
+
         await self._progress_repo.save(progress)
-        
+
         return SaveProgressOutput(
             progress_id=progress.id,
             status=status,
             percentage=percentage,
         )
-    
+
     def _calculate_status(self, percentage: float) -> WatchStatus:
         if percentage >= 90:
             return WatchStatus.COMPLETED
@@ -592,30 +727,43 @@ class SaveProgressUseCase:
 
 ## 8. API Endpoints (v1)
 
-### 8.1 Media
+### 8.1 Libraries
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
-| GET | `/v1/movies` | Lista filmes |
-| GET | `/v1/movies/{id}` | Detalhes do filme |
-| GET | `/v1/series` | Lista séries |
+| GET | `/v1/libraries` | Lista todas as bibliotecas |
+| POST | `/v1/libraries` | Cria nova biblioteca |
+| GET | `/v1/libraries/{id}` | Detalhes da biblioteca |
+| PATCH | `/v1/libraries/{id}` | Atualiza biblioteca |
+| DELETE | `/v1/libraries/{id}` | Remove biblioteca (soft delete) |
+| POST | `/v1/libraries/{id}/scan` | Inicia scan da biblioteca |
+| GET | `/v1/libraries/{id}/scan/status` | Status do scan |
+
+### 8.2 Media
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| GET | `/v1/movies` | Lista filmes (filtro por library_id) |
+| GET | `/v1/movies/{id}` | Detalhes do filme (inclui variantes) |
+| GET | `/v1/movies/{id}/files` | Lista arquivos/variantes do filme |
+| GET | `/v1/series` | Lista séries (filtro por library_id) |
 | GET | `/v1/series/{id}` | Detalhes da série |
 | GET | `/v1/series/{id}/seasons/{season}` | Episódios da temporada |
-| POST | `/v1/library/scan` | Inicia scan da biblioteca |
-| GET | `/v1/library/scan/status` | Status do scan |
 | PATCH | `/v1/media/{id}/metadata` | Atualiza metadados |
+| POST | `/v1/media/{id}/merge` | Merge variantes incorretamente separadas |
+| POST | `/v1/media/{id}/split` | Separa variantes incorretamente agrupadas |
 
-### 8.2 Progress
+### 8.3 Progress
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
 | GET | `/v1/progress/continue-watching` | Lista "continuar assistindo" |
 | GET | `/v1/progress/{media_id}` | Progresso de uma mídia |
-| POST | `/v1/progress` | Salva progresso |
+| POST | `/v1/progress` | Salva progresso (inclui track preferences) |
 | DELETE | `/v1/progress/{media_id}` | Limpa progresso |
 | GET | `/v1/history` | Histórico de visualização |
 
-### 8.3 Collections
+### 8.4 Collections
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
@@ -631,20 +779,24 @@ class SaveProgressUseCase:
 | POST | `/v1/lists/{id}/items` | Adiciona item |
 | DELETE | `/v1/lists/{id}/items/{media_id}` | Remove item |
 
-### 8.4 Streaming
+### 8.5 Streaming
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
-| GET | `/v1/stream/{media_id}` | Stream do vídeo (HTTP Range) |
-| GET | `/v1/stream/{media_id}/subtitles` | Lista legendas |
-| GET | `/v1/stream/{media_id}/subtitles/{lang}` | Legenda específica |
+| GET | `/v1/stream/{media_id}` | Stream do vídeo (auto-seleciona variante) |
+| GET | `/v1/stream/{media_id}?file_index={n}` | Stream de variante específica |
+| GET | `/v1/stream/{media_id}/files` | Lista variantes disponíveis para stream |
+| GET | `/v1/stream/{media_id}/audio-tracks` | Lista faixas de áudio da variante |
+| GET | `/v1/stream/{media_id}/subtitles` | Lista legendas da variante |
+| GET | `/v1/stream/{media_id}/subtitles/{index}` | Legenda específica |
 | GET | `/v1/thumbnails/{media_id}` | Thumbnail/poster |
 
-### 8.5 Search
+### 8.6 Search
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
 | GET | `/v1/search?q={query}` | Busca global |
+| GET | `/v1/search?q={query}&library_id={id}` | Busca em biblioteca específica |
 | GET | `/v1/genres` | Lista gêneros |
 | GET | `/v1/genres/{slug}` | Mídia por gênero |
 

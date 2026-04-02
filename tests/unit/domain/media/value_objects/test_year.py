@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestYearCreation:
@@ -37,7 +37,7 @@ class TestYearCreation:
     def test_should_raise_error_for_year_before_minimum(self):
         from src.domain.media.value_objects import Year
 
-        with pytest.raises(DomainValidationError, match="1800"):
+        with pytest.raises(DomainValidationException, match="1800"):
             Year(1799)
 
     def test_should_raise_error_for_year_too_far_in_future(self):
@@ -46,13 +46,13 @@ class TestYearCreation:
         current_year = datetime.now().year
         too_far = current_year + 11
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Year(too_far)
 
     def test_should_raise_error_for_non_integer_input(self):
         from src.domain.media.value_objects import Year
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Year("2024")
 
 
@@ -147,5 +147,5 @@ class TestYearImmutability:
 
         year = Year(2024)
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             year.root = 2020

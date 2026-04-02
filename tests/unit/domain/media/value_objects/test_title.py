@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestTitleCreation:
@@ -53,13 +53,13 @@ class TestTitleCreation:
     def test_should_raise_error_for_empty_string(self):
         from src.domain.media.value_objects import Title
 
-        with pytest.raises(DomainValidationError, match="cannot be empty"):
+        with pytest.raises(DomainValidationException, match="cannot be empty"):
             Title("")
 
     def test_should_raise_error_for_whitespace_only(self):
         from src.domain.media.value_objects import Title
 
-        with pytest.raises(DomainValidationError, match="cannot be empty"):
+        with pytest.raises(DomainValidationException, match="cannot be empty"):
             Title("   ")
 
     def test_should_raise_error_when_exceeds_max_length(self):
@@ -67,7 +67,7 @@ class TestTitleCreation:
 
         long_title = "A" * 501
 
-        with pytest.raises(DomainValidationError, match="500"):
+        with pytest.raises(DomainValidationException, match="500"):
             Title(long_title)
 
     def test_should_accept_title_at_max_length(self):
@@ -82,7 +82,7 @@ class TestTitleCreation:
     def test_should_raise_error_for_non_string_input(self):
         from src.domain.media.value_objects import Title
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Title(123)
 
 
@@ -157,5 +157,5 @@ class TestTitleImmutability:
 
         title = Title("Inception")
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             title.root = "Interstellar"

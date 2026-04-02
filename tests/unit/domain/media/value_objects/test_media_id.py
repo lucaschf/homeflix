@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 from src.domain.shared.models.external_id import RANDOM_PART_LENGTH
 
 
@@ -26,13 +26,13 @@ class TestMovieIdCreation:
     def test_should_raise_error_for_wrong_prefix(self):
         from src.domain.media.value_objects import MovieId
 
-        with pytest.raises(DomainValidationError, match="prefix"):
+        with pytest.raises(DomainValidationException, match="prefix"):
             MovieId("ser_abc123abc123")
 
     def test_should_raise_error_for_invalid_format(self):
         from src.domain.media.value_objects import MovieId
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             MovieId("mov_short")
 
 
@@ -82,7 +82,7 @@ class TestSeriesIdCreation:
     def test_should_raise_error_for_wrong_prefix(self):
         from src.domain.media.value_objects import SeriesId
 
-        with pytest.raises(DomainValidationError, match="prefix"):
+        with pytest.raises(DomainValidationException, match="prefix"):
             SeriesId("mov_abc123abc123")
 
 
@@ -125,7 +125,7 @@ class TestSeasonIdCreation:
     def test_should_raise_error_for_wrong_prefix(self):
         from src.domain.media.value_objects import SeasonId
 
-        with pytest.raises(DomainValidationError, match="prefix"):
+        with pytest.raises(DomainValidationException, match="prefix"):
             SeasonId("mov_abc123abc123")
 
 
@@ -168,7 +168,7 @@ class TestEpisodeIdCreation:
     def test_should_raise_error_for_wrong_prefix(self):
         from src.domain.media.value_objects import EpisodeId
 
-        with pytest.raises(DomainValidationError, match="prefix"):
+        with pytest.raises(DomainValidationException, match="prefix"):
             EpisodeId("mov_abc123abc123")
 
 
@@ -259,17 +259,17 @@ class TestParseMediaId:
     def test_should_raise_error_for_unknown_prefix(self):
         from src.domain.media.value_objects import parse_media_id
 
-        with pytest.raises(ValueError, match="Unknown media prefix"):
+        with pytest.raises(DomainValidationException, match="Unknown media prefix"):
             parse_media_id("xyz_abc123abc123")
 
     def test_should_raise_error_for_invalid_format(self):
         from src.domain.media.value_objects import parse_media_id
 
-        with pytest.raises(ValueError, match="Invalid media ID format"):
+        with pytest.raises(DomainValidationException, match="Invalid media ID format"):
             parse_media_id("invalidformat")
 
     def test_should_raise_error_for_empty_string(self):
         from src.domain.media.value_objects import parse_media_id
 
-        with pytest.raises(ValueError, match="Invalid media ID format"):
+        with pytest.raises(DomainValidationException, match="Invalid media ID format"):
             parse_media_id("")

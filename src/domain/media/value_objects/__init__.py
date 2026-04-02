@@ -1,31 +1,41 @@
-"""Media domain value objects."""
+"""Media domain value objects (re-export for backwards compatibility)."""
 
-from src.domain.media.value_objects.duration import Duration
-from src.domain.media.value_objects.file_path import FilePath
-from src.domain.media.value_objects.genre import Genre
-from src.domain.media.value_objects.media_id import (
+from src.modules.media.domain.value_objects import (
+    AudioTrack,
+    Duration,
     EpisodeId,
+    FilePath,
+    Genre,
+    HdrFormat,
+    MediaFile,
     MediaId,
     MovieId,
+    Resolution,
     SeasonId,
     SeriesId,
+    SubtitleTrack,
+    Title,
+    VideoCodec,
+    Year,
     parse_media_id,
 )
-from src.domain.media.value_objects.resolution import Resolution
-from src.domain.media.value_objects.title import Title
-from src.domain.media.value_objects.year import Year
 
 __all__ = [
+    "AudioTrack",
     "Duration",
     "EpisodeId",
     "FilePath",
     "Genre",
+    "HdrFormat",
+    "MediaFile",
     "MediaId",
     "MovieId",
     "Resolution",
     "SeasonId",
     "SeriesId",
+    "SubtitleTrack",
     "Title",
+    "VideoCodec",
     "Year",
     "parse_media_id",
 ]

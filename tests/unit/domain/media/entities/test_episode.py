@@ -4,7 +4,20 @@ from datetime import date
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+from src.domain.shared.exceptions.domain import DomainValidationException
+
+
+def _make_file(**overrides: object) -> MediaFile:
+    """Create a MediaFile for testing."""
+    defaults: dict[str, object] = {
+        "file_path": FilePath("/series/show/s01e01.mkv"),
+        "file_size": 1_000_000_000,
+        "resolution": Resolution("1080p"),
+        "is_primary": True,
+    }
+    defaults.update(overrides)
+    return MediaFile(**defaults)
 
 
 class TestEpisodeCreation:
@@ -14,8 +27,6 @@ class TestEpisodeCreation:
         from src.domain.media.entities import Episode
         from src.domain.media.value_objects import (
             Duration,
-            FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
@@ -26,9 +37,7 @@ class TestEpisodeCreation:
             episode_number=1,
             title=Title("Pilot"),
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[_make_file()],
         )
 
         assert episode.id is None
@@ -40,8 +49,6 @@ class TestEpisodeCreation:
         from src.domain.media.value_objects import (
             Duration,
             EpisodeId,
-            FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
@@ -54,9 +61,7 @@ class TestEpisodeCreation:
             episode_number=1,
             title=Title("Pilot"),
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[_make_file()],
         )
 
         assert episode.id == episode_id
@@ -66,8 +71,6 @@ class TestEpisodeCreation:
         from src.domain.media.value_objects import (
             Duration,
             EpisodeId,
-            FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
@@ -79,9 +82,7 @@ class TestEpisodeCreation:
             episode_number=1,
             title=Title("Pilot"),
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[_make_file()],
         )
 
         assert isinstance(episode.id, EpisodeId)
@@ -92,6 +93,7 @@ class TestEpisodeCreation:
         from src.domain.media.value_objects import (
             Duration,
             FilePath,
+            MediaFile,
             Resolution,
             SeriesId,
             Title,
@@ -103,9 +105,14 @@ class TestEpisodeCreation:
             episode_number=1,
             title=Title("Special Episode"),
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s00e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[
+                MediaFile(
+                    file_path=FilePath("/series/show/s00e01.mkv"),
+                    file_size=1_000_000_000,
+                    resolution=Resolution("1080p"),
+                    is_primary=True,
+                )
+            ],
         )
 
         assert episode.season_number == 0
@@ -114,45 +121,37 @@ class TestEpisodeCreation:
         from src.domain.media.entities import Episode
         from src.domain.media.value_objects import (
             Duration,
-            FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Episode(
                 series_id=SeriesId.generate(),
                 season_number=1,
                 episode_number=0,
                 title=Title("Pilot"),
                 duration=Duration(2700),
-                file_path=FilePath("/series/show/s01e00.mkv"),
-                file_size=1_000_000_000,
-                resolution=Resolution("1080p"),
+                files=[_make_file()],
             )
 
-    def test_should_raise_error_for_negative_file_size(self):
+    def test_should_create_with_no_files(self):
         from src.domain.media.entities import Episode
         from src.domain.media.value_objects import (
             Duration,
-            FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
 
-        with pytest.raises(DomainValidationError):
-            Episode(
-                series_id=SeriesId.generate(),
-                season_number=1,
-                episode_number=1,
-                title=Title("Pilot"),
-                duration=Duration(2700),
-                file_path=FilePath("/series/show/s01e01.mkv"),
-                file_size=-1,
-                resolution=Resolution("1080p"),
-            )
+        episode = Episode(
+            series_id=SeriesId.generate(),
+            season_number=1,
+            episode_number=1,
+            title=Title("Pilot"),
+            duration=Duration(2700),
+        )
+
+        assert episode.files == []
 
 
 class TestEpisodeOptionalFields:
@@ -162,8 +161,6 @@ class TestEpisodeOptionalFields:
         from src.domain.media.entities import Episode
         from src.domain.media.value_objects import (
             Duration,
-            FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
@@ -175,9 +172,7 @@ class TestEpisodeOptionalFields:
             title=Title("Pilot"),
             synopsis="The first episode of the series.",
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[_make_file()],
         )
 
         assert episode.synopsis == "The first episode of the series."
@@ -187,7 +182,6 @@ class TestEpisodeOptionalFields:
         from src.domain.media.value_objects import (
             Duration,
             FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
@@ -198,9 +192,7 @@ class TestEpisodeOptionalFields:
             episode_number=1,
             title=Title("Pilot"),
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[_make_file()],
             thumbnail_path=FilePath("/thumbnails/show/s01e01.jpg"),
         )
 
@@ -210,8 +202,6 @@ class TestEpisodeOptionalFields:
         from src.domain.media.entities import Episode
         from src.domain.media.value_objects import (
             Duration,
-            FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
@@ -223,13 +213,91 @@ class TestEpisodeOptionalFields:
             episode_number=1,
             title=Title("Pilot"),
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[_make_file()],
             air_date=air_date,
         )
 
         assert episode.air_date == air_date
+
+
+class TestEpisodeFileManagement:
+    """Tests for Episode file variant management."""
+
+    def test_primary_file_should_return_primary(self):
+        from src.domain.media.entities import Episode
+        from src.domain.media.value_objects import Duration, SeriesId, Title
+
+        episode = Episode(
+            series_id=SeriesId.generate(),
+            season_number=1,
+            episode_number=1,
+            title=Title("Pilot"),
+            duration=Duration(2700),
+            files=[_make_file()],
+        )
+
+        assert episode.primary_file is not None
+        assert episode.primary_file.is_primary is True
+
+    def test_with_file_should_add_new_variant(self):
+        from src.domain.media.entities import Episode
+        from src.domain.media.value_objects import (
+            Duration,
+            FilePath,
+            MediaFile,
+            Resolution,
+            SeriesId,
+            Title,
+        )
+
+        episode = Episode(
+            series_id=SeriesId.generate(),
+            season_number=1,
+            episode_number=1,
+            title=Title("Pilot"),
+            duration=Duration(2700),
+            files=[_make_file()],
+        )
+
+        episode = episode.with_file(
+            MediaFile(
+                file_path=FilePath("/series/show/s01e01_4k.mkv"),
+                file_size=3_000_000_000,
+                resolution=Resolution("4K"),
+            )
+        )
+
+        assert len(episode.files) == 2
+
+    def test_best_file_should_return_highest_resolution(self):
+        from src.domain.media.entities import Episode
+        from src.domain.media.value_objects import (
+            Duration,
+            FilePath,
+            MediaFile,
+            Resolution,
+            SeriesId,
+            Title,
+        )
+
+        episode = Episode(
+            series_id=SeriesId.generate(),
+            season_number=1,
+            episode_number=1,
+            title=Title("Pilot"),
+            duration=Duration(2700),
+            files=[_make_file(resolution=Resolution("720p"))],
+        )
+        episode = episode.with_file(
+            MediaFile(
+                file_path=FilePath("/series/show/s01e01_4k.mkv"),
+                file_size=3_000_000_000,
+                resolution=Resolution("4K"),
+            )
+        )
+
+        assert episode.best_file is not None
+        assert episode.best_file.resolution.name == "4K"
 
 
 class TestEpisodeEquality:
@@ -240,8 +308,6 @@ class TestEpisodeEquality:
         from src.domain.media.value_objects import (
             Duration,
             EpisodeId,
-            FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
@@ -256,9 +322,7 @@ class TestEpisodeEquality:
             episode_number=1,
             title=Title("Pilot"),
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[_make_file()],
         )
 
         episode2 = Episode(
@@ -268,9 +332,7 @@ class TestEpisodeEquality:
             episode_number=1,
             title=Title("Different Title"),
             duration=Duration(3000),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[_make_file()],
         )
 
         assert episode1 == episode2
@@ -280,8 +342,6 @@ class TestEpisodeEquality:
         from src.domain.media.value_objects import (
             Duration,
             EpisodeId,
-            FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
@@ -295,9 +355,7 @@ class TestEpisodeEquality:
             episode_number=1,
             title=Title("Pilot"),
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[_make_file()],
         )
 
         episode2 = Episode(
@@ -307,9 +365,7 @@ class TestEpisodeEquality:
             episode_number=1,
             title=Title("Pilot"),
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[_make_file()],
         )
 
         assert episode1 != episode2
@@ -322,8 +378,6 @@ class TestEpisodeTimestamps:
         from src.domain.media.entities import Episode
         from src.domain.media.value_objects import (
             Duration,
-            FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
@@ -334,21 +388,15 @@ class TestEpisodeTimestamps:
             episode_number=1,
             title=Title("Pilot"),
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
+            files=[_make_file()],
         )
 
         assert episode.created_at is not None
 
-    def test_should_update_timestamp_on_touch(self):
-        from datetime import UTC, datetime
-
+    def test_should_reject_direct_attribute_assignment(self):
         from src.domain.media.entities import Episode
         from src.domain.media.value_objects import (
             Duration,
-            FilePath,
-            Resolution,
             SeriesId,
             Title,
         )
@@ -359,13 +407,8 @@ class TestEpisodeTimestamps:
             episode_number=1,
             title=Title("Pilot"),
             duration=Duration(2700),
-            file_path=FilePath("/series/show/s01e01.mkv"),
-            file_size=1_000_000_000,
-            resolution=Resolution("1080p"),
-            updated_at=datetime(2020, 1, 1, tzinfo=UTC),
+            files=[_make_file()],
         )
 
-        old_updated_at = episode.updated_at
-        episode.touch()
-
-        assert episode.updated_at > old_updated_at
+        with pytest.raises(DomainValidationException):
+            episode.season_number = 2  # type: ignore[misc]

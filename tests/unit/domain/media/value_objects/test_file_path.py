@@ -3,7 +3,7 @@
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestFilePathCreation:
@@ -48,37 +48,37 @@ class TestFilePathCreation:
     def test_should_raise_error_for_relative_path(self):
         from src.domain.media.value_objects import FilePath
 
-        with pytest.raises(DomainValidationError, match="absolute"):
+        with pytest.raises(DomainValidationException, match="absolute"):
             FilePath("movies/inception.mkv")
 
     def test_should_raise_error_for_directory_traversal(self):
         from src.domain.media.value_objects import FilePath
 
-        with pytest.raises(DomainValidationError, match="traversal"):
+        with pytest.raises(DomainValidationException, match="traversal"):
             FilePath("/movies/../etc/passwd")
 
     def test_should_raise_error_for_hidden_directory_traversal(self):
         from src.domain.media.value_objects import FilePath
 
-        with pytest.raises(DomainValidationError, match="traversal"):
+        with pytest.raises(DomainValidationException, match="traversal"):
             FilePath("/movies/subdir/../../etc/passwd")
 
     def test_should_raise_error_for_empty_string(self):
         from src.domain.media.value_objects import FilePath
 
-        with pytest.raises(DomainValidationError, match="cannot be empty"):
+        with pytest.raises(DomainValidationException, match="cannot be empty"):
             FilePath("")
 
     def test_should_raise_error_for_whitespace_only(self):
         from src.domain.media.value_objects import FilePath
 
-        with pytest.raises(DomainValidationError, match="cannot be empty"):
+        with pytest.raises(DomainValidationException, match="cannot be empty"):
             FilePath("   ")
 
     def test_should_raise_error_for_non_string_input(self):
         from src.domain.media.value_objects import FilePath
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             FilePath(123)
 
 
@@ -181,5 +181,5 @@ class TestFilePathImmutability:
 
         file_path = FilePath("/movies/inception.mkv")
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             file_path.root = "/movies/other.mkv"

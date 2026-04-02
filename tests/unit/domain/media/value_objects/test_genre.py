@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domain.shared.models import DomainValidationError
+from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestGenreCreation:
@@ -25,13 +25,13 @@ class TestGenreCreation:
     def test_should_raise_error_for_empty_string(self):
         from src.domain.media.value_objects import Genre
 
-        with pytest.raises(DomainValidationError, match="cannot be empty"):
+        with pytest.raises(DomainValidationException, match="cannot be empty"):
             Genre("")
 
     def test_should_raise_error_for_whitespace_only(self):
         from src.domain.media.value_objects import Genre
 
-        with pytest.raises(DomainValidationError, match="cannot be empty"):
+        with pytest.raises(DomainValidationException, match="cannot be empty"):
             Genre("   ")
 
     def test_should_raise_error_when_exceeds_max_length(self):
@@ -39,7 +39,7 @@ class TestGenreCreation:
 
         long_genre = "A" * 51
 
-        with pytest.raises(DomainValidationError, match="50"):
+        with pytest.raises(DomainValidationException, match="50"):
             Genre(long_genre)
 
     def test_should_accept_genre_at_max_length(self):
@@ -54,7 +54,7 @@ class TestGenreCreation:
     def test_should_raise_error_for_non_string_input(self):
         from src.domain.media.value_objects import Genre
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             Genre(123)
 
 
@@ -121,5 +121,5 @@ class TestGenreImmutability:
 
         genre = Genre("Action")
 
-        with pytest.raises(DomainValidationError):
+        with pytest.raises(DomainValidationException):
             genre.root = "Comedy"
