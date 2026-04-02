@@ -1,11 +1,8 @@
-"""Media Catalog bounded context.
+"""Media Catalog bounded context (re-export for backwards compatibility)."""
 
-This module contains the domain model for media content (movies, series).
-"""
-
-from src.domain.media.entities import Episode, Movie, Season, Series
-from src.domain.media.repositories import MovieRepository, SeriesRepository
-from src.domain.media.value_objects import (
+from src.modules.media.domain.entities import Episode, Movie, Season, Series
+from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
+from src.modules.media.domain.value_objects import (
     Duration,
     EpisodeId,
     FilePath,

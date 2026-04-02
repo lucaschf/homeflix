@@ -1,17 +1,15 @@
-"""Media DTOs for application layer."""
+"""Media DTOs (re-export for backwards compatibility)."""
 
-from src.application.media.dtos.movie_dtos import (
+from src.modules.media.application.dtos import (
+    EpisodeOutput,
     GetMovieByIdInput,
+    GetSeriesByIdInput,
     ListMoviesInput,
     ListMoviesOutput,
-    MovieOutput,
-    MovieSummaryOutput,
-)
-from src.application.media.dtos.series_dtos import (
-    EpisodeOutput,
-    GetSeriesByIdInput,
     ListSeriesInput,
     ListSeriesOutput,
+    MovieOutput,
+    MovieSummaryOutput,
     SeasonOutput,
     SeriesOutput,
     SeriesSummaryOutput,

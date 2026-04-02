@@ -1,5 +1,5 @@
-"""Media domain services."""
+"""Media domain services (re-export for backwards compatibility)."""
 
-from src.domain.media.services.file_selector import FileSelector
+from src.modules.media.domain.services import FileSelector
 
 __all__ = ["FileSelector"]
