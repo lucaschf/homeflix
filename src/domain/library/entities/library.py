@@ -1,5 +1,0 @@
-"""Library entity (re-export for backwards compatibility)."""
-
-from src.modules.library.domain.entities.library import Library
-
-__all__ = ["Library"]

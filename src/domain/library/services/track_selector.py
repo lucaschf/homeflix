@@ -1,5 +1,0 @@
-"""Track selection domain service (re-export for backwards compatibility)."""
-
-from src.modules.library.domain.services.track_selector import TrackSelector
-
-__all__ = ["TrackSelector"]
