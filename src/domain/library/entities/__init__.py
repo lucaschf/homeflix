@@ -1,5 +1,5 @@
-"""Library domain entities."""
+"""Library domain entities (re-export for backwards compatibility)."""
 
-from src.domain.library.entities.library import Library
+from src.modules.library.domain.entities import Library
 
 __all__ = ["Library"]

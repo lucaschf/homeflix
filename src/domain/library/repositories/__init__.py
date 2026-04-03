@@ -1,5 +1,5 @@
-"""Library domain repositories."""
+"""Library domain repositories (re-export for backwards compatibility)."""
 
-from src.domain.library.repositories.library_repository import LibraryRepository
+from src.modules.library.domain.repositories import LibraryRepository
 
 __all__ = ["LibraryRepository"]

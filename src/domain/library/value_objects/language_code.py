@@ -1,5 +1,5 @@
-"""LanguageCode value object — re-exported from shared kernel."""
+"""LanguageCode value object (re-export for backwards compatibility)."""
 
-from src.domain.shared.value_objects.language_code import LanguageCode
+from src.shared_kernel.value_objects.language_code import LanguageCode
 
 __all__ = ["LanguageCode"]

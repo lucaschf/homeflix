@@ -1,4 +1,4 @@
-"""Library entity (re-export for backwards compatibility)."""
+"""Library domain entities."""
 
 from src.modules.library.domain.entities.library import Library
 
