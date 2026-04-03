@@ -4,8 +4,8 @@ Contains database initialization and the Base ORM model
 used by all module-specific ORM models.
 """
 
-from src.config.persistence.base import Base
-from src.config.persistence.database import Database
+from .base import Base
+from .database import Database
 
 __all__ = [
     "Base",

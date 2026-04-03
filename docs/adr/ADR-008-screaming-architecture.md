@@ -123,7 +123,10 @@ from src.modules.library.domain.entities import Library                # dentro 
 from src.config.containers import ApplicationContainer                 # dentro de modules/media/
 ```
 
-`config/` é o **composition root** — o único lugar que conhece módulos e infra simultaneamente para montar o grafo de dependências.
+`config/` tem dois papéis distintos:
+
+- **`config/containers/`** é o **composition root** — o único lugar que conhece módulos e monta o grafo de dependências. Módulos nunca importam de containers.
+- **`config/persistence/`** é **infraestrutura compartilhada** (Base, Database) — módulos podem importar livremente, assim como importam de `building_blocks` ou `shared_kernel`.
 
 ## Consequências
 
