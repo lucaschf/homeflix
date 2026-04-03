@@ -1,5 +1,0 @@
-"""Library repository interface (re-export for backwards compatibility)."""
-
-from src.modules.library.domain.repositories.library_repository import LibraryRepository
-
-__all__ = ["LibraryRepository"]
