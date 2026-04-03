@@ -5,10 +5,10 @@ from collections.abc import AsyncGenerator
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.infrastructure.persistence.models import Base
+from src.config.persistence import Base
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="function")  # type: ignore[misc]
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Create an in-memory SQLite database session for testing.
 
