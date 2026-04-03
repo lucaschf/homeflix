@@ -1,5 +1,5 @@
-"""Library domain services."""
+"""Library domain services (re-export for backwards compatibility)."""
 
-from src.domain.library.services.track_selector import TrackSelector
+from src.modules.library.domain.services import TrackSelector
 
 __all__ = ["TrackSelector"]

@@ -1,4 +1,4 @@
-"""Library repository interface (re-export for backwards compatibility)."""
+"""Library domain repository interfaces."""
 
 from src.modules.library.domain.repositories.library_repository import LibraryRepository
 

@@ -1,5 +1,5 @@
-"""Audio and subtitle track value objects — re-exported from media context."""
+"""Audio and subtitle track value objects (re-export for backwards compatibility)."""
 
-from src.domain.media.value_objects.tracks import AudioTrack, SubtitleTrack
+from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 __all__ = ["AudioTrack", "SubtitleTrack"]
