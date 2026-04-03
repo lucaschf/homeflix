@@ -3,7 +3,7 @@
 from sqlalchemy import BigInteger, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.infrastructure.persistence.models.base import Base
+from src.config.persistence.base import Base
 
 
 class MovieModel(Base):

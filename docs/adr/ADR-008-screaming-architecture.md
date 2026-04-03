@@ -75,15 +75,12 @@ src/
 │       ├── infrastructure/
 │       └── presentation/
 │
-├── infrastructure/               # Infra compartilhada cross-module
-│   └── persistence/
-│       ├── database.py
-│       └── models/
-│           └── base.py           # SQLAlchemy Base
-│
 ├── config/
 │   ├── settings.py
 │   ├── logging.py
+│   ├── persistence/              # Shared persistence (database + Base model)
+│   │   ├── database.py
+│   │   └── base.py               # SQLAlchemy Base
 │   └── containers/
 │       ├── main.py               # ApplicationContainer
 │       ├── infrastructure.py     # InfrastructureContainer
@@ -101,23 +98,20 @@ src/
 4. **Cada módulo tem as 4 camadas** — domain, application, infrastructure, presentation
 5. **Regra de dependência** — `modules → shared_kernel → building_blocks`
 
-### Infrastructure: top-level vs module-level
+### Persistence compartilhada
 
-| Camada | Localização | Responsabilidade |
-|--------|-------------|------------------|
-| **Shared** | `src/infrastructure/` | Recursos cross-module: `database.py` (engine, session factory), `models/base.py` (SQLAlchemy Base com soft delete, timestamps) |
-| **Module** | `src/modules/<ctx>/infrastructure/` | Implementações específicas do módulo: ORM models, repository implementations, mappers, API clients |
+`config/persistence/` contém `database.py` (engine, session factory) e `base.py` (SQLAlchemy Base com soft delete, timestamps). Esses recursos são usados por todos os módulos que têm persistência. Ficam em `config/` porque são configuração de infraestrutura — não são domínio nem pertencem a um módulo específico. Isso elimina a necessidade de um `src/infrastructure/` top-level, mantendo o top-level do `src/` focado em domínio.
 
-A regra é simples: se **todos** os módulos precisam (Base, Database), fica em `src/infrastructure/`. Se é **específico** de um módulo (MovieModel, SQLAlchemyMovieRepository), fica em `modules/<ctx>/infrastructure/`. Module infrastructure importa de shared infrastructure (e.g., `from src.infrastructure.persistence.models.base import Base`), mas nunca o contrário.
+Implementações concretas (ORM models, repository implementations, mappers) ficam em `modules/<ctx>/infrastructure/`.
 
 ### Imports permitidos e proibidos
 
 ```python
-# ✅ Permitido — módulo importa de building_blocks, shared_kernel, e sua própria infra
+# ✅ Permitido — módulo importa de building_blocks, shared_kernel, config/persistence
 from src.building_blocks.domain.entity import AggregateRoot
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.modules.media.domain.entities import Movie                    # dentro do próprio módulo
-from src.infrastructure.persistence.models.base import Base            # shared infra
+from src.config.persistence.base import Base                           # shared persistence
 
 # ✅ Permitido — config/containers importa de módulos (é o composition root)
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemyMovieRepository
@@ -125,14 +119,14 @@ from src.modules.media.infrastructure.persistence.repositories import SQLAlchemy
 # ❌ Proibido — módulo importa de outro módulo
 from src.modules.library.domain.entities import Library                # dentro de modules/media/
 
-# ❌ Proibido — módulo importa de config (inversão de dependência)
+# ❌ Proibido — módulo importa de config/containers (inversão de dependência)
 from src.config.containers import ApplicationContainer                 # dentro de modules/media/
-
-# ❌ Proibido — shared infra importa de módulo
-from src.modules.media.infrastructure.persistence.models import MovieModel  # dentro de src/infrastructure/
 ```
 
-`config/containers/` é o **composition root** — o único lugar que conhece módulos e infra simultaneamente para montar o grafo de dependências.
+`config/` tem dois papéis distintos:
+
+- **`config/containers/`** é o **composition root** — o único lugar que conhece módulos e monta o grafo de dependências. Módulos nunca importam de containers.
+- **`config/persistence/`** é **infraestrutura compartilhada** (Base, Database) — módulos podem importar livremente, assim como importam de `building_blocks` ou `shared_kernel`.
 
 ## Consequências
 

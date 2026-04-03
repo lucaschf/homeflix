@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.infrastructure.persistence.database import Database
-from src.infrastructure.persistence.models import Base
+from src.config.persistence import Base
+from src.config.persistence.database import Database
 
 
 @pytest.mark.integration

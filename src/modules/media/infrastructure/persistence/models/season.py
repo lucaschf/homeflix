@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Date, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.infrastructure.persistence.models.base import Base
+from src.config.persistence.base import Base
 
 if TYPE_CHECKING:
     from src.modules.media.infrastructure.persistence.models.episode import EpisodeModel
