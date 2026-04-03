@@ -101,6 +101,39 @@ src/
 4. **Cada módulo tem as 4 camadas** — domain, application, infrastructure, presentation
 5. **Regra de dependência** — `modules → shared_kernel → building_blocks`
 
+### Infrastructure: top-level vs module-level
+
+| Camada | Localização | Responsabilidade |
+|--------|-------------|------------------|
+| **Shared** | `src/infrastructure/` | Recursos cross-module: `database.py` (engine, session factory), `models/base.py` (SQLAlchemy Base com soft delete, timestamps) |
+| **Module** | `src/modules/<ctx>/infrastructure/` | Implementações específicas do módulo: ORM models, repository implementations, mappers, API clients |
+
+A regra é simples: se **todos** os módulos precisam (Base, Database), fica em `src/infrastructure/`. Se é **específico** de um módulo (MovieModel, SQLAlchemyMovieRepository), fica em `modules/<ctx>/infrastructure/`. Module infrastructure importa de shared infrastructure (e.g., `from src.infrastructure.persistence.models.base import Base`), mas nunca o contrário.
+
+### Imports permitidos e proibidos
+
+```python
+# ✅ Permitido — módulo importa de building_blocks, shared_kernel, e sua própria infra
+from src.building_blocks.domain.entity import AggregateRoot
+from src.shared_kernel.value_objects.file_path import FilePath
+from src.modules.media.domain.entities import Movie                    # dentro do próprio módulo
+from src.infrastructure.persistence.models.base import Base            # shared infra
+
+# ✅ Permitido — config/containers importa de módulos (é o composition root)
+from src.modules.media.infrastructure.persistence.repositories import SQLAlchemyMovieRepository
+
+# ❌ Proibido — módulo importa de outro módulo
+from src.modules.library.domain.entities import Library                # dentro de modules/media/
+
+# ❌ Proibido — módulo importa de config (inversão de dependência)
+from src.config.containers import ApplicationContainer                 # dentro de modules/media/
+
+# ❌ Proibido — shared infra importa de módulo
+from src.modules.media.infrastructure.persistence.models import MovieModel  # dentro de src/infrastructure/
+```
+
+`config/containers/` é o **composition root** — o único lugar que conhece módulos e infra simultaneamente para montar o grafo de dependências.
+
 ## Consequências
 
 ### Positivas
