@@ -1,13 +1,7 @@
-"""SQLAlchemy repository implementations.
+"""SQLAlchemy repository implementations (re-export for backwards compatibility)."""
 
-These repositories implement the domain repository interfaces,
-providing concrete database operations.
-"""
-
-from src.infrastructure.persistence.repositories.movie_repository import (
+from src.modules.media.infrastructure.persistence.repositories import (
     SQLAlchemyMovieRepository,
-)
-from src.infrastructure.persistence.repositories.series_repository import (
     SQLAlchemySeriesRepository,
 )
 

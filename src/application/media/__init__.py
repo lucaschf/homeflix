@@ -1,6 +1,6 @@
-"""Media application layer - use cases and DTOs."""
+"""Media application layer (re-export for backwards compatibility)."""
 
-from src.application.media.dtos import (
+from src.modules.media.application.dtos import (
     EpisodeOutput,
     GetMovieByIdInput,
     GetSeriesByIdInput,
@@ -14,7 +14,7 @@ from src.application.media.dtos import (
     SeriesOutput,
     SeriesSummaryOutput,
 )
-from src.application.media.use_cases import (
+from src.modules.media.application.use_cases import (
     GetMovieByIdUseCase,
     GetSeriesByIdUseCase,
     ListMoviesUseCase,

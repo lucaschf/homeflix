@@ -1,6 +1,6 @@
-"""Application layer exceptions."""
+"""Application layer exceptions (re-export for backwards compatibility)."""
 
-from src.application.shared.exceptions.application import (
+from src.building_blocks.application.errors import (
     ApplicationException,
     ForbiddenOperationException,
     ResourceNotFoundException,

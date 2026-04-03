@@ -1,0 +1,1 @@
+"""Media catalog bounded context."""

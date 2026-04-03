@@ -1,5 +1,5 @@
-"""FilePath value object — re-exported from shared kernel."""
+"""FilePath value object (re-export for backwards compatibility)."""
 
-from src.domain.shared.value_objects.file_path import FilePath
+from src.shared_kernel.value_objects.file_path import FilePath
 
 __all__ = ["FilePath"]
