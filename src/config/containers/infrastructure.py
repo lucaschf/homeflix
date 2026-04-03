@@ -9,7 +9,7 @@ from dependency_injector import containers, providers
 from src.config.settings import Settings
 
 
-class InfrastructureContainer(containers.DeclarativeContainer):
+class InfrastructureContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     """Container for infrastructure dependencies.
 
     Includes:
