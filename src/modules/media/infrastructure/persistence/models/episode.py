@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.config.persistence.base import Base
 
 if TYPE_CHECKING:
+    from src.modules.media.infrastructure.persistence.models.media_file import MediaFileModel
     from src.modules.media.infrastructure.persistence.models.season import SeasonModel
 
 
@@ -79,6 +80,11 @@ class EpisodeModel(Base):
     air_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # Relationships
+    file_variants: Mapped[list["MediaFileModel"]] = relationship(
+        "MediaFileModel",
+        back_populates="episode",
+        cascade="all, delete-orphan",
+    )
     season: Mapped["SeasonModel"] = relationship(
         "SeasonModel",
         back_populates="episodes",

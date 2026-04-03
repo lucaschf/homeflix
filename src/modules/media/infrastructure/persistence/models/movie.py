@@ -1,9 +1,14 @@
 """Movie ORM model."""
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import BigInteger, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.config.persistence.base import Base
+
+if TYPE_CHECKING:
+    from src.modules.media.infrastructure.persistence.models.media_file import MediaFileModel
 
 
 class MovieModel(Base):
@@ -54,6 +59,13 @@ class MovieModel(Base):
     # External IDs for metadata enrichment
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+
+    # Relationships
+    file_variants: Mapped[list["MediaFileModel"]] = relationship(
+        "MediaFileModel",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         """Return string representation."""
