@@ -1,6 +1,6 @@
 """Library bounded context dependency container.
 
-Provides repositories and services for the Library module.
+Provides services for the Library module.
 """
 
 from dependency_injector import containers, providers
@@ -13,15 +13,10 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     Provides:
     - Domain services
-    - Repository implementations (when infrastructure is added)
 
-    Example:
-        >>> container = LibraryContainer()
-        >>> selector = container.track_selector()
+    A ``session`` dependency will be added here when library
+    persistence is implemented, wired from InfrastructureContainer.
     """
-
-    # Database session provided by parent container (for future use)
-    session = providers.Dependency(default=None)
 
     # =========================================================================
     # Domain Services

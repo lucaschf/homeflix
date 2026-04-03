@@ -24,12 +24,15 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     - Repository implementations (SQLAlchemy)
     - Use cases for movie and series operations
 
+    The ``session`` dependency must be wired from the parent container
+    once the database provider is added to InfrastructureContainer.
+
     Example:
         >>> container = MediaContainer(session=session_provider)
         >>> use_case = container.get_movie_by_id()
     """
 
-    # Database session provided by parent container
+    # Must be wired from InfrastructureContainer.session
     session = providers.Dependency()
 
     # =========================================================================
