@@ -4,12 +4,13 @@ from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
 from src.modules.media.domain.value_objects import FilePath, MovieId
 from src.modules.media.infrastructure.persistence.mappers import MovieMapper
-from src.modules.media.infrastructure.persistence.models import MovieModel
+from src.modules.media.infrastructure.persistence.models import MediaFileModel, MovieModel
 
 
 class SQLAlchemyMovieRepository(MovieRepository):
@@ -39,9 +40,13 @@ class SQLAlchemyMovieRepository(MovieRepository):
         Returns:
             The Movie if found, None otherwise.
         """
-        stmt = select(MovieModel).where(
-            MovieModel.external_id == str(movie_id),
-            MovieModel.deleted_at.is_(None),
+        stmt = (
+            select(MovieModel)
+            .where(
+                MovieModel.external_id == str(movie_id),
+                MovieModel.deleted_at.is_(None),
+            )
+            .options(selectinload(MovieModel.file_variants))
         )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
@@ -60,7 +65,11 @@ class SQLAlchemyMovieRepository(MovieRepository):
         movie = movie.with_updates(id=MovieId.generate_if_absent(movie.id))
 
         # Check if the movie already exists (including soft-deleted for restore)
-        stmt = select(MovieModel).where(MovieModel.external_id == str(movie.id))
+        stmt = (
+            select(MovieModel)
+            .where(MovieModel.external_id == str(movie.id))
+            .options(selectinload(MovieModel.file_variants))
+        )
         result = await self._session.execute(stmt)
         existing_model = result.scalar_one_or_none()
 
@@ -72,16 +81,17 @@ class SQLAlchemyMovieRepository(MovieRepository):
             # Update existing
             MovieMapper.update_model(existing_model, movie)
             await self._session.flush()
-            await self._session.refresh(existing_model)
-            return MovieMapper.to_entity(existing_model)
+        else:
+            # Create new
+            model = MovieMapper.to_model(movie)
+            self._session.add(model)
+            await self._session.flush()
 
-        # Create new
-        model = MovieMapper.to_model(movie)
-        self._session.add(model)
-        await self._session.flush()
-        await self._session.refresh(model)
-
-        return MovieMapper.to_entity(model)
+        # Reload with relationships to return a complete entity
+        assert movie.id is not None
+        result_entity = await self.find_by_id(movie.id)
+        assert result_entity is not None
+        return result_entity
 
     async def delete(self, movie_id: MovieId) -> bool:
         """Soft delete a movie by ID.
@@ -112,14 +122,19 @@ class SQLAlchemyMovieRepository(MovieRepository):
         Returns:
             Sequence of all movies ordered by title.
         """
-        stmt = select(MovieModel).where(MovieModel.deleted_at.is_(None)).order_by(MovieModel.title)
+        stmt = (
+            select(MovieModel)
+            .where(MovieModel.deleted_at.is_(None))
+            .options(selectinload(MovieModel.file_variants))
+            .order_by(MovieModel.title)
+        )
         result = await self._session.execute(stmt)
         models = result.scalars().all()
 
         return [MovieMapper.to_entity(model) for model in models]
 
     async def find_by_file_path(self, file_path: FilePath) -> Movie | None:
-        """Find a movie by its file path (excluding soft-deleted).
+        """Find a movie by any of its file variant paths.
 
         Args:
             file_path: The absolute file path.
@@ -127,9 +142,30 @@ class SQLAlchemyMovieRepository(MovieRepository):
         Returns:
             The Movie if found, None otherwise.
         """
-        stmt = select(MovieModel).where(
-            MovieModel.file_path == str(file_path),
-            MovieModel.deleted_at.is_(None),
+        # Search in file_variants table
+        stmt = (
+            select(MovieModel)
+            .join(MediaFileModel, MediaFileModel.movie_id == MovieModel.id)
+            .where(
+                MediaFileModel.file_path == str(file_path),
+                MovieModel.deleted_at.is_(None),
+            )
+            .options(selectinload(MovieModel.file_variants))
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+
+        if model is not None:
+            return MovieMapper.to_entity(model)
+
+        # Fallback to flat column for backward compatibility
+        stmt = (
+            select(MovieModel)
+            .where(
+                MovieModel.file_path == str(file_path),
+                MovieModel.deleted_at.is_(None),
+            )
+            .options(selectinload(MovieModel.file_variants))
         )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()

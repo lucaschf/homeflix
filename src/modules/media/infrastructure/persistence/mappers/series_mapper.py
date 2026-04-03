@@ -13,8 +13,12 @@ from src.modules.media.domain.value_objects import (
     Title,
     Year,
 )
+from src.modules.media.infrastructure.persistence.mappers.media_file_mapper import (
+    MediaFileMapper,
+)
 from src.modules.media.infrastructure.persistence.models import (
     EpisodeModel,
+    MediaFileModel,
     SeasonModel,
     SeriesModel,
 )
@@ -26,6 +30,9 @@ class EpisodeMapper:
     @staticmethod
     def to_model(entity: Episode, season_id: int) -> EpisodeModel:
         """Convert Episode entity to EpisodeModel.
+
+        Creates MediaFileModel instances for each file variant and
+        attaches them via the file_variants relationship.
 
         Args:
             entity: The domain Episode entity.
@@ -41,7 +48,7 @@ class EpisodeMapper:
             raise ValueError("Cannot map entity without ID to model")
 
         primary = entity.primary_file
-        return EpisodeModel(
+        model = EpisodeModel(
             external_id=str(entity.id),
             season_id=season_id,
             series_external_id=str(entity.series_id),
@@ -57,9 +64,17 @@ class EpisodeMapper:
             air_date=entity.air_date,
         )
 
+        for file in entity.files:
+            model.file_variants.append(MediaFileMapper.to_model(file))
+
+        return model
+
     @staticmethod
     def to_entity(model: EpisodeModel) -> Episode:
         """Convert EpisodeModel to Episode entity.
+
+        Uses the file_variants relationship if loaded, otherwise
+        falls back to flat columns for backward compatibility.
 
         Args:
             model: The SQLAlchemy EpisodeModel.
@@ -68,7 +83,11 @@ class EpisodeMapper:
             Domain Episode entity with reconstructed value objects.
         """
         files: list[MediaFile] = []
-        if model.file_path:
+        if model.file_variants:
+            files = [
+                MediaFileMapper.to_entity(fv) for fv in model.file_variants if not fv.is_deleted
+            ]
+        elif model.file_path:
             files = [
                 MediaFile(
                     file_path=FilePath(model.file_path),
@@ -97,6 +116,8 @@ class EpisodeMapper:
     def update_model(model: EpisodeModel, entity: Episode) -> EpisodeModel:
         """Update existing EpisodeModel with entity data.
 
+        Synchronizes file_variants with entity files.
+
         Args:
             model: The existing SQLAlchemy EpisodeModel.
             entity: The domain Episode entity with updated data.
@@ -115,6 +136,8 @@ class EpisodeMapper:
         model.resolution = primary.resolution.value if primary else None
         model.thumbnail_path = entity.thumbnail_path.value if entity.thumbnail_path else None
         model.air_date = entity.air_date
+
+        _sync_episode_file_variants(model.file_variants, entity.files)
 
         return model
 
@@ -292,6 +315,31 @@ class SeriesMapper:
         model.imdb_id = entity.imdb_id
 
         return model
+
+
+def _sync_episode_file_variants(
+    existing_models: list[MediaFileModel],
+    entity_files: list[MediaFile],
+) -> None:
+    """Synchronize ORM file_variants list with entity files.
+
+    Args:
+        existing_models: The ORM relationship list (mutable).
+        entity_files: The domain MediaFile list (source of truth).
+    """
+    existing_by_path = {m.file_path: m for m in existing_models}
+    entity_paths = {f.file_path.value for f in entity_files}
+
+    for file in entity_files:
+        path = file.file_path.value
+        if path in existing_by_path:
+            MediaFileMapper.update_model(existing_by_path[path], file)
+        else:
+            existing_models.append(MediaFileMapper.to_model(file))
+
+    to_remove = [m for m in existing_models if m.file_path not in entity_paths]
+    for m in to_remove:
+        existing_models.remove(m)
 
 
 __all__ = ["EpisodeMapper", "SeasonMapper", "SeriesMapper"]

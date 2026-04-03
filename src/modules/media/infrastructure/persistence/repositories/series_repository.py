@@ -1,6 +1,7 @@
 """SQLAlchemy implementation of SeriesRepository."""
 
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ from src.modules.media.infrastructure.persistence.mappers import (
 )
 from src.modules.media.infrastructure.persistence.models import (
     EpisodeModel,
+    MediaFileModel,
     SeasonModel,
     SeriesModel,
 )
@@ -40,6 +42,15 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         """
         self._session = session
 
+    @staticmethod
+    def _series_load_options() -> list[Any]:
+        """Return common eager-loading options for series queries."""
+        return [
+            selectinload(SeriesModel.seasons)
+            .selectinload(SeasonModel.episodes)
+            .selectinload(EpisodeModel.file_variants),
+        ]
+
     async def find_by_id(self, series_id: SeriesId) -> Series | None:
         """Find a series by its ID (includes seasons and episodes).
 
@@ -55,9 +66,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 SeriesModel.external_id == str(series_id),
                 SeriesModel.deleted_at.is_(None),
             )
-            .options(
-                selectinload(SeriesModel.seasons).selectinload(SeasonModel.episodes),
-            )
+            .options(*self._series_load_options())
             .execution_options(populate_existing=True)
         )
         result = await self._session.execute(stmt)
@@ -81,9 +90,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         stmt = (
             select(SeriesModel)
             .where(SeriesModel.external_id == str(series.id))
-            .options(
-                selectinload(SeriesModel.seasons).selectinload(SeasonModel.episodes),
-            )
+            .options(*self._series_load_options())
             .execution_options(populate_existing=True)
         )
         result = await self._session.execute(stmt)
@@ -146,9 +153,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         stmt = (
             select(SeriesModel)
             .where(SeriesModel.deleted_at.is_(None))
-            .options(
-                selectinload(SeriesModel.seasons).selectinload(SeasonModel.episodes),
-            )
+            .options(*self._series_load_options())
             .order_by(SeriesModel.title)
         )
         result = await self._session.execute(stmt)
@@ -156,8 +161,32 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         return [SeriesMapper.to_entity(model) for model in models]
 
+    async def find_by_episode_id(self, episode_id: EpisodeId) -> Series | None:
+        """Find a series containing an episode with this ID.
+
+        Args:
+            episode_id: The episode's external ID.
+
+        Returns:
+            The Series if found, None otherwise.
+        """
+        stmt = select(EpisodeModel).where(
+            EpisodeModel.external_id == str(episode_id),
+            EpisodeModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        episode_model = result.scalar_one_or_none()
+
+        if episode_model is None:
+            return None
+
+        return await self.find_by_id(SeriesId(episode_model.series_external_id))
+
     async def find_by_file_path(self, file_path: FilePath) -> Series | None:
-        """Find a series containing an episode with this file path (excluding soft-deleted).
+        """Find a series containing an episode with this file path.
+
+        Searches both the file_variants table and the flat column
+        for backward compatibility.
 
         Args:
             file_path: The absolute file path.
@@ -165,13 +194,26 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         Returns:
             The Series if found, None otherwise.
         """
-        # Find episode with this file path (not soft-deleted)
-        episode_stmt = select(EpisodeModel).where(
-            EpisodeModel.file_path == str(file_path),
-            EpisodeModel.deleted_at.is_(None),
+        # Search in file_variants table
+        stmt = (
+            select(EpisodeModel)
+            .join(MediaFileModel, MediaFileModel.episode_id == EpisodeModel.id)
+            .where(
+                MediaFileModel.file_path == str(file_path),
+                EpisodeModel.deleted_at.is_(None),
+            )
         )
-        episode_result = await self._session.execute(episode_stmt)
-        episode_model = episode_result.scalar_one_or_none()
+        result = await self._session.execute(stmt)
+        episode_model = result.scalar_one_or_none()
+
+        if episode_model is None:
+            # Fallback to flat column
+            stmt = select(EpisodeModel).where(
+                EpisodeModel.file_path == str(file_path),
+                EpisodeModel.deleted_at.is_(None),
+            )
+            result = await self._session.execute(stmt)
+            episode_model = result.scalar_one_or_none()
 
         if episode_model is None:
             return None

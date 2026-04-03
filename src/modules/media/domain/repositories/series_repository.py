@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from src.modules.media.domain.entities.series import Series
-from src.modules.media.domain.value_objects import FilePath, SeriesId
+from src.modules.media.domain.value_objects import EpisodeId, FilePath, SeriesId
 
 
 class SeriesRepository(ABC):
@@ -56,6 +56,18 @@ class SeriesRepository(ABC):
 
         Returns:
             Sequence of all series.
+        """
+        ...
+
+    @abstractmethod
+    async def find_by_episode_id(self, episode_id: EpisodeId) -> Series | None:
+        """Find a series containing an episode with this ID.
+
+        Args:
+            episode_id: The episode's external ID.
+
+        Returns:
+            The Series if found, None otherwise.
         """
         ...
 
