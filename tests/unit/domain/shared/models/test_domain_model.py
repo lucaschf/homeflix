@@ -4,8 +4,8 @@ from typing import ClassVar
 
 import pytest
 
-from src.domain.shared.exceptions.domain import DomainValidationException
-from src.domain.shared.models import DomainModel
+from src.building_blocks.domain.errors import DomainValidationException
+from src.building_blocks.domain.models import DomainModel
 
 
 class SampleModel(DomainModel):
@@ -30,11 +30,11 @@ class TestDomainModelCreation:
 
     def test_should_raise_domain_validation_error_for_missing_required_field(self):
         with pytest.raises(DomainValidationException):
-            SampleModel(name="John")
+            SampleModel(name="John")  # type: ignore[call-arg]
 
     def test_should_forbid_extra_attributes(self):
         with pytest.raises(DomainValidationException):
-            SampleModel(name="John", age=30, extra="not_allowed")
+            SampleModel(name="John", age=30, extra="not_allowed")  # type: ignore[call-arg]
 
 
 class TestDomainModelValidation:
@@ -68,7 +68,7 @@ class TestDomainModelAssignment:
         model = SampleModel(name="John", age=30)
 
         with pytest.raises(DomainValidationException):
-            model.age = "invalid"
+            model.age = "invalid"  # type: ignore[assignment]
 
     def test_should_allow_valid_assignment(self):
         model = SampleModel(name="John", age=30)
@@ -113,7 +113,7 @@ class TestDomainModelConfigValidation:
         with pytest.raises(TypeError, match="extra='forbid'"):
             # This class definition should fail because extra="allow" is not permitted
             class InvalidExtraModel(DomainModel):
-                model_config: ClassVar[dict[str, object]] = {
+                model_config: ClassVar[dict[str, object]] = {  # type: ignore[assignment]
                     "extra": "allow",
                     "validate_assignment": True,
                 }
@@ -123,7 +123,7 @@ class TestDomainModelConfigValidation:
         with pytest.raises(TypeError, match="validate_assignment=True"):
 
             class InvalidValidationModel(DomainModel):
-                model_config: ClassVar[dict[str, object]] = {
+                model_config: ClassVar[dict[str, object]] = {  # type: ignore[assignment]
                     "extra": "forbid",
                     "validate_assignment": False,
                 }

@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domain.shared.exceptions.domain import (
+from src.building_blocks.domain.errors import (
     BusinessRuleViolationException,
     DomainValidationException,
 )
@@ -12,8 +12,8 @@ class TestSeriesCreation:
     """Tests for Series instantiation."""
 
     def test_should_create_with_required_fields(self):
-        from src.domain.media.entities import Series
-        from src.domain.media.value_objects import Title, Year
+        from src.modules.media.domain.entities import Series
+        from src.modules.media.domain.value_objects import Title, Year
 
         series = Series(
             title=Title("Breaking Bad"),
@@ -27,8 +27,8 @@ class TestSeriesCreation:
         assert series.is_ongoing is True
 
     def test_should_create_via_factory_with_auto_id(self):
-        from src.domain.media.entities import Series
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Series
+        from src.modules.media.domain.value_objects import SeriesId
 
         series = Series.create(
             title="Breaking Bad",
@@ -40,8 +40,8 @@ class TestSeriesCreation:
         assert series.id.prefix == "ser"
 
     def test_should_create_with_end_year(self):
-        from src.domain.media.entities import Series
-        from src.domain.media.value_objects import Title, Year
+        from src.modules.media.domain.entities import Series
+        from src.modules.media.domain.value_objects import Title, Year
 
         series = Series(
             title=Title("Breaking Bad"),
@@ -54,8 +54,8 @@ class TestSeriesCreation:
         assert series.is_ongoing is False
 
     def test_should_raise_error_when_end_year_before_start_year(self):
-        from src.domain.media.entities import Series
-        from src.domain.media.value_objects import Title, Year
+        from src.modules.media.domain.entities import Series
+        from src.modules.media.domain.value_objects import Title, Year
 
         with pytest.raises(DomainValidationException, match="end_year"):
             Series(
@@ -69,22 +69,22 @@ class TestSeriesSeasonManagement:
     """Tests for Series season management."""
 
     def test_season_count_should_return_zero_when_empty(self):
-        from src.domain.media.entities import Series
+        from src.modules.media.domain.entities import Series
 
         series = Series.create(title="Breaking Bad", start_year=2008)
 
         assert series.season_count == 0
 
     def test_total_episodes_should_return_zero_when_empty(self):
-        from src.domain.media.entities import Series
+        from src.modules.media.domain.entities import Series
 
         series = Series.create(title="Breaking Bad", start_year=2008)
 
         assert series.total_episodes == 0
 
     def test_should_add_season(self):
-        from src.domain.media.entities import Season, Series
-        from src.domain.media.value_objects import SeasonId
+        from src.modules.media.domain.entities import Season, Series
+        from src.modules.media.domain.value_objects import SeasonId
 
         series = Series.create(title="Breaking Bad", start_year=2008)
 
@@ -99,8 +99,8 @@ class TestSeriesSeasonManagement:
         assert series.season_count == 1
 
     def test_should_raise_error_when_adding_season_with_wrong_series_id(self):
-        from src.domain.media.entities import Season, Series
-        from src.domain.media.value_objects import SeasonId, SeriesId
+        from src.modules.media.domain.entities import Season, Series
+        from src.modules.media.domain.value_objects import SeasonId, SeriesId
 
         series = Series.create(title="Breaking Bad", start_year=2008)
 
@@ -114,8 +114,8 @@ class TestSeriesSeasonManagement:
             series.with_season(season)
 
     def test_should_get_season_by_number(self):
-        from src.domain.media.entities import Season, Series
-        from src.domain.media.value_objects import SeasonId
+        from src.modules.media.domain.entities import Season, Series
+        from src.modules.media.domain.value_objects import SeasonId
 
         series = Series.create(title="Breaking Bad", start_year=2008)
 
@@ -131,7 +131,7 @@ class TestSeriesSeasonManagement:
         assert found == season
 
     def test_should_return_none_when_season_not_found(self):
-        from src.domain.media.entities import Series
+        from src.modules.media.domain.entities import Series
 
         series = Series.create(title="Breaking Bad", start_year=2008)
 
@@ -143,8 +143,8 @@ class TestSeriesEquality:
     """Tests for Series equality based on ID."""
 
     def test_should_be_equal_when_same_id(self):
-        from src.domain.media.entities import Series
-        from src.domain.media.value_objects import SeriesId, Title, Year
+        from src.modules.media.domain.entities import Series
+        from src.modules.media.domain.value_objects import SeriesId, Title, Year
 
         series_id = SeriesId.generate()
 
@@ -167,7 +167,7 @@ class TestSeriesEvents:
     """Tests for Series domain events."""
 
     def test_should_add_and_pull_events(self):
-        from src.domain.media.entities import Series
+        from src.modules.media.domain.entities import Series
 
         series = Series.create(title="Breaking Bad", start_year=2008)
 
@@ -185,7 +185,7 @@ class TestSeriesImmutability:
     """Tests for Series frozen (immutable) behavior."""
 
     def test_should_reject_direct_attribute_assignment(self):
-        from src.domain.media.entities import Series
+        from src.modules.media.domain.entities import Series
 
         series = Series.create(title="Breaking Bad", start_year=2008)
 
@@ -193,8 +193,8 @@ class TestSeriesImmutability:
             series.start_year = 2020  # type: ignore[assignment, misc]
 
     def test_with_season_should_return_new_instance(self):
-        from src.domain.media.entities import Season, Series
-        from src.domain.media.value_objects import SeasonId
+        from src.modules.media.domain.entities import Season, Series
+        from src.modules.media.domain.value_objects import SeasonId
 
         series = Series.create(title="Breaking Bad", start_year=2008)
         season = Season(
@@ -210,8 +210,8 @@ class TestSeriesImmutability:
         assert series.season_count == 0
 
     def test_with_season_should_preserve_identity(self):
-        from src.domain.media.entities import Season, Series
-        from src.domain.media.value_objects import SeasonId
+        from src.modules.media.domain.entities import Season, Series
+        from src.modules.media.domain.value_objects import SeasonId
 
         series = Series.create(title="Breaking Bad", start_year=2008)
         season = Season(
@@ -225,8 +225,8 @@ class TestSeriesImmutability:
         assert updated == series  # same id
 
     def test_with_season_duplicate_should_return_self(self):
-        from src.domain.media.entities import Season, Series
-        from src.domain.media.value_objects import SeasonId
+        from src.modules.media.domain.entities import Season, Series
+        from src.modules.media.domain.value_objects import SeasonId
 
         series = Series.create(title="Breaking Bad", start_year=2008)
         season = Season(

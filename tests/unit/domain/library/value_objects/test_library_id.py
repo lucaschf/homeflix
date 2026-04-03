@@ -2,9 +2,9 @@
 
 import pytest
 
-from src.domain.library.value_objects.library_id import LibraryId
-from src.domain.shared.exceptions.domain import DomainValidationException
-from src.domain.shared.models.external_id import RANDOM_PART_LENGTH
+from src.building_blocks.domain.errors import DomainValidationException
+from src.building_blocks.domain.external_id import RANDOM_PART_LENGTH
+from src.modules.library.domain.value_objects.library_id import LibraryId
 
 
 class TestLibraryIdCreation:

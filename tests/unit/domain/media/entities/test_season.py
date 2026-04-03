@@ -4,8 +4,12 @@ from datetime import date
 
 import pytest
 
-from src.domain.media.entities import Episode
-from src.domain.media.value_objects import (
+from src.building_blocks.domain.errors import (
+    BusinessRuleViolationException,
+    DomainValidationException,
+)
+from src.modules.media.domain.entities import Episode
+from src.modules.media.domain.value_objects import (
     Duration,
     EpisodeId,
     FilePath,
@@ -13,10 +17,6 @@ from src.domain.media.value_objects import (
     Resolution,
     SeriesId,
     Title,
-)
-from src.domain.shared.exceptions.domain import (
-    BusinessRuleViolationException,
-    DomainValidationException,
 )
 
 
@@ -49,8 +49,8 @@ class TestSeasonCreation:
     """Tests for Season instantiation."""
 
     def test_should_create_with_required_fields(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         series_id = SeriesId.generate()
         season = Season(
@@ -64,8 +64,8 @@ class TestSeasonCreation:
         assert season.episodes == []
 
     def test_should_create_with_explicit_id(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeasonId, SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeasonId, SeriesId
 
         season_id = SeasonId.generate()
         season = Season(
@@ -77,8 +77,8 @@ class TestSeasonCreation:
         assert season.id == season_id
 
     def test_should_accept_string_id_and_convert(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeasonId, SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeasonId, SeriesId
 
         season = Season(
             id="ssn_abc123abc123",
@@ -90,8 +90,8 @@ class TestSeasonCreation:
         assert season.id.value == "ssn_abc123abc123"
 
     def test_should_allow_season_number_zero_for_specials(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         season = Season(
             series_id=SeriesId.generate(),
@@ -101,8 +101,8 @@ class TestSeasonCreation:
         assert season.season_number == 0
 
     def test_should_raise_error_for_negative_season_number(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         with pytest.raises(DomainValidationException):
             Season(
@@ -115,8 +115,8 @@ class TestSeasonOptionalFields:
     """Tests for Season optional fields."""
 
     def test_should_create_with_title(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId, Title
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId, Title
 
         season = Season(
             series_id=SeriesId.generate(),
@@ -128,8 +128,8 @@ class TestSeasonOptionalFields:
         assert season.title.value == "Season One"
 
     def test_should_create_with_synopsis(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         season = Season(
             series_id=SeriesId.generate(),
@@ -140,8 +140,8 @@ class TestSeasonOptionalFields:
         assert season.synopsis == "The first season of the show."
 
     def test_should_create_with_poster_path(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import FilePath, SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import FilePath, SeriesId
 
         season = Season(
             series_id=SeriesId.generate(),
@@ -152,8 +152,8 @@ class TestSeasonOptionalFields:
         assert season.poster_path is not None
 
     def test_should_create_with_air_date(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         air_date = date(2024, 1, 15)
         season = Season(
@@ -169,8 +169,8 @@ class TestSeasonEpisodeManagement:
     """Tests for Season episode management."""
 
     def test_episode_count_should_return_zero_when_empty(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         season = Season(
             series_id=SeriesId.generate(),
@@ -180,8 +180,8 @@ class TestSeasonEpisodeManagement:
         assert season.episode_count == 0
 
     def test_should_add_episode(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         series_id = SeriesId.generate()
         season = Season(
@@ -196,8 +196,8 @@ class TestSeasonEpisodeManagement:
         assert season.episodes[0] == episode
 
     def test_should_raise_error_when_adding_episode_with_wrong_series_id(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         season = Season(
             series_id=SeriesId.generate(),
@@ -210,8 +210,8 @@ class TestSeasonEpisodeManagement:
             season.with_episode(episode)
 
     def test_should_raise_error_when_adding_episode_with_wrong_season_number(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         series_id = SeriesId.generate()
         season = Season(
@@ -225,8 +225,8 @@ class TestSeasonEpisodeManagement:
             season.with_episode(episode)
 
     def test_should_get_episode_by_number(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         series_id = SeriesId.generate()
         season = Season(
@@ -241,8 +241,8 @@ class TestSeasonEpisodeManagement:
         assert found == episode
 
     def test_should_return_none_when_episode_not_found(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         season = Season(
             series_id=SeriesId.generate(),
@@ -257,8 +257,8 @@ class TestSeasonEquality:
     """Tests for Season equality based on ID."""
 
     def test_should_be_equal_when_same_id(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeasonId, SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeasonId, SeriesId
 
         season_id = SeasonId.generate()
         series_id = SeriesId.generate()
@@ -269,8 +269,8 @@ class TestSeasonEquality:
         assert season1 == season2
 
     def test_should_not_be_equal_when_different_id(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeasonId, SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeasonId, SeriesId
 
         series_id = SeriesId.generate()
 
@@ -284,8 +284,8 @@ class TestSeasonImmutability:
     """Tests for Season frozen (immutable) behavior."""
 
     def test_should_reject_direct_attribute_assignment(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         season = Season(
             series_id=SeriesId.generate(),
@@ -296,8 +296,8 @@ class TestSeasonImmutability:
             season.season_number = 2  # type: ignore[misc]
 
     def test_with_episode_should_return_new_instance(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         series_id = SeriesId.generate()
         season = Season(
@@ -313,8 +313,8 @@ class TestSeasonImmutability:
         assert season.episode_count == 0
 
     def test_with_episode_should_preserve_identity(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeasonId, SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeasonId, SeriesId
 
         series_id = SeriesId.generate()
         season = Season(
@@ -329,8 +329,8 @@ class TestSeasonImmutability:
         assert updated == season  # same id
 
     def test_with_episode_duplicate_should_return_self(self):
-        from src.domain.media.entities import Season
-        from src.domain.media.value_objects import SeriesId
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
 
         series_id = SeriesId.generate()
         season = Season(

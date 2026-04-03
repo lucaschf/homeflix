@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.application.media.dtos import GetMovieByIdInput, MovieOutput
-from src.application.media.use_cases import GetMovieByIdUseCase
-from src.application.shared.exceptions import ResourceNotFoundException
-from src.domain.media.entities import Movie
-from src.domain.media.repositories import MovieRepository
+from src.building_blocks.application.errors import ResourceNotFoundException
+from src.modules.media.application.dtos import GetMovieByIdInput, MovieOutput
+from src.modules.media.application.use_cases import GetMovieByIdUseCase
+from src.modules.media.domain.entities import Movie
+from src.modules.media.domain.repositories import MovieRepository
 
 
 class TestGetMovieByIdUseCase:

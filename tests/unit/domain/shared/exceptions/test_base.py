@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from src.domain.shared.exceptions.base import (
+from src.building_blocks.domain.errors import (
     CoreException,
     ExceptionDetail,
     Severity,

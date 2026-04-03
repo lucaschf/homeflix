@@ -1,9 +1,9 @@
 """Tests for TrackSelector domain service."""
 
-from src.domain.library.services.track_selector import TrackSelector
-from src.domain.library.value_objects.language_code import LanguageCode
-from src.domain.library.value_objects.subtitle_mode import SubtitleMode
-from src.domain.library.value_objects.tracks import AudioTrack, SubtitleTrack
+from src.modules.library.domain.services.track_selector import TrackSelector
+from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
+from src.shared_kernel.value_objects.language_code import LanguageCode
+from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 
 class TestTrackSelectorAudioSelection:

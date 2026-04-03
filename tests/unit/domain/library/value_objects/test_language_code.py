@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.domain.library.value_objects.language_code import LanguageCode
-from src.domain.shared.exceptions.domain import DomainValidationException
+from src.building_blocks.domain.errors import DomainValidationException
+from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 class TestLanguageCodeCreation:

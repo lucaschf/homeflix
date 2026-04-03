@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.application.media.dtos import ListMoviesInput, ListMoviesOutput, MovieSummaryOutput
-from src.application.media.use_cases import ListMoviesUseCase
-from src.domain.media.entities import Movie
-from src.domain.media.repositories import MovieRepository
+from src.modules.media.application.dtos import ListMoviesInput, ListMoviesOutput, MovieSummaryOutput
+from src.modules.media.application.use_cases import ListMoviesUseCase
+from src.modules.media.domain.entities import Movie
+from src.modules.media.domain.repositories import MovieRepository
 
 
 class TestListMoviesUseCase:

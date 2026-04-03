@@ -1,6 +1,6 @@
 """Tests for SubtitleMode enumeration."""
 
-from src.domain.library.value_objects.subtitle_mode import SubtitleMode
+from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
 
 
 class TestSubtitleMode:

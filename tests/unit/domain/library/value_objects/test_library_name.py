@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.domain.library.value_objects.library_name import LibraryName
-from src.domain.shared.exceptions.domain import DomainValidationException
+from src.building_blocks.domain.errors import DomainValidationException
+from src.modules.library.domain.value_objects.library_name import LibraryName
 
 
 class TestLibraryNameCreation:

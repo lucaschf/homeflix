@@ -1,6 +1,6 @@
 """Tests for LibraryType enumeration."""
 
-from src.domain.library.value_objects.library_type import LibraryType
+from src.modules.library.domain.value_objects.library_type import LibraryType
 
 
 class TestLibraryType:

@@ -1,6 +1,6 @@
 """Tests for HdrFormat enum."""
 
-from src.domain.media.value_objects import HdrFormat
+from src.modules.media.domain.value_objects import HdrFormat
 
 
 class TestHdrFormat:
