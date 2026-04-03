@@ -7,8 +7,11 @@ from src.modules.media.application.dtos.series_dtos import (
     SeasonOutput,
     SeriesOutput,
 )
+from src.modules.media.application.use_cases._media_file_helpers import (
+    to_media_file_output,
+)
 from src.modules.media.domain.entities import Episode, Season, Series
-from src.modules.media.domain.repositories.series_repository import SeriesRepository
+from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import SeriesId
 
 
@@ -124,6 +127,7 @@ class GetSeriesByIdUseCase:
             file_path=primary.file_path.value if primary else None,
             file_size=primary.file_size if primary else None,
             resolution=primary.resolution.value if primary else None,
+            files=[to_media_file_output(f) for f in episode.files],
             thumbnail_path=episode.thumbnail_path.value if episode.thumbnail_path else None,
             air_date=episode.air_date.isoformat() if episode.air_date else None,
         )

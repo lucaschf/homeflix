@@ -6,7 +6,7 @@ from src.modules.media.application.dtos.movie_dtos import (
     MovieSummaryOutput,
 )
 from src.modules.media.domain.entities import Movie
-from src.modules.media.domain.repositories.movie_repository import MovieRepository
+from src.modules.media.domain.repositories import MovieRepository
 
 
 class ListMoviesUseCase:
@@ -68,6 +68,8 @@ class ListMoviesUseCase:
             duration_formatted=movie.duration.format_hms(),
             poster_path=movie.poster_path.value if movie.poster_path else None,
             resolution=best.resolution.value if best else None,
+            variant_count=len(movie.files),
+            available_resolutions=[r.value for r in movie.available_resolutions],
             genres=[g.value for g in movie.genres],
         )
 

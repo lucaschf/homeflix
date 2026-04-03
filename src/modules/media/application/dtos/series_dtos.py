@@ -1,6 +1,12 @@
 """Series DTOs for application layer."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.modules.media.application.dtos.media_file_dtos import MediaFileOutput
 
 
 @dataclass(frozen=True)
@@ -30,6 +36,7 @@ class EpisodeOutput:
     file_path: str | None
     file_size: int | None
     resolution: str | None
+    files: list[MediaFileOutput]
     thumbnail_path: str | None
     air_date: str | None
 

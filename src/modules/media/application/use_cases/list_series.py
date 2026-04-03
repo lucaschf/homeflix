@@ -6,7 +6,7 @@ from src.modules.media.application.dtos.series_dtos import (
     SeriesSummaryOutput,
 )
 from src.modules.media.domain.entities import Series
-from src.modules.media.domain.repositories.series_repository import SeriesRepository
+from src.modules.media.domain.repositories import SeriesRepository
 
 
 class ListSeriesUseCase:

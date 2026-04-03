@@ -2,8 +2,11 @@
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput, MovieOutput
+from src.modules.media.application.use_cases._media_file_helpers import (
+    to_media_file_output,
+)
 from src.modules.media.domain.entities.movie import Movie
-from src.modules.media.domain.repositories.movie_repository import MovieRepository
+from src.modules.media.domain.repositories import MovieRepository
 from src.modules.media.domain.value_objects import MovieId
 
 
@@ -73,6 +76,7 @@ class GetMovieByIdUseCase:
             file_path=primary.file_path.value if primary else None,
             file_size=primary.file_size if primary else None,
             resolution=primary.resolution.value if primary else None,
+            files=[to_media_file_output(f) for f in movie.files],
             tmdb_id=movie.tmdb_id,
             imdb_id=movie.imdb_id,
             created_at=movie.created_at.isoformat(),
