@@ -3,8 +3,8 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.domain.media.entities import Movie
-from src.domain.media.value_objects import (
+from src.modules.media.domain.entities import Movie
+from src.modules.media.domain.value_objects import (
     Duration,
     FilePath,
     Genre,
@@ -14,7 +14,7 @@ from src.domain.media.value_objects import (
     Title,
     Year,
 )
-from src.infrastructure.persistence.repositories import SQLAlchemyMovieRepository
+from src.modules.media.infrastructure.persistence.repositories import SQLAlchemyMovieRepository
 
 
 def _create_movie(

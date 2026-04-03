@@ -1,12 +1,12 @@
 """Tests for domain layer exceptions."""
 
-from src.domain.shared.exceptions.base import Severity
-from src.domain.shared.exceptions.domain import (
+from src.building_blocks.domain.errors import (
     BusinessRuleViolationException,
     DomainConflictException,
     DomainException,
     DomainNotFoundException,
     DomainValidationException,
+    Severity,
 )
 
 

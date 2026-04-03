@@ -4,8 +4,8 @@ from datetime import date
 
 import pytest
 
-from src.domain.shared.exceptions.domain import DomainValidationException
-from src.domain.shared.models import (
+from src.building_blocks.domain.errors import DomainValidationException
+from src.building_blocks.domain.value_objects import (
     CompoundValueObject,
     DateValueObject,
     FloatValueObject,
@@ -58,7 +58,7 @@ class TestCompoundValueObject:
         vo = SampleCompoundVO(name="Test", code=123)
 
         with pytest.raises(DomainValidationException):
-            vo.name = "Changed"
+            vo.name = "Changed"  # type: ignore[misc]
 
     def test_should_support_with_updates(self):
         original = SampleCompoundVO(name="Test", code=123)
@@ -125,7 +125,7 @@ class TestStringValueObject:
 
     def test_should_raise_error_for_non_string_input(self):
         with pytest.raises(DomainValidationException):
-            SampleStringVO(123)
+            SampleStringVO(123)  # type: ignore[arg-type]
 
 
 class TestIntValueObject:
@@ -207,7 +207,7 @@ class TestIntValueObject:
 
     def test_should_raise_error_for_non_integer_input(self):
         with pytest.raises(DomainValidationException):
-            SampleIntVO("not_an_int")
+            SampleIntVO("not_an_int")  # type: ignore[arg-type]
 
 
 class TestFloatValueObject:
@@ -254,7 +254,7 @@ class TestFloatValueObject:
 
     def test_should_raise_error_for_non_numeric_input(self):
         with pytest.raises(DomainValidationException):
-            SampleFloatVO("not_a_float")
+            SampleFloatVO("not_a_float")  # type: ignore[arg-type]
 
 
 class TestDateValueObject:
@@ -298,10 +298,10 @@ class TestDateValueObject:
         assert vo in vo_set
 
     def test_should_parse_date_from_string(self):
-        vo = SampleDateVO("2024-06-15")
+        vo = SampleDateVO("2024-06-15")  # type: ignore[arg-type]
 
         assert vo.value == date(2024, 6, 15)
 
     def test_should_raise_error_for_invalid_date_string(self):
         with pytest.raises(DomainValidationException):
-            SampleDateVO("not-a-date")
+            SampleDateVO("not-a-date")  # type: ignore[arg-type]

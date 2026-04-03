@@ -4,8 +4,8 @@ from datetime import date
 
 import pytest
 
-from src.domain.media.value_objects import FilePath, MediaFile, Resolution
-from src.domain.shared.exceptions.domain import DomainValidationException
+from src.building_blocks.domain.errors import DomainValidationException
+from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
 
 def _make_file(**overrides: object) -> MediaFile:
@@ -24,8 +24,8 @@ class TestEpisodeCreation:
     """Tests for Episode instantiation."""
 
     def test_should_create_with_required_fields(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             SeriesId,
             Title,
@@ -45,8 +45,8 @@ class TestEpisodeCreation:
         assert episode.title.value == "Pilot"
 
     def test_should_create_with_explicit_id(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             EpisodeId,
             SeriesId,
@@ -67,8 +67,8 @@ class TestEpisodeCreation:
         assert episode.id == episode_id
 
     def test_should_accept_string_id_and_convert(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             EpisodeId,
             SeriesId,
@@ -89,8 +89,8 @@ class TestEpisodeCreation:
         assert episode.id.value == "epi_abc123abc123"
 
     def test_should_allow_season_number_zero_for_specials(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             FilePath,
             MediaFile,
@@ -118,8 +118,8 @@ class TestEpisodeCreation:
         assert episode.season_number == 0
 
     def test_should_raise_error_for_negative_episode_number(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             SeriesId,
             Title,
@@ -136,8 +136,8 @@ class TestEpisodeCreation:
             )
 
     def test_should_create_with_no_files(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             SeriesId,
             Title,
@@ -158,8 +158,8 @@ class TestEpisodeOptionalFields:
     """Tests for Episode optional fields."""
 
     def test_should_create_with_synopsis(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             SeriesId,
             Title,
@@ -178,8 +178,8 @@ class TestEpisodeOptionalFields:
         assert episode.synopsis == "The first episode of the series."
 
     def test_should_create_with_thumbnail_path(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             FilePath,
             SeriesId,
@@ -199,8 +199,8 @@ class TestEpisodeOptionalFields:
         assert episode.thumbnail_path is not None
 
     def test_should_create_with_air_date(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             SeriesId,
             Title,
@@ -224,8 +224,8 @@ class TestEpisodeFileManagement:
     """Tests for Episode file variant management."""
 
     def test_primary_file_should_return_primary(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import Duration, SeriesId, Title
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import Duration, SeriesId, Title
 
         episode = Episode(
             series_id=SeriesId.generate(),
@@ -240,8 +240,8 @@ class TestEpisodeFileManagement:
         assert episode.primary_file.is_primary is True
 
     def test_with_file_should_add_new_variant(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             FilePath,
             MediaFile,
@@ -270,8 +270,8 @@ class TestEpisodeFileManagement:
         assert len(episode.files) == 2
 
     def test_best_file_should_return_highest_resolution(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             FilePath,
             MediaFile,
@@ -304,8 +304,8 @@ class TestEpisodeEquality:
     """Tests for Episode equality based on ID."""
 
     def test_should_be_equal_when_same_id(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             EpisodeId,
             SeriesId,
@@ -338,8 +338,8 @@ class TestEpisodeEquality:
         assert episode1 == episode2
 
     def test_should_not_be_equal_when_different_id(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             EpisodeId,
             SeriesId,
@@ -375,8 +375,8 @@ class TestEpisodeTimestamps:
     """Tests for Episode timestamp management."""
 
     def test_should_have_created_at_on_creation(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             SeriesId,
             Title,
@@ -394,8 +394,8 @@ class TestEpisodeTimestamps:
         assert episode.created_at is not None
 
     def test_should_reject_direct_attribute_assignment(self):
-        from src.domain.media.entities import Episode
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
             Duration,
             SeriesId,
             Title,

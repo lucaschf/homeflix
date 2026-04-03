@@ -4,10 +4,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.application.media.dtos import ListSeriesInput, ListSeriesOutput, SeriesSummaryOutput
-from src.application.media.use_cases import ListSeriesUseCase
-from src.domain.media.entities import Series
-from src.domain.media.repositories import SeriesRepository
+from src.modules.media.application.dtos import (
+    ListSeriesInput,
+    ListSeriesOutput,
+    SeriesSummaryOutput,
+)
+from src.modules.media.application.use_cases import ListSeriesUseCase
+from src.modules.media.domain.entities import Series
+from src.modules.media.domain.repositories import SeriesRepository
 
 
 class TestListSeriesUseCase:

@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.domain.media.services import FileSelector
-from src.domain.media.value_objects import (
+from src.modules.media.domain.services import FileSelector
+from src.modules.media.domain.value_objects import (
     FilePath,
     HdrFormat,
     MediaFile,

@@ -1,6 +1,6 @@
 """Tests for VideoCodec enum."""
 
-from src.domain.media.value_objects import VideoCodec
+from src.modules.media.domain.value_objects import VideoCodec
 
 
 class TestVideoCodec:

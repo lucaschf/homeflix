@@ -4,8 +4,8 @@ from typing import ClassVar
 
 import pytest
 
-from src.domain.shared.exceptions.domain import DomainValidationException
-from src.domain.shared.models.external_id import (
+from src.building_blocks.domain.errors import DomainValidationException
+from src.building_blocks.domain.external_id import (
     BASE62_ALPHABET,
     RANDOM_PART_LENGTH,
     ExternalId,

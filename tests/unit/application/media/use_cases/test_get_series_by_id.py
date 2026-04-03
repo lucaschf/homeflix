@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.application.media.dtos import GetSeriesByIdInput, SeriesOutput
-from src.application.media.use_cases import GetSeriesByIdUseCase
-from src.application.shared.exceptions import ResourceNotFoundException
-from src.domain.media.entities import Episode, Season, Series
-from src.domain.media.repositories import SeriesRepository
-from src.domain.media.value_objects import (
+from src.building_blocks.application.errors import ResourceNotFoundException
+from src.modules.media.application.dtos import GetSeriesByIdInput, SeriesOutput
+from src.modules.media.application.use_cases import GetSeriesByIdUseCase
+from src.modules.media.domain.entities import Episode, Season, Series
+from src.modules.media.domain.repositories import SeriesRepository
+from src.modules.media.domain.value_objects import (
     Duration,
     EpisodeId,
     FilePath,

@@ -2,10 +2,10 @@
 
 import pytest
 
-from src.domain.library.value_objects.language_code import LanguageCode
-from src.domain.library.value_objects.tracks import AudioTrack, SubtitleTrack
-from src.domain.media.value_objects.file_path import FilePath
-from src.domain.shared.exceptions.domain import DomainValidationException
+from src.building_blocks.domain.errors import DomainValidationException
+from src.shared_kernel.value_objects.file_path import FilePath
+from src.shared_kernel.value_objects.language_code import LanguageCode
+from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 
 class TestAudioTrackCreation:

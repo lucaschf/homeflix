@@ -1,8 +1,8 @@
 """Tests for LibrarySettings value object."""
 
-from src.domain.library.value_objects.language_code import LanguageCode
-from src.domain.library.value_objects.library_settings import LibrarySettings
-from src.domain.library.value_objects.subtitle_mode import SubtitleMode
+from src.modules.library.domain.value_objects.library_settings import LibrarySettings
+from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
+from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 class TestLibrarySettingsCreation:
@@ -29,7 +29,7 @@ class TestLibrarySettingsCreation:
         )
 
         assert settings.preferred_audio_language.value == "ja"
-        assert settings.preferred_subtitle_language.value == "en"
+        assert settings.preferred_subtitle_language.value == "en"  # type: ignore[union-attr]
         assert settings.subtitle_mode == SubtitleMode.ALWAYS
         assert settings.generate_thumbnails is False
         assert settings.detect_intros is True
@@ -50,16 +50,16 @@ class TestLibrarySettingsFactories:
         settings = LibrarySettings.for_anime()
 
         assert settings.preferred_audio_language.value == "ja"
-        assert settings.preferred_subtitle_language.value == "en"
+        assert settings.preferred_subtitle_language.value == "en"  # type: ignore[union-attr]
         assert settings.subtitle_mode == SubtitleMode.ALWAYS
 
     def test_for_foreign_films_should_return_foreign_audio_mode(self):
         settings = LibrarySettings.for_foreign_films()
 
-        assert settings.preferred_subtitle_language.value == "en"
+        assert settings.preferred_subtitle_language.value == "en"  # type: ignore[union-attr]
         assert settings.subtitle_mode == SubtitleMode.FOREIGN_AUDIO_ONLY
 
     def test_for_foreign_films_should_accept_custom_subtitle_language(self):
         settings = LibrarySettings.for_foreign_films(subtitle_language="pt")
 
-        assert settings.preferred_subtitle_language.value == "pt"
+        assert settings.preferred_subtitle_language.value == "pt"  # type: ignore[union-attr]

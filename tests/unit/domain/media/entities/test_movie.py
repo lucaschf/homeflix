@@ -2,15 +2,15 @@
 
 import pytest
 
-from src.domain.shared.exceptions.domain import DomainValidationException
+from src.building_blocks.domain.errors import DomainValidationException
 
 
 class TestMovieCreation:
     """Tests for Movie instantiation."""
 
     def test_should_create_with_required_fields(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import (
             Duration,
             FilePath,
             MediaFile,
@@ -38,8 +38,8 @@ class TestMovieCreation:
         assert movie.year.value == 2010
 
     def test_should_create_via_factory_with_auto_id(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import MovieId
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import MovieId
 
         movie = Movie.create(
             title="Inception",
@@ -55,7 +55,7 @@ class TestMovieCreation:
         assert movie.id.prefix == "mov"
 
     def test_factory_should_create_primary_file(self):
-        from src.domain.media.entities import Movie
+        from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
             title="Inception",
@@ -72,8 +72,8 @@ class TestMovieCreation:
         assert movie.files[0].resolution.name == "1080p"
 
     def test_should_accept_string_id_and_convert(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import (
             Duration,
             MovieId,
             Title,
@@ -94,8 +94,8 @@ class TestMovieOptionalFields:
     """Tests for Movie optional fields."""
 
     def test_should_create_with_all_optional_fields(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import (
             Duration,
             FilePath,
             Genre,
@@ -138,7 +138,7 @@ class TestMovieGenreManagement:
     """Tests for Movie genre management."""
 
     def test_should_add_genre(self):
-        from src.domain.media.entities import Movie
+        from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
             title="Inception",
@@ -155,8 +155,8 @@ class TestMovieGenreManagement:
         assert movie.genres[0].value == "Sci-Fi"
 
     def test_should_add_genre_as_value_object(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import Genre
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import Genre
 
         movie = Movie.create(
             title="Inception",
@@ -172,7 +172,7 @@ class TestMovieGenreManagement:
         assert len(movie.genres) == 1
 
     def test_should_not_add_duplicate_genre(self):
-        from src.domain.media.entities import Movie
+        from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
             title="Inception",
@@ -193,7 +193,7 @@ class TestMovieFileManagement:
     """Tests for Movie file variant management."""
 
     def test_primary_file_should_return_primary(self):
-        from src.domain.media.entities import Movie
+        from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
             title="Inception",
@@ -209,8 +209,8 @@ class TestMovieFileManagement:
         assert primary.is_primary is True
 
     def test_primary_file_should_return_none_when_no_files(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import Duration, Title, Year
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import Duration, Title, Year
 
         movie = Movie(
             title=Title("Test"),
@@ -221,8 +221,8 @@ class TestMovieFileManagement:
         assert movie.primary_file is None
 
     def test_best_file_should_return_highest_resolution(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
         movie = Movie.create(
             title="Inception",
@@ -245,8 +245,8 @@ class TestMovieFileManagement:
         assert best.resolution.name == "4K"
 
     def test_available_resolutions_should_be_sorted_highest_first(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
         movie = Movie.create(
             title="Inception",
@@ -268,8 +268,8 @@ class TestMovieFileManagement:
         assert [r.name for r in resolutions] == ["4K", "720p"]
 
     def test_total_size_should_sum_all_files(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
         movie = Movie.create(
             title="Inception",
@@ -290,8 +290,8 @@ class TestMovieFileManagement:
         assert movie.total_size == 24_000_000_000
 
     def test_with_file_should_add_new_variant(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
         movie = Movie.create(
             title="Inception",
@@ -313,7 +313,7 @@ class TestMovieFileManagement:
         assert len(movie.files) == 2
 
     def test_with_file_should_not_add_duplicate_path(self):
-        from src.domain.media.entities import Movie
+        from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
             title="Inception",
@@ -324,7 +324,7 @@ class TestMovieFileManagement:
             resolution="1080p",
         )
 
-        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+        from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
         result = movie.with_file(
             MediaFile(
@@ -337,7 +337,7 @@ class TestMovieFileManagement:
         assert result is movie  # same object, no change
 
     def test_get_file_by_resolution_should_find_match(self):
-        from src.domain.media.entities import Movie
+        from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
             title="Inception",
@@ -353,7 +353,7 @@ class TestMovieFileManagement:
         assert found.resolution.name == "1080p"
 
     def test_get_file_by_resolution_should_return_none_when_not_found(self):
-        from src.domain.media.entities import Movie
+        from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
             title="Inception",
@@ -372,8 +372,8 @@ class TestMovieEquality:
     """Tests for Movie equality based on ID."""
 
     def test_should_be_equal_when_same_id(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import (
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import (
             Duration,
             MovieId,
             Title,
@@ -403,7 +403,7 @@ class TestMovieEvents:
     """Tests for Movie domain events."""
 
     def test_should_add_and_pull_events(self):
-        from src.domain.media.entities import Movie
+        from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
             title="Inception",
@@ -428,7 +428,7 @@ class TestMovieImmutability:
     """Tests for Movie frozen (immutable) behavior."""
 
     def test_should_reject_direct_attribute_assignment(self):
-        from src.domain.media.entities import Movie
+        from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
             title="Inception",
@@ -443,7 +443,7 @@ class TestMovieImmutability:
             movie.year = 2020  # type: ignore[assignment, misc]
 
     def test_with_genre_should_return_new_instance(self):
-        from src.domain.media.entities import Movie
+        from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
             title="Inception",
@@ -461,7 +461,7 @@ class TestMovieImmutability:
         assert len(movie.genres) == 0
 
     def test_with_genre_duplicate_string_should_return_self(self):
-        from src.domain.media.entities import Movie
+        from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
             title="Inception",
@@ -478,8 +478,8 @@ class TestMovieImmutability:
         assert result is movie
 
     def test_with_genre_duplicate_value_object_should_return_self(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import Genre
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import Genre
 
         movie = Movie.create(
             title="Inception",
@@ -496,8 +496,8 @@ class TestMovieImmutability:
         assert result is movie
 
     def test_with_file_should_return_new_instance(self):
-        from src.domain.media.entities import Movie
-        from src.domain.media.value_objects import FilePath, MediaFile, Resolution
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
         movie = Movie.create(
             title="Inception",

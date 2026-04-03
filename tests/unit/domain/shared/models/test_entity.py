@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import Field
 
-from src.domain.shared.exceptions.domain import DomainValidationException
-from src.domain.shared.models import AggregateRoot, DomainEntity, utc_now
+from src.building_blocks.domain.entity import AggregateRoot, DomainEntity, utc_now
+from src.building_blocks.domain.errors import DomainValidationException
 
 
 class SampleEntity(DomainEntity[str]):

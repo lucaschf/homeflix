@@ -2,12 +2,12 @@
 
 import pytest
 
-from src.domain.library.entities.library import Library
-from src.domain.library.value_objects.library_name import LibraryName
-from src.domain.library.value_objects.library_type import LibraryType
-from src.domain.library.value_objects.metadata_provider import MetadataProviderConfig
-from src.domain.media.value_objects.file_path import FilePath
-from src.domain.shared.exceptions.domain import DomainValidationException
+from src.building_blocks.domain.errors import DomainValidationException
+from src.modules.library.domain.entities.library import Library
+from src.modules.library.domain.value_objects.library_name import LibraryName
+from src.modules.library.domain.value_objects.library_type import LibraryType
+from src.modules.library.domain.value_objects.metadata_provider import MetadataProviderConfig
+from src.shared_kernel.value_objects.file_path import FilePath
 
 
 class TestLibraryCreation:

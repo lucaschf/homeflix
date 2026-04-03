@@ -2,11 +2,11 @@
 
 import pytest
 
-from src.domain.library.value_objects.metadata_provider import (
+from src.building_blocks.domain.errors import DomainValidationException
+from src.modules.library.domain.value_objects.metadata_provider import (
     MetadataProvider,
     MetadataProviderConfig,
 )
-from src.domain.shared.exceptions.domain import DomainValidationException
 
 
 class TestMetadataProvider:

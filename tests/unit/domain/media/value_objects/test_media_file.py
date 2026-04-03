@@ -2,7 +2,8 @@
 
 import pytest
 
-from src.domain.media.value_objects import (
+from src.building_blocks.domain.errors import DomainValidationException
+from src.modules.media.domain.value_objects import (
     AudioTrack,
     FilePath,
     HdrFormat,
@@ -11,8 +12,7 @@ from src.domain.media.value_objects import (
     SubtitleTrack,
     VideoCodec,
 )
-from src.domain.shared.exceptions.domain import DomainValidationException
-from src.domain.shared.value_objects.language_code import LanguageCode
+from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 class TestMediaFileCreation:

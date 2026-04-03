@@ -3,8 +3,8 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.domain.media.entities import Episode, Season, Series
-from src.domain.media.value_objects import (
+from src.modules.media.domain.entities import Episode, Season, Series
+from src.modules.media.domain.value_objects import (
     Duration,
     EpisodeId,
     FilePath,
@@ -16,7 +16,7 @@ from src.domain.media.value_objects import (
     Title,
     Year,
 )
-from src.infrastructure.persistence.repositories import SQLAlchemySeriesRepository
+from src.modules.media.infrastructure.persistence.repositories import SQLAlchemySeriesRepository
 
 
 def _create_episode(
