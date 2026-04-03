@@ -5,10 +5,14 @@ Provides repositories and use cases for the Media module.
 
 from dependency_injector import containers, providers
 
+from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
+from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
+from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
+from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
 from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
     SQLAlchemyMovieRepository,
 )
@@ -22,7 +26,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     Provides:
     - Repository implementations (SQLAlchemy)
-    - Use cases for movie and series operations
+    - Use cases for movie, series, and file variant operations
 
     The ``session`` dependency must be wired from the parent container
     once the database provider is added to InfrastructureContainer.
@@ -50,7 +54,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     )
 
     # =========================================================================
-    # Use Cases
+    # Use Cases — Query
     # =========================================================================
 
     get_movie_by_id = providers.Factory(
@@ -70,5 +74,33 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     list_series = providers.Factory(
         ListSeriesUseCase,
+        series_repository=series_repository,
+    )
+
+    # =========================================================================
+    # Use Cases — File Variants
+    # =========================================================================
+
+    get_file_variants = providers.Factory(
+        GetFileVariantsUseCase,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
+    )
+
+    add_file_variant = providers.Factory(
+        AddFileVariantUseCase,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
+    )
+
+    remove_file_variant = providers.Factory(
+        RemoveFileVariantUseCase,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
+    )
+
+    set_primary_file = providers.Factory(
+        SetPrimaryFileUseCase,
+        movie_repository=movie_repository,
         series_repository=series_repository,
     )

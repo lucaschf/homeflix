@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.config.containers import ApplicationContainer
 from src.config.logging import get_logger, setup_logging
 from src.config.settings import get_settings
+from src.modules.media.presentation.routes import movie_router, series_router
 
 
 def create_container() -> ApplicationContainer:
@@ -47,7 +48,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     # Initialize DI container
-    app.state.container = create_container()
+    container = create_container()
+    container.wire(
+        modules=[
+            "src.modules.media.presentation.routes.movie_routes",
+            "src.modules.media.presentation.routes.series_routes",
+        ],
+    )
+    app.state.container = container
 
     logger.info("Application ready")
 
@@ -90,8 +98,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Register health check routes
+    # Register routes
     register_health_routes(app)
+    app.include_router(movie_router)
+    app.include_router(series_router)
 
     return app
 
@@ -99,7 +109,7 @@ def create_app() -> FastAPI:
 def register_health_routes(app: FastAPI) -> None:
     """Register health check endpoints."""
 
-    @app.get("/health", tags=["Health"])
+    @app.get("/health", tags=["Health"])  # type: ignore[misc]
     async def health_check() -> dict[str, Any]:
         """Basic health check endpoint."""
         return {
@@ -108,7 +118,7 @@ def register_health_routes(app: FastAPI) -> None:
             "version": "0.1.0",
         }
 
-    @app.get("/health/ready", tags=["Health"])
+    @app.get("/health/ready", tags=["Health"])  # type: ignore[misc]
     async def readiness_check() -> dict[str, Any]:
         """Readiness check - verifies all dependencies are available."""
         checks = {
@@ -124,7 +134,7 @@ def register_health_routes(app: FastAPI) -> None:
             "checks": checks,
         }
 
-    @app.get("/", tags=["Root"])
+    @app.get("/", tags=["Root"])  # type: ignore[misc]
     async def root() -> dict[str, str]:
         """Root endpoint with API information."""
         return {
