@@ -9,10 +9,12 @@ See ADR-004 for the rationale behind this design.
 from dependency_injector import containers, providers
 
 from src.config.containers.infrastructure import InfrastructureContainer
+from src.config.containers.library import LibraryContainer
+from src.config.containers.media import MediaContainer
 from src.config.settings import Settings
 
 
-class ApplicationContainer(containers.DeclarativeContainer):
+class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     """Main application dependency injection container.
 
     This container composes all sub-containers and serves as the
@@ -21,12 +23,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
     Structure:
         ApplicationContainer
         ├── config (Settings)
-        └── infrastructure (InfrastructureContainer)
-            ├── database
-            └── ...
-
-    Bounded context containers (repositories, use_cases) are added
-    as each context is implemented.
+        ├── infrastructure (InfrastructureContainer)
+        ├── media (MediaContainer)
+        └── library (LibraryContainer)
 
     Example:
         >>> container = ApplicationContainer()
@@ -48,6 +47,14 @@ class ApplicationContainer(containers.DeclarativeContainer):
         InfrastructureContainer,
         config=config,
     )
+
+    # =========================================================================
+    # Bounded Context Containers
+    # =========================================================================
+
+    media = providers.Container(MediaContainer)
+
+    library = providers.Container(LibraryContainer)
 
 
 # Convenience alias

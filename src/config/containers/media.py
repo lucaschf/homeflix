@@ -1,0 +1,71 @@
+"""Media bounded context dependency container.
+
+Provides repositories and use cases for the Media module.
+"""
+
+from dependency_injector import containers, providers
+
+from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
+from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
+from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
+from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
+from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
+    SQLAlchemyMovieRepository,
+)
+from src.modules.media.infrastructure.persistence.repositories.series_repository import (
+    SQLAlchemySeriesRepository,
+)
+
+
+class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+    """Container for Media bounded context dependencies.
+
+    Provides:
+    - Repository implementations (SQLAlchemy)
+    - Use cases for movie and series operations
+
+    Example:
+        >>> container = MediaContainer(session=session_provider)
+        >>> use_case = container.get_movie_by_id()
+    """
+
+    # Database session provided by parent container
+    session = providers.Dependency()
+
+    # =========================================================================
+    # Repositories
+    # =========================================================================
+
+    movie_repository = providers.Factory(
+        SQLAlchemyMovieRepository,
+        session=session,
+    )
+
+    series_repository = providers.Factory(
+        SQLAlchemySeriesRepository,
+        session=session,
+    )
+
+    # =========================================================================
+    # Use Cases
+    # =========================================================================
+
+    get_movie_by_id = providers.Factory(
+        GetMovieByIdUseCase,
+        movie_repository=movie_repository,
+    )
+
+    list_movies = providers.Factory(
+        ListMoviesUseCase,
+        movie_repository=movie_repository,
+    )
+
+    get_series_by_id = providers.Factory(
+        GetSeriesByIdUseCase,
+        series_repository=series_repository,
+    )
+
+    list_series = providers.Factory(
+        ListSeriesUseCase,
+        series_repository=series_repository,
+    )
