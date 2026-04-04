@@ -201,12 +201,13 @@ class TestEpisodeOptionalFields:
     def test_should_create_with_air_date(self):
         from src.modules.media.domain.entities import Episode
         from src.modules.media.domain.value_objects import (
+            AirDate,
             Duration,
             SeriesId,
             Title,
         )
 
-        air_date = date(2024, 1, 15)
+        air_date = AirDate(date(2024, 1, 15))
         episode = Episode(
             series_id=SeriesId.generate(),
             season_number=1,

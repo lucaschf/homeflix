@@ -153,9 +153,9 @@ class TestSeasonOptionalFields:
 
     def test_should_create_with_air_date(self):
         from src.modules.media.domain.entities import Season
-        from src.modules.media.domain.value_objects import SeriesId
+        from src.modules.media.domain.value_objects import AirDate, SeriesId
 
-        air_date = date(2024, 1, 15)
+        air_date = AirDate(date(2024, 1, 15))
         season = Season(
             series_id=SeriesId.generate(),
             season_number=1,
