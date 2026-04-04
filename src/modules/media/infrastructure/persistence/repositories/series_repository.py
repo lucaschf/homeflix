@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
-from src.modules.media.domain.value_objects import EpisodeId, FilePath, SeasonId, SeriesId
+from src.modules.media.domain.value_objects import EpisodeId, FilePath, SeasonId, SeriesId, Title
 from src.modules.media.infrastructure.persistence.mappers import (
     EpisodeMapper,
     SeasonMapper,
@@ -160,6 +160,29 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         models = result.scalars().all()
 
         return [SeriesMapper.to_entity(model) for model in models]
+
+    async def find_by_title(self, title: Title) -> Series | None:
+        """Find a series by its title (case-insensitive).
+
+        Args:
+            title: The series title to search for.
+
+        Returns:
+            The Series if found, None otherwise.
+        """
+        stmt = (
+            select(SeriesModel)
+            .where(
+                SeriesModel.title.ilike(title.value),
+                SeriesModel.deleted_at.is_(None),
+            )
+            .options(*self._series_load_options())
+            .execution_options(populate_existing=True)
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+
+        return None if model is None else SeriesMapper.to_entity(model)
 
     async def find_by_episode_id(self, episode_id: EpisodeId) -> Series | None:
         """Find a series containing an episode with this ID.

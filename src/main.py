@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.config.containers import ApplicationContainer
 from src.config.logging import get_logger, setup_logging
 from src.config.settings import get_settings
-from src.modules.media.presentation.routes import movie_router, series_router
+from src.modules.media.presentation.routes import movie_router, scan_router, series_router
 
 
 def create_container() -> ApplicationContainer:
@@ -52,6 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container.wire(
         modules=[
             "src.modules.media.presentation.routes.movie_routes",
+            "src.modules.media.presentation.routes.scan_routes",
             "src.modules.media.presentation.routes.series_routes",
         ],
     )
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     # Register routes
     register_health_routes(app)
     app.include_router(movie_router)
+    app.include_router(scan_router)
     app.include_router(series_router)
 
     return app
