@@ -12,7 +12,12 @@ from src.modules.media.application.use_cases.get_series_by_id import GetSeriesBy
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
+from src.modules.media.application.use_cases.scan_media_directories import (
+    ScanMediaDirectoriesUseCase,
+)
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
+from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
+from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
 from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
     SQLAlchemyMovieRepository,
 )
@@ -101,6 +106,26 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     set_primary_file = providers.Factory(
         SetPrimaryFileUseCase,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
+    )
+
+    # =========================================================================
+    # Infrastructure — File System
+    # =========================================================================
+
+    file_scanner = providers.Factory(LocalFileSystemScanner)
+
+    variant_detector = providers.Factory(VariantDetector)
+
+    # =========================================================================
+    # Use Cases — Scan
+    # =========================================================================
+
+    scan_media_directories = providers.Factory(
+        ScanMediaDirectoriesUseCase,
+        file_scanner=file_scanner,
+        variant_detector=variant_detector,
         movie_repository=movie_repository,
         series_repository=series_repository,
     )
