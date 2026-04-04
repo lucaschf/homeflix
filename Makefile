@@ -54,7 +54,7 @@ test:
 	poetry run pytest
 
 test-unit:
-	poetry run pytest tests/unit -v
+	poetry run pytest -k "unit" -v
 
 test-cov:
 	poetry run pytest --cov=src --cov-report=html --cov-report=term-missing
