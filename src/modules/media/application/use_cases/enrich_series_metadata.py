@@ -1,5 +1,6 @@
 """Use case for enriching a series with external metadata."""
 
+import logging
 from datetime import date
 
 from src.building_blocks.application.errors import ResourceNotFoundException
@@ -148,7 +149,9 @@ def _apply_season_metadata(season: Season, meta: SeasonMetadata) -> Season:
     if meta.synopsis and not season.synopsis:
         updates["synopsis"] = meta.synopsis
     if meta.air_date and not season.air_date:
-        updates["air_date"] = AirDate(date.fromisoformat(meta.air_date))
+        parsed = _parse_date(meta.air_date)
+        if parsed:
+            updates["air_date"] = AirDate(parsed)
 
     if updates:
         season = season.with_updates(**updates)
@@ -175,7 +178,9 @@ def _apply_episode_metadata(episode: Episode, meta: EpisodeMetadata) -> Episode:
     if meta.synopsis and not episode.synopsis:
         updates["synopsis"] = meta.synopsis
     if meta.air_date and not episode.air_date:
-        updates["air_date"] = AirDate(date.fromisoformat(meta.air_date))
+        parsed = _parse_date(meta.air_date)
+        if parsed:
+            updates["air_date"] = AirDate(parsed)
     if meta.duration_seconds and episode.duration.value == 0:
         updates["duration"] = Duration(meta.duration_seconds)
 
@@ -183,6 +188,18 @@ def _apply_episode_metadata(episode: Episode, meta: EpisodeMetadata) -> Episode:
         episode = episode.with_updates(**updates)
 
     return episode
+
+
+_logger = logging.getLogger(__name__)
+
+
+def _parse_date(value: str) -> date | None:
+    """Safely parse an ISO date string, returning None on failure."""
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        _logger.warning("Could not parse date: %s", value)
+        return None
 
 
 __all__ = ["EnrichSeriesMetadataUseCase"]

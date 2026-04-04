@@ -145,7 +145,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # =========================================================================
 
     # Must be wired from parent container (Settings.tmdb_api_key)
-    tmdb_api_key = providers.Dependency(default="")
+    tmdb_api_key = providers.Dependency()
 
     tmdb_client = providers.Singleton(TmdbClient, api_key=tmdb_api_key)
 

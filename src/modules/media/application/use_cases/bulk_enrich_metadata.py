@@ -1,11 +1,12 @@
 """Use case for bulk metadata enrichment of all media."""
 
-from typing import Any
+from collections.abc import Awaitable, Callable
 
 from src.modules.media.application.dtos.enrichment_dtos import (
     BulkEnrichInput,
     BulkEnrichOutput,
     EnrichMediaInput,
+    EnrichMediaOutput,
 )
 from src.modules.media.application.use_cases.enrich_movie_metadata import (
     EnrichMovieMetadataUseCase,
@@ -80,7 +81,7 @@ class BulkEnrichMetadataUseCase:
     @staticmethod
     async def _enrich_all(
         items: list[tuple[str, str]],
-        enrich_fn: Any,
+        enrich_fn: Callable[[EnrichMediaInput], Awaitable[EnrichMediaOutput]],
         label: str,
         *,
         force: bool,

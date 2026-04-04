@@ -23,6 +23,7 @@ class TmdbClient(MetadataProvider):
     def __init__(self, api_key: str, base_url: str = "https://api.themoviedb.org/3") -> None:
         self._api_key = api_key
         self._base_url = base_url
+        self._client = httpx.AsyncClient(timeout=30.0)
 
     def _params(self, **extra: str | int | None) -> dict[str, str | int]:
         params: dict[str, str | int] = {"api_key": self._api_key}
@@ -36,51 +37,45 @@ class TmdbClient(MetadataProvider):
 
     async def search_movie(self, title: str, year: int | None = None) -> MediaMetadata | None:
         """Search TMDB for a movie and return metadata for the best match."""
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self._base_url}/search/movie",
-                params=self._params(query=title, year=year),
-            )
-            resp.raise_for_status()
-            results = resp.json().get("results", [])
+        resp = await self._client.get(
+            f"{self._base_url}/search/movie",
+            params=self._params(query=title, year=year),
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
 
-            if not results:
-                return None
+        if not results:
+            return None
 
-            tmdb_id = results[0]["id"]
-            return await self._fetch_movie_details(client, tmdb_id)
+        tmdb_id = results[0]["id"]
+        return await self._fetch_movie_details(tmdb_id)
 
     async def search_series(self, title: str, year: int | None = None) -> MediaMetadata | None:
         """Search TMDB for a TV series and return metadata for the best match."""
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self._base_url}/search/tv",
-                params=self._params(query=title, first_air_date_year=year),
-            )
-            resp.raise_for_status()
-            results = resp.json().get("results", [])
+        resp = await self._client.get(
+            f"{self._base_url}/search/tv",
+            params=self._params(query=title, first_air_date_year=year),
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
 
-            if not results:
-                return None
+        if not results:
+            return None
 
-            tmdb_id = results[0]["id"]
-            return await self._fetch_series_details(client, tmdb_id)
+        tmdb_id = results[0]["id"]
+        return await self._fetch_series_details(tmdb_id)
 
     async def get_movie_by_id(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch movie details by TMDB ID."""
-        async with httpx.AsyncClient() as client:
-            return await self._fetch_movie_details(client, tmdb_id)
+        return await self._fetch_movie_details(tmdb_id)
 
     async def get_series_by_id(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch series details by TMDB ID."""
-        async with httpx.AsyncClient() as client:
-            return await self._fetch_series_details(client, tmdb_id)
+        return await self._fetch_series_details(tmdb_id)
 
-    async def _fetch_movie_details(
-        self, client: httpx.AsyncClient, tmdb_id: int
-    ) -> MediaMetadata | None:
+    async def _fetch_movie_details(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch full movie details from TMDB."""
-        resp = await client.get(
+        resp = await self._client.get(
             f"{self._base_url}/movie/{tmdb_id}",
             params=self._params(),
         )
@@ -106,13 +101,11 @@ class TmdbClient(MetadataProvider):
             imdb_id=data.get("imdb_id"),
         )
 
-    async def _fetch_series_details(
-        self, client: httpx.AsyncClient, tmdb_id: int
-    ) -> MediaMetadata | None:
+    async def _fetch_series_details(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch full series details including seasons and episodes."""
-        resp = await client.get(
+        resp = await self._client.get(
             f"{self._base_url}/tv/{tmdb_id}",
-            params=self._params(),
+            params=self._params(append_to_response="external_ids"),
         )
         if resp.status_code == 404:
             return None
@@ -131,7 +124,7 @@ class TmdbClient(MetadataProvider):
         seasons: list[SeasonMetadata] = []
         for s in data.get("seasons", []):
             season_num = s.get("season_number", 0)
-            season_meta = await self._fetch_season(client, tmdb_id, season_num)
+            season_meta = await self._fetch_season(tmdb_id, season_num)
             if season_meta:
                 seasons.append(season_meta)
 
@@ -149,11 +142,9 @@ class TmdbClient(MetadataProvider):
             seasons=seasons,
         )
 
-    async def _fetch_season(
-        self, client: httpx.AsyncClient, series_id: int, season_number: int
-    ) -> SeasonMetadata | None:
+    async def _fetch_season(self, series_id: int, season_number: int) -> SeasonMetadata | None:
         """Fetch season details with episode list."""
-        resp = await client.get(
+        resp = await self._client.get(
             f"{self._base_url}/tv/{series_id}/season/{season_number}",
             params=self._params(),
         )
