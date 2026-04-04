@@ -25,6 +25,12 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 target_metadata = Base.metadata
 
 
+def _is_sqlite(url: str | None = None) -> bool:
+    """Check if the database URL is SQLite."""
+    db_url = url or config.get_main_option("sqlalchemy.url") or ""
+    return db_url.startswith("sqlite")
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
@@ -33,7 +39,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=True,
+        render_as_batch=_is_sqlite(url),
     )
 
     with context.begin_transaction():
@@ -45,7 +51,7 @@ def do_run_migrations(connection: Connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
-        render_as_batch=True,
+        render_as_batch=connection.dialect.name == "sqlite",
     )
 
     with context.begin_transaction():
