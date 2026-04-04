@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date  # noqa: TCH003 - Pydantic needs this at runtime
-
 from pydantic import Field, field_validator
 
 from src.building_blocks.domain import DomainEntity
 from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixin
 from src.modules.media.domain.value_objects import (
+    AirDate,
     Duration,
     EpisodeId,
     FilePath,
@@ -58,7 +57,7 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
     thumbnail_path: FilePath | None = None
 
     # Metadata
-    air_date: date | None = None
+    air_date: AirDate | None = None
 
     # noinspection PyNestedDecorators
     @field_validator("id", mode="before")

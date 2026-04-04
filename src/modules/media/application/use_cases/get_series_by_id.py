@@ -101,7 +101,7 @@ class GetSeriesByIdUseCase:
             title=season.title.value if season.title else None,
             synopsis=season.synopsis,
             poster_path=season.poster_path.value if season.poster_path else None,
-            air_date=season.air_date.isoformat() if season.air_date else None,
+            air_date=season.air_date.value.isoformat() if season.air_date else None,
             episode_count=season.episode_count,
             episodes=[self._to_episode_output(e) for e in season.episodes],
         )
@@ -129,7 +129,7 @@ class GetSeriesByIdUseCase:
             resolution=primary.resolution.value if primary else None,
             files=[to_media_file_output(f) for f in episode.files],
             thumbnail_path=episode.thumbnail_path.value if episode.thumbnail_path else None,
-            air_date=episode.air_date.isoformat() if episode.air_date else None,
+            air_date=episode.air_date.value.isoformat() if episode.air_date else None,
         )
 
 

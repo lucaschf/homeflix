@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date  # noqa: TCH003
 from typing import TYPE_CHECKING, Self
 
 from pydantic import Field, field_validator
@@ -10,7 +9,7 @@ from pydantic import Field, field_validator
 from src.building_blocks.domain import DomainEntity
 from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.rule_codes import MediaRuleCodes
-from src.modules.media.domain.value_objects import FilePath, SeasonId, SeriesId, Title
+from src.modules.media.domain.value_objects import AirDate, FilePath, SeasonId, SeriesId, Title
 
 if TYPE_CHECKING:
     from src.modules.media.domain.entities.episode import Episode
@@ -43,7 +42,7 @@ class Season(DomainEntity[SeasonId]):
     poster_path: FilePath | None = None
 
     # Metadata
-    air_date: date | None = None
+    air_date: AirDate | None = None
 
     # Composition
     episodes: list[Episode] = Field(default_factory=list)
