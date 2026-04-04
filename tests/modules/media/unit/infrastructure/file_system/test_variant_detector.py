@@ -5,7 +5,7 @@ import pytest
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def detector() -> VariantDetector:
     return VariantDetector()
 
