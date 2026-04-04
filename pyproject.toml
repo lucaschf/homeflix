@@ -91,6 +91,7 @@ plugins = ["pydantic.mypy", "sqlalchemy.ext.mypy.plugin"]
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+disallow_untyped_decorators = false
 
 # =============================================================================
 # Pytest
