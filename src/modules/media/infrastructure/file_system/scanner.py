@@ -1,7 +1,7 @@
 """Filesystem scanner for discovering media files."""
 
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePath
 
 from src.modules.media.application.ports import FileSystemScanner, MediaType, ScannedFile
 from src.shared_kernel.value_objects.file_path import FilePath
@@ -46,7 +46,7 @@ def _extract_year(filename: str) -> int | None:
 
 def _extract_title(filename: str, year: int | None) -> str:
     """Extract title from filename by removing year and quality tags."""
-    stem = PurePosixPath(filename).stem
+    stem = PurePath(filename).stem
 
     # Remove everything from year onwards (if present)
     if year:
@@ -85,7 +85,7 @@ def _find_series_name(file_path: str) -> str:
 
     Walks up the directory tree looking for the series root folder.
     """
-    parts = PurePosixPath(file_path).parts
+    parts = PurePath(file_path).parts
 
     for i, part in enumerate(parts):
         # Check if this folder is a season folder

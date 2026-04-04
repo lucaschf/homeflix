@@ -7,6 +7,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 
 from src.config.containers import ApplicationContainer
+from src.config.settings import get_settings
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
@@ -30,7 +31,8 @@ async def scan_media(
     Scans configured directories (or overrides from request body)
     for movie and episode files, registering them in the database.
     """
-    directories = [FilePath(d) for d in body.directories] if body and body.directories else []
+    raw_dirs = body.directories if body and body.directories else get_settings().media_directories
+    directories = [FilePath(d) for d in raw_dirs]
     input_dto = ScanMediaInput(directories=directories)
     output = await use_case.execute(input_dto)
     return asdict(output)

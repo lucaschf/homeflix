@@ -1,7 +1,6 @@
 """Use case for scanning media directories and registering discovered files."""
 
 from collections import defaultdict
-from typing import Any
 
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput, ScanMediaOutput
 from src.modules.media.application.ports import FileSystemScanner, MediaType, ScannedFile
@@ -87,7 +86,7 @@ class ScanMediaDirectoriesUseCase:
                 created += c
                 updated += u
             except Exception as e:
-                errors.append(f"Error processing movie group: {e}")
+                errors.append(f"Error processing movie files {paths}: {e}")
 
         return created, updated, errors
 
@@ -224,8 +223,8 @@ def _process_episode_group(
         episode = _create_episode(series, season_num, episode_num, ep_files)
         created, updated = 1, 0
 
-    season = _replace_in_list(season, "episodes", "episode_number", episode_num, episode)
-    series = _replace_in_list(series, "seasons", "season_number", season_num, season)
+    season = _upsert_episode_in_season(season, episode)
+    series = _upsert_season_in_series(series, season)
 
     return series, created, updated
 
@@ -265,26 +264,28 @@ def _add_variants_to_episode(
     return episode, added
 
 
-def _replace_in_list(
-    entity: Any,
-    attr: str,
-    key_attr: str,
-    key_value: int,
-    replacement: Any,
-) -> Any:
-    """Replace an item in an entity's list attribute, or append if not found."""
-    items = getattr(entity, attr)
-    new_items = []
-    replaced = False
-    for item in items:
-        if getattr(item, key_attr) == key_value:
-            new_items.append(replacement)
-            replaced = True
-        else:
-            new_items.append(item)
-    if not replaced:
-        new_items.append(replacement)
-    return entity.with_updates(**{attr: new_items})
+def _upsert_episode_in_season(season: Season, episode: Episode) -> Season:
+    """Replace or append an episode in a season's episode list."""
+    episodes = list(season.episodes)
+    for idx, existing in enumerate(episodes):
+        if existing.episode_number == episode.episode_number:
+            episodes[idx] = episode
+            break
+    else:
+        episodes.append(episode)
+    return season.with_updates(episodes=episodes)
+
+
+def _upsert_season_in_series(series: Series, season: Season) -> Series:
+    """Replace or append a season in a series' season list."""
+    seasons = list(series.seasons)
+    for idx, existing in enumerate(seasons):
+        if existing.season_number == season.season_number:
+            seasons[idx] = season
+            break
+    else:
+        seasons.append(season)
+    return series.with_updates(seasons=seasons)
 
 
 def _build_media_file(scanned: ScannedFile, *, is_primary: bool) -> MediaFile:
