@@ -40,6 +40,14 @@ class TestAirDateCreation:
 
         assert air_date.value == future_date
 
+    def test_should_create_with_upper_boundary_date(self):
+        from src.modules.media.domain.value_objects.air_date import AirDate
+
+        upper_boundary = date.today() + timedelta(days=AirDate.MAX_YEARS_AHEAD * 365)
+        air_date = AirDate(upper_boundary)
+
+        assert air_date.value == upper_boundary
+
     def test_should_raise_error_for_date_before_minimum(self):
         from src.modules.media.domain.value_objects import AirDate
 
