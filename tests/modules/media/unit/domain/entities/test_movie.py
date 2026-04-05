@@ -99,9 +99,11 @@ class TestMovieOptionalFields:
             Duration,
             FilePath,
             Genre,
+            ImdbId,
             MediaFile,
             Resolution,
             Title,
+            TmdbId,
             Year,
         )
 
@@ -122,16 +124,16 @@ class TestMovieOptionalFields:
                     is_primary=True,
                 )
             ],
-            tmdb_id=27205,
-            imdb_id="tt1375666",
+            tmdb_id=TmdbId(27205),
+            imdb_id=ImdbId("tt1375666"),
         )
 
         assert movie.original_title is not None
         assert movie.original_title.value == "Inception"
         assert movie.synopsis is not None
         assert len(movie.genres) == 2
-        assert movie.tmdb_id == 27205
-        assert movie.imdb_id == "tt1375666"
+        assert movie.tmdb_id == TmdbId(27205)
+        assert movie.imdb_id == ImdbId("tt1375666")
 
 
 class TestMovieGenreManagement:

@@ -17,7 +17,14 @@ from src.modules.media.application.use_cases.enrich_series_metadata import (
 )
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
-from src.modules.media.domain.value_objects import Duration, FilePath, MediaFile, Resolution, Title
+from src.modules.media.domain.value_objects import (
+    Duration,
+    FilePath,
+    MediaFile,
+    Resolution,
+    Title,
+    TmdbId,
+)
 
 
 def _make_series(**kwargs: object) -> Series:
@@ -95,7 +102,7 @@ class TestEnrichSeriesMetadata:
         assert result.provider == "tmdb"
 
         saved = repo.save.call_args[0][0]
-        assert saved.tmdb_id == 1396
+        assert saved.tmdb_id == TmdbId(1396)
         assert saved.synopsis is not None
 
     @pytest.mark.asyncio
@@ -118,7 +125,7 @@ class TestEnrichSeriesMetadata:
     @pytest.mark.asyncio
     async def test_should_skip_already_enriched(self) -> None:
         series = _make_series()
-        series = series.with_updates(tmdb_id=1396)
+        series = series.with_updates(tmdb_id=TmdbId(1396))
 
         repo = AsyncMock(spec=SeriesRepository)
         repo.find_by_id.return_value = series

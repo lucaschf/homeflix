@@ -12,10 +12,12 @@ from src.modules.media.domain.value_objects import (
     Duration,
     FilePath,
     Genre,
+    ImdbId,
     MediaFile,
     MovieId,
     Resolution,
     Title,
+    TmdbId,
     Year,
 )
 
@@ -58,8 +60,8 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     files: list[MediaFile] = Field(default_factory=list)
 
     # External IDs for metadata enrichment
-    tmdb_id: int | None = None
-    imdb_id: str | None = Field(default=None, pattern=r"^tt\d{7,}$")
+    tmdb_id: TmdbId | None = None
+    imdb_id: ImdbId | None = None
 
     # noinspection PyNestedDecorators
     @field_validator("id", mode="before")

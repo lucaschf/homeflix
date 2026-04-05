@@ -20,8 +20,10 @@ from src.modules.media.domain.value_objects import (
     AirDate,
     Duration,
     Genre,
+    ImdbId,
     SeriesId,
     Title,
+    TmdbId,
     Year,
 )
 
@@ -80,7 +82,7 @@ class EnrichSeriesMetadataUseCase:
     async def _fetch_metadata(self, series: Series) -> tuple[MediaMetadata | None, str | None]:
         """Try primary provider, then fallback."""
         if series.tmdb_id:
-            metadata = await self._primary.get_series_by_id(series.tmdb_id)
+            metadata = await self._primary.get_series_by_id(series.tmdb_id.value)
             if metadata:
                 return metadata, "tmdb"
 
@@ -105,9 +107,9 @@ def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
     if metadata.synopsis and not series.synopsis:
         updates["synopsis"] = metadata.synopsis
     if metadata.tmdb_id:
-        updates["tmdb_id"] = metadata.tmdb_id
+        updates["tmdb_id"] = TmdbId(metadata.tmdb_id)
     if metadata.imdb_id:
-        updates["imdb_id"] = metadata.imdb_id
+        updates["imdb_id"] = ImdbId(metadata.imdb_id)
     if metadata.original_title:
         updates["original_title"] = Title(metadata.original_title)
     if metadata.year:

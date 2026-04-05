@@ -8,10 +8,12 @@ from src.modules.media.domain.value_objects import (
     Duration,
     FilePath,
     Genre,
+    ImdbId,
     MediaFile,
     MovieId,
     Resolution,
     Title,
+    TmdbId,
     Year,
 )
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemyMovieRepository
@@ -196,8 +198,8 @@ class TestSQLAlchemyMovieRepository:
             poster_path=FilePath("/posters/full.jpg"),
             backdrop_path=FilePath("/backdrops/full.jpg"),
             genres=[Genre("Action"), Genre("Sci-Fi")],
-            tmdb_id=12345,
-            imdb_id="tt1234567",
+            tmdb_id=TmdbId(12345),
+            imdb_id=ImdbId("tt1234567"),
         )
 
         saved = await repo.save(movie)
@@ -208,8 +210,8 @@ class TestSQLAlchemyMovieRepository:
         assert saved.poster_path is not None
         assert saved.backdrop_path is not None
         assert len(saved.genres) == 2
-        assert saved.tmdb_id == 12345
-        assert saved.imdb_id == "tt1234567"
+        assert saved.tmdb_id == TmdbId(12345)
+        assert saved.imdb_id == ImdbId("tt1234567")
 
     async def test_save_preserves_genres(self, db_session: AsyncSession) -> None:
         """Test that genres are correctly persisted and retrieved."""

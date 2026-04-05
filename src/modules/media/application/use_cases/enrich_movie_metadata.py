@@ -8,7 +8,15 @@ from src.modules.media.application.dtos.enrichment_dtos import (
 from src.modules.media.application.ports import MediaMetadata, MetadataProvider
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
-from src.modules.media.domain.value_objects import Duration, Genre, MovieId, Title, Year
+from src.modules.media.domain.value_objects import (
+    Duration,
+    Genre,
+    ImdbId,
+    MovieId,
+    Title,
+    TmdbId,
+    Year,
+)
 
 
 class EnrichMovieMetadataUseCase:
@@ -65,7 +73,7 @@ class EnrichMovieMetadataUseCase:
     async def _fetch_metadata(self, movie: Movie) -> tuple[MediaMetadata | None, str | None]:
         """Try primary provider, then fallback."""
         if movie.tmdb_id:
-            metadata = await self._primary.get_movie_by_id(movie.tmdb_id)
+            metadata = await self._primary.get_movie_by_id(movie.tmdb_id.value)
             if metadata:
                 return metadata, "tmdb"
 
@@ -88,9 +96,9 @@ def _apply_movie_metadata(movie: Movie, metadata: MediaMetadata) -> Movie:
     if metadata.synopsis and not movie.synopsis:
         updates["synopsis"] = metadata.synopsis
     if metadata.tmdb_id:
-        updates["tmdb_id"] = metadata.tmdb_id
+        updates["tmdb_id"] = TmdbId(metadata.tmdb_id)
     if metadata.imdb_id:
-        updates["imdb_id"] = metadata.imdb_id
+        updates["imdb_id"] = ImdbId(metadata.imdb_id)
     if metadata.original_title:
         updates["original_title"] = Title(metadata.original_title)
     if metadata.duration_seconds and movie.duration.value == 0:

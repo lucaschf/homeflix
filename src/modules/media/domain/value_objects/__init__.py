@@ -4,6 +4,7 @@ from src.modules.media.domain.value_objects.air_date import AirDate
 from src.modules.media.domain.value_objects.duration import Duration
 from src.modules.media.domain.value_objects.genre import Genre
 from src.modules.media.domain.value_objects.hdr_format import HdrFormat
+from src.modules.media.domain.value_objects.imdb_id import ImdbId
 from src.modules.media.domain.value_objects.media_file import MediaFile
 from src.modules.media.domain.value_objects.media_id import (
     EpisodeId,
@@ -15,6 +16,7 @@ from src.modules.media.domain.value_objects.media_id import (
 )
 from src.modules.media.domain.value_objects.resolution import Resolution
 from src.modules.media.domain.value_objects.title import Title
+from src.modules.media.domain.value_objects.tmdb_id import TmdbId
 from src.modules.media.domain.value_objects.video_codec import VideoCodec
 from src.modules.media.domain.value_objects.year import Year
 from src.shared_kernel.value_objects.file_path import FilePath
@@ -28,6 +30,7 @@ __all__ = [
     "FilePath",
     "Genre",
     "HdrFormat",
+    "ImdbId",
     "MediaFile",
     "MediaId",
     "MovieId",
@@ -36,6 +39,7 @@ __all__ = [
     "SeriesId",
     "SubtitleTrack",
     "Title",
+    "TmdbId",
     "VideoCodec",
     "Year",
     "parse_media_id",

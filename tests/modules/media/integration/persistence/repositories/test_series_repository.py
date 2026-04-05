@@ -9,11 +9,13 @@ from src.modules.media.domain.value_objects import (
     EpisodeId,
     FilePath,
     Genre,
+    ImdbId,
     MediaFile,
     Resolution,
     SeasonId,
     SeriesId,
     Title,
+    TmdbId,
     Year,
 )
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemySeriesRepository
@@ -301,8 +303,8 @@ class TestSQLAlchemySeriesRepository:
             poster_path=FilePath("/posters/full.jpg"),
             backdrop_path=FilePath("/backdrops/full.jpg"),
             genres=[Genre("Drama"), Genre("Comedy")],
-            tmdb_id=98765,
-            imdb_id="tt9876543",
+            tmdb_id=TmdbId(98765),
+            imdb_id=ImdbId("tt9876543"),
         )
 
         saved = await repo.save(series)
@@ -313,8 +315,8 @@ class TestSQLAlchemySeriesRepository:
         assert saved.end_year.value == 2023
         assert saved.synopsis == "A complete test series."
         assert len(saved.genres) == 2
-        assert saved.tmdb_id == 98765
-        assert saved.imdb_id == "tt9876543"
+        assert saved.tmdb_id == TmdbId(98765)
+        assert saved.imdb_id == ImdbId("tt9876543")
 
     async def test_update_adds_new_season(self, db_session: AsyncSession) -> None:
         """Test that updating a series can add a new season."""

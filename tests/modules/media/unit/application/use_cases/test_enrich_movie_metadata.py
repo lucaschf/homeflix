@@ -12,6 +12,7 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
+from src.modules.media.domain.value_objects import TmdbId
 
 
 def _make_movie() -> Movie:
@@ -62,7 +63,7 @@ class TestEnrichMovieMetadata:
     @pytest.mark.asyncio
     async def test_should_skip_already_enriched_movie(self) -> None:
         movie = _make_movie()
-        movie = movie.with_updates(tmdb_id=27205)
+        movie = movie.with_updates(tmdb_id=TmdbId(27205))
 
         repo = AsyncMock(spec=MovieRepository)
         repo.find_by_id.return_value = movie
@@ -78,7 +79,7 @@ class TestEnrichMovieMetadata:
     @pytest.mark.asyncio
     async def test_should_force_re_enrich(self) -> None:
         movie = _make_movie()
-        movie = movie.with_updates(tmdb_id=27205)
+        movie = movie.with_updates(tmdb_id=TmdbId(27205))
 
         repo = AsyncMock(spec=MovieRepository)
         repo.find_by_id.return_value = movie
