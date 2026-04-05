@@ -64,13 +64,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.container = container
 
+    # Initialize database
+    await container.infrastructure.init_resources()
+
     logger.info("Application ready")
 
     yield
 
     # Shutdown
     logger.info("Application shutting down")
-
+    await container.infrastructure.shutdown_resources()
     logger.info("Application stopped")
 
 
