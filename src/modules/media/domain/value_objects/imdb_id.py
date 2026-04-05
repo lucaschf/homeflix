@@ -1,8 +1,12 @@
 """IMDb ID value object for external metadata references."""
 
+import re
+
 from pydantic import model_validator
 
 from src.building_blocks.domain import StringValueObject
+
+_IMDB_PATTERN = re.compile(r"^tt\d{7,}$")
 
 
 class ImdbId(StringValueObject):
@@ -34,9 +38,7 @@ class ImdbId(StringValueObject):
         if not isinstance(value, str):
             raise ValueError("IMDb ID must be a string")
 
-        import re
-
-        if not re.match(r"^tt\d{7,}$", value):
+        if not _IMDB_PATTERN.match(value):
             raise ValueError("IMDb ID must match format tt1234567 (tt followed by 7+ digits)")
 
         return value

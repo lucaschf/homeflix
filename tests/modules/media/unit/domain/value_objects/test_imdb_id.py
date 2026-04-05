@@ -37,8 +37,14 @@ class TestImdbIdCreation:
     def test_should_raise_error_for_invalid_format(self):
         from src.modules.media.domain.value_objects import ImdbId
 
-        with pytest.raises(DomainValidationException):
+        with pytest.raises(DomainValidationException, match="tt followed by 7"):
             ImdbId("invalid")
+
+    def test_should_raise_error_for_non_string_input(self):
+        from src.modules.media.domain.value_objects import ImdbId
+
+        with pytest.raises(DomainValidationException, match="must be a string"):
+            ImdbId(1234567)  # type: ignore[arg-type]
 
 
 class TestImdbIdBehavior:
