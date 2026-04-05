@@ -9,7 +9,15 @@ from pydantic import Field, field_validator, model_validator
 from src.building_blocks.domain import AggregateRoot
 from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.rule_codes import MediaRuleCodes
-from src.modules.media.domain.value_objects import FilePath, Genre, SeriesId, Title, Year
+from src.modules.media.domain.value_objects import (
+    FilePath,
+    Genre,
+    ImdbId,
+    SeriesId,
+    Title,
+    TmdbId,
+    Year,
+)
 
 if TYPE_CHECKING:
     from src.modules.media.domain.entities.season import Season
@@ -46,8 +54,8 @@ class Series(AggregateRoot[SeriesId]):
     genres: list[Genre] = Field(default_factory=list)
 
     # External IDs
-    tmdb_id: int | None = None
-    imdb_id: str | None = Field(default=None, pattern=r"^tt\d{7,}$")
+    tmdb_id: TmdbId | None = None
+    imdb_id: ImdbId | None = None
 
     # Composition
     seasons: list[Season] = Field(default_factory=list)

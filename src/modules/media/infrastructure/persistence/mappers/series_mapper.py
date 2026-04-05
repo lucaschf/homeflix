@@ -7,11 +7,13 @@ from src.modules.media.domain.value_objects import (
     EpisodeId,
     FilePath,
     Genre,
+    ImdbId,
     MediaFile,
     Resolution,
     SeasonId,
     SeriesId,
     Title,
+    TmdbId,
     Year,
 )
 from src.modules.media.infrastructure.persistence.mappers.media_file_mapper import (
@@ -253,8 +255,8 @@ class SeriesMapper:
             poster_path=entity.poster_path.value if entity.poster_path else None,
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
-            tmdb_id=entity.tmdb_id,
-            imdb_id=entity.imdb_id,
+            tmdb_id=entity.tmdb_id.value if entity.tmdb_id else None,
+            imdb_id=entity.imdb_id.value if entity.imdb_id else None,
         )
 
     @staticmethod
@@ -286,8 +288,8 @@ class SeriesMapper:
             poster_path=FilePath(model.poster_path) if model.poster_path else None,
             backdrop_path=FilePath(model.backdrop_path) if model.backdrop_path else None,
             genres=genre_list,
-            tmdb_id=model.tmdb_id,
-            imdb_id=model.imdb_id,
+            tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
+            imdb_id=ImdbId(model.imdb_id) if model.imdb_id else None,
             seasons=season_list,
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -312,8 +314,8 @@ class SeriesMapper:
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
-        model.tmdb_id = entity.tmdb_id
-        model.imdb_id = entity.imdb_id
+        model.tmdb_id = entity.tmdb_id.value if entity.tmdb_id else None
+        model.imdb_id = entity.imdb_id.value if entity.imdb_id else None
 
         return model
 

@@ -77,8 +77,8 @@ class GetMovieByIdUseCase:
             file_size=primary.file_size if primary else None,
             resolution=primary.resolution.value if primary else None,
             files=[to_media_file_output(f) for f in movie.files],
-            tmdb_id=movie.tmdb_id,
-            imdb_id=movie.imdb_id,
+            tmdb_id=movie.tmdb_id.value if movie.tmdb_id else None,
+            imdb_id=movie.imdb_id.value if movie.imdb_id else None,
             created_at=movie.created_at.isoformat(),
             updated_at=movie.updated_at.isoformat(),
         )
