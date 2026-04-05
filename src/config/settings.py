@@ -48,7 +48,7 @@ class Settings(BaseSettings):  # type: ignore[misc]
     # =========================================================================
 
     host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8000)
+    port: int = Field(default=8005)
     allowed_origins: list[str] = Field(default=["http://localhost:3000", "http://localhost:5173"])
 
     @field_validator("allowed_origins", mode="before")
