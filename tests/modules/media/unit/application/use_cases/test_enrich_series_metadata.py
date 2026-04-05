@@ -1,0 +1,145 @@
+"""Tests for EnrichSeriesMetadataUseCase."""
+
+from unittest.mock import AsyncMock
+
+import pytest
+
+from src.building_blocks.application.errors import ResourceNotFoundException
+from src.modules.media.application.dtos.enrichment_dtos import EnrichMediaInput
+from src.modules.media.application.ports import (
+    EpisodeMetadata,
+    MediaMetadata,
+    MetadataProvider,
+    SeasonMetadata,
+)
+from src.modules.media.application.use_cases.enrich_series_metadata import (
+    EnrichSeriesMetadataUseCase,
+)
+from src.modules.media.domain.entities import Episode, Season, Series
+from src.modules.media.domain.repositories import SeriesRepository
+from src.modules.media.domain.value_objects import Duration, FilePath, MediaFile, Resolution, Title
+
+
+def _make_series(**kwargs: object) -> Series:
+    series = Series.create(title="Breaking Bad", start_year=2008, **kwargs)
+    assert series.id is not None
+    season = Season(series_id=series.id, season_number=1)
+    episode = Episode(
+        series_id=series.id,
+        season_number=1,
+        episode_number=1,
+        title=Title("Episode 1"),
+        duration=Duration(0),
+        files=[
+            MediaFile(
+                file_path=FilePath("/series/bb/s01e01.mkv"),
+                file_size=500_000,
+                resolution=Resolution("1080p"),
+                is_primary=True,
+            ),
+        ],
+    )
+    season = season.with_episode(episode)
+    return series.with_season(season)
+
+
+def _make_metadata() -> MediaMetadata:
+    return MediaMetadata(
+        title="Breaking Bad",
+        original_title="Breaking Bad",
+        year=2008,
+        end_year=2013,
+        synopsis="A chemistry teacher turns to a life of crime.",
+        genres=["Drama", "Crime"],
+        tmdb_id=1396,
+        imdb_id="tt0903747",
+        seasons=[
+            SeasonMetadata(
+                season_number=1,
+                title="Season 1",
+                synopsis="The beginning.",
+                air_date="2008-01-20",
+                episodes=[
+                    EpisodeMetadata(
+                        season_number=1,
+                        episode_number=1,
+                        title="Pilot",
+                        synopsis="Walter White begins.",
+                        air_date="2008-01-20",
+                        duration_seconds=3480,
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+@pytest.mark.unit
+class TestEnrichSeriesMetadata:
+    """Tests for EnrichSeriesMetadataUseCase."""
+
+    @pytest.mark.asyncio
+    async def test_should_enrich_series_with_metadata(self) -> None:
+        series = _make_series()
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+        repo.save.side_effect = lambda s: s
+
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = _make_metadata()
+
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        assert result.enriched is True
+        assert result.provider == "tmdb"
+
+        saved = repo.save.call_args[0][0]
+        assert saved.tmdb_id == 1396
+        assert saved.synopsis is not None
+
+    @pytest.mark.asyncio
+    async def test_should_enrich_episode_title(self) -> None:
+        series = _make_series()
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+        repo.save.side_effect = lambda s: s
+
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = _make_metadata()
+
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        saved = repo.save.call_args[0][0]
+        episode = saved.seasons[0].episodes[0]
+        assert episode.title.value == "Pilot"
+
+    @pytest.mark.asyncio
+    async def test_should_skip_already_enriched(self) -> None:
+        series = _make_series()
+        series = series.with_updates(tmdb_id=1396)
+
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+
+        provider = AsyncMock(spec=MetadataProvider)
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+
+        result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        assert result.enriched is False
+
+    @pytest.mark.asyncio
+    async def test_should_raise_when_series_not_found(self) -> None:
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = None
+
+        provider = AsyncMock(spec=MetadataProvider)
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+
+        from src.modules.media.domain.value_objects import SeriesId
+
+        fake_id = str(SeriesId.generate())
+        with pytest.raises(ResourceNotFoundException):
+            await use_case.execute(EnrichMediaInput(media_id=fake_id))
