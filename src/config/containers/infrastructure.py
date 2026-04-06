@@ -7,6 +7,7 @@ infrastructure components.
 from collections.abc import AsyncGenerator
 
 from dependency_injector import containers, providers
+from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.config.settings import Settings
@@ -17,9 +18,13 @@ async def _init_engine(
 ) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
     """Create engine and session factory with lifecycle management."""
     is_sqlite = database_url.startswith("sqlite")
+
     engine_kwargs: dict[str, object] = {"echo": False}
 
-    if not is_sqlite:
+    if is_sqlite:
+        # SQLite: use NullPool to avoid connection limit issues
+        engine_kwargs["poolclass"] = pool.NullPool
+    else:
         engine_kwargs["pool_size"] = 5
         engine_kwargs["max_overflow"] = 10
 
