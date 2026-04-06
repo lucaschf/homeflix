@@ -30,12 +30,15 @@ async def _init_engine(
 
     engine = create_async_engine(database_url, **engine_kwargs)
 
-    # Create tables for dev (Alembic handles prod migrations)
-    import src.modules.media.infrastructure.persistence.models  # noqa: F401
-    from src.config.persistence.base import Base
+    # Auto-create tables only in dev (prod uses Alembic migrations)
+    from src.config.settings import get_settings
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    if get_settings().is_development:
+        import src.modules.media.infrastructure.persistence.models  # noqa: F401
+        from src.config.persistence.base import Base
+
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
     factory = async_sessionmaker(
         bind=engine,
