@@ -87,6 +87,8 @@ class SQLAlchemyMovieRepository(MovieRepository):
             self._session.add(model)
             await self._session.flush()
 
+        await self._session.commit()
+
         # Reload with relationships to return a complete entity
         assert movie.id is not None
         result_entity = await self.find_by_id(movie.id)
@@ -114,6 +116,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
 
         model.soft_delete()
         await self._session.flush()
+        await self._session.commit()
         return True
 
     async def list_all(self) -> Sequence[Movie]:

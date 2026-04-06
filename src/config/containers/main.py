@@ -55,6 +55,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     media = providers.Container(
         MediaContainer,
         session=infrastructure.session,
+        tmdb_api_key=config.provided.tmdb_api_key,
     )
 
     library = providers.Container(LibraryContainer)

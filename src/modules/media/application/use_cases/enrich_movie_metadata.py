@@ -1,5 +1,7 @@
 """Use case for enriching a movie with external metadata."""
 
+import logging
+
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.enrichment_dtos import (
     EnrichMediaInput,
@@ -17,6 +19,8 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 class EnrichMovieMetadataUseCase:
@@ -71,28 +75,82 @@ class EnrichMovieMetadataUseCase:
         return EnrichMediaOutput(media_id=input_dto.media_id, enriched=True, provider=provider_name)
 
     async def _fetch_metadata(self, movie: Movie) -> tuple[MediaMetadata | None, str | None]:
-        """Try primary provider, then fallback."""
+        """Try primary provider, then fallback.
+
+        Searches with original title first, then retries with a
+        cleaned title (quality tags removed) and without year.
+        """
         if movie.tmdb_id:
             metadata = await self._primary.get_movie_by_id(movie.tmdb_id.value)
             if metadata:
                 return metadata, "tmdb"
 
-        metadata = await self._primary.search_movie(movie.title.value, movie.year.value)
+        title = movie.title.value
+        year = movie.year.value
+
+        # Try with original title + year
+        metadata = await self._primary.search_movie(title, year)
+        if metadata:
+            return metadata, "tmdb"
+
+        # Retry with cleaned title (remove quality tags) and no year
+        clean = _clean_title(title)
+        if clean != title:
+            metadata = await self._primary.search_movie(clean)
+            if metadata:
+                return metadata, "tmdb"
+
+        # Retry with just the title, no year
+        metadata = await self._primary.search_movie(title)
         if metadata:
             return metadata, "tmdb"
 
         if self._fallback:
-            metadata = await self._fallback.search_movie(movie.title.value, movie.year.value)
+            metadata = await self._fallback.search_movie(clean or title)
             if metadata:
                 return metadata, "omdb"
 
+        _logger.warning("No metadata found for movie %r", title)
         return None, None
+
+
+def _clean_title(title: str) -> str:
+    """Remove common quality tags and noise from a title for better search."""
+    import re
+
+    # Remove words containing resolution (e.g. "TetraBD720p", "1080p", "FHD")
+    result = re.sub(r"\S*\d{3,4}p\S*", "", title, flags=re.IGNORECASE)
+
+    # Remove known tags
+    patterns = [
+        r"\b(?:4K|UHD|FHD|HD|SD)\b",
+        r"\b(?:BluRay|BDRip|BRRip|WEB-?DL|WEB-?Rip|HDTV|DVDRip|REMUX)\b",
+        r"\b(?:HEVC|H\.?265|H\.?264|x264|x265|AV1|VP9|MPEG4)\b",
+        r"\b(?:HDR10\+?|HDR|DolbyVision|DV|HLG)\b",
+        r"\b(?:DTS(?:-HD)?(?:\.?MA)?|TrueHD|Atmos|AAC|AC3|FLAC|EAC3)\b",
+        r"\b(?:PROPER|REPACK|EXTENDED|UNRATED|IMAX|DC)\b",
+        r"\b(?:TetraBD|MemoriadaTV|YIFY|RARBG|NTb|FGT|EVO|SPARKS)\b",
+        r"\b\d{1,2}\.\d\b",  # audio channels like 5.1
+        r"\[.*?\]",
+        r"\(.*?\)",
+    ]
+    for pattern in patterns:
+        result = re.sub(pattern, "", result, flags=re.IGNORECASE)
+
+    # Remove standalone 2-digit numbers (e.g. "86" from year in filename)
+    result = re.sub(r"\b\d{2}\b", "", result)
+
+    # Clean up whitespace and trailing punctuation
+    result = re.sub(r"\s+", " ", result).strip().strip("-._")
+    return result
 
 
 def _apply_movie_metadata(movie: Movie, metadata: MediaMetadata) -> Movie:
     """Apply metadata fields to a movie entity."""
     updates: dict[str, object] = {}
 
+    if metadata.title:
+        updates["title"] = Title(metadata.title)
     if metadata.synopsis and not movie.synopsis:
         updates["synopsis"] = metadata.synopsis
     if metadata.tmdb_id:
