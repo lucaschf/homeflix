@@ -20,6 +20,7 @@ from src.modules.media.domain.value_objects import (
     AirDate,
     Duration,
     Genre,
+    ImageUrl,
     ImdbId,
     SeriesId,
     Title,
@@ -118,6 +119,10 @@ def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
         updates["end_year"] = Year(metadata.end_year)
     if metadata.genres and not series.genres:
         updates["genres"] = [Genre(g) for g in metadata.genres]
+    if metadata.poster_url and not series.poster_path:
+        updates["poster_path"] = ImageUrl(metadata.poster_url)
+    if metadata.backdrop_url and not series.backdrop_path:
+        updates["backdrop_path"] = ImageUrl(metadata.backdrop_url)
 
     if updates:
         series = series.with_updates(**updates)

@@ -141,12 +141,12 @@ class TestSeasonOptionalFields:
 
     def test_should_create_with_poster_path(self):
         from src.modules.media.domain.entities import Season
-        from src.modules.media.domain.value_objects import FilePath, SeriesId
+        from src.modules.media.domain.value_objects import ImageUrl, SeriesId
 
         season = Season(
             series_id=SeriesId.generate(),
             season_number=1,
-            poster_path=FilePath("/posters/show_s01.jpg"),
+            poster_path=ImageUrl("/posters/show_s01.jpg"),
         )
 
         assert season.poster_path is not None

@@ -10,8 +10,8 @@ from src.building_blocks.domain import AggregateRoot
 from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
-    FilePath,
     Genre,
+    ImageUrl,
     ImdbId,
     SeriesId,
     Title,
@@ -47,8 +47,8 @@ class Series(AggregateRoot[SeriesId]):
     synopsis: str | None = Field(default=None, max_length=10000)
 
     # Images
-    poster_path: FilePath | None = None
-    backdrop_path: FilePath | None = None
+    poster_path: ImageUrl | None = None
+    backdrop_path: ImageUrl | None = None
 
     # Categorization
     genres: list[Genre] = Field(default_factory=list)

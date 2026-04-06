@@ -9,7 +9,7 @@ from pydantic import Field, field_validator
 from src.building_blocks.domain import DomainEntity
 from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.rule_codes import MediaRuleCodes
-from src.modules.media.domain.value_objects import AirDate, FilePath, SeasonId, SeriesId, Title
+from src.modules.media.domain.value_objects import AirDate, ImageUrl, SeasonId, SeriesId, Title
 
 if TYPE_CHECKING:
     from src.modules.media.domain.entities.episode import Episode
@@ -39,7 +39,7 @@ class Season(DomainEntity[SeasonId]):
     # Content info
     title: Title | None = None
     synopsis: str | None = Field(default=None, max_length=10000)
-    poster_path: FilePath | None = None
+    poster_path: ImageUrl | None = None
 
     # Metadata
     air_date: AirDate | None = None

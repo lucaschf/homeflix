@@ -12,6 +12,7 @@ from src.modules.media.domain.value_objects import (
     Duration,
     FilePath,
     Genre,
+    ImageUrl,
     ImdbId,
     MediaFile,
     MovieId,
@@ -50,8 +51,8 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     synopsis: str | None = Field(default=None, max_length=10000)
 
     # Images
-    poster_path: FilePath | None = None
-    backdrop_path: FilePath | None = None
+    poster_path: ImageUrl | None = None
+    backdrop_path: ImageUrl | None = None
 
     # Categorization
     genres: list[Genre] = Field(default_factory=list)
