@@ -5,8 +5,8 @@ for MKV/AVI/MOV/WMV to MP4 (container conversion without
 re-encoding for browser compatibility).
 """
 
-import asyncio
 import shutil
+import subprocess
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -66,7 +66,7 @@ async def _stream_transmux(file_path: str) -> AsyncGenerator[bytes, None]:
         "-c:v",
         "copy",
         "-c:a",
-        "aac",  # Re-encode audio to AAC for browser compat
+        "aac",
         "-movflags",
         "frag_keyframe+empty_moov+faststart",
         "-f",
@@ -76,23 +76,22 @@ async def _stream_transmux(file_path: str) -> AsyncGenerator[bytes, None]:
         "pipe:1",
     ]
 
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
 
     try:
         assert process.stdout is not None
         while True:
-            chunk = await process.stdout.read(_CHUNK_SIZE)
+            chunk = process.stdout.read(_CHUNK_SIZE)
             if not chunk:
                 break
             yield chunk
     finally:
-        if process.returncode is None:
-            process.kill()
-        await process.wait()
+        process.kill()
+        process.wait()
 
 
 def _resolve_file(file_path: str | None) -> Path:
