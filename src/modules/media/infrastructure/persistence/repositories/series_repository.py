@@ -142,6 +142,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 episode.soft_delete()
 
         await self._session.flush()
+        await self._session.commit()
         return True
 
     async def list_all(self) -> Sequence[Series]:
@@ -299,6 +300,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 self._session.add(episode_model)
 
         await self._session.flush()
+        await self._session.commit()
 
         # Reload and return (series.id is guaranteed to exist after _ensure_ids)
         assert series.id is not None
@@ -352,6 +354,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 ep_model.soft_delete()
 
         await self._session.flush()
+        await self._session.commit()
 
         # Reload and return (series.id is guaranteed to exist)
         assert series.id is not None

@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from src.config.settings import Settings
 
 
-async def _create_session(
+async def _init_engine(
     database_url: str,
 ) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
-    """Create an async session factory with engine lifecycle management."""
+    """Create engine and session factory with lifecycle management."""
     is_sqlite = database_url.startswith("sqlite")
     engine_kwargs: dict[str, object] = {"echo": False}
 
@@ -32,14 +32,14 @@ async def _create_session(
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    session_factory = async_sessionmaker(
+    factory = async_sessionmaker(
         bind=engine,
         class_=AsyncSession,
         expire_on_commit=False,
         autoflush=False,
     )
 
-    yield session_factory
+    yield factory
 
     await engine.dispose()
 
@@ -50,7 +50,7 @@ class InfrastructureContainer(containers.DeclarativeContainer):  # type: ignore[
     config = providers.Dependency(instance_of=Settings)
 
     session_factory = providers.Resource(
-        _create_session,
+        _init_engine,
         database_url=config.provided.database_url,
     )
 
