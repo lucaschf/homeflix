@@ -20,6 +20,7 @@ from src.modules.media.presentation.routes import (
     movie_router,
     scan_router,
     series_router,
+    stream_router,
 )
 
 
@@ -60,6 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "src.modules.media.presentation.routes.movie_routes",
             "src.modules.media.presentation.routes.scan_routes",
             "src.modules.media.presentation.routes.series_routes",
+            "src.modules.media.presentation.routes.stream_routes",
         ],
     )
     app.state.container = container
@@ -114,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(movie_router)
     app.include_router(scan_router)
     app.include_router(series_router)
+    app.include_router(stream_router)
 
     return app
 
