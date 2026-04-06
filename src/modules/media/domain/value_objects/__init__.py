@@ -20,6 +20,7 @@ from src.modules.media.domain.value_objects.tmdb_id import TmdbId
 from src.modules.media.domain.value_objects.video_codec import VideoCodec
 from src.modules.media.domain.value_objects.year import Year
 from src.shared_kernel.value_objects.file_path import FilePath
+from src.shared_kernel.value_objects.image_url import ImageUrl
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "EpisodeId",
     "FilePath",
     "Genre",
+    "ImageUrl",
     "HdrFormat",
     "ImdbId",
     "MediaFile",

@@ -99,6 +99,7 @@ class TestMovieOptionalFields:
             Duration,
             FilePath,
             Genre,
+            ImageUrl,
             ImdbId,
             MediaFile,
             Resolution,
@@ -113,8 +114,8 @@ class TestMovieOptionalFields:
             year=Year(2010),
             duration=Duration(8880),
             synopsis="A thief who steals corporate secrets...",
-            poster_path=FilePath("/posters/inception.jpg"),
-            backdrop_path=FilePath("/backdrops/inception.jpg"),
+            poster_path=ImageUrl("/posters/inception.jpg"),
+            backdrop_path=ImageUrl("/backdrops/inception.jpg"),
             genres=[Genre("Sci-Fi"), Genre("Action")],
             files=[
                 MediaFile(

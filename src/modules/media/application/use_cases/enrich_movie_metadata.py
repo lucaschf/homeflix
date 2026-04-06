@@ -13,6 +13,7 @@ from src.modules.media.domain.repositories import MovieRepository
 from src.modules.media.domain.value_objects import (
     Duration,
     Genre,
+    ImageUrl,
     ImdbId,
     MovieId,
     Title,
@@ -165,6 +166,10 @@ def _apply_movie_metadata(movie: Movie, metadata: MediaMetadata) -> Movie:
         updates["year"] = Year(metadata.year)
     if metadata.genres and not movie.genres:
         updates["genres"] = [Genre(g) for g in metadata.genres]
+    if metadata.poster_url and not movie.poster_path:
+        updates["poster_path"] = ImageUrl(metadata.poster_url)
+    if metadata.backdrop_url and not movie.backdrop_path:
+        updates["backdrop_path"] = ImageUrl(metadata.backdrop_url)
 
     if updates:
         movie = movie.with_updates(**updates)
