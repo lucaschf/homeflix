@@ -52,7 +52,10 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     # Bounded Context Containers
     # =========================================================================
 
-    media = providers.Container(MediaContainer)
+    media = providers.Container(
+        MediaContainer,
+        session=infrastructure.session,
+    )
 
     library = providers.Container(LibraryContainer)
 
