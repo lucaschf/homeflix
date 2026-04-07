@@ -214,18 +214,23 @@ def _apply_season_metadata(season: Season, meta: SeasonMetadata) -> Season:
     if updates:
         season = season.with_updates(**updates)
 
-    # Enrich episodes
+    # Enrich episodes — track TMDB index separately to handle multi-segment files
     if meta.episodes:
         ep_by_num = {e.episode_number: e for e in meta.episodes}
+        sorted_episodes = sorted(season.episodes, key=lambda e: e.episode_number)
+        tmdb_idx = 1  # TMDB episode numbering starts at 1
         new_episodes = []
-        for ep in season.episodes:
+        for ep in sorted_episodes:
             segment_count = _detect_multi_episode(ep.title.value)
             if segment_count > 1:
-                enriched_ep = _apply_multi_episode_metadata(ep, ep_by_num, segment_count)
+                enriched_ep = _apply_multi_episode_metadata(
+                    ep, ep_by_num, segment_count, tmdb_start=tmdb_idx
+                )
             else:
-                ep_meta = ep_by_num.get(ep.episode_number)
+                ep_meta = ep_by_num.get(tmdb_idx)
                 enriched_ep = _apply_episode_metadata(ep, ep_meta) if ep_meta else ep
             new_episodes.append(enriched_ep)
+            tmdb_idx += segment_count
         season = season.with_updates(episodes=new_episodes)
 
     return season
@@ -251,13 +256,20 @@ def _apply_multi_episode_metadata(
     episode: Episode,
     ep_by_num: dict[int, EpisodeMetadata],
     segment_count: int,
+    tmdb_start: int | None = None,
 ) -> Episode:
     """Apply combined metadata from multiple TMDB episodes to a multi-segment file.
 
     Concatenates titles with ``/``, joins synopses, sums durations,
     and uses the first episode's thumbnail.
+
+    Args:
+        episode: The local episode entity.
+        ep_by_num: TMDB episodes keyed by episode number.
+        segment_count: Number of TMDB episodes in this file.
+        tmdb_start: Starting TMDB episode number (if None, uses episode.episode_number).
     """
-    start = episode.episode_number
+    start = tmdb_start if tmdb_start is not None else episode.episode_number
     metas = [ep_by_num.get(start + i) for i in range(segment_count)]
     present = [m for m in metas if m is not None]
 

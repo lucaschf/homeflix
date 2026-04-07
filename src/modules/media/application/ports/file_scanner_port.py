@@ -39,6 +39,7 @@ class ScannedFile:
     series_name: str | None = None
     season_number: int | None = None
     episode_number: int | None = None
+    episode_title: str | None = None
 
 
 class FileSystemScanner(ABC):
