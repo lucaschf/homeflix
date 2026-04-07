@@ -34,7 +34,7 @@ from src.modules.media.infrastructure.persistence.repositories.movie_repository 
 from src.modules.media.infrastructure.persistence.repositories.series_repository import (
     SQLAlchemySeriesRepository,
 )
-from src.modules.media.infrastructure.streaming.hls_service import HlsService
+from src.modules.media.infrastructure.streaming import HlsService, MediaProbeService
 
 
 class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
@@ -132,7 +132,13 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     variant_detector = providers.Factory(VariantDetector)
 
-    hls_service = providers.Singleton(HlsService, cache_dir=hls_cache_directory)
+    media_probe_service = providers.Singleton(MediaProbeService)
+
+    hls_service = providers.Singleton(
+        HlsService,
+        cache_dir=hls_cache_directory,
+        probe_service=media_probe_service,
+    )
 
     # =========================================================================
     # Use Cases — Scan
