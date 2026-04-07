@@ -78,6 +78,10 @@ class Settings(BaseSettings):  # type: ignore[misc]
         default="./thumbnails",
         description="Directory to store generated thumbnails",
     )
+    hls_cache_directory: str = Field(
+        default="./hls_cache",
+        description="Directory to store cached HLS segments",
+    )
 
     @field_validator("media_directories", mode="before")
     @classmethod
