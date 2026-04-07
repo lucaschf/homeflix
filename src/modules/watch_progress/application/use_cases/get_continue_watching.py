@@ -1,5 +1,7 @@
 """GetContinueWatchingUseCase - List in-progress items with media details."""
 
+import logging
+
 from src.modules.media.domain.repositories import MovieRepository
 from src.modules.watch_progress.application.dtos import (
     ContinueWatchingItem,
@@ -8,6 +10,8 @@ from src.modules.watch_progress.application.dtos import (
 )
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.repositories import WatchProgressRepository
+
+_logger = logging.getLogger(__name__)
 
 
 class GetContinueWatchingUseCase:
@@ -45,12 +49,20 @@ class GetContinueWatchingUseCase:
             ContinueWatchingOutput with items including media metadata.
         """
         progress_list = await self._progress_repo.list_in_progress(limit=input_dto.limit)
+        _logger.info("Found %d in-progress items", len(progress_list))
 
         items: list[ContinueWatchingItem] = []
         for progress in progress_list:
+            _logger.info(
+                "Enriching progress: media_id=%s, media_type=%s",
+                progress.media_id,
+                progress.media_type,
+            )
             item = await self._enrich_with_metadata(progress, input_dto.lang)
             if item:
                 items.append(item)
+            else:
+                _logger.warning("Could not find media for progress: %s", progress.media_id)
 
         return ContinueWatchingOutput(items=items)
 
