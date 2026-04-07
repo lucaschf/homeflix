@@ -1,7 +1,6 @@
 """GetProgressUseCase - Get watch progress for a media item."""
 
 from src.modules.watch_progress.application.dtos import GetProgressInput, ProgressOutput
-from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.repositories import WatchProgressRepository
 
 
@@ -35,22 +34,7 @@ class GetProgressUseCase:
         progress = await self._repo.find_by_media_id(input_dto.media_id)
         if progress is None:
             return None
-        return _to_output(progress)
-
-
-def _to_output(progress: WatchProgress) -> ProgressOutput:
-    """Convert WatchProgress entity to output DTO."""
-    return ProgressOutput(
-        media_id=progress.media_id,
-        media_type=progress.media_type,
-        position_seconds=progress.position_seconds,
-        duration_seconds=progress.duration_seconds,
-        percentage=progress.percentage,
-        status=progress.status,
-        audio_track=progress.audio_track,
-        subtitle_track=progress.subtitle_track,
-        last_watched_at=progress.last_watched_at.isoformat(),
-    )
+        return ProgressOutput.from_entity(progress)
 
 
 __all__ = ["GetProgressUseCase"]

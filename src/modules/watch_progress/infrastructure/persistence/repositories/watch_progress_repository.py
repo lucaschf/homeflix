@@ -50,14 +50,12 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
 
         if existing:
             WatchProgressMapper.update_model(existing, progress)
-            await self._session.flush()
             await self._session.commit()
             await self._session.refresh(existing)
             return WatchProgressMapper.to_entity(existing)
 
         model = WatchProgressMapper.to_model(progress)
         self._session.add(model)
-        await self._session.flush()
         await self._session.commit()
         await self._session.refresh(model)
         return WatchProgressMapper.to_entity(model)
@@ -89,7 +87,6 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
             return False
 
         model.soft_delete()
-        await self._session.flush()
         await self._session.commit()
         return True
 

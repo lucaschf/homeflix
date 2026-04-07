@@ -1,6 +1,12 @@
 """Watch Progress DTOs for application layer."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.modules.watch_progress.domain.entities import WatchProgress
 
 
 @dataclass(frozen=True)
@@ -60,6 +66,21 @@ class ProgressOutput:
     audio_track: int | None
     subtitle_track: int | None
     last_watched_at: str
+
+    @classmethod
+    def from_entity(cls, progress: WatchProgress) -> ProgressOutput:
+        """Create output DTO from a WatchProgress entity."""
+        return cls(
+            media_id=progress.media_id,
+            media_type=progress.media_type,
+            position_seconds=progress.position_seconds,
+            duration_seconds=progress.duration_seconds,
+            percentage=progress.percentage,
+            status=progress.status,
+            audio_track=progress.audio_track,
+            subtitle_track=progress.subtitle_track,
+            last_watched_at=progress.last_watched_at.isoformat(),
+        )
 
 
 @dataclass(frozen=True)

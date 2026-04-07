@@ -43,6 +43,7 @@ class SaveProgressUseCase:
         if existing:
             progress = existing.update_position(
                 position_seconds=input_dto.position_seconds,
+                duration_seconds=input_dto.duration_seconds,
                 audio_track=input_dto.audio_track,
                 subtitle_track=input_dto.subtitle_track,
             )
@@ -57,22 +58,7 @@ class SaveProgressUseCase:
             )
 
         saved = await self._repo.save(progress)
-        return _to_output(saved)
-
-
-def _to_output(progress: WatchProgress) -> ProgressOutput:
-    """Convert WatchProgress entity to output DTO."""
-    return ProgressOutput(
-        media_id=progress.media_id,
-        media_type=progress.media_type,
-        position_seconds=progress.position_seconds,
-        duration_seconds=progress.duration_seconds,
-        percentage=progress.percentage,
-        status=progress.status,
-        audio_track=progress.audio_track,
-        subtitle_track=progress.subtitle_track,
-        last_watched_at=progress.last_watched_at.isoformat(),
-    )
+        return ProgressOutput.from_entity(saved)
 
 
 __all__ = ["SaveProgressUseCase"]

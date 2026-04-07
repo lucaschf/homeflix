@@ -4,7 +4,7 @@ from dataclasses import asdict
 from typing import Any
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -47,7 +47,7 @@ class SaveProgressRequest(BaseModel):
 @router.get("/continue-watching")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def continue_watching(
-    limit: int = 20,
+    limit: int = Query(20, ge=1, le=100),
     lang: str = "en",
     use_case: GetContinueWatchingUseCase = Depends(
         Provide[ApplicationContainer.watch_progress.get_continue_watching],

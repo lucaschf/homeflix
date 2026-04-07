@@ -64,6 +64,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
     def update_position(
         self,
         position_seconds: int,
+        duration_seconds: int | None = None,
         audio_track: int | None = None,
         subtitle_track: int | None = None,
     ) -> Self:
@@ -73,6 +74,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
 
         Args:
             position_seconds: Current playback position in seconds.
+            duration_seconds: Updated total duration (corrects stale values).
             audio_track: Selected audio track index.
             subtitle_track: Selected subtitle track index (-1 = off).
 
@@ -80,7 +82,8 @@ class WatchProgress(AggregateRoot[ProgressId]):
             New WatchProgress with updated fields.
         """
         now = datetime.now(UTC)
-        ratio = position_seconds / self.duration_seconds if self.duration_seconds else 0
+        effective_duration = duration_seconds or self.duration_seconds
+        ratio = position_seconds / effective_duration if effective_duration else 0
         is_complete = ratio >= _COMPLETION_THRESHOLD
 
         updates: dict[str, object] = {
@@ -88,6 +91,8 @@ class WatchProgress(AggregateRoot[ProgressId]):
             "last_watched_at": now,
         }
 
+        if duration_seconds is not None:
+            updates["duration_seconds"] = duration_seconds
         if audio_track is not None:
             updates["audio_track"] = audio_track
         if subtitle_track is not None:
