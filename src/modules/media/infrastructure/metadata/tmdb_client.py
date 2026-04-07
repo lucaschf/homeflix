@@ -12,6 +12,15 @@ from src.modules.media.application.ports import (
 
 _MAX_CAST = 15
 
+
+def _safe_int(value: object, default: int) -> int:
+    """Safely convert a value to int, returning default on failure."""
+    try:
+        return int(str(value))
+    except (ValueError, TypeError):
+        return default
+
+
 _TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/original"
 
 
@@ -188,7 +197,7 @@ class TmdbClient(MetadataProvider):
 
     def _parse_cast(self, cast_data: list[dict[str, object]]) -> list[CreditPerson]:
         """Parse TMDB cast data into CreditPerson list (top billed)."""
-        sorted_cast = sorted(cast_data, key=lambda c: int(str(c.get("order", 999))))
+        sorted_cast = sorted(cast_data, key=lambda c: _safe_int(c.get("order"), 999))
         return [
             self._to_credit_person(c, role_key="character")
             for c in sorted_cast[:_MAX_CAST]
@@ -208,11 +217,12 @@ class TmdbClient(MetadataProvider):
             name = str(c.get("name", ""))
             if not name:
                 continue
-            job = str(c.get("job", ""))
-            if job == "Director" and name not in seen_directors:
+            job = str(c.get("job", "")).lower()
+            dept = str(c.get("department", "")).lower()
+            if job == "director" and name not in seen_directors:
                 directors.append(self._to_credit_person(c, role_key="job"))
                 seen_directors.add(name)
-            elif c.get("department") == "Writing" and name not in seen_writers:
+            elif dept == "writing" and name not in seen_writers:
                 writers.append(self._to_credit_person(c, role_key="job"))
                 seen_writers.add(name)
 
