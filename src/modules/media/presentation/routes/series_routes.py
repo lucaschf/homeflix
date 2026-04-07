@@ -52,12 +52,13 @@ async def list_series(
 @inject  # type: ignore[misc]
 async def get_series(
     series_id: str,
+    lang: str = "en",
     use_case: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
 ) -> dict[str, Any]:
     """Get a series by ID (includes full season/episode hierarchy)."""
-    result = await use_case.execute(GetSeriesByIdInput(series_id=series_id))
+    result = await use_case.execute(GetSeriesByIdInput(series_id=series_id, lang=lang))
     return {
         "type": "series",
         "data": _dataclass_to_dict(result),
