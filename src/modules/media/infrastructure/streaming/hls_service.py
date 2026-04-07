@@ -74,7 +74,11 @@ class HlsService:
 
     @staticmethod
     def _probe_video_codec(file_path: str) -> str | None:
-        """Detect video codec using ffprobe."""
+        """Detect video codec using ffprobe.
+
+        Args:
+            file_path: Already-validated absolute path to the source file.
+        """
         try:
             result = subprocess.run(
                 [
@@ -145,12 +149,30 @@ class HlsService:
             str(output_dir / "playlist.m3u8"),
         ]
 
+    @staticmethod
+    def _validate_source(file_path: str) -> Path:
+        """Resolve and validate that file_path is an existing file.
+
+        Prevents path traversal and ensures the subprocess only
+        receives a resolved absolute path to a real file.
+
+        Raises:
+            FileNotFoundError: If path does not point to an existing file.
+        """
+        resolved = Path(file_path).resolve()
+        if not resolved.is_file():
+            msg = f"Source file not found: {file_path}"
+            raise FileNotFoundError(msg)
+        return resolved
+
     def _start_ffmpeg(self, file_path: str) -> str:
         """Start FFmpeg in background if not already running.
 
         Returns:
             The path hash for this file.
         """
+        source = self._validate_source(file_path)
+        safe_path = str(source)
         path_hash = self.get_path_hash(file_path)
 
         with self._lock:
@@ -174,9 +196,9 @@ class HlsService:
 
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            cmd = self._build_ffmpeg_cmd(file_path, output_dir)
+            cmd = self._build_ffmpeg_cmd(safe_path, output_dir)
 
-            _logger.info("Starting HLS generation for %s", file_path)
+            _logger.info("Starting HLS generation for %s", safe_path)
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
