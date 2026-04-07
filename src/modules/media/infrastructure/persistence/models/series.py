@@ -45,6 +45,9 @@ class SeriesModel(Base):
     # Categorization
     genres: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # Localized metadata (JSON)
+    localized: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # External IDs
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)

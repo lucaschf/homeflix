@@ -110,6 +110,30 @@ class TmdbClient(MetadataProvider):
         """Fetch series details by TMDB ID."""
         return await self._fetch_series_details(tmdb_id)
 
+    async def get_series_localized(self, tmdb_id: int) -> MediaMetadata | None:
+        """Fetch series details in English with pt-BR localization."""
+        en_meta = await self._fetch_series_details(tmdb_id)
+        if not en_meta:
+            return None
+
+        pt_resp = await self._client.get(
+            f"{self._base_url}/tv/{tmdb_id}",
+            params=self._params(language="pt-BR"),
+        )
+        if pt_resp.status_code != 200:
+            return en_meta
+
+        pt_data = pt_resp.json()
+        pt_fields = LocalizedFields(
+            title=pt_data.get("name"),
+            synopsis=pt_data.get("overview"),
+            genres=[g["name"] for g in pt_data.get("genres", [])],
+        )
+
+        from dataclasses import replace
+
+        return replace(en_meta, localized={"pt-BR": pt_fields})
+
     async def _fetch_movie_details(
         self, tmdb_id: int, language: str = "en-US"
     ) -> MediaMetadata | None:
@@ -209,6 +233,7 @@ class TmdbClient(MetadataProvider):
                 synopsis=ep.get("overview"),
                 air_date=ep.get("air_date"),
                 duration_seconds=(ep.get("runtime") or 0) * 60,
+                still_url=self._image_url(ep.get("still_path")),
             )
             for ep in data.get("episodes", [])
         ]

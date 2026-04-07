@@ -45,7 +45,7 @@ _logger = logging.getLogger(__name__)
 _SEGMENT_DURATION = 10  # seconds per segment
 _POLL_INTERVAL = 0.5  # seconds between readiness checks
 _POLL_TIMEOUT = 120  # max seconds to wait for first segment
-_BROWSER_SAFE_CODECS = {"h264", "mpeg4", "mpeg2video"}
+_BROWSER_SAFE_CODECS = {"h264"}
 
 _VIDEO_DIR = "video"
 

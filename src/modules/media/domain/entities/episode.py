@@ -10,7 +10,7 @@ from src.modules.media.domain.value_objects import (
     AirDate,
     Duration,
     EpisodeId,
-    FilePath,
+    ImageUrl,
     MediaFile,
     SeriesId,
     Title,
@@ -54,7 +54,7 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
 
     # File variants
     files: list[MediaFile] = Field(default_factory=list)
-    thumbnail_path: FilePath | None = None
+    thumbnail_path: ImageUrl | None = None
 
     # Metadata
     air_date: AirDate | None = None

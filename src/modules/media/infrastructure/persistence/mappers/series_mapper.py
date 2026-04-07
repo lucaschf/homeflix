@@ -1,5 +1,7 @@
 """Mapper between Series/Season/Episode entities and ORM models."""
 
+import json
+
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
     AirDate,
@@ -110,7 +112,7 @@ class EpisodeMapper:
             synopsis=model.synopsis,
             duration=Duration(model.duration),
             files=files,
-            thumbnail_path=FilePath(model.thumbnail_path) if model.thumbnail_path else None,
+            thumbnail_path=ImageUrl(model.thumbnail_path) if model.thumbnail_path else None,
             air_date=AirDate(model.air_date) if model.air_date else None,
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -256,6 +258,9 @@ class SeriesMapper:
             poster_path=entity.poster_path.value if entity.poster_path else None,
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
+            localized=json.dumps(entity.localized, ensure_ascii=False)
+            if entity.localized
+            else None,
             tmdb_id=entity.tmdb_id.value if entity.tmdb_id else None,
             imdb_id=entity.imdb_id.value if entity.imdb_id else None,
         )
@@ -289,6 +294,7 @@ class SeriesMapper:
             poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
             backdrop_path=ImageUrl(model.backdrop_path) if model.backdrop_path else None,
             genres=genre_list,
+            localized=json.loads(model.localized) if model.localized else {},
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
             imdb_id=ImdbId(model.imdb_id) if model.imdb_id else None,
             seasons=season_list,
@@ -315,6 +321,9 @@ class SeriesMapper:
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
+        model.localized = (
+            json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None
+        )
         model.tmdb_id = entity.tmdb_id.value if entity.tmdb_id else None
         model.imdb_id = entity.imdb_id.value if entity.imdb_id else None
 
