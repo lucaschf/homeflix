@@ -1,5 +1,7 @@
 """Mapper between Movie domain entity and MovieModel ORM model."""
 
+import json
+
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
     Duration,
@@ -61,6 +63,12 @@ class MovieMapper:
             poster_path=entity.poster_path.value if entity.poster_path else None,
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
+            cast=json.dumps(entity.cast, ensure_ascii=False) if entity.cast else None,
+            directors=json.dumps(entity.directors, ensure_ascii=False)
+            if entity.directors
+            else None,
+            writers=json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None,
+            content_rating=entity.content_rating,
             file_path=primary.file_path.value if primary else None,
             file_size=primary.file_size if primary else None,
             resolution=primary.resolution.value if primary else None,
@@ -115,6 +123,10 @@ class MovieMapper:
             poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
             backdrop_path=ImageUrl(model.backdrop_path) if model.backdrop_path else None,
             genres=genre_list,
+            cast=json.loads(model.cast) if model.cast else [],
+            directors=json.loads(model.directors) if model.directors else [],
+            writers=json.loads(model.writers) if model.writers else [],
+            content_rating=model.content_rating,
             files=files,
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
             imdb_id=ImdbId(model.imdb_id) if model.imdb_id else None,
@@ -145,6 +157,12 @@ class MovieMapper:
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
+        model.cast = json.dumps(entity.cast, ensure_ascii=False) if entity.cast else None
+        model.directors = (
+            json.dumps(entity.directors, ensure_ascii=False) if entity.directors else None
+        )
+        model.writers = json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None
+        model.content_rating = entity.content_rating
         model.file_path = primary.file_path.value if primary else None
         model.file_size = primary.file_size if primary else None
         model.resolution = primary.resolution.value if primary else None

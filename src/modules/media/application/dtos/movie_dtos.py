@@ -68,6 +68,10 @@ class MovieOutput:
     poster_path: str | None
     backdrop_path: str | None
     genres: list[str]
+    cast: list[str]
+    directors: list[str]
+    writers: list[str]
+    content_rating: str | None
     file_path: str | None
     file_size: int | None
     resolution: str | None

@@ -47,6 +47,23 @@ class SeasonMetadata:
 
 
 @dataclass(frozen=True)
+class CreditPerson:
+    """A person involved in the production of a media item.
+
+    Attributes:
+        name: Full name.
+        role: Role description (character name for cast, job title for crew).
+        profile_url: URL to profile image.
+        tmdb_id: TMDB person ID.
+    """
+
+    name: str
+    role: str | None = None
+    profile_url: str | None = None
+    tmdb_id: int | None = None
+
+
+@dataclass(frozen=True)
 class MediaMetadata:
     """Metadata fetched from an external provider.
 
@@ -63,6 +80,9 @@ class MediaMetadata:
         tmdb_id: TMDB numeric ID.
         imdb_id: IMDb ID (tt1234567 format).
         seasons: Season metadata (series only).
+        cast: Top billed actors.
+        directors: Directors.
+        writers: Screenwriters.
     """
 
     title: str
@@ -77,6 +97,10 @@ class MediaMetadata:
     tmdb_id: int | None = None
     imdb_id: str | None = None
     seasons: list[SeasonMetadata] = field(default_factory=list)
+    cast: list[CreditPerson] = field(default_factory=list)
+    directors: list[CreditPerson] = field(default_factory=list)
+    writers: list[CreditPerson] = field(default_factory=list)
+    content_rating: str | None = None
 
 
 class MetadataProvider(ABC):
@@ -134,6 +158,7 @@ class MetadataProvider(ABC):
 
 
 __all__ = [
+    "CreditPerson",
     "EpisodeMetadata",
     "MediaMetadata",
     "MetadataProvider",

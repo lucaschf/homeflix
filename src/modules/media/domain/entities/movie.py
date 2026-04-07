@@ -60,6 +60,14 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     # File variants
     files: list[MediaFile] = Field(default_factory=list)
 
+    # Credits
+    cast: list[str] = Field(default_factory=list)
+    directors: list[str] = Field(default_factory=list)
+    writers: list[str] = Field(default_factory=list)
+
+    # Classification
+    content_rating: str | None = None
+
     # External IDs for metadata enrichment
     tmdb_id: TmdbId | None = None
     imdb_id: ImdbId | None = None

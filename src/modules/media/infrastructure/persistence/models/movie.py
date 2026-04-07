@@ -56,6 +56,14 @@ class MovieModel(Base):
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # bytes
     resolution: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
+    # Credits (stored as JSON arrays of names)
+    cast: Mapped[str | None] = mapped_column(Text, nullable=True)
+    directors: Mapped[str | None] = mapped_column(Text, nullable=True)
+    writers: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Classification (e.g., "PG-13", "R", "14")
+    content_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # External IDs for metadata enrichment
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
