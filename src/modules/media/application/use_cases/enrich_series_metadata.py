@@ -119,7 +119,7 @@ class EnrichSeriesMetadataUseCase:
             return metadata, "tmdb"
 
         if self._fallback:
-            metadata = await self._fallback.search_series(clean or title)
+            metadata = await self._fallback.search_series(clean, year)
             if metadata:
                 return metadata, "omdb"
 
@@ -270,7 +270,7 @@ def _clean_series_title(title: str) -> str:
         result = re.sub(pattern, "", result, flags=re.IGNORECASE)
 
     result = re.sub(r"\s+", " ", result).strip().strip("-._")
-    return result
+    return result or title
 
 
 def _parse_date(value: str) -> date | None:
