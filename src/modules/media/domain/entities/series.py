@@ -53,6 +53,9 @@ class Series(AggregateRoot[SeriesId]):
     # Categorization
     genres: list[Genre] = Field(default_factory=list)
 
+    # Localized metadata
+    localized: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
     # External IDs
     tmdb_id: TmdbId | None = None
     imdb_id: ImdbId | None = None
@@ -69,6 +72,26 @@ class Series(AggregateRoot[SeriesId]):
             return None
 
         return SeriesId(v) if isinstance(v, str) else v
+
+    # -- Localized accessors ---------------------------------------------------
+
+    def get_title(self, lang: str = "en") -> str:
+        """Get title in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        return str(loc.get("title") or self.title.value)
+
+    def get_synopsis(self, lang: str = "en") -> str | None:
+        """Get synopsis in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        return str(loc["synopsis"]) if loc.get("synopsis") else self.synopsis
+
+    def get_genres(self, lang: str = "en") -> list[str]:
+        """Get genres in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        loc_genres = loc.get("genres")
+        if loc_genres and isinstance(loc_genres, list):
+            return [str(g) for g in loc_genres]
+        return [g.value for g in self.genres]
 
     @model_validator(mode="after")
     def validate_year_range(self) -> Series:

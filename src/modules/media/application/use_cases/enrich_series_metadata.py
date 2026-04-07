@@ -19,6 +19,7 @@ from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import (
     AirDate,
     Duration,
+    FilePath,
     Genre,
     ImageUrl,
     ImdbId,
@@ -75,6 +76,13 @@ class EnrichSeriesMetadataUseCase:
                 error="No metadata found from any provider",
             )
 
+        # Re-fetch with localization if provider supports it
+        if metadata.tmdb_id and hasattr(self._primary, "get_series_localized"):
+            get_localized = self._primary.get_series_localized
+            localized_meta: MediaMetadata | None = await get_localized(metadata.tmdb_id)
+            if localized_meta is not None:
+                metadata = localized_meta
+
         series = _apply_series_metadata(series, metadata)
         await self._series_repository.save(series)
 
@@ -120,6 +128,29 @@ class EnrichSeriesMetadataUseCase:
         return None, None
 
 
+def _apply_localized(
+    updates: dict[str, object],
+    existing: dict[str, dict[str, object]],
+    metadata: MediaMetadata,
+) -> None:
+    """Apply localized metadata overrides from provider."""
+    if not metadata.localized:
+        return
+    localized: dict[str, dict[str, object]] = {}
+    for lang, fields in metadata.localized.items():
+        loc_entry: dict[str, object] = {}
+        if fields.title:
+            loc_entry["title"] = fields.title
+        if fields.synopsis:
+            loc_entry["synopsis"] = fields.synopsis
+        if fields.genres:
+            loc_entry["genres"] = fields.genres
+        if loc_entry:
+            localized[lang] = loc_entry
+    if localized:
+        updates["localized"] = {**existing, **localized}
+
+
 def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
     """Apply metadata fields to a series entity."""
     updates: dict[str, object] = {}
@@ -142,6 +173,8 @@ def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
         updates["poster_path"] = ImageUrl(metadata.poster_url)
     if metadata.backdrop_url and not series.backdrop_path:
         updates["backdrop_path"] = ImageUrl(metadata.backdrop_url)
+
+    _apply_localized(updates, series.localized, metadata)
 
     if updates:
         series = series.with_updates(**updates)
@@ -209,6 +242,8 @@ def _apply_episode_metadata(episode: Episode, meta: EpisodeMetadata) -> Episode:
             updates["air_date"] = AirDate(parsed)
     if meta.duration_seconds and episode.duration.value == 0:
         updates["duration"] = Duration(meta.duration_seconds)
+    if meta.still_url and not episode.thumbnail_path:
+        updates["thumbnail_path"] = FilePath(meta.still_url)
 
     if updates:
         episode = episode.with_updates(**updates)

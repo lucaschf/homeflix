@@ -23,6 +23,7 @@ class EpisodeMetadata:
     synopsis: str | None = None
     air_date: str | None = None
     duration_seconds: int | None = None
+    still_url: str | None = None
 
 
 @dataclass(frozen=True)
