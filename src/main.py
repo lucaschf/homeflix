@@ -22,6 +22,7 @@ from src.modules.media.presentation.routes import (
     series_router,
     stream_router,
 )
+from src.modules.watch_progress.presentation.routes import progress_router
 
 
 def create_container() -> ApplicationContainer:
@@ -62,6 +63,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "src.modules.media.presentation.routes.scan_routes",
             "src.modules.media.presentation.routes.series_routes",
             "src.modules.media.presentation.routes.stream_routes",
+            "src.modules.watch_progress.presentation.routes.progress_routes",
         ],
     )
     app.state.container = container
@@ -117,6 +119,7 @@ def create_app() -> FastAPI:
     app.include_router(scan_router)
     app.include_router(series_router)
     app.include_router(stream_router)
+    app.include_router(progress_router)
 
     return app
 

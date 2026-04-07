@@ -1,0 +1,1 @@
+"""Watch Progress domain layer."""

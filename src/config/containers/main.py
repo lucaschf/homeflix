@@ -11,6 +11,7 @@ from dependency_injector import containers, providers
 from src.config.containers.infrastructure import InfrastructureContainer
 from src.config.containers.library import LibraryContainer
 from src.config.containers.media import MediaContainer
+from src.config.containers.watch_progress import WatchProgressContainer
 from src.config.settings import Settings
 
 
@@ -60,6 +61,12 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     )
 
     library = providers.Container(LibraryContainer)
+
+    watch_progress = providers.Container(
+        WatchProgressContainer,
+        session=infrastructure.session,
+        movie_repository=media.movie_repository,
+    )
 
 
 # Convenience alias
