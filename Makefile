@@ -48,7 +48,7 @@ setup: install-dev pc-install
 # =============================================================================
 
 dev:
-	poetry run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+	poetry run uvicorn src.main:app --reload --host 0.0.0.0 --port 8005
 
 test:
 	poetry run pytest

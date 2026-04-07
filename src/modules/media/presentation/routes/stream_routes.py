@@ -3,14 +3,19 @@
 Uses HLS (HTTP Live Streaming) for all video formats via FFmpeg.
 Segments are cached for subsequent plays. MP4/WebM also support
 direct Range-based streaming as fallback.
+
+Segment endpoints use a path-hash scheme so they never touch the
+database — only the initial playlist request needs a DB lookup.
 """
 
+import logging
+import re
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput
@@ -19,9 +24,11 @@ from src.modules.media.application.use_cases.get_movie_by_id import GetMovieById
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.infrastructure.streaming.hls_service import HlsService
 
+_logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1/stream", tags=["Streaming"])
 
-_hls = HlsService()
+_SEGMENT_RE = re.compile(r"^(segment_\d{4}\.ts)$", re.MULTILINE)
 
 
 def _resolve_file(file_path: str | None) -> Path:
@@ -34,7 +41,35 @@ def _resolve_file(file_path: str | None) -> Path:
     return path
 
 
-# ── HLS endpoints ────────────────────────────────────────────
+def _rewrite_playlist(m3u8_text: str, path_hash: str) -> str:
+    """Replace relative segment names with hash-based absolute URLs."""
+    return _SEGMENT_RE.sub(
+        rf"/api/v1/stream/hls/{path_hash}/\1",
+        m3u8_text,
+    )
+
+
+# -- HLS segments (no DB access) ----------------------------------------------
+
+
+@router.get("/hls/{path_hash}/{segment}")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def hls_segment(
+    path_hash: str,
+    segment: str,
+    hls: HlsService = Depends(
+        Provide[ApplicationContainer.media.hls_service],
+    ),
+) -> FileResponse:
+    """Serve an HLS segment by cache hash. No database access needed."""
+    segment_path = hls.get_segment_by_hash(path_hash, segment)
+    if not segment_path:
+        raise HTTPException(status_code=404, detail="Segment not found")
+
+    return FileResponse(str(segment_path), media_type="video/mp2t")
+
+
+# -- HLS playlist endpoints (need DB to resolve file path) ---------------------
 
 
 @router.get("/movie/{movie_id}/hls/playlist.m3u8")  # type: ignore[misc]
@@ -44,41 +79,27 @@ async def movie_hls_playlist(
     use_case: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
-) -> FileResponse:
-    """Generate and serve HLS playlist for a movie."""
+    hls: HlsService = Depends(
+        Provide[ApplicationContainer.media.hls_service],
+    ),
+) -> Response:
+    """Generate and serve HLS playlist for a movie.
+
+    Starts FFmpeg in the background and returns the playlist as soon
+    as the first segments are available. hls.js will keep polling
+    until ``#EXT-X-ENDLIST`` appears.
+    """
     movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
-    path = _resolve_file(movie.file_path)
+    file_path = _resolve_file(movie.file_path)
 
     try:
-        playlist = _hls.generate(str(path))
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        path_hash = await hls.ensure_playlist(str(file_path))
+    except Exception as e:
+        _logger.exception("HLS generation failed for movie %s (file=%s)", movie_id, file_path)
+        detail = str(e) or f"{type(e).__name__}: check server logs"
+        raise HTTPException(status_code=500, detail=detail) from e
 
-    return FileResponse(
-        str(playlist),
-        media_type="application/vnd.apple.mpegurl",
-        headers={"Cache-Control": "no-cache"},
-    )
-
-
-@router.get("/movie/{movie_id}/hls/{segment}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
-async def movie_hls_segment(
-    movie_id: str,
-    segment: str,
-    use_case: GetMovieByIdUseCase = Depends(
-        Provide[ApplicationContainer.media.get_movie_by_id],
-    ),
-) -> FileResponse:
-    """Serve an HLS segment file."""
-    movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
-    path = _resolve_file(movie.file_path)
-
-    segment_path = _hls.get_segment_path(str(path), segment)
-    if not segment_path:
-        raise HTTPException(status_code=404, detail="Segment not found")
-
-    return FileResponse(str(segment_path), media_type="video/mp2t")
+    return _serve_playlist(hls, path_hash)
 
 
 @router.get("/episode/{series_id}/{season_number}/{episode_number}/hls/playlist.m3u8")  # type: ignore[misc]
@@ -90,46 +111,65 @@ async def episode_hls_playlist(
     use_case: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
-) -> FileResponse:
+    hls: HlsService = Depends(
+        Provide[ApplicationContainer.media.hls_service],
+    ),
+) -> Response:
     """Generate and serve HLS playlist for an episode."""
     file_path = await _find_episode_file(use_case, series_id, season_number, episode_number)
     path = _resolve_file(file_path)
 
     try:
-        playlist = _hls.generate(str(path))
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        path_hash = await hls.ensure_playlist(str(path))
+    except Exception as e:
+        _logger.exception(
+            "HLS generation failed for episode %s/S%sE%s (file=%s)",
+            series_id,
+            season_number,
+            episode_number,
+            path,
+        )
+        detail = str(e) or f"{type(e).__name__}: check server logs"
+        raise HTTPException(status_code=500, detail=detail) from e
 
-    return FileResponse(
-        str(playlist),
+    return _serve_playlist(hls, path_hash)
+
+
+def _serve_playlist(hls: HlsService, path_hash: str) -> Response:
+    """Read current m3u8 content and rewrite segment URLs."""
+    content = hls.get_playlist_content(path_hash)
+    if not content:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    return Response(
+        content=_rewrite_playlist(content, path_hash),
         media_type="application/vnd.apple.mpegurl",
         headers={"Cache-Control": "no-cache"},
     )
 
 
-@router.get("/episode/{series_id}/{season_number}/{episode_number}/hls/{segment}")  # type: ignore[misc]
+# -- Cache management ----------------------------------------------------------
+
+
+@router.delete("/movie/{movie_id}/hls/cache")  # type: ignore[misc]
 @inject  # type: ignore[misc]
-async def episode_hls_segment(
-    series_id: str,
-    season_number: int,
-    episode_number: int,
-    segment: str,
-    use_case: GetSeriesByIdUseCase = Depends(
-        Provide[ApplicationContainer.media.get_series_by_id],
+async def clear_movie_hls_cache(
+    movie_id: str,
+    use_case: GetMovieByIdUseCase = Depends(
+        Provide[ApplicationContainer.media.get_movie_by_id],
     ),
-) -> FileResponse:
-    """Serve an HLS segment file for an episode."""
-    file_path = await _find_episode_file(use_case, series_id, season_number, episode_number)
-    path = _resolve_file(file_path)
+    hls: HlsService = Depends(
+        Provide[ApplicationContainer.media.hls_service],
+    ),
+) -> Response:
+    """Clear cached HLS segments for a movie, forcing regeneration."""
+    movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
+    if movie.file_path:
+        hls.clear_cache(movie.file_path)
+    return Response(status_code=204)
 
-    segment_path = _hls.get_segment_path(str(path), segment)
-    if not segment_path:
-        raise HTTPException(status_code=404, detail="Segment not found")
 
-    return FileResponse(str(segment_path), media_type="video/mp2t")
-
-
-# ── Direct streaming (fallback for MP4/WebM) ────────────────
+# -- Direct streaming (fallback for MP4/WebM) ---------------------------------
 
 
 @router.get("/movie/{movie_id}")  # type: ignore[misc]
@@ -166,7 +206,7 @@ async def stream_episode(
     return _build_range_response(str(path), path.stat().st_size, request.headers.get("range"))
 
 
-# ── Helpers ──────────────────────────────────────────────────
+# -- Helpers -------------------------------------------------------------------
 
 
 async def _find_episode_file(
