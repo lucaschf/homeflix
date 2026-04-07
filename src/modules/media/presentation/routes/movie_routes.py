@@ -77,7 +77,11 @@ async def delete_movie(
         Provide[ApplicationContainer.media.delete_movie],
     ),
 ) -> None:
-    """Delete a movie by ID."""
+    """Soft-delete a movie by ID.
+
+    The movie record is marked as deleted but not physically removed,
+    allowing for future recovery if needed.
+    """
     await use_case.execute(DeleteMovieInput(movie_id=movie_id))
 
 
