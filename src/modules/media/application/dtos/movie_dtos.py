@@ -15,9 +15,11 @@ class GetMovieByIdInput:
 
     Attributes:
         movie_id: External ID of the movie (mov_xxx format).
+        lang: Language code for localized metadata (e.g., "en", "pt-BR").
     """
 
     movie_id: str
+    lang: str = "en"
 
 
 @dataclass(frozen=True)
@@ -115,9 +117,11 @@ class ListMoviesInput:
 
     Attributes:
         limit: Maximum number of movies to return (optional, default: all).
+        lang: Language code for localized metadata.
     """
 
     limit: int | None = None
+    lang: str = "en"
 
 
 @dataclass(frozen=True)

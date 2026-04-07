@@ -70,6 +70,13 @@ class EnrichMovieMetadataUseCase:
                 error="No metadata found from any provider",
             )
 
+        # Re-fetch with localization if TMDB provider supports it
+        if metadata.tmdb_id and hasattr(self._primary, "get_movie_localized"):
+            get_localized = self._primary.get_movie_localized
+            localized_meta: MediaMetadata | None = await get_localized(metadata.tmdb_id)
+            if localized_meta is not None:
+                metadata = localized_meta
+
         movie = _apply_movie_metadata(movie, metadata)
         await self._movie_repository.save(movie)
 
@@ -193,6 +200,20 @@ def _apply_credits(
         updates["writers"] = [p.name for p in metadata.writers]
     if metadata.content_rating and not movie.content_rating:
         updates["content_rating"] = metadata.content_rating
+    if metadata.localized:
+        localized: dict[str, dict[str, object]] = {}
+        for lang, fields in metadata.localized.items():
+            loc_entry: dict[str, object] = {}
+            if fields.title:
+                loc_entry["title"] = fields.title
+            if fields.synopsis:
+                loc_entry["synopsis"] = fields.synopsis
+            if fields.genres:
+                loc_entry["genres"] = fields.genres
+            if loc_entry:
+                localized[lang] = loc_entry
+        if localized:
+            updates["localized"] = {**movie.localized, **localized}
 
 
 __all__ = ["EnrichMovieMetadataUseCase"]

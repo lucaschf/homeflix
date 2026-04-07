@@ -64,6 +64,21 @@ class CreditPerson:
 
 
 @dataclass(frozen=True)
+class LocalizedFields:
+    """Localized metadata fields for a specific language.
+
+    Attributes:
+        title: Localized title.
+        synopsis: Localized plot overview.
+        genres: Localized genre names.
+    """
+
+    title: str | None = None
+    synopsis: str | None = None
+    genres: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class MediaMetadata:
     """Metadata fetched from an external provider.
 
@@ -101,6 +116,7 @@ class MediaMetadata:
     directors: list[CreditPerson] = field(default_factory=list)
     writers: list[CreditPerson] = field(default_factory=list)
     content_rating: str | None = None
+    localized: dict[str, LocalizedFields] = field(default_factory=dict)
 
 
 class MetadataProvider(ABC):

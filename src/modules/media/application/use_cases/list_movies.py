@@ -46,16 +46,17 @@ class ListMoviesUseCase:
             movies = movies[: input_dto.limit]
 
         return ListMoviesOutput(
-            movies=[self._to_summary(movie) for movie in movies],
+            movies=[self._to_summary(movie, input_dto.lang) for movie in movies],
             total_count=total_count,
         )
 
     @staticmethod
-    def _to_summary(movie: Movie) -> MovieSummaryOutput:
+    def _to_summary(movie: Movie, lang: str = "en") -> MovieSummaryOutput:
         """Convert Movie entity to summary output.
 
         Args:
             movie: The Movie entity to convert.
+            lang: Language code for localized fields.
 
         Returns:
             MovieSummaryOutput with essential fields.
@@ -63,14 +64,14 @@ class ListMoviesUseCase:
         best = movie.best_file
         return MovieSummaryOutput(
             id=str(movie.id),
-            title=movie.title.value,
+            title=movie.get_title(lang),
             year=movie.year.value,
             duration_formatted=movie.duration.format_hms(),
             poster_path=movie.poster_path.value if movie.poster_path else None,
             resolution=best.resolution.value if best else None,
             variant_count=len(movie.files),
             available_resolutions=[r.value for r in movie.available_resolutions],
-            genres=[g.value for g in movie.genres],
+            genres=movie.get_genres(lang),
         )
 
 
