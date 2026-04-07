@@ -100,6 +100,7 @@ class MediaMetadata:
     cast: list[CreditPerson] = field(default_factory=list)
     directors: list[CreditPerson] = field(default_factory=list)
     writers: list[CreditPerson] = field(default_factory=list)
+    content_rating: str | None = None
 
 
 class MetadataProvider(ABC):

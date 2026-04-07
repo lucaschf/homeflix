@@ -76,6 +76,7 @@ class GetMovieByIdUseCase:
             cast=movie.cast,
             directors=movie.directors,
             writers=movie.writers,
+            content_rating=movie.content_rating,
             file_path=primary.file_path.value if primary else None,
             file_size=primary.file_size if primary else None,
             resolution=primary.resolution.value if primary else None,

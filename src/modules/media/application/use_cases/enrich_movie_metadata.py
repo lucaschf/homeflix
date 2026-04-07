@@ -191,6 +191,8 @@ def _apply_credits(
         updates["directors"] = [p.name for p in metadata.directors]
     if metadata.writers and not movie.writers:
         updates["writers"] = [p.name for p in metadata.writers]
+    if metadata.content_rating and not movie.content_rating:
+        updates["content_rating"] = metadata.content_rating
 
 
 __all__ = ["EnrichMovieMetadataUseCase"]

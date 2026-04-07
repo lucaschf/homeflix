@@ -68,6 +68,7 @@ class MovieMapper:
             if entity.directors
             else None,
             writers=json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None,
+            content_rating=entity.content_rating,
             file_path=primary.file_path.value if primary else None,
             file_size=primary.file_size if primary else None,
             resolution=primary.resolution.value if primary else None,
@@ -125,6 +126,7 @@ class MovieMapper:
             cast=json.loads(model.cast) if model.cast else [],
             directors=json.loads(model.directors) if model.directors else [],
             writers=json.loads(model.writers) if model.writers else [],
+            content_rating=model.content_rating,
             files=files,
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
             imdb_id=ImdbId(model.imdb_id) if model.imdb_id else None,
@@ -160,6 +162,7 @@ class MovieMapper:
             json.dumps(entity.directors, ensure_ascii=False) if entity.directors else None
         )
         model.writers = json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None
+        model.content_rating = entity.content_rating
         model.file_path = primary.file_path.value if primary else None
         model.file_size = primary.file_size if primary else None
         model.resolution = primary.resolution.value if primary else None

@@ -80,7 +80,7 @@ class TmdbClient(MetadataProvider):
         """Fetch full movie details from TMDB."""
         resp = await self._client.get(
             f"{self._base_url}/movie/{tmdb_id}",
-            params=self._params(append_to_response="credits"),
+            params=self._params(append_to_response="credits,release_dates"),
         )
         if resp.status_code == 404:
             return None
@@ -94,6 +94,7 @@ class TmdbClient(MetadataProvider):
         credits = data.get("credits", {})
         cast = self._parse_cast(credits.get("cast", []))
         directors, writers = self._parse_crew(credits.get("crew", []))
+        content_rating = self._parse_content_rating(data.get("release_dates", {}))
 
         return MediaMetadata(
             title=data.get("title", ""),
@@ -109,6 +110,7 @@ class TmdbClient(MetadataProvider):
             cast=cast,
             directors=directors,
             writers=writers,
+            content_rating=content_rating,
         )
 
     async def _fetch_series_details(self, tmdb_id: int) -> MediaMetadata | None:
@@ -215,6 +217,26 @@ class TmdbClient(MetadataProvider):
                 seen_writers.add(name)
 
         return directors, writers
+
+    @staticmethod
+    def _parse_content_rating(release_dates: dict[str, object]) -> str | None:
+        """Extract content rating from TMDB release_dates, preferring BR then US."""
+        results = release_dates.get("results", [])
+        if not isinstance(results, list):
+            return None
+
+        ratings_by_country: dict[str, str] = {}
+        for entry in results:
+            iso = str(entry.get("iso_3166_1", "")) if isinstance(entry, dict) else ""
+            release_list = entry.get("release_dates", []) if isinstance(entry, dict) else []
+            if not isinstance(release_list, list):
+                continue
+            for rel in release_list:
+                cert = str(rel.get("certification", "")).strip() if isinstance(rel, dict) else ""
+                if cert and iso not in ratings_by_country:
+                    ratings_by_country[iso] = cert
+
+        return ratings_by_country.get("BR") or ratings_by_country.get("US") or None
 
     def _to_credit_person(self, data: dict[str, object], role_key: str) -> CreditPerson:
         """Convert a TMDB cast/crew dict to a CreditPerson."""
