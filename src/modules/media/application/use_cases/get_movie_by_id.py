@@ -49,14 +49,15 @@ class GetMovieByIdUseCase:
         if movie is None:
             raise ResourceNotFoundException.for_resource("Movie", input_dto.movie_id)
 
-        return self._to_output(movie)
+        return self._to_output(movie, input_dto.lang)
 
     @staticmethod
-    def _to_output(movie: Movie) -> MovieOutput:
+    def _to_output(movie: Movie, lang: str = "en") -> MovieOutput:
         """Convert Movie entity to output DTO.
 
         Args:
             movie: The Movie entity to convert.
+            lang: Language code for localized fields.
 
         Returns:
             MovieOutput with all fields serialized.
@@ -64,15 +65,15 @@ class GetMovieByIdUseCase:
         primary = movie.primary_file
         return MovieOutput(
             id=str(movie.id),
-            title=movie.title.value,
+            title=movie.get_title(lang),
             original_title=movie.original_title.value if movie.original_title else None,
             year=movie.year.value,
             duration_seconds=movie.duration.value,
             duration_formatted=movie.duration.format_hms(),
-            synopsis=movie.synopsis,
+            synopsis=movie.get_synopsis(lang),
             poster_path=movie.poster_path.value if movie.poster_path else None,
             backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
-            genres=[g.value for g in movie.genres],
+            genres=movie.get_genres(lang),
             cast=movie.cast,
             directors=movie.directors,
             writers=movie.writers,

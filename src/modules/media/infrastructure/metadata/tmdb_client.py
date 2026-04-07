@@ -5,6 +5,7 @@ import httpx
 from src.modules.media.application.ports import (
     CreditPerson,
     EpisodeMetadata,
+    LocalizedFields,
     MediaMetadata,
     MetadataProvider,
     SeasonMetadata,
@@ -81,15 +82,41 @@ class TmdbClient(MetadataProvider):
         """Fetch movie details by TMDB ID."""
         return await self._fetch_movie_details(tmdb_id)
 
+    async def get_movie_localized(self, tmdb_id: int) -> MediaMetadata | None:
+        """Fetch movie details in English with pt-BR localization."""
+        en_meta = await self._fetch_movie_details(tmdb_id, language="en-US")
+        if not en_meta:
+            return None
+
+        pt_resp = await self._client.get(
+            f"{self._base_url}/movie/{tmdb_id}",
+            params=self._params(language="pt-BR"),
+        )
+        if pt_resp.status_code != 200:
+            return en_meta
+
+        pt_data = pt_resp.json()
+        pt_fields = LocalizedFields(
+            title=pt_data.get("title"),
+            synopsis=pt_data.get("overview"),
+            genres=[g["name"] for g in pt_data.get("genres", [])],
+        )
+
+        from dataclasses import replace
+
+        return replace(en_meta, localized={"pt-BR": pt_fields})
+
     async def get_series_by_id(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch series details by TMDB ID."""
         return await self._fetch_series_details(tmdb_id)
 
-    async def _fetch_movie_details(self, tmdb_id: int) -> MediaMetadata | None:
+    async def _fetch_movie_details(
+        self, tmdb_id: int, language: str = "en-US"
+    ) -> MediaMetadata | None:
         """Fetch full movie details from TMDB."""
         resp = await self._client.get(
             f"{self._base_url}/movie/{tmdb_id}",
-            params=self._params(append_to_response="credits,release_dates"),
+            params=self._params(append_to_response="credits,release_dates", language=language),
         )
         if resp.status_code == 404:
             return None

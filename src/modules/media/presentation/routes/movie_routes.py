@@ -40,12 +40,13 @@ router = APIRouter(prefix="/api/v1/movies", tags=["Movies"])
 @inject  # type: ignore[misc]
 async def list_movies(
     limit: int | None = None,
+    lang: str = "en",
     use_case: ListMoviesUseCase = Depends(
         Provide[ApplicationContainer.media.list_movies],
     ),
 ) -> dict[str, Any]:
     """List all movies."""
-    result = await use_case.execute(ListMoviesInput(limit=limit))
+    result = await use_case.execute(ListMoviesInput(limit=limit, lang=lang))
     return {
         "type": "list",
         "data": [_dataclass_to_dict(m) for m in result.movies],
@@ -57,12 +58,13 @@ async def list_movies(
 @inject  # type: ignore[misc]
 async def get_movie(
     movie_id: str,
+    lang: str = "en",
     use_case: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
 ) -> dict[str, Any]:
     """Get a movie by ID."""
-    result = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
+    result = await use_case.execute(GetMovieByIdInput(movie_id=movie_id, lang=lang))
     return {
         "type": "movie",
         "data": _dataclass_to_dict(result),

@@ -64,6 +64,9 @@ class MovieModel(Base):
     # Classification (e.g., "PG-13", "R", "14")
     content_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
+    # Localized metadata (JSON: {"pt-BR": {"title": "...", "synopsis": "...", "genres": [...]}})
+    localized: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # External IDs for metadata enrichment
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)

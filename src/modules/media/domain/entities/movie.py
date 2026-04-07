@@ -68,6 +68,9 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     # Classification
     content_rating: str | None = None
 
+    # Localized metadata: {"pt-BR": {"title": "...", "synopsis": "...", "genres": [...]}}
+    localized: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
     # External IDs for metadata enrichment
     tmdb_id: TmdbId | None = None
     imdb_id: ImdbId | None = None
@@ -87,6 +90,26 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     def convert_genres(cls, v: list[Any] | None) -> list[Genre]:
         """Convert string list to Genre list."""
         return [] if v is None else [Genre(g) if isinstance(g, str) else g for g in v]
+
+    # ── localized accessors ────────────────────────────────────────────
+
+    def get_title(self, lang: str = "en") -> str:
+        """Get title in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        return str(loc.get("title") or self.title.value)
+
+    def get_synopsis(self, lang: str = "en") -> str | None:
+        """Get synopsis in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        return str(loc["synopsis"]) if loc.get("synopsis") else self.synopsis
+
+    def get_genres(self, lang: str = "en") -> list[str]:
+        """Get genres in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        loc_genres = loc.get("genres")
+        if loc_genres and isinstance(loc_genres, list):
+            return [str(g) for g in loc_genres]
+        return [g.value for g in self.genres]
 
     # ── genre helpers ─────────────────────────────────────────────────
 
