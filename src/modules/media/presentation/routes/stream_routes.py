@@ -1,9 +1,7 @@
 """Video streaming REST API routes.
 
 Uses HLS (HTTP Live Streaming) for all video formats via FFmpeg.
-Segments are cached for subsequent plays. MP4/WebM also support
-direct Range-based streaming as fallback.
-
+Supports multi-audio and subtitle tracks via master playlist.
 Segment endpoints use a path-hash scheme so they never touch the
 database — only the initial playlist request needs a DB lookup.
 """
@@ -28,7 +26,19 @@ _logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/stream", tags=["Streaming"])
 
-_SEGMENT_RE = re.compile(r"^(segment_\d{4}\.ts)$", re.MULTILINE)
+# Matches standalone relative references (non-comment lines)
+_RELATIVE_REF_RE = re.compile(
+    r"^(?!#)(?!https?://)(?!/)(.+)$",
+    re.MULTILINE,
+)
+# Matches URI="..." attributes inside #EXT-X-MEDIA and similar tags
+_URI_ATTR_RE = re.compile(r'URI="([^"]+)"')
+
+_MEDIA_TYPES: dict[str, str] = {
+    ".m3u8": "application/vnd.apple.mpegurl",
+    ".ts": "video/mp2t",
+    ".vtt": "text/vtt",
+}
 
 
 def _resolve_file(file_path: str | None) -> Path:
@@ -41,32 +51,65 @@ def _resolve_file(file_path: str | None) -> Path:
     return path
 
 
-def _rewrite_playlist(m3u8_text: str, path_hash: str) -> str:
-    """Replace relative segment names with hash-based absolute URLs."""
-    return _SEGMENT_RE.sub(
-        rf"/api/v1/stream/hls/{path_hash}/\1",
-        m3u8_text,
-    )
+def _rewrite_m3u8(m3u8_text: str, base_url: str) -> str:
+    """Prefix all relative references in an m3u8 with an absolute base URL."""
+    # Rewrite URI="..." attributes inside #EXT-X-MEDIA tags
+    result = _URI_ATTR_RE.sub(rf'URI="{base_url}/\1"', m3u8_text)
+    # Rewrite standalone relative references (segment/playlist filenames)
+    return _RELATIVE_REF_RE.sub(rf"{base_url}/\1", result)
 
 
-# -- HLS segments (no DB access) ----------------------------------------------
+def _media_type_for(filename: str) -> str:
+    """Determine media type from file extension."""
+    suffix = Path(filename).suffix.lower()
+    return _MEDIA_TYPES.get(suffix, "application/octet-stream")
 
 
-@router.get("/hls/{path_hash}/{segment}")  # type: ignore[misc]
+# -- HLS file serving (no DB access) ------------------------------------------
+
+
+@router.get("/hls/{path_hash}/{file_path:path}")  # type: ignore[misc]
 @inject  # type: ignore[misc]
-async def hls_segment(
+async def hls_file(
     path_hash: str,
-    segment: str,
+    file_path: str,
     hls: HlsService = Depends(
         Provide[ApplicationContainer.media.hls_service],
     ),
-) -> FileResponse:
-    """Serve an HLS segment by cache hash. No database access needed."""
-    segment_path = hls.get_segment_by_hash(path_hash, segment)
-    if not segment_path:
-        raise HTTPException(status_code=404, detail="Segment not found")
+) -> Response:
+    """Serve any HLS file (segment, sub-playlist, VTT) by cache hash.
 
-    return FileResponse(str(segment_path), media_type="video/mp2t")
+    For .m3u8 files, rewrites relative references to absolute URLs.
+    No database access needed.
+    """
+    resolved = hls.get_file_by_hash(path_hash, file_path)
+    if not resolved:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Sub-playlists need URL rewriting
+    if resolved.suffix == ".m3u8":
+        try:
+            content = resolved.read_text(encoding="utf-8")
+        except OSError as e:
+            raise HTTPException(status_code=404, detail="Playlist not readable") from e
+
+        # Base URL is the parent directory of this playlist
+        parent_parts = str(Path(file_path).parent)
+        if parent_parts == ".":
+            base_url = f"/api/v1/stream/hls/{path_hash}"
+        else:
+            base_url = f"/api/v1/stream/hls/{path_hash}/{parent_parts}"
+
+        return Response(
+            content=_rewrite_m3u8(content, base_url),
+            media_type="application/vnd.apple.mpegurl",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    return FileResponse(
+        str(resolved),
+        media_type=_media_type_for(file_path),
+    )
 
 
 # -- HLS playlist endpoints (need DB to resolve file path) ---------------------
@@ -83,12 +126,7 @@ async def movie_hls_playlist(
         Provide[ApplicationContainer.media.hls_service],
     ),
 ) -> Response:
-    """Generate and serve HLS playlist for a movie.
-
-    Starts FFmpeg in the background and returns the playlist as soon
-    as the first segments are available. hls.js will keep polling
-    until ``#EXT-X-ENDLIST`` appears.
-    """
+    """Generate and serve HLS master playlist for a movie."""
     movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
     file_path = _resolve_file(movie.file_path)
 
@@ -99,7 +137,7 @@ async def movie_hls_playlist(
         detail = str(e) or f"{type(e).__name__}: check server logs"
         raise HTTPException(status_code=500, detail=detail) from e
 
-    return _serve_playlist(hls, path_hash)
+    return _serve_master_playlist(hls, path_hash)
 
 
 @router.get("/episode/{series_id}/{season_number}/{episode_number}/hls/playlist.m3u8")  # type: ignore[misc]
@@ -115,7 +153,7 @@ async def episode_hls_playlist(
         Provide[ApplicationContainer.media.hls_service],
     ),
 ) -> Response:
-    """Generate and serve HLS playlist for an episode."""
+    """Generate and serve HLS master playlist for an episode."""
     file_path = await _find_episode_file(use_case, series_id, season_number, episode_number)
     path = _resolve_file(file_path)
 
@@ -132,20 +170,119 @@ async def episode_hls_playlist(
         detail = str(e) or f"{type(e).__name__}: check server logs"
         raise HTTPException(status_code=500, detail=detail) from e
 
-    return _serve_playlist(hls, path_hash)
+    return _serve_master_playlist(hls, path_hash)
 
 
-def _serve_playlist(hls: HlsService, path_hash: str) -> Response:
-    """Read current m3u8 content and rewrite segment URLs."""
-    content = hls.get_playlist_content(path_hash)
+def _serve_master_playlist(hls: HlsService, path_hash: str) -> Response:
+    """Read master playlist and rewrite all relative URLs."""
+    content = hls.get_master_playlist(path_hash)
     if not content:
         raise HTTPException(status_code=404, detail="Playlist not found")
 
+    base_url = f"/api/v1/stream/hls/{path_hash}"
+
     return Response(
-        content=_rewrite_playlist(content, path_hash),
+        content=_rewrite_m3u8(content, base_url),
         media_type="application/vnd.apple.mpegurl",
         headers={"Cache-Control": "no-cache"},
     )
+
+
+# -- Track info ----------------------------------------------------------------
+
+
+@router.get("/movie/{movie_id}/tracks")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def movie_tracks(
+    movie_id: str,
+    use_case: GetMovieByIdUseCase = Depends(
+        Provide[ApplicationContainer.media.get_movie_by_id],
+    ),
+    hls: HlsService = Depends(
+        Provide[ApplicationContainer.media.hls_service],
+    ),
+) -> dict[str, list[dict[str, object]]]:
+    """Get available audio and subtitle tracks for a movie."""
+    movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
+    file_path = _resolve_file(movie.file_path)
+    probe = hls.probe_tracks(str(file_path))
+
+    return {
+        "audio_tracks": [
+            {
+                "index": t.index,
+                "language": t.language.value,
+                "codec": t.codec,
+                "channels": t.channels,
+                "channel_layout": t.channel_layout,
+                "title": t.title,
+                "is_default": t.is_default,
+            }
+            for t in probe.audio_tracks
+        ],
+        "subtitle_tracks": [
+            {
+                "index": t.index,
+                "language": t.language.value,
+                "format": t.format,
+                "title": t.title,
+                "is_default": t.is_default,
+                "is_forced": t.is_forced,
+                "is_external": t.is_external,
+                "is_image_based": t.is_image_based,
+            }
+            for t in probe.all_subtitles
+            if t.is_text_based  # Only include text-based (playable) subtitles
+        ],
+    }
+
+
+@router.get("/episode/{series_id}/{season_number}/{episode_number}/tracks")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def episode_tracks(
+    series_id: str,
+    season_number: int,
+    episode_number: int,
+    use_case: GetSeriesByIdUseCase = Depends(
+        Provide[ApplicationContainer.media.get_series_by_id],
+    ),
+    hls: HlsService = Depends(
+        Provide[ApplicationContainer.media.hls_service],
+    ),
+) -> dict[str, list[dict[str, object]]]:
+    """Get available audio and subtitle tracks for an episode."""
+    file_path = await _find_episode_file(use_case, series_id, season_number, episode_number)
+    path = _resolve_file(file_path)
+    probe = hls.probe_tracks(str(path))
+
+    return {
+        "audio_tracks": [
+            {
+                "index": t.index,
+                "language": t.language.value,
+                "codec": t.codec,
+                "channels": t.channels,
+                "channel_layout": t.channel_layout,
+                "title": t.title,
+                "is_default": t.is_default,
+            }
+            for t in probe.audio_tracks
+        ],
+        "subtitle_tracks": [
+            {
+                "index": t.index,
+                "language": t.language.value,
+                "format": t.format,
+                "title": t.title,
+                "is_default": t.is_default,
+                "is_forced": t.is_forced,
+                "is_external": t.is_external,
+                "is_image_based": t.is_image_based,
+            }
+            for t in probe.all_subtitles
+            if t.is_text_based
+        ],
+    }
 
 
 # -- Cache management ----------------------------------------------------------
