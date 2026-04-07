@@ -34,6 +34,7 @@ from src.modules.media.infrastructure.persistence.repositories.movie_repository 
 from src.modules.media.infrastructure.persistence.repositories.series_repository import (
     SQLAlchemySeriesRepository,
 )
+from src.modules.media.infrastructure.streaming.hls_service import HlsService
 
 
 class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
@@ -53,6 +54,9 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     # Must be wired from InfrastructureContainer.session
     session = providers.Dependency()
+
+    # Must be wired from parent container (Settings.hls_cache_directory)
+    hls_cache_directory = providers.Dependency(default="./hls_cache")
 
     # =========================================================================
     # Repositories
@@ -127,6 +131,8 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     file_scanner = providers.Factory(LocalFileSystemScanner)
 
     variant_detector = providers.Factory(VariantDetector)
+
+    hls_service = providers.Singleton(HlsService, cache_dir=hls_cache_directory)
 
     # =========================================================================
     # Use Cases — Scan
