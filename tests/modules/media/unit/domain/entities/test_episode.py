@@ -181,7 +181,7 @@ class TestEpisodeOptionalFields:
         from src.modules.media.domain.entities import Episode
         from src.modules.media.domain.value_objects import (
             Duration,
-            FilePath,
+            ImageUrl,
             SeriesId,
             Title,
         )
@@ -193,7 +193,7 @@ class TestEpisodeOptionalFields:
             title=Title("Pilot"),
             duration=Duration(2700),
             files=[_make_file()],
-            thumbnail_path=FilePath("/thumbnails/show/s01e01.jpg"),
+            thumbnail_path=ImageUrl("https://image.tmdb.org/t/p/original/example.jpg"),
         )
 
         assert episode.thumbnail_path is not None

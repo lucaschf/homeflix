@@ -19,7 +19,6 @@ from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import (
     AirDate,
     Duration,
-    FilePath,
     Genre,
     ImageUrl,
     ImdbId,
@@ -243,7 +242,7 @@ def _apply_episode_metadata(episode: Episode, meta: EpisodeMetadata) -> Episode:
     if meta.duration_seconds and episode.duration.value == 0:
         updates["duration"] = Duration(meta.duration_seconds)
     if meta.still_url and not episode.thumbnail_path:
-        updates["thumbnail_path"] = FilePath(meta.still_url)
+        updates["thumbnail_path"] = ImageUrl(meta.still_url)
 
     if updates:
         episode = episode.with_updates(**updates)

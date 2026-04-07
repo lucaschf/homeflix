@@ -112,7 +112,7 @@ class EpisodeMapper:
             synopsis=model.synopsis,
             duration=Duration(model.duration),
             files=files,
-            thumbnail_path=FilePath(model.thumbnail_path) if model.thumbnail_path else None,
+            thumbnail_path=ImageUrl(model.thumbnail_path) if model.thumbnail_path else None,
             air_date=AirDate(model.air_date) if model.air_date else None,
             created_at=model.created_at,
             updated_at=model.updated_at,
