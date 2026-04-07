@@ -21,6 +21,17 @@ class GetMovieByIdInput:
 
 
 @dataclass(frozen=True)
+class DeleteMovieInput:
+    """Input for DeleteMovieUseCase.
+
+    Attributes:
+        movie_id: External ID of the movie (mov_xxx format).
+    """
+
+    movie_id: str
+
+
+@dataclass(frozen=True)
 class MovieOutput:
     """Output representation of a Movie.
 
