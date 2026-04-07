@@ -28,6 +28,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import shutil
 import subprocess
 import threading
@@ -47,6 +48,37 @@ _POLL_TIMEOUT = 120  # max seconds to wait for first segment
 _BROWSER_SAFE_CODECS = {"h264", "mpeg4", "mpeg2video"}
 
 _VIDEO_DIR = "video"
+
+# -- Playlist rewriting utilities (used by routes) ----------------------------
+
+# Matches standalone relative references (non-comment lines)
+_RELATIVE_REF_RE = re.compile(
+    r"^(?!#)(?!https?://)(?!/)(.+)$",
+    re.MULTILINE,
+)
+# Matches URI="..." with relative paths only (skip absolute/protocol URIs)
+_URI_ATTR_RE = re.compile(r'URI="(?!https?://)(?!/)([^"]+)"')
+
+_MEDIA_TYPES: dict[str, str] = {
+    ".m3u8": "application/vnd.apple.mpegurl",
+    ".ts": "video/mp2t",
+    ".vtt": "text/vtt",
+}
+
+
+def rewrite_m3u8(m3u8_text: str, base_url: str) -> str:
+    """Prefix all relative references in an m3u8 with an absolute base URL."""
+    result = _URI_ATTR_RE.sub(rf'URI="{base_url}/\1"', m3u8_text)
+    return _RELATIVE_REF_RE.sub(rf"{base_url}/\1", result)
+
+
+def media_type_for(filename: str) -> str:
+    """Determine media type from file extension."""
+    suffix = Path(filename).suffix.lower()
+    return _MEDIA_TYPES.get(suffix, "application/octet-stream")
+
+
+# -- Module helpers -----------------------------------------------------------
 
 
 def _primary_audio_index(probe: MediaProbeResult) -> int:
@@ -82,13 +114,14 @@ class HlsService:
     def get_file_by_hash(self, path_hash: str, relative_path: str) -> Path | None:
         """Get any file from cache by hash + relative path.
 
-        Includes path traversal protection.
+        Includes path traversal protection via ``Path.is_relative_to``.
         """
         cache_root = (self._cache_dir / path_hash).resolve()
         target = (cache_root / relative_path).resolve()
 
-        # Prevent directory traversal
-        if not str(target).startswith(str(cache_root)):
+        try:
+            target.relative_to(cache_root)
+        except ValueError:
             return None
 
         return target if target.is_file() else None
@@ -97,7 +130,6 @@ class HlsService:
         """Check if generation is fully complete."""
         video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
         if not video_playlist.is_file():
-            # Backward compat: check flat playlist
             flat = self._cache_dir / path_hash / "playlist.m3u8"
             if not flat.is_file():
                 return False
@@ -112,31 +144,13 @@ class HlsService:
 
     def get_master_playlist(self, path_hash: str) -> str | None:
         """Get master playlist content, falling back to legacy flat playlist."""
-        master = self._cache_dir / path_hash / "master.m3u8"
-        if master.is_file():
-            try:
-                return master.read_text(encoding="utf-8")
-            except OSError:
-                return None
-
-        # Backward compat: flat playlist from old cache
-        flat = self._cache_dir / path_hash / "playlist.m3u8"
-        if flat.is_file():
-            try:
-                return flat.read_text(encoding="utf-8")
-            except OSError:
-                return None
-
-        return None
-
-    def get_sub_playlist(self, path_hash: str, relative_path: str) -> str | None:
-        """Get a sub-playlist (video, audio, subtitle) content."""
-        path = self.get_file_by_hash(path_hash, relative_path)
-        if path and path.suffix == ".m3u8":
-            try:
-                return path.read_text(encoding="utf-8")
-            except OSError:
-                return None
+        for name in ("master.m3u8", "playlist.m3u8"):
+            path = self._cache_dir / path_hash / name
+            if path.is_file():
+                try:
+                    return path.read_text(encoding="utf-8")
+                except OSError:
+                    continue
         return None
 
     def get_cached_tracks(self, path_hash: str) -> dict[str, Any] | None:
@@ -179,7 +193,6 @@ class HlsService:
 
         await asyncio.to_thread(self._start_generation, file_path)
 
-        # Poll until video playlist has at least one segment
         video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
         attempts = int(_POLL_TIMEOUT / _POLL_INTERVAL)
         for _ in range(attempts):
@@ -191,16 +204,9 @@ class HlsService:
                 except OSError:
                     pass
 
-            # Check if main process died
-            with self._lock:
-                procs = self._processes.get(path_hash, [])
-            if procs and procs[0].poll() is not None:
-                stderr = procs[0].stderr.read().decode() if procs[0].stderr else ""
-                _logger.error("FFmpeg exited with code %d: %s", procs[0].returncode, stderr)
-                output_dir = self._cache_dir / path_hash
-                shutil.rmtree(output_dir, ignore_errors=True)
-                msg = f"FFmpeg failed (exit {procs[0].returncode}): {stderr}"
-                raise RuntimeError(msg)
+            main_proc = self._get_main_process(path_hash)
+            if main_proc and main_proc.poll() is not None:
+                self._handle_generation_failure(path_hash, main_proc)
 
             await asyncio.sleep(_POLL_INTERVAL)
 
@@ -223,22 +229,41 @@ class HlsService:
         """
         if file_path:
             path_hash = self.get_path_hash(file_path)
-            output_dir = self._cache_dir / path_hash
-            # Kill running processes
-            with self._lock:
-                for proc in self._processes.pop(path_hash, []):
-                    if proc.poll() is None:
-                        proc.kill()
-            shutil.rmtree(output_dir, ignore_errors=True)
+            self._kill_processes(path_hash)
+            shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
         else:
             with self._lock:
-                for procs in self._processes.values():
-                    for proc in procs:
-                        if proc.poll() is None:
-                            proc.kill()
-                self._processes.clear()
+                for path_hash in list(self._processes):
+                    self._kill_processes(path_hash)
             shutil.rmtree(self._cache_dir, ignore_errors=True)
             self._cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # -- Private: process management -------------------------------------------
+
+    def _get_main_process(self, path_hash: str) -> subprocess.Popen[bytes] | None:
+        """Get the main (video) FFmpeg process for a generation, if any."""
+        with self._lock:
+            procs = self._processes.get(path_hash, [])
+        return procs[0] if procs else None
+
+    def _kill_processes(self, path_hash: str) -> None:
+        """Kill all running FFmpeg processes for a path hash."""
+        with self._lock:
+            for proc in self._processes.pop(path_hash, []):
+                if proc.poll() is None:
+                    proc.kill()
+
+    def _handle_generation_failure(
+        self,
+        path_hash: str,
+        proc: subprocess.Popen[bytes],
+    ) -> None:
+        """Log error, clean up cache, and raise for a failed FFmpeg process."""
+        stderr = proc.stderr.read().decode() if proc.stderr else ""
+        _logger.error("FFmpeg exited with code %d: %s", proc.returncode, stderr)
+        shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
+        msg = f"FFmpeg failed (exit {proc.returncode}): {stderr}"
+        raise RuntimeError(msg)
 
     # -- Private: generation ---------------------------------------------------
 
@@ -248,16 +273,21 @@ class HlsService:
         safe_path = str(source)
         path_hash = self.get_path_hash(file_path)
 
+        if self.is_complete(path_hash):
+            return path_hash
+
+        # Probe outside the lock (potentially slow I/O)
+        probe_result = self._probe.probe(safe_path)
+
         with self._lock:
+            # Re-check after acquiring lock
             if self.is_complete(path_hash):
                 return path_hash
 
-            # Already running
-            if path_hash in self._processes:
-                running = [p for p in self._processes[path_hash] if p.poll() is None]
-                if running:
-                    return path_hash
-                del self._processes[path_hash]
+            running = [p for p in self._processes.get(path_hash, []) if p.poll() is None]
+            if running:
+                return path_hash
+            self._processes.pop(path_hash, None)
 
             # Clean stale cache
             output_dir = self._cache_dir / path_hash
@@ -266,19 +296,16 @@ class HlsService:
                 shutil.rmtree(output_dir, ignore_errors=True)
 
             output_dir.mkdir(parents=True, exist_ok=True)
-
-            # Probe tracks
-            probe_result = self._probe.probe(safe_path)
             self._save_probe_cache(output_dir, probe_result)
 
             procs: list[subprocess.Popen[bytes]] = []
 
-            # 1. Main: video + default audio
+            # 1. Main: video + default audio (always first in list)
             video_dir = output_dir / _VIDEO_DIR
             video_dir.mkdir()
             cmd = self._build_video_cmd(safe_path, video_dir, probe_result)
             _logger.info("Starting video HLS for %s", safe_path)
-            procs.append(subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE))
+            procs.append(self._spawn_ffmpeg(cmd))
 
             # 2. Additional audio tracks (audio-only HLS)
             primary_audio_idx = _primary_audio_index(probe_result)
@@ -294,11 +321,9 @@ class HlsService:
                     track.language.value,
                     safe_path,
                 )
-                procs.append(
-                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-                )
+                procs.append(self._spawn_ffmpeg(cmd))
 
-            # 3. Extract subtitles to WebVTT
+            # 3. Extract subtitles to WebVTT (synchronous, fast)
             self._extract_subtitles(safe_path, output_dir, probe_result)
 
             # 4. Build master playlist
@@ -307,6 +332,19 @@ class HlsService:
             self._processes[path_hash] = procs
 
         return path_hash
+
+    @staticmethod
+    def _spawn_ffmpeg(cmd: list[str]) -> subprocess.Popen[bytes]:
+        """Spawn an FFmpeg subprocess.
+
+        All arguments are built internally from validated paths,
+        not from user-controlled input.
+        """
+        return subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
 
     # -- Private: FFmpeg commands ----------------------------------------------
 
@@ -354,7 +392,6 @@ class HlsService:
             _logger.info("Source codec %s — copying", codec)
             video_args = ["-c:v", "copy"]
 
-        # Use the primary (first) audio track for the video stream
         primary_idx = _primary_audio_index(probe)
         audio_map = f"0:a:{primary_idx}"
 
@@ -432,7 +469,6 @@ class HlsService:
         probe: MediaProbeResult,
     ) -> None:
         """Extract text-based subtitles to WebVTT files."""
-        # Embedded text subtitles
         for track in probe.subtitle_tracks:
             if not track.is_text_based:
                 _logger.info(
@@ -474,7 +510,6 @@ class HlsService:
             except subprocess.TimeoutExpired:
                 _logger.warning("Subtitle extraction timed out for track %d", track.index)
 
-        # External subtitles
         for track in probe.external_subtitles:
             if not track.is_text_based or not track.file_path:
                 continue
@@ -523,14 +558,12 @@ class HlsService:
         text_subs = [s for s in probe.all_subtitles if s.is_text_based]
         sub_group = 'SUBTITLES="subs"' if text_subs else ""
 
-        # Audio renditions
         primary_idx = _primary_audio_index(probe)
         if has_alt_audio:
             for track in probe.audio_tracks:
                 is_primary = track.index == primary_idx
                 name = track.title or f"{track.language.value.upper()} ({track.channel_layout})"
                 if is_primary:
-                    # Default audio is muxed in video stream — omit URI per HLS spec
                     lines.append(
                         f'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",'
                         f'NAME="{name}",LANGUAGE="{track.language.value}",'
@@ -544,7 +577,6 @@ class HlsService:
                         f'URI="audio_{track.index}/playlist.m3u8"'
                     )
 
-        # Subtitle tracks
         for sub in text_subs:
             sub_name = sub.title or f"{sub.language.value.upper()}"
             is_forced = "YES" if sub.is_forced else "NO"
@@ -555,7 +587,6 @@ class HlsService:
                 f'URI="sub_{sub.index}/playlist.m3u8"'
             )
 
-        # Stream inf
         groups = ",".join(filter(None, [audio_group, sub_group]))
         stream_inf = "#EXT-X-STREAM-INF:BANDWIDTH=5000000"
         if groups:
@@ -644,7 +675,7 @@ class HlsService:
                 is_default=t.get("is_default", False),
                 is_forced=t.get("is_forced", False),
                 is_external=True,
-                file_path=None,  # Not needed from cache
+                file_path=None,
             )
             for t in data.get("subtitle_tracks", [])
             if t.get("is_external", False)
@@ -678,4 +709,4 @@ def _write_subtitle_playlist(sub_dir: Path) -> None:
     )
 
 
-__all__ = ["HlsService"]
+__all__ = ["HlsService", "media_type_for", "rewrite_m3u8"]

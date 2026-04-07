@@ -7,7 +7,6 @@ database — only the initial playlist request needs a DB lookup.
 """
 
 import logging
-import re
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -20,25 +19,16 @@ from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput
 from src.modules.media.application.dtos.series_dtos import GetSeriesByIdInput
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
-from src.modules.media.infrastructure.streaming.hls_service import HlsService
+from src.modules.media.infrastructure.streaming.hls_service import (
+    HlsService,
+    media_type_for,
+    rewrite_m3u8,
+)
+from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeResult
 
 _logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/stream", tags=["Streaming"])
-
-# Matches standalone relative references (non-comment lines)
-_RELATIVE_REF_RE = re.compile(
-    r"^(?!#)(?!https?://)(?!/)(.+)$",
-    re.MULTILINE,
-)
-# Matches URI="..." attributes inside #EXT-X-MEDIA and similar tags
-_URI_ATTR_RE = re.compile(r'URI="([^"]+)"')
-
-_MEDIA_TYPES: dict[str, str] = {
-    ".m3u8": "application/vnd.apple.mpegurl",
-    ".ts": "video/mp2t",
-    ".vtt": "text/vtt",
-}
 
 
 def _resolve_file(file_path: str | None) -> Path:
@@ -51,18 +41,50 @@ def _resolve_file(file_path: str | None) -> Path:
     return path
 
 
-def _rewrite_m3u8(m3u8_text: str, base_url: str) -> str:
-    """Prefix all relative references in an m3u8 with an absolute base URL."""
-    # Rewrite URI="..." attributes inside #EXT-X-MEDIA tags
-    result = _URI_ATTR_RE.sub(rf'URI="{base_url}/\1"', m3u8_text)
-    # Rewrite standalone relative references (segment/playlist filenames)
-    return _RELATIVE_REF_RE.sub(rf"{base_url}/\1", result)
+def _serialize_tracks(probe: MediaProbeResult) -> dict[str, list[dict[str, object]]]:
+    """Serialize probe result into API response format."""
+    return {
+        "audio_tracks": [
+            {
+                "index": t.index,
+                "language": t.language.value,
+                "codec": t.codec,
+                "channels": t.channels,
+                "channel_layout": t.channel_layout,
+                "title": t.title,
+                "is_default": t.is_default,
+            }
+            for t in probe.audio_tracks
+        ],
+        "subtitle_tracks": [
+            {
+                "index": t.index,
+                "language": t.language.value,
+                "format": t.format,
+                "title": t.title,
+                "is_default": t.is_default,
+                "is_forced": t.is_forced,
+                "is_external": t.is_external,
+                "is_image_based": t.is_image_based,
+            }
+            for t in probe.all_subtitles
+            if t.is_text_based
+        ],
+    }
 
 
-def _media_type_for(filename: str) -> str:
-    """Determine media type from file extension."""
-    suffix = Path(filename).suffix.lower()
-    return _MEDIA_TYPES.get(suffix, "application/octet-stream")
+def _serve_master_playlist(hls: HlsService, path_hash: str) -> Response:
+    """Read master playlist and rewrite all relative URLs."""
+    content = hls.get_master_playlist(path_hash)
+    if not content:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    base_url = f"/api/v1/stream/hls/{path_hash}"
+    return Response(
+        content=rewrite_m3u8(content, base_url),
+        media_type="application/vnd.apple.mpegurl",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 # -- HLS file serving (no DB access) ------------------------------------------
@@ -86,14 +108,12 @@ async def hls_file(
     if not resolved:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Sub-playlists need URL rewriting
     if resolved.suffix == ".m3u8":
         try:
             content = resolved.read_text(encoding="utf-8")
         except OSError as e:
             raise HTTPException(status_code=404, detail="Playlist not readable") from e
 
-        # Base URL is the parent directory of this playlist
         parent_parts = str(Path(file_path).parent)
         if parent_parts == ".":
             base_url = f"/api/v1/stream/hls/{path_hash}"
@@ -101,14 +121,14 @@ async def hls_file(
             base_url = f"/api/v1/stream/hls/{path_hash}/{parent_parts}"
 
         return Response(
-            content=_rewrite_m3u8(content, base_url),
+            content=rewrite_m3u8(content, base_url),
             media_type="application/vnd.apple.mpegurl",
             headers={"Cache-Control": "no-cache"},
         )
 
     return FileResponse(
         str(resolved),
-        media_type=_media_type_for(file_path),
+        media_type=media_type_for(file_path),
     )
 
 
@@ -173,21 +193,6 @@ async def episode_hls_playlist(
     return _serve_master_playlist(hls, path_hash)
 
 
-def _serve_master_playlist(hls: HlsService, path_hash: str) -> Response:
-    """Read master playlist and rewrite all relative URLs."""
-    content = hls.get_master_playlist(path_hash)
-    if not content:
-        raise HTTPException(status_code=404, detail="Playlist not found")
-
-    base_url = f"/api/v1/stream/hls/{path_hash}"
-
-    return Response(
-        content=_rewrite_m3u8(content, base_url),
-        media_type="application/vnd.apple.mpegurl",
-        headers={"Cache-Control": "no-cache"},
-    )
-
-
 # -- Track info ----------------------------------------------------------------
 
 
@@ -206,35 +211,7 @@ async def movie_tracks(
     movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
     file_path = _resolve_file(movie.file_path)
     probe = hls.probe_tracks(str(file_path))
-
-    return {
-        "audio_tracks": [
-            {
-                "index": t.index,
-                "language": t.language.value,
-                "codec": t.codec,
-                "channels": t.channels,
-                "channel_layout": t.channel_layout,
-                "title": t.title,
-                "is_default": t.is_default,
-            }
-            for t in probe.audio_tracks
-        ],
-        "subtitle_tracks": [
-            {
-                "index": t.index,
-                "language": t.language.value,
-                "format": t.format,
-                "title": t.title,
-                "is_default": t.is_default,
-                "is_forced": t.is_forced,
-                "is_external": t.is_external,
-                "is_image_based": t.is_image_based,
-            }
-            for t in probe.all_subtitles
-            if t.is_text_based  # Only include text-based (playable) subtitles
-        ],
-    }
+    return _serialize_tracks(probe)
 
 
 @router.get("/episode/{series_id}/{season_number}/{episode_number}/tracks")  # type: ignore[misc]
@@ -254,35 +231,7 @@ async def episode_tracks(
     file_path = await _find_episode_file(use_case, series_id, season_number, episode_number)
     path = _resolve_file(file_path)
     probe = hls.probe_tracks(str(path))
-
-    return {
-        "audio_tracks": [
-            {
-                "index": t.index,
-                "language": t.language.value,
-                "codec": t.codec,
-                "channels": t.channels,
-                "channel_layout": t.channel_layout,
-                "title": t.title,
-                "is_default": t.is_default,
-            }
-            for t in probe.audio_tracks
-        ],
-        "subtitle_tracks": [
-            {
-                "index": t.index,
-                "language": t.language.value,
-                "format": t.format,
-                "title": t.title,
-                "is_default": t.is_default,
-                "is_forced": t.is_forced,
-                "is_external": t.is_external,
-                "is_image_based": t.is_image_based,
-            }
-            for t in probe.all_subtitles
-            if t.is_text_based
-        ],
-    }
+    return _serialize_tracks(probe)
 
 
 # -- Cache management ----------------------------------------------------------

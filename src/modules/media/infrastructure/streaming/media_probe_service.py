@@ -7,6 +7,7 @@ from a media file, returning structured domain value objects.
 import json
 import logging
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -151,6 +152,9 @@ class MediaProbeService:
     @staticmethod
     def _run_ffprobe(file_path: str) -> list[dict[str, Any]]:
         """Run ffprobe and return stream data as JSON."""
+        if not shutil.which("ffprobe"):
+            _logger.warning("ffprobe not found — cannot probe %s", file_path)
+            return []
         try:
             result = subprocess.run(
                 [
