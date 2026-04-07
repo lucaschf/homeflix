@@ -14,6 +14,7 @@ from src.modules.media.application.ports import (
 )
 from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
+    _detect_multi_episode,
 )
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
@@ -150,3 +151,94 @@ class TestEnrichSeriesMetadata:
         fake_id = str(SeriesId.generate())
         with pytest.raises(ResourceNotFoundException):
             await use_case.execute(EnrichMediaInput(media_id=fake_id))
+
+    @pytest.mark.asyncio
+    async def test_should_enrich_double_episode(self) -> None:
+        """Double episode file should merge metadata from two TMDB episodes."""
+        series = _make_series()
+        assert series.id is not None
+        # Replace episode with a double-title one
+        double_ep = Episode(
+            series_id=series.id,
+            season_number=1,
+            episode_number=1,
+            title=Title("Downtown as Fruits - Eugene_s Bike"),
+            duration=Duration(0),
+            files=[
+                MediaFile(
+                    file_path=FilePath("/series/ha/s01e01.avi"),
+                    file_size=300_000,
+                    resolution=Resolution("720p"),
+                    is_primary=True,
+                ),
+            ],
+        )
+        season = Season(series_id=series.id, season_number=1)
+        season = season.with_episode(double_ep)
+        series = series.with_updates(seasons=[season])
+
+        metadata = MediaMetadata(
+            title="Hey! Arnold",
+            tmdb_id=537,
+            seasons=[
+                SeasonMetadata(
+                    season_number=1,
+                    episodes=[
+                        EpisodeMetadata(
+                            season_number=1,
+                            episode_number=1,
+                            title="Downtown as Fruits",
+                            synopsis="Arnold goes downtown.",
+                            duration_seconds=660,
+                        ),
+                        EpisodeMetadata(
+                            season_number=1,
+                            episode_number=2,
+                            title="Eugene's Bike",
+                            synopsis="Eugene gets a new bike.",
+                            duration_seconds=660,
+                        ),
+                    ],
+                ),
+            ],
+        )
+
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+        repo.save.side_effect = lambda s: s
+
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = metadata
+
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        saved = repo.save.call_args[0][0]
+        ep = saved.seasons[0].episodes[0]
+        assert ep.title.value == "Downtown as Fruits / Eugene's Bike"
+        assert ep.duration.value == 1320  # 660 + 660
+        assert "Arnold goes downtown." in (ep.synopsis or "")
+        assert "Eugene gets a new bike." in (ep.synopsis or "")
+
+
+@pytest.mark.unit
+class TestDetectMultiEpisode:
+    """Tests for _detect_multi_episode helper."""
+
+    def test_single_generic_title(self):
+        assert _detect_multi_episode("Episode 1") == 1
+
+    def test_single_real_title(self):
+        assert _detect_multi_episode("The Pilot") == 1
+
+    def test_double_episode(self):
+        assert _detect_multi_episode("Downtown as Fruits - Eugene_s Bike") == 2
+
+    def test_triple_episode(self):
+        assert _detect_multi_episode("Part 1 - Part 2 - Part 3") == 3
+
+    def test_no_separator(self):
+        assert _detect_multi_episode("A Simple Title") == 1
+
+    def test_empty_title(self):
+        assert _detect_multi_episode("") == 1
