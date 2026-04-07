@@ -8,6 +8,7 @@ from src.modules.media.application.dtos.media_file_dtos import (
     SetPrimaryFileInput,
 )
 from src.modules.media.application.dtos.movie_dtos import (
+    DeleteMovieInput,
     GetMovieByIdInput,
     ListMoviesInput,
     ListMoviesOutput,
@@ -32,6 +33,7 @@ __all__ = [
     "RemoveFileVariantInput",
     "SetPrimaryFileInput",
     # Movie DTOs
+    "DeleteMovieInput",
     "GetMovieByIdInput",
     "ListMoviesInput",
     "ListMoviesOutput",

@@ -12,8 +12,13 @@ from src.modules.media.application.dtos.media_file_dtos import (
     RemoveFileVariantInput,
     SetPrimaryFileInput,
 )
-from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput, ListMoviesInput
+from src.modules.media.application.dtos.movie_dtos import (
+    DeleteMovieInput,
+    GetMovieByIdInput,
+    ListMoviesInput,
+)
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
+from src.modules.media.application.use_cases.delete_movie import DeleteMovieUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
@@ -62,6 +67,22 @@ async def get_movie(
         "type": "movie",
         "data": _dataclass_to_dict(result),
     }
+
+
+@router.delete("/{movie_id}", status_code=204)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def delete_movie(
+    movie_id: str,
+    use_case: DeleteMovieUseCase = Depends(
+        Provide[ApplicationContainer.media.delete_movie],
+    ),
+) -> None:
+    """Soft-delete a movie by ID.
+
+    The movie record is marked as deleted but not physically removed,
+    allowing for future recovery if needed.
+    """
+    await use_case.execute(DeleteMovieInput(movie_id=movie_id))
 
 
 # ── File variant endpoints ──────────────────────────────────────────

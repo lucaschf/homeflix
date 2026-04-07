@@ -9,6 +9,7 @@ from src.modules.media.application.use_cases.add_file_variant import AddFileVari
 from src.modules.media.application.use_cases.bulk_enrich_metadata import (
     BulkEnrichMetadataUseCase,
 )
+from src.modules.media.application.use_cases.delete_movie import DeleteMovieUseCase
 from src.modules.media.application.use_cases.enrich_movie_metadata import (
     EnrichMovieMetadataUseCase,
 )
@@ -83,6 +84,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     list_movies = providers.Factory(
         ListMoviesUseCase,
+        movie_repository=movie_repository,
+    )
+
+    delete_movie = providers.Factory(
+        DeleteMovieUseCase,
         movie_repository=movie_repository,
     )
 
