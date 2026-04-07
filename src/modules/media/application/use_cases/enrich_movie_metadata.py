@@ -171,10 +171,26 @@ def _apply_movie_metadata(movie: Movie, metadata: MediaMetadata) -> Movie:
     if metadata.backdrop_url and not movie.backdrop_path:
         updates["backdrop_path"] = ImageUrl(metadata.backdrop_url)
 
+    _apply_credits(updates, movie, metadata)
+
     if updates:
         movie = movie.with_updates(**updates)
 
     return movie
+
+
+def _apply_credits(
+    updates: dict[str, object],
+    movie: Movie,
+    metadata: MediaMetadata,
+) -> None:
+    """Apply cast/director/writer credits from metadata if not already present."""
+    if metadata.cast and not movie.cast:
+        updates["cast"] = [p.name for p in metadata.cast]
+    if metadata.directors and not movie.directors:
+        updates["directors"] = [p.name for p in metadata.directors]
+    if metadata.writers and not movie.writers:
+        updates["writers"] = [p.name for p in metadata.writers]
 
 
 __all__ = ["EnrichMovieMetadataUseCase"]

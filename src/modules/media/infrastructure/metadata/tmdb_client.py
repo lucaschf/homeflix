@@ -3,11 +3,14 @@
 import httpx
 
 from src.modules.media.application.ports import (
+    CreditPerson,
     EpisodeMetadata,
     MediaMetadata,
     MetadataProvider,
     SeasonMetadata,
 )
+
+_MAX_CAST = 15
 
 _TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/original"
 
@@ -77,7 +80,7 @@ class TmdbClient(MetadataProvider):
         """Fetch full movie details from TMDB."""
         resp = await self._client.get(
             f"{self._base_url}/movie/{tmdb_id}",
-            params=self._params(),
+            params=self._params(append_to_response="credits"),
         )
         if resp.status_code == 404:
             return None
@@ -87,6 +90,10 @@ class TmdbClient(MetadataProvider):
         year = None
         if data.get("release_date"):
             year = int(data["release_date"][:4])
+
+        credits = data.get("credits", {})
+        cast = self._parse_cast(credits.get("cast", []))
+        directors, writers = self._parse_crew(credits.get("crew", []))
 
         return MediaMetadata(
             title=data.get("title", ""),
@@ -99,6 +106,9 @@ class TmdbClient(MetadataProvider):
             genres=[g["name"] for g in data.get("genres", [])],
             tmdb_id=data["id"],
             imdb_id=data.get("imdb_id"),
+            cast=cast,
+            directors=directors,
+            writers=writers,
         )
 
     async def _fetch_series_details(self, tmdb_id: int) -> MediaMetadata | None:
@@ -172,6 +182,48 @@ class TmdbClient(MetadataProvider):
             poster_url=self._image_url(data.get("poster_path")),
             air_date=data.get("air_date"),
             episodes=episodes,
+        )
+
+    def _parse_cast(self, cast_data: list[dict[str, object]]) -> list[CreditPerson]:
+        """Parse TMDB cast data into CreditPerson list (top billed)."""
+        sorted_cast = sorted(cast_data, key=lambda c: int(str(c.get("order", 999))))
+        return [
+            self._to_credit_person(c, role_key="character")
+            for c in sorted_cast[:_MAX_CAST]
+            if c.get("name")
+        ]
+
+    def _parse_crew(
+        self, crew_data: list[dict[str, object]]
+    ) -> tuple[list[CreditPerson], list[CreditPerson]]:
+        """Parse TMDB crew data into directors and writers lists."""
+        directors: list[CreditPerson] = []
+        writers: list[CreditPerson] = []
+        seen_directors: set[str] = set()
+        seen_writers: set[str] = set()
+
+        for c in crew_data:
+            name = str(c.get("name", ""))
+            if not name:
+                continue
+            job = str(c.get("job", ""))
+            if job == "Director" and name not in seen_directors:
+                directors.append(self._to_credit_person(c, role_key="job"))
+                seen_directors.add(name)
+            elif c.get("department") == "Writing" and name not in seen_writers:
+                writers.append(self._to_credit_person(c, role_key="job"))
+                seen_writers.add(name)
+
+        return directors, writers
+
+    def _to_credit_person(self, data: dict[str, object], role_key: str) -> CreditPerson:
+        """Convert a TMDB cast/crew dict to a CreditPerson."""
+        profile_path = str(data.get("profile_path", "")) or None
+        return CreditPerson(
+            name=str(data.get("name", "")),
+            role=str(data.get(role_key, "")) or None,
+            profile_url=self._image_url(profile_path),
+            tmdb_id=int(str(data["id"])) if data.get("id") else None,
         )
 
 

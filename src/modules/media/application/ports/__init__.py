@@ -6,6 +6,7 @@ from src.modules.media.application.ports.file_scanner_port import (
     ScannedFile,
 )
 from src.modules.media.application.ports.metadata_provider_port import (
+    CreditPerson,
     EpisodeMetadata,
     MediaMetadata,
     MetadataProvider,
@@ -13,6 +14,7 @@ from src.modules.media.application.ports.metadata_provider_port import (
 )
 
 __all__ = [
+    "CreditPerson",
     "EpisodeMetadata",
     "FileSystemScanner",
     "MediaMetadata",
