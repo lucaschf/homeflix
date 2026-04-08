@@ -104,7 +104,9 @@ class MovieSummaryOutput:
     title: str
     year: int
     duration_formatted: str
+    synopsis: str | None
     poster_path: str | None
+    backdrop_path: str | None
     resolution: str | None
     variant_count: int
     available_resolutions: list[str]

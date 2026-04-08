@@ -135,7 +135,9 @@ class SeriesSummaryOutput:
     start_year: int
     end_year: int | None
     is_ongoing: bool
+    synopsis: str | None
     poster_path: str | None
+    backdrop_path: str | None
     season_count: int
     total_episodes: int
     genres: list[str]
@@ -160,9 +162,11 @@ class ListSeriesInput:
 
     Attributes:
         limit: Maximum number of series to return (optional, default: all).
+        lang: Language code for localized metadata.
     """
 
     limit: int | None = None
+    lang: str = "en"
 
 
 @dataclass(frozen=True)

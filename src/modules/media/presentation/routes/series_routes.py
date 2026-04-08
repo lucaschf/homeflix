@@ -35,12 +35,13 @@ router = APIRouter(prefix="/api/v1/series", tags=["Series"])
 @inject  # type: ignore[misc]
 async def list_series(
     limit: int | None = None,
+    lang: str = "en",
     use_case: ListSeriesUseCase = Depends(
         Provide[ApplicationContainer.media.list_series],
     ),
 ) -> dict[str, Any]:
     """List all series."""
-    result = await use_case.execute(ListSeriesInput(limit=limit))
+    result = await use_case.execute(ListSeriesInput(limit=limit, lang=lang))
     return {
         "type": "list",
         "data": [_dataclass_to_dict(s) for s in result.series],
