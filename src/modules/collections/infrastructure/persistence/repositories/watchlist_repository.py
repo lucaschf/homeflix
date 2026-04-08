@@ -40,7 +40,26 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
         return None if model is None else WatchlistItemMapper.to_entity(model)
 
     async def add(self, item: WatchlistItem) -> WatchlistItem:
-        """Add an item to the watchlist."""
+        """Add an item to the watchlist.
+
+        If a soft-deleted record exists for the same media_id,
+        restores it instead of creating a duplicate.
+        """
+        # Check for soft-deleted record to restore
+        stmt = select(WatchlistItemModel).where(
+            WatchlistItemModel.media_id == item.media_id,
+            WatchlistItemModel.deleted_at.is_not(None),
+        )
+        result = await self._session.execute(stmt)
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            existing.restore()
+            WatchlistItemMapper.update_model(existing, item)
+            await self._session.commit()
+            await self._session.refresh(existing)
+            return WatchlistItemMapper.to_entity(existing)
+
         model = WatchlistItemMapper.to_model(item)
         self._session.add(model)
         await self._session.commit()
