@@ -55,28 +55,29 @@ class GetSeriesByIdUseCase:
         if series is None:
             raise ResourceNotFoundException.for_resource("Series", input_dto.series_id)
 
-        return self._to_output(series)
+        return self._to_output(series, input_dto.lang)
 
-    def _to_output(self, series: Series) -> SeriesOutput:
+    def _to_output(self, series: Series, lang: str = "en") -> SeriesOutput:
         """Convert Series entity to output DTO.
 
         Args:
             series: The Series entity to convert.
+            lang: Language code for localized fields.
 
         Returns:
             SeriesOutput with all fields and nested seasons/episodes.
         """
         return SeriesOutput(
             id=str(series.id),
-            title=series.title.value,
+            title=series.get_title(lang),
             original_title=series.original_title.value if series.original_title else None,
             start_year=series.start_year.value,
             end_year=series.end_year.value if series.end_year else None,
             is_ongoing=series.is_ongoing,
-            synopsis=series.synopsis,
+            synopsis=series.get_synopsis(lang),
             poster_path=series.poster_path.value if series.poster_path else None,
             backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
-            genres=[g.value for g in series.genres],
+            genres=series.get_genres(lang),
             tmdb_id=series.tmdb_id.value if series.tmdb_id else None,
             imdb_id=series.imdb_id.value if series.imdb_id else None,
             season_count=series.season_count,

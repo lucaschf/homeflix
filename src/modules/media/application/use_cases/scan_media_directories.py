@@ -238,11 +238,12 @@ def _create_episode(
     """Create a new Episode from scanned files."""
     first = ep_files[0]
     assert series.id is not None
+    ep_title = first.episode_title or f"Episode {episode_num}"
     episode = Episode(
         series_id=series.id,
         season_number=season_num,
         episode_number=episode_num,
-        title=Title(f"Episode {episode_num}"),
+        title=Title(ep_title),
         duration=Duration(0),
         files=[_build_media_file(first, is_primary=True)],
     )

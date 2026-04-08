@@ -214,21 +214,106 @@ def _apply_season_metadata(season: Season, meta: SeasonMetadata) -> Season:
     if updates:
         season = season.with_updates(**updates)
 
-    # Enrich episodes
+    # Enrich episodes — track TMDB index separately to handle multi-segment files
     if meta.episodes:
         ep_by_num = {e.episode_number: e for e in meta.episodes}
+        sorted_episodes = sorted(season.episodes, key=lambda e: e.episode_number)
+        tmdb_idx = 1  # TMDB episode numbering starts at 1
         new_episodes = []
-        for ep in season.episodes:
-            ep_meta = ep_by_num.get(ep.episode_number)
-            enriched_ep = _apply_episode_metadata(ep, ep_meta) if ep_meta else ep
+        for ep in sorted_episodes:
+            segment_count = _detect_multi_episode(ep.title.value)
+            if segment_count > 1:
+                enriched_ep = _apply_multi_episode_metadata(
+                    ep, ep_by_num, segment_count, tmdb_start=tmdb_idx
+                )
+            else:
+                ep_meta = ep_by_num.get(tmdb_idx)
+                enriched_ep = _apply_episode_metadata(ep, ep_meta) if ep_meta else ep
             new_episodes.append(enriched_ep)
+            tmdb_idx += segment_count
         season = season.with_updates(episodes=new_episodes)
 
     return season
 
 
+def _detect_multi_episode(title: str) -> int:
+    """Detect how many episodes are in a single file based on title.
+
+    Counts segments separated by `` - `` in the episode title.
+    Titles like "Downtown as Fruits - Eugene's Bike" have 2 segments.
+
+    Returns:
+        Number of episodes detected (1 = single, 2+ = multi).
+    """
+    # Skip titles that are just generic "Episode N" from the scanner
+    if title.startswith("Episode "):
+        return 1
+    parts = [p.strip() for p in title.split(" - ") if p.strip()]
+    # Cap at 4 to avoid false positives from stylized titles
+    return min(max(len(parts), 1), 4)
+
+
+def _apply_multi_episode_metadata(
+    episode: Episode,
+    ep_by_num: dict[int, EpisodeMetadata],
+    segment_count: int,
+    tmdb_start: int | None = None,
+) -> Episode:
+    """Apply combined metadata from multiple TMDB episodes to a multi-segment file.
+
+    Concatenates titles with ``/``, joins synopses, sums durations,
+    and uses the first episode's thumbnail.
+
+    Args:
+        episode: The local episode entity.
+        ep_by_num: TMDB episodes keyed by episode number.
+        segment_count: Number of TMDB episodes in this file.
+        tmdb_start: Starting TMDB episode number (if None, uses episode.episode_number).
+    """
+    start = tmdb_start if tmdb_start is not None else episode.episode_number
+    metas = [ep_by_num.get(start + i) for i in range(segment_count)]
+    present = [m for m in metas if m is not None]
+
+    if not present:
+        return episode
+
+    updates: dict[str, object] = {}
+
+    # Concatenate titles from all segments (only if local title is from scanner)
+    titles = [m.title for m in present if m.title]
+    if titles and " / " not in episode.title.value:
+        updates["title"] = Title(" / ".join(titles))
+
+    # Synopsis: combine with separator
+    synopses = [m.synopsis for m in present if m.synopsis]
+    if synopses and not episode.synopsis:
+        updates["synopsis"] = " ◆ ".join(synopses)
+
+    # Sum durations from all segments
+    total_duration = sum(m.duration_seconds or 0 for m in present)
+    if total_duration and episode.duration.value == 0:
+        updates["duration"] = Duration(total_duration)
+
+    # Thumbnail: first available
+    first_still = next((m.still_url for m in present if m.still_url), None)
+    if first_still and not episode.thumbnail_path:
+        updates["thumbnail_path"] = ImageUrl(first_still)
+
+    # Air date: first available
+    first_date = next((m.air_date for m in present if m.air_date), None)
+    if first_date and not episode.air_date:
+        parsed = _parse_date(first_date)
+        if parsed:
+            updates["air_date"] = AirDate(parsed)
+
+    if updates:
+        episode = episode.with_updates(**updates)
+
+    return episode
+
+
 def _apply_episode_metadata(episode: Episode, meta: EpisodeMetadata) -> Episode:
-    """Apply metadata to an episode."""
+    """Apply metadata from a single TMDB episode."""
     updates: dict[str, object] = {}
 
     if meta.title and episode.title.value.startswith("Episode "):

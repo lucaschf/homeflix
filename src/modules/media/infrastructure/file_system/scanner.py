@@ -80,6 +80,25 @@ def _detect_episode(file_path: str) -> tuple[str, int, int] | None:
     return None
 
 
+def _extract_episode_title(filename: str) -> str | None:
+    """Extract episode title(s) from filename after the SxxExx pattern.
+
+    Example:
+        >>> _extract_episode_title("Hey! Arnold - S01E01 - Downtown as Fruits - Eugene_s Bike.avi")
+        'Downtown as Fruits - Eugene_s Bike'
+    """
+    stem = Path(filename).stem
+    for pattern in _EPISODE_PATTERNS:
+        match = pattern.search(stem)
+        if match:
+            after = stem[match.end() :]
+            # Strip leading separators
+            title = re.sub(r"^[\s\-_.]+", "", after).strip()
+            if title:
+                return title
+    return None
+
+
 def _find_series_name(file_path: str) -> str:
     """Find series name from directory structure.
 
@@ -148,6 +167,7 @@ class LocalFileSystemScanner(FileSystemScanner):
 
                 if episode_info:
                     series_name, season_num, episode_num = episode_info
+                    ep_title = _extract_episode_title(path.name)
                     results.append(
                         ScannedFile(
                             file_path=FilePath(full_path),
@@ -158,6 +178,7 @@ class LocalFileSystemScanner(FileSystemScanner):
                             series_name=series_name,
                             season_number=season_num,
                             episode_number=episode_num,
+                            episode_title=ep_title,
                         ),
                     )
                 else:

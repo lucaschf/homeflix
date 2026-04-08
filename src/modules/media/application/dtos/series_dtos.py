@@ -147,9 +147,11 @@ class GetSeriesByIdInput:
 
     Attributes:
         series_id: External ID of the series (ser_xxx format).
+        lang: Language code for localized metadata.
     """
 
     series_id: str
+    lang: str = "en"
 
 
 @dataclass(frozen=True)
