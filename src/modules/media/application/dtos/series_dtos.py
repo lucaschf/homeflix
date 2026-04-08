@@ -162,9 +162,11 @@ class ListSeriesInput:
 
     Attributes:
         limit: Maximum number of series to return (optional, default: all).
+        lang: Language code for localized metadata.
     """
 
     limit: int | None = None
+    lang: str = "en"
 
 
 @dataclass(frozen=True)
