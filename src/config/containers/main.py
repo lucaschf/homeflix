@@ -8,6 +8,7 @@ See ADR-004 for the rationale behind this design.
 
 from dependency_injector import containers, providers
 
+from src.config.containers.collections import CollectionsContainer
 from src.config.containers.infrastructure import InfrastructureContainer
 from src.config.containers.library import LibraryContainer
 from src.config.containers.media import MediaContainer
@@ -66,6 +67,13 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         WatchProgressContainer,
         session=infrastructure.session,
         movie_repository=media.movie_repository,
+    )
+
+    collections = providers.Container(
+        CollectionsContainer,
+        session=infrastructure.session,
+        movie_repository=media.movie_repository,
+        series_repository=media.series_repository,
     )
 
 
