@@ -220,6 +220,76 @@ class TestEnrichSeriesMetadata:
         assert "Arnold goes downtown." in (ep.synopsis or "")
         assert "Eugene gets a new bike." in (ep.synopsis or "")
 
+    @pytest.mark.asyncio
+    async def test_should_not_overwrite_existing_fields_for_double_episode(self) -> None:
+        """Double-episode enrichment must not overwrite existing episode fields."""
+        series = _make_series()
+        assert series.id is not None
+        double_ep = Episode(
+            series_id=series.id,
+            season_number=1,
+            episode_number=1,
+            title=Title("Downtown as Fruits / Eugene's Bike"),
+            duration=Duration(1320),
+            synopsis="Existing synopsis that must be preserved.",
+            files=[
+                MediaFile(
+                    file_path=FilePath("/series/ha/s01e01.avi"),
+                    file_size=300_000,
+                    resolution=Resolution("720p"),
+                    is_primary=True,
+                ),
+            ],
+        )
+        season = Season(series_id=series.id, season_number=1)
+        season = season.with_episode(double_ep)
+        series = series.with_updates(seasons=[season])
+
+        metadata = MediaMetadata(
+            title="Hey! Arnold",
+            tmdb_id=537,
+            seasons=[
+                SeasonMetadata(
+                    season_number=1,
+                    episodes=[
+                        EpisodeMetadata(
+                            season_number=1,
+                            episode_number=1,
+                            title="Downtown as Fruits",
+                            synopsis="New synopsis from TMDB.",
+                            duration_seconds=660,
+                        ),
+                        EpisodeMetadata(
+                            season_number=1,
+                            episode_number=2,
+                            title="Eugene's Bike",
+                            synopsis="Another TMDB synopsis.",
+                            duration_seconds=660,
+                        ),
+                    ],
+                ),
+            ],
+        )
+
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+        repo.save.side_effect = lambda s: s
+
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = metadata
+
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        saved = repo.save.call_args[0][0]
+        ep = saved.seasons[0].episodes[0]
+        # Title already has " / " so should NOT be overwritten
+        assert ep.title.value == "Downtown as Fruits / Eugene's Bike"
+        # Existing synopsis preserved
+        assert ep.synopsis == "Existing synopsis that must be preserved."
+        # Existing duration preserved
+        assert ep.duration.value == 1320
+
 
 @pytest.mark.unit
 class TestDetectMultiEpisode:

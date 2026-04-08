@@ -249,7 +249,8 @@ def _detect_multi_episode(title: str) -> int:
     if title.startswith("Episode "):
         return 1
     parts = [p.strip() for p in title.split(" - ") if p.strip()]
-    return max(len(parts), 1)
+    # Cap at 4 to avoid false positives from stylized titles
+    return min(max(len(parts), 1), 4)
 
 
 def _apply_multi_episode_metadata(
@@ -278,9 +279,9 @@ def _apply_multi_episode_metadata(
 
     updates: dict[str, object] = {}
 
-    # Concatenate titles from all segments
+    # Concatenate titles from all segments (only if local title is from scanner)
     titles = [m.title for m in present if m.title]
-    if titles:
+    if titles and " / " not in episode.title.value:
         updates["title"] = Title(" / ".join(titles))
 
     # Synopsis: combine with separator
