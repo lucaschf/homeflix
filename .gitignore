@@ -127,3 +127,7 @@ temp/
 # Claude Code context
 CLAUDE.md
 hls_cache/
+
+# Specs and evidence (local references only)
+specs/
+evidence/
