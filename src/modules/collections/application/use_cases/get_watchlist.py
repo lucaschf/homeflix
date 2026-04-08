@@ -9,6 +9,7 @@ from src.modules.collections.application.dtos import (
 from src.modules.collections.domain.entities import WatchlistItem
 from src.modules.collections.domain.repositories import WatchlistRepository
 from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
+from src.modules.media.domain.value_objects import MovieId, SeriesId
 
 _logger = logging.getLogger(__name__)
 
@@ -78,8 +79,6 @@ class GetWatchlistUseCase:
             WatchlistItemOutput with metadata, or None if media not found.
         """
         if item.media_type == "movie":
-            from src.modules.media.domain.value_objects import MovieId
-
             movie = await self._movie_repo.find_by_id(MovieId(item.media_id))
             if not movie:
                 return None
@@ -90,8 +89,6 @@ class GetWatchlistUseCase:
             )
 
         if item.media_type == "series":
-            from src.modules.media.domain.value_objects import SeriesId
-
             series = await self._series_repo.find_by_id(SeriesId(item.media_id))
             if not series:
                 return None

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from src.modules.collections.domain.entities import WatchlistItem
@@ -19,7 +19,7 @@ class ToggleWatchlistInput:
     """
 
     media_id: str
-    media_type: str
+    media_type: Literal["movie", "series"]
 
 
 @dataclass(frozen=True)

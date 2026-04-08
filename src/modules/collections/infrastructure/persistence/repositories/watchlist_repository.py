@@ -87,7 +87,7 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
         stmt = (
             select(WatchlistItemModel)
             .where(WatchlistItemModel.deleted_at.is_(None))
-            .order_by(WatchlistItemModel.created_at.desc())
+            .order_by(WatchlistItemModel.added_at.desc())
             .limit(limit)
         )
         result = await self._session.execute(stmt)
