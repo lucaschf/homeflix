@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.config.containers import ApplicationContainer
 from src.config.logging import get_logger, setup_logging
 from src.config.settings import get_settings
-from src.modules.collections.presentation.routes import watchlist_router
+from src.modules.collections.presentation.routes import custom_list_router, watchlist_router
 from src.modules.media.presentation.routes import (
     enrichment_router,
     movie_router,
@@ -66,6 +66,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "src.modules.media.presentation.routes.stream_routes",
             "src.modules.watch_progress.presentation.routes.progress_routes",
             "src.modules.collections.presentation.routes.watchlist_routes",
+            "src.modules.collections.presentation.routes.custom_list_routes",
         ],
     )
     app.state.container = container
@@ -123,6 +124,7 @@ def create_app() -> FastAPI:
     app.include_router(stream_router)
     app.include_router(progress_router)
     app.include_router(watchlist_router)
+    app.include_router(custom_list_router)
 
     return app
 
