@@ -115,6 +115,7 @@ class ContinueWatchingItem:
     media_type: str
     title: str
     poster_path: str | None
+    backdrop_path: str | None
     position_seconds: int
     duration_seconds: int
     percentage: float

@@ -91,6 +91,7 @@ class GetContinueWatchingUseCase:
                 media_type=progress.media_type,
                 title=movie.get_title(lang),
                 poster_path=movie.poster_path.value if movie.poster_path else None,
+                backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
                 position_seconds=progress.position_seconds,
                 duration_seconds=progress.duration_seconds,
                 percentage=progress.percentage,
