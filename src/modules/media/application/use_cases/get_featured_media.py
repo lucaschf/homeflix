@@ -89,7 +89,7 @@ class GetFeaturedMediaUseCase:
             duration_formatted=None,
             genres=series.get_genres(lang),
             backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
-            content_rating=None,
+            content_rating=None,  # Series entity does not have content_rating yet
         )
 
 
