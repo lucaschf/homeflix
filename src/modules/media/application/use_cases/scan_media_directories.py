@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 
+from src.building_blocks.application.event_bus import EventBus
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput, ScanMediaOutput
 from src.modules.media.application.ports import FileSystemScanner, MediaType, ScannedFile
 from src.modules.media.domain.entities import Episode, Movie, Season, Series
@@ -34,11 +35,13 @@ class ScanMediaDirectoriesUseCase:
         variant_detector: VariantDetector,
         movie_repository: MovieRepository,
         series_repository: SeriesRepository,
+        event_bus: EventBus | None = None,
     ) -> None:
         self._file_scanner = file_scanner
         self._variant_detector = variant_detector
         self._movie_repository = movie_repository
         self._series_repository = series_repository
+        self._event_bus = event_bus
 
     async def execute(self, input_dto: ScanMediaInput) -> ScanMediaOutput:
         """Execute the media scan.
@@ -66,6 +69,13 @@ class ScanMediaDirectoriesUseCase:
             episodes_updated=episodes_updated,
             errors=[*movie_errors, *episode_errors],
         )
+
+    async def _dispatch_events(self, events: list[object]) -> None:
+        """Dispatch domain events via the event bus, if available."""
+        if not self._event_bus:
+            return
+        for event in events:
+            await self._event_bus.publish(event)  # type: ignore[arg-type]
 
     async def _process_movies(
         self,
@@ -147,7 +157,9 @@ class ScanMediaDirectoriesUseCase:
         )
         for path in paths[1:]:
             movie = movie.with_file(_build_media_file(by_path[path], is_primary=False))
+        events = movie.pull_events()
         await self._movie_repository.save(movie)
+        await self._dispatch_events(events)
         return 1, 0
 
     async def _process_episodes(
@@ -198,7 +210,9 @@ class ScanMediaDirectoriesUseCase:
             created += c
             updated += u
 
+        events = series.pull_events()
         await self._series_repository.save(series)
+        await self._dispatch_events(events)
         return created, updated
 
 

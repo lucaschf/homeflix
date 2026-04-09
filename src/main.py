@@ -76,6 +76,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Initialize database
     await container.infrastructure.init_resources()
 
+    # Subscribe domain event handlers
+    from src.building_blocks.domain.events import MediaCreatedEvent
+
+    event_bus = container.infrastructure.event_bus()
+    event_bus.subscribe(MediaCreatedEvent, container.media.on_media_created_handler())
+
     logger.info("Application ready")
 
     yield
