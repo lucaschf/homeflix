@@ -1,7 +1,9 @@
 """Use case for enriching a series with external metadata."""
 
 import logging
+from collections.abc import Callable
 from datetime import date
+from typing import Any
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.enrichment_dtos import (
@@ -154,14 +156,14 @@ def _set_if_missing(
     updates: dict[str, object],
     metadata: MediaMetadata,
     entity: Series,
-    field_map: dict[str, tuple[str, object]],
+    field_map: dict[str, tuple[str, Callable[[Any], Any] | None]],
 ) -> None:
     """Set fields in updates only if metadata has a value and entity doesn't."""
     for meta_attr, (entity_attr, converter) in field_map.items():
         meta_val = getattr(metadata, meta_attr, None)
         entity_val = getattr(entity, entity_attr, None)
         if meta_val and not entity_val:
-            updates[entity_attr] = converter(meta_val) if callable(converter) else meta_val
+            updates[entity_attr] = converter(meta_val) if converter is not None else meta_val
 
 
 def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:

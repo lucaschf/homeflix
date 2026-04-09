@@ -314,13 +314,13 @@ class TmdbClient(MetadataProvider):
     def _parse_trailer(videos: dict[str, object]) -> str | None:
         """Extract the best YouTube trailer URL from TMDB videos.
 
-        Prefers official trailers, falls back to teasers.
+        Ranking: official Trailer > any Trailer > official Teaser > any Teaser.
         """
         results = videos.get("results", [])
         if not isinstance(results, list):
             return None
 
-        trailers = [
+        candidates: list[dict[str, object]] = [
             v
             for v in results
             if isinstance(v, dict)
@@ -329,12 +329,22 @@ class TmdbClient(MetadataProvider):
             and v.get("key")
         ]
 
-        if not trailers:
+        if not candidates:
             return None
 
-        # Prefer official trailers over teasers
-        official = [v for v in trailers if v.get("official") and v.get("type") == "Trailer"]
-        best = official[0] if official else trailers[0]
+        def _rank(video: dict[str, object]) -> int:
+            is_trailer = video.get("type") == "Trailer"
+            is_official = bool(video.get("official"))
+            if is_trailer and is_official:
+                return 0
+            if is_trailer:
+                return 1
+            if is_official:
+                return 2
+            return 3
+
+        ranked = sorted(enumerate(candidates), key=lambda item: (_rank(item[1]), item[0]))
+        best = ranked[0][1]
 
         return f"https://www.youtube.com/watch?v={best['key']}"
 
