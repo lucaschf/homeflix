@@ -76,6 +76,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Initialize database
     await container.infrastructure.init_resources()
 
+    # Subscribe domain event handlers
+    _subscribe_event_handlers(container)
+
     logger.info("Application ready")
 
     yield
@@ -84,6 +87,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Application shutting down")
     await container.infrastructure.shutdown_resources()
     logger.info("Application stopped")
+
+
+def _subscribe_event_handlers(container: ApplicationContainer) -> None:
+    """Wire domain event handlers to the event bus.
+
+    Centralises event handler registration so it stays alongside
+    the rest of the container configuration.
+    """
+    from src.building_blocks.domain.events import MediaCreatedEvent
+    from src.modules.media.application.event_handlers import OnMediaCreatedHandler
+
+    event_bus = container.infrastructure.event_bus()
+    handler = OnMediaCreatedHandler(
+        enrich_movie_factory=container.media.enrich_movie_metadata,
+        enrich_series_factory=container.media.enrich_series_metadata,
+    )
+    event_bus.subscribe(MediaCreatedEvent, handler)
 
 
 def create_app() -> FastAPI:

@@ -405,6 +405,29 @@ class TestMovieEquality:
 class TestMovieEvents:
     """Tests for Movie domain events."""
 
+    def test_should_emit_media_created_event_on_create(self):
+        from src.building_blocks.domain.events import MediaCreatedEvent
+        from src.modules.media.domain.entities import Movie
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        assert movie.has_pending_events is True
+
+        events = movie.pull_events()
+
+        assert len(events) == 1
+        assert isinstance(events[0], MediaCreatedEvent)
+        assert events[0].media_id == str(movie.id)
+        assert events[0].media_type == "movie"
+        assert movie.has_pending_events is False
+
     def test_should_add_and_pull_events(self):
         from src.modules.media.domain.entities import Movie
 
@@ -417,14 +440,35 @@ class TestMovieEvents:
             resolution="1080p",
         )
 
-        movie.add_event({"type": "MovieCreated", "movie_id": str(movie.id)})
-
-        assert movie.has_pending_events is True
+        movie.add_event({"type": "CustomEvent", "movie_id": str(movie.id)})
 
         events = movie.pull_events()
 
-        assert len(events) == 1
+        # MediaCreatedEvent from create() + the custom event
+        assert len(events) == 2
         assert movie.has_pending_events is False
+
+    def test_events_survive_with_updates(self):
+        from src.building_blocks.domain.events import MediaCreatedEvent
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import Year
+
+        movie = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        # Events from create() should survive with_updates()
+        updated = movie.with_updates(year=Year(2011))
+
+        assert updated.has_pending_events is True
+        events = updated.pull_events()
+        assert len(events) == 1
+        assert isinstance(events[0], MediaCreatedEvent)
 
 
 class TestMovieImmutability:

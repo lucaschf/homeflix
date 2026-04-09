@@ -166,18 +166,33 @@ class TestSeriesEquality:
 class TestSeriesEvents:
     """Tests for Series domain events."""
 
-    def test_should_add_and_pull_events(self):
+    def test_should_emit_media_created_event_on_create(self):
+        from src.building_blocks.domain.events import MediaCreatedEvent
         from src.modules.media.domain.entities import Series
 
         series = Series.create(title="Breaking Bad", start_year=2008)
-
-        series.add_event({"type": "SeriesCreated", "series_id": str(series.id)})
 
         assert series.has_pending_events is True
 
         events = series.pull_events()
 
         assert len(events) == 1
+        assert isinstance(events[0], MediaCreatedEvent)
+        assert events[0].media_id == str(series.id)
+        assert events[0].media_type == "series"
+        assert series.has_pending_events is False
+
+    def test_should_add_and_pull_events(self):
+        from src.modules.media.domain.entities import Series
+
+        series = Series.create(title="Breaking Bad", start_year=2008)
+
+        series.add_event({"type": "CustomEvent", "series_id": str(series.id)})
+
+        events = series.pull_events()
+
+        # MediaCreatedEvent from create() + the custom event
+        assert len(events) == 2
         assert series.has_pending_events is False
 
 

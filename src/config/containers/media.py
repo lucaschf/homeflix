@@ -5,6 +5,7 @@ Provides repositories and use cases for the Media module.
 
 from dependency_injector import containers, providers
 
+from src.modules.media.application.event_handlers import OnMediaCreatedHandler
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
 from src.modules.media.application.use_cases.bulk_enrich_metadata import (
     BulkEnrichMetadataUseCase,
@@ -54,8 +55,9 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         >>> use_case = container.get_movie_by_id()
     """
 
-    # Must be wired from InfrastructureContainer.session
+    # Must be wired from InfrastructureContainer
     session = providers.Dependency()
+    event_bus = providers.Dependency()
 
     # Must be wired from parent container (Settings.hls_cache_directory)
     hls_cache_directory = providers.Dependency(default="./hls_cache")
@@ -163,6 +165,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         variant_detector=variant_detector,
         movie_repository=movie_repository,
         series_repository=series_repository,
+        event_bus=event_bus,
     )
 
     # =========================================================================
@@ -196,4 +199,14 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         enrich_series=enrich_series_metadata,
         movie_repository=movie_repository,
         series_repository=series_repository,
+    )
+
+    # =========================================================================
+    # Event Handlers
+    # =========================================================================
+
+    on_media_created_handler = providers.Singleton(
+        OnMediaCreatedHandler,
+        enrich_movie=enrich_movie_metadata,
+        enrich_series=enrich_series_metadata,
     )

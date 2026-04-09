@@ -10,6 +10,7 @@ from dependency_injector import containers, providers
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from src.building_blocks.infrastructure.in_process_event_bus import InProcessEventBus
 from src.config.settings import Settings
 
 
@@ -68,3 +69,5 @@ class InfrastructureContainer(containers.DeclarativeContainer):  # type: ignore[
         lambda factory: factory(),
         factory=session_factory,
     )
+
+    event_bus = providers.Singleton(InProcessEventBus)
