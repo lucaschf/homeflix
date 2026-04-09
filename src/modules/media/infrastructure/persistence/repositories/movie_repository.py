@@ -136,6 +136,24 @@ class SQLAlchemyMovieRepository(MovieRepository):
 
         return [MovieMapper.to_entity(model) for model in models]
 
+    async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Movie]:
+        """Return random movies."""
+        from sqlalchemy.sql.expression import func
+
+        stmt = (
+            select(MovieModel)
+            .where(MovieModel.deleted_at.is_(None))
+            .options(selectinload(MovieModel.file_variants))
+        )
+        if with_backdrop:
+            stmt = stmt.where(
+                MovieModel.backdrop_path.is_not(None),
+                MovieModel.backdrop_path != "",
+            )
+        stmt = stmt.order_by(func.random()).limit(limit)
+        result = await self._session.execute(stmt)
+        return [MovieMapper.to_entity(m) for m in result.scalars().all()]
+
     async def find_by_ids(self, movie_ids: Sequence[MovieId]) -> dict[str, Movie]:
         """Find multiple movies by their IDs in a single query."""
         if not movie_ids:

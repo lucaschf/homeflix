@@ -162,6 +162,24 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         return [SeriesMapper.to_entity(model) for model in models]
 
+    async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Series]:
+        """Return random series."""
+        from sqlalchemy.sql.expression import func
+
+        stmt = (
+            select(SeriesModel)
+            .where(SeriesModel.deleted_at.is_(None))
+            .options(*self._series_load_options())
+        )
+        if with_backdrop:
+            stmt = stmt.where(
+                SeriesModel.backdrop_path.is_not(None),
+                SeriesModel.backdrop_path != "",
+            )
+        stmt = stmt.order_by(func.random()).limit(limit)
+        result = await self._session.execute(stmt)
+        return [SeriesMapper.to_entity(m) for m in result.scalars().all()]
+
     async def find_by_title(self, title: Title) -> Series | None:
         """Find a series by its title (case-insensitive).
 

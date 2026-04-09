@@ -16,6 +16,7 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
 from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
 )
+from src.modules.media.application.use_cases.get_featured_media import GetFeaturedMediaUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
@@ -76,6 +77,12 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # =========================================================================
     # Use Cases — Query
     # =========================================================================
+
+    get_featured_media = providers.Factory(
+        GetFeaturedMediaUseCase,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
+    )
 
     get_movie_by_id = providers.Factory(
         GetMovieByIdUseCase,

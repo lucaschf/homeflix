@@ -60,6 +60,19 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Series]:
+        """Return random series, optionally filtering to those with backdrop.
+
+        Args:
+            limit: Maximum number of series to return.
+            with_backdrop: If True, only return series with a backdrop_path.
+
+        Returns:
+            Sequence of randomly selected series.
+        """
+        ...
+
+    @abstractmethod
     async def find_by_ids(self, series_ids: Sequence[SeriesId]) -> dict[str, Series]:
         """Find multiple series by their IDs in a single query.
 

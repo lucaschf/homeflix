@@ -1,5 +1,9 @@
 """Media DTOs for application layer."""
 
+from src.modules.media.application.dtos.featured_dtos import (
+    FeaturedItemOutput,
+    GetFeaturedInput,
+)
 from src.modules.media.application.dtos.media_file_dtos import (
     AddFileVariantInput,
     GetFileVariantsInput,
@@ -26,6 +30,9 @@ from src.modules.media.application.dtos.series_dtos import (
 )
 
 __all__ = [
+    # Featured DTOs
+    "FeaturedItemOutput",
+    "GetFeaturedInput",
     # MediaFile DTOs
     "AddFileVariantInput",
     "GetFileVariantsInput",

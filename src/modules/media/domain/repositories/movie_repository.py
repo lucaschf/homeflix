@@ -60,6 +60,19 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Movie]:
+        """Return random movies, optionally filtering to those with backdrop.
+
+        Args:
+            limit: Maximum number of movies to return.
+            with_backdrop: If True, only return movies with a backdrop_path.
+
+        Returns:
+            Sequence of randomly selected movies.
+        """
+        ...
+
+    @abstractmethod
     async def find_by_ids(self, movie_ids: Sequence[MovieId]) -> dict[str, Movie]:
         """Find multiple movies by their IDs in a single query.
 
