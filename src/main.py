@@ -78,9 +78,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Subscribe domain event handlers
     from src.building_blocks.domain.events import MediaCreatedEvent
+    from src.modules.media.application.event_handlers import OnMediaCreatedHandler
 
     event_bus = container.infrastructure.event_bus()
-    event_bus.subscribe(MediaCreatedEvent, container.media.on_media_created_handler())
+    handler = OnMediaCreatedHandler(
+        enrich_movie=container.media.enrich_movie_metadata(),
+        enrich_series=container.media.enrich_series_metadata(),
+    )
+    event_bus.subscribe(MediaCreatedEvent, handler)
 
     logger.info("Application ready")
 
