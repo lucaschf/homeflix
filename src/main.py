@@ -82,8 +82,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     event_bus = container.infrastructure.event_bus()
     handler = OnMediaCreatedHandler(
-        enrich_movie=container.media.enrich_movie_metadata(),
-        enrich_series=container.media.enrich_series_metadata(),
+        enrich_movie_factory=container.media.enrich_movie_metadata,
+        enrich_series_factory=container.media.enrich_series_metadata,
     )
     event_bus.subscribe(MediaCreatedEvent, handler)
 
