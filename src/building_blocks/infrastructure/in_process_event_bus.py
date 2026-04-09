@@ -36,7 +36,11 @@ class InProcessEventBus(EventBus):
         )
 
     async def publish(self, event: DomainEvent) -> None:
-        """Publish an event to all registered handlers."""
+        """Publish an event to all registered handlers.
+
+        Dispatch is by exact concrete type — handlers registered for a
+        base class will not receive subclass events.
+        """
         event_type = type(event)
         handlers = self._handlers.get(event_type, [])
 

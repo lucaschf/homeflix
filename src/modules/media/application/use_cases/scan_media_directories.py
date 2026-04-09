@@ -3,6 +3,7 @@
 from collections import defaultdict
 
 from src.building_blocks.application.event_bus import EventBus
+from src.building_blocks.domain.events import DomainEvent
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput, ScanMediaOutput
 from src.modules.media.application.ports import FileSystemScanner, MediaType, ScannedFile
 from src.modules.media.domain.entities import Episode, Movie, Season, Series
@@ -70,12 +71,12 @@ class ScanMediaDirectoriesUseCase:
             errors=[*movie_errors, *episode_errors],
         )
 
-    async def _dispatch_events(self, events: list[object]) -> None:
+    async def _dispatch_events(self, events: list[DomainEvent]) -> None:
         """Dispatch domain events via the event bus, if available."""
         if not self._event_bus:
             return
         for event in events:
-            await self._event_bus.publish(event)  # type: ignore[arg-type]
+            await self._event_bus.publish(event)
 
     async def _process_movies(
         self,
