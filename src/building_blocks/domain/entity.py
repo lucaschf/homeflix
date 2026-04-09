@@ -96,5 +96,15 @@ class AggregateRoot(DomainEntity[IdT]):
         """Return True if there are pending domain events."""
         return len(self._events) > 0
 
+    def with_updates(self, **kwargs: Any) -> Self:
+        """Create a new instance with updates, propagating pending events.
+
+        Overrides DomainEntity.with_updates to ensure domain events
+        survive immutable model transitions.
+        """
+        new_instance = super().with_updates(**kwargs)
+        new_instance._events = self._events[:]
+        return new_instance
+
 
 __all__ = ["AggregateRoot", "DomainEntity", "utc_now"]
