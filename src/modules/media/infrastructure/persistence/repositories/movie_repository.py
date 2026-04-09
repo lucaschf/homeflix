@@ -136,6 +136,23 @@ class SQLAlchemyMovieRepository(MovieRepository):
 
         return [MovieMapper.to_entity(model) for model in models]
 
+    async def find_by_ids(self, movie_ids: Sequence[MovieId]) -> dict[str, Movie]:
+        """Find multiple movies by their IDs in a single query."""
+        if not movie_ids:
+            return {}
+
+        ext_ids = [str(mid) for mid in movie_ids]
+        stmt = (
+            select(MovieModel)
+            .where(
+                MovieModel.external_id.in_(ext_ids),
+                MovieModel.deleted_at.is_(None),
+            )
+            .options(selectinload(MovieModel.file_variants))
+        )
+        result = await self._session.execute(stmt)
+        return {model.external_id: MovieMapper.to_entity(model) for model in result.scalars().all()}
+
     async def find_by_file_path(self, file_path: FilePath) -> Movie | None:
         """Find a movie by any of its file variant paths.
 

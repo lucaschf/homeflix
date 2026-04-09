@@ -5,6 +5,7 @@ from src.modules.collections.domain.value_objects import ListId
 from src.modules.collections.infrastructure.persistence.models import (
     WatchlistItemModel,
 )
+from src.shared_kernel.value_objects import CollectionMediaType
 
 
 class WatchlistItemMapper:
@@ -49,7 +50,7 @@ class WatchlistItemMapper:
         return WatchlistItem(
             id=ListId(model.external_id),
             media_id=model.media_id,
-            media_type=model.media_type,
+            media_type=CollectionMediaType(model.media_type),
             added_at=model.added_at,
             created_at=model.created_at,
             updated_at=model.updated_at,

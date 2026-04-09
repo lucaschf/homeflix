@@ -60,6 +60,18 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_by_ids(self, series_ids: Sequence[SeriesId]) -> dict[str, Series]:
+        """Find multiple series by their IDs in a single query.
+
+        Args:
+            series_ids: Sequence of series external IDs.
+
+        Returns:
+            Dict mapping external ID string to Series entity.
+        """
+        ...
+
+    @abstractmethod
     async def find_by_episode_id(self, episode_id: EpisodeId) -> Series | None:
         """Find a series containing an episode with this ID.
 
