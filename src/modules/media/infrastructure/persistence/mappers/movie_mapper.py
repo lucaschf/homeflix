@@ -69,6 +69,7 @@ class MovieMapper:
             else None,
             writers=json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None,
             content_rating=entity.content_rating,
+            trailer_url=entity.trailer_url,
             localized=json.dumps(entity.localized, ensure_ascii=False)
             if entity.localized
             else None,
@@ -130,6 +131,7 @@ class MovieMapper:
             directors=json.loads(model.directors) if model.directors else [],
             writers=json.loads(model.writers) if model.writers else [],
             content_rating=model.content_rating,
+            trailer_url=model.trailer_url,
             localized=json.loads(model.localized) if model.localized else {},
             files=files,
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
@@ -167,6 +169,7 @@ class MovieMapper:
         )
         model.writers = json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None
         model.content_rating = entity.content_rating
+        model.trailer_url = entity.trailer_url
         model.localized = (
             json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None
         )

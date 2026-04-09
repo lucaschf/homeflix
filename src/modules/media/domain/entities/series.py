@@ -53,6 +53,7 @@ class Series(AggregateRoot[SeriesId]):
     # Categorization
     genres: list[Genre] = Field(default_factory=list)
     content_rating: str | None = None
+    trailer_url: str | None = None
 
     # Localized metadata
     localized: dict[str, dict[str, Any]] = Field(default_factory=dict)

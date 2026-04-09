@@ -79,6 +79,7 @@ class GetSeriesByIdUseCase:
             backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
             genres=series.get_genres(lang),
             content_rating=series.content_rating,
+            trailer_url=series.trailer_url,
             tmdb_id=series.tmdb_id.value if series.tmdb_id else None,
             imdb_id=series.imdb_id.value if series.imdb_id else None,
             season_count=series.season_count,

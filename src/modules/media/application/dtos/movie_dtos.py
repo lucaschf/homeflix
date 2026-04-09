@@ -74,6 +74,7 @@ class MovieOutput:
     directors: list[str]
     writers: list[str]
     content_rating: str | None
+    trailer_url: str | None
     file_path: str | None
     file_size: int | None
     resolution: str | None

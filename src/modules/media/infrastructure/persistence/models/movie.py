@@ -64,6 +64,9 @@ class MovieModel(Base):
     # Classification (e.g., "PG-13", "R", "14")
     content_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
+    # Trailer (YouTube URL)
+    trailer_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # Localized metadata (JSON: {"pt-BR": {"title": "...", "synopsis": "...", "genres": [...]}})
     localized: Mapped[str | None] = mapped_column(Text, nullable=True)
 
