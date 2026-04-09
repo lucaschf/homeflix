@@ -177,7 +177,7 @@ class TmdbClient(MetadataProvider):
         """Fetch full series details including seasons and episodes."""
         resp = await self._client.get(
             f"{self._base_url}/tv/{tmdb_id}",
-            params=self._params(append_to_response="external_ids"),
+            params=self._params(append_to_response="external_ids,content_ratings"),
         )
         if resp.status_code == 404:
             return None
@@ -200,6 +200,10 @@ class TmdbClient(MetadataProvider):
             if season_meta:
                 seasons.append(season_meta)
 
+        content_rating = self._parse_series_content_rating(
+            data.get("content_ratings", {}),
+        )
+
         return MediaMetadata(
             title=data.get("name", ""),
             original_title=data.get("original_name"),
@@ -211,6 +215,7 @@ class TmdbClient(MetadataProvider):
             genres=[g["name"] for g in data.get("genres", [])],
             tmdb_id=data["id"],
             imdb_id=data.get("external_ids", {}).get("imdb_id"),
+            content_rating=content_rating,
             seasons=seasons,
         )
 
@@ -297,6 +302,24 @@ class TmdbClient(MetadataProvider):
                 cert = str(rel.get("certification", "")).strip() if isinstance(rel, dict) else ""
                 if cert and iso not in ratings_by_country:
                     ratings_by_country[iso] = cert
+
+        return ratings_by_country.get("BR") or ratings_by_country.get("US") or None
+
+    @staticmethod
+    def _parse_series_content_rating(content_ratings: dict[str, object]) -> str | None:
+        """Extract content rating from TMDB series content_ratings, preferring BR then US."""
+        results = content_ratings.get("results", [])
+        if not isinstance(results, list):
+            return None
+
+        ratings_by_country: dict[str, str] = {}
+        for entry in results:
+            if not isinstance(entry, dict):
+                continue
+            iso = str(entry.get("iso_3166_1", ""))
+            rating = str(entry.get("rating", "")).strip()
+            if rating and iso not in ratings_by_country:
+                ratings_by_country[iso] = rating
 
         return ratings_by_country.get("BR") or ratings_by_country.get("US") or None
 

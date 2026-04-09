@@ -43,3 +43,4 @@ class FeaturedItemOutput:
     duration_formatted: str | None
     genres: list[str]
     backdrop_path: str | None
+    content_rating: str | None

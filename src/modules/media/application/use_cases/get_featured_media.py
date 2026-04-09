@@ -74,6 +74,7 @@ class GetFeaturedMediaUseCase:
             duration_formatted=movie.duration.format_hms(),
             genres=movie.get_genres(lang),
             backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
+            content_rating=movie.content_rating,
         )
 
     @staticmethod
@@ -88,6 +89,7 @@ class GetFeaturedMediaUseCase:
             duration_formatted=None,
             genres=series.get_genres(lang),
             backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
+            content_rating=series.content_rating,
         )
 
 
