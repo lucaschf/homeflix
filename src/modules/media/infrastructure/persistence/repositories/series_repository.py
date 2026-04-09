@@ -185,6 +185,26 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         return None if model is None else SeriesMapper.to_entity(model)
 
+    async def find_by_ids(self, series_ids: Sequence[SeriesId]) -> dict[str, Series]:
+        """Find multiple series by their IDs in a single query."""
+        if not series_ids:
+            return {}
+
+        ext_ids = [str(sid) for sid in series_ids]
+        stmt = (
+            select(SeriesModel)
+            .where(
+                SeriesModel.external_id.in_(ext_ids),
+                SeriesModel.deleted_at.is_(None),
+            )
+            .options(*self._series_load_options())
+            .execution_options(populate_existing=True)
+        )
+        result = await self._session.execute(stmt)
+        return {
+            model.external_id: SeriesMapper.to_entity(model) for model in result.scalars().all()
+        }
+
     async def find_by_episode_id(self, episode_id: EpisodeId) -> Series | None:
         """Find a series containing an episode with this ID.
 

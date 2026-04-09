@@ -6,10 +6,10 @@ from src.modules.collections.application.dtos import (
     GetWatchlistInput,
     WatchlistItemOutput,
 )
-from src.modules.collections.domain.entities import WatchlistItem
 from src.modules.collections.domain.repositories import WatchlistRepository
 from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import MovieId, SeriesId
+from src.shared_kernel.value_objects import CollectionMediaType
 
 _logger = logging.getLogger(__name__)
 
@@ -18,7 +18,8 @@ class GetWatchlistUseCase:
     """List all items in the user's watchlist with display metadata.
 
     Joins watchlist records with movie/series data to provide
-    title and poster for the My List UI section.
+    title and poster for the My List UI section. Uses batch
+    lookups to avoid N+1 queries.
 
     Example:
         >>> use_case = GetWatchlistUseCase(watchlist_repo, movie_repo, series_repo)
@@ -54,51 +55,48 @@ class GetWatchlistUseCase:
         items = await self._watchlist_repo.list_all(limit=input_dto.limit)
         _logger.info("Found %d watchlist items", len(items))
 
+        if not items:
+            return []
+
+        # Batch-load all referenced movies and series
+        movie_ids = [
+            MovieId(i.media_id) for i in items if i.media_type == CollectionMediaType.MOVIE
+        ]
+        series_ids = [
+            SeriesId(i.media_id) for i in items if i.media_type == CollectionMediaType.SERIES
+        ]
+
+        movies_map = await self._movie_repo.find_by_ids(movie_ids) if movie_ids else {}
+        series_map = await self._series_repo.find_by_ids(series_ids) if series_ids else {}
+
         result: list[WatchlistItemOutput] = []
         for item in items:
-            output = await self._enrich_with_metadata(item, input_dto.lang)
-            if output:
-                result.append(output)
-            else:
-                _logger.warning("Could not find media for watchlist item: %s", item.media_id)
+            if item.media_type == CollectionMediaType.MOVIE:
+                movie = movies_map.get(item.media_id)
+                if not movie:
+                    _logger.warning("Could not find media for watchlist item: %s", item.media_id)
+                    continue
+                result.append(
+                    WatchlistItemOutput.from_entity(
+                        entity=item,
+                        title=movie.get_title(input_dto.lang),
+                        poster_path=movie.poster_path.value if movie.poster_path else None,
+                    )
+                )
+            elif item.media_type == CollectionMediaType.SERIES:
+                series = series_map.get(item.media_id)
+                if not series:
+                    _logger.warning("Could not find media for watchlist item: %s", item.media_id)
+                    continue
+                result.append(
+                    WatchlistItemOutput.from_entity(
+                        entity=item,
+                        title=series.get_title(input_dto.lang),
+                        poster_path=series.poster_path.value if series.poster_path else None,
+                    )
+                )
 
         return result
-
-    async def _enrich_with_metadata(
-        self,
-        item: WatchlistItem,
-        lang: str,
-    ) -> WatchlistItemOutput | None:
-        """Enrich a watchlist item with media metadata.
-
-        Args:
-            item: The watchlist item.
-            lang: Language code for localized metadata.
-
-        Returns:
-            WatchlistItemOutput with metadata, or None if media not found.
-        """
-        if item.media_type == "movie":
-            movie = await self._movie_repo.find_by_id(MovieId(item.media_id))
-            if not movie:
-                return None
-            return WatchlistItemOutput.from_entity(
-                entity=item,
-                title=movie.get_title(lang),
-                poster_path=movie.poster_path.value if movie.poster_path else None,
-            )
-
-        if item.media_type == "series":
-            series = await self._series_repo.find_by_id(SeriesId(item.media_id))
-            if not series:
-                return None
-            return WatchlistItemOutput.from_entity(
-                entity=item,
-                title=series.get_title(lang),
-                poster_path=series.poster_path.value if series.poster_path else None,
-            )
-
-        return None
 
 
 __all__ = ["GetWatchlistUseCase"]

@@ -60,6 +60,18 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_by_ids(self, movie_ids: Sequence[MovieId]) -> dict[str, Movie]:
+        """Find multiple movies by their IDs in a single query.
+
+        Args:
+            movie_ids: Sequence of movie external IDs.
+
+        Returns:
+            Dict mapping external ID string to Movie entity.
+        """
+        ...
+
+    @abstractmethod
     async def find_by_file_path(self, file_path: FilePath) -> Movie | None:
         """Find a movie by its file path.
 

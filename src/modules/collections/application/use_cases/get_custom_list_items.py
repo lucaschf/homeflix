@@ -7,10 +7,10 @@ from src.modules.collections.application.dtos import (
     CustomListItemOutput,
     GetCustomListItemsInput,
 )
-from src.modules.collections.domain.entities import CustomListItem
 from src.modules.collections.domain.repositories import CustomListRepository
 from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import MovieId, SeriesId
+from src.shared_kernel.value_objects import CollectionMediaType
 
 _logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class GetCustomListItemsUseCase:
     """List all items in a custom list with display metadata.
 
     Joins list items with movie/series data to provide
-    title and poster for the UI.
+    title and poster for the UI. Uses batch lookups to avoid N+1.
 
     Example:
         >>> use_case = GetCustomListItemsUseCase(
@@ -69,54 +69,48 @@ class GetCustomListItemsUseCase:
         items = await self._list_repo.list_items(input_dto.list_id)
         _logger.info("Found %d items in custom list %s", len(items), input_dto.list_id)
 
+        if not items:
+            return []
+
+        # Batch-load all referenced movies and series
+        movie_ids = [
+            MovieId(i.media_id) for i in items if i.media_type == CollectionMediaType.MOVIE
+        ]
+        series_ids = [
+            SeriesId(i.media_id) for i in items if i.media_type == CollectionMediaType.SERIES
+        ]
+
+        movies_map = await self._movie_repo.find_by_ids(movie_ids) if movie_ids else {}
+        series_map = await self._series_repo.find_by_ids(series_ids) if series_ids else {}
+
         result: list[CustomListItemOutput] = []
         for item in items:
-            output = await self._enrich_with_metadata(item, input_dto.lang)
-            if output:
-                result.append(output)
-            else:
-                _logger.warning(
-                    "Could not find media for custom list item: %s",
-                    item.media_id,
+            if item.media_type == CollectionMediaType.MOVIE:
+                movie = movies_map.get(item.media_id)
+                if not movie:
+                    _logger.warning("Could not find movie for custom list item: %s", item.media_id)
+                    continue
+                result.append(
+                    CustomListItemOutput.from_entity(
+                        entity=item,
+                        title=movie.get_title(input_dto.lang),
+                        poster_path=movie.poster_path.value if movie.poster_path else None,
+                    )
+                )
+            elif item.media_type == CollectionMediaType.SERIES:
+                series = series_map.get(item.media_id)
+                if not series:
+                    _logger.warning("Could not find series for custom list item: %s", item.media_id)
+                    continue
+                result.append(
+                    CustomListItemOutput.from_entity(
+                        entity=item,
+                        title=series.get_title(input_dto.lang),
+                        poster_path=series.poster_path.value if series.poster_path else None,
+                    )
                 )
 
         return result
-
-    async def _enrich_with_metadata(
-        self,
-        item: CustomListItem,
-        lang: str,
-    ) -> CustomListItemOutput | None:
-        """Enrich a custom list item with media metadata.
-
-        Args:
-            item: The custom list item.
-            lang: Language code for localized metadata.
-
-        Returns:
-            CustomListItemOutput with metadata, or None if media not found.
-        """
-        if item.media_type == "movie":
-            movie = await self._movie_repo.find_by_id(MovieId(item.media_id))
-            if not movie:
-                return None
-            return CustomListItemOutput.from_entity(
-                entity=item,
-                title=movie.get_title(lang),
-                poster_path=movie.poster_path.value if movie.poster_path else None,
-            )
-
-        if item.media_type == "series":
-            series = await self._series_repo.find_by_id(SeriesId(item.media_id))
-            if not series:
-                return None
-            return CustomListItemOutput.from_entity(
-                entity=item,
-                title=series.get_title(lang),
-                poster_path=series.poster_path.value if series.poster_path else None,
-            )
-
-        return None
 
 
 __all__ = ["GetCustomListItemsUseCase"]
