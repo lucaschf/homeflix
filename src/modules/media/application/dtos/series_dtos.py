@@ -103,6 +103,7 @@ class SeriesOutput:
     backdrop_path: str | None
     genres: list[str]
     content_rating: str | None
+    trailer_url: str | None
     tmdb_id: int | None
     imdb_id: str | None
     season_count: int

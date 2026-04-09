@@ -140,7 +140,9 @@ class TmdbClient(MetadataProvider):
         """Fetch full movie details from TMDB."""
         resp = await self._client.get(
             f"{self._base_url}/movie/{tmdb_id}",
-            params=self._params(append_to_response="credits,release_dates", language=language),
+            params=self._params(
+                append_to_response="credits,release_dates,videos", language=language
+            ),
         )
         if resp.status_code == 404:
             return None
@@ -155,6 +157,7 @@ class TmdbClient(MetadataProvider):
         cast = self._parse_cast(credits.get("cast", []))
         directors, writers = self._parse_crew(credits.get("crew", []))
         content_rating = self._parse_content_rating(data.get("release_dates", {}))
+        trailer_url = self._parse_trailer(data.get("videos", {}))
 
         return MediaMetadata(
             title=data.get("title", ""),
@@ -171,13 +174,14 @@ class TmdbClient(MetadataProvider):
             directors=directors,
             writers=writers,
             content_rating=content_rating,
+            trailer_url=trailer_url,
         )
 
     async def _fetch_series_details(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch full series details including seasons and episodes."""
         resp = await self._client.get(
             f"{self._base_url}/tv/{tmdb_id}",
-            params=self._params(append_to_response="external_ids,content_ratings"),
+            params=self._params(append_to_response="external_ids,content_ratings,videos"),
         )
         if resp.status_code == 404:
             return None
@@ -216,6 +220,7 @@ class TmdbClient(MetadataProvider):
             tmdb_id=data["id"],
             imdb_id=data.get("external_ids", {}).get("imdb_id"),
             content_rating=content_rating,
+            trailer_url=self._parse_trailer(data.get("videos", {})),
             seasons=seasons,
         )
 
@@ -304,6 +309,34 @@ class TmdbClient(MetadataProvider):
                     ratings_by_country[iso] = cert
 
         return ratings_by_country.get("BR") or ratings_by_country.get("US") or None
+
+    @staticmethod
+    def _parse_trailer(videos: dict[str, object]) -> str | None:
+        """Extract the best YouTube trailer URL from TMDB videos.
+
+        Prefers official trailers, falls back to teasers.
+        """
+        results = videos.get("results", [])
+        if not isinstance(results, list):
+            return None
+
+        trailers = [
+            v
+            for v in results
+            if isinstance(v, dict)
+            and v.get("site") == "YouTube"
+            and v.get("type") in ("Trailer", "Teaser")
+            and v.get("key")
+        ]
+
+        if not trailers:
+            return None
+
+        # Prefer official trailers over teasers
+        official = [v for v in trailers if v.get("official") and v.get("type") == "Trailer"]
+        best = official[0] if official else trailers[0]
+
+        return f"https://www.youtube.com/watch?v={best['key']}"
 
     @staticmethod
     def _parse_series_content_rating(content_ratings: dict[str, object]) -> str | None:

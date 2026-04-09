@@ -200,6 +200,8 @@ def _apply_credits(
         updates["writers"] = [p.name for p in metadata.writers]
     if metadata.content_rating and not movie.content_rating:
         updates["content_rating"] = metadata.content_rating
+    if metadata.trailer_url and not movie.trailer_url:
+        updates["trailer_url"] = metadata.trailer_url
     if metadata.localized:
         localized: dict[str, dict[str, object]] = {}
         for lang, fields in metadata.localized.items():

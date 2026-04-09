@@ -75,6 +75,7 @@ class GetFeaturedMediaUseCase:
             genres=movie.get_genres(lang),
             backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
             content_rating=movie.content_rating,
+            trailer_url=movie.trailer_url,
         )
 
     @staticmethod
@@ -90,6 +91,7 @@ class GetFeaturedMediaUseCase:
             genres=series.get_genres(lang),
             backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
             content_rating=series.content_rating,
+            trailer_url=series.trailer_url,
         )
 
 

@@ -44,3 +44,4 @@ class FeaturedItemOutput:
     genres: list[str]
     backdrop_path: str | None
     content_rating: str | None
+    trailer_url: str | None

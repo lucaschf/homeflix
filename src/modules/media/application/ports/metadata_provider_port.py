@@ -117,6 +117,7 @@ class MediaMetadata:
     directors: list[CreditPerson] = field(default_factory=list)
     writers: list[CreditPerson] = field(default_factory=list)
     content_rating: str | None = None
+    trailer_url: str | None = None
     localized: dict[str, LocalizedFields] = field(default_factory=dict)
 
 

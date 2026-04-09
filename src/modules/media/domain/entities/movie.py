@@ -68,6 +68,9 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     # Classification
     content_rating: str | None = None
 
+    # Trailer
+    trailer_url: str | None = None
+
     # Localized metadata: {"pt-BR": {"title": "...", "synopsis": "...", "genres": [...]}}
     localized: dict[str, dict[str, Any]] = Field(default_factory=dict)
 

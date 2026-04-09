@@ -150,12 +150,25 @@ def _apply_localized(
         updates["localized"] = {**existing, **localized}
 
 
+def _set_if_missing(
+    updates: dict[str, object],
+    metadata: MediaMetadata,
+    entity: Series,
+    field_map: dict[str, tuple[str, object]],
+) -> None:
+    """Set fields in updates only if metadata has a value and entity doesn't."""
+    for meta_attr, (entity_attr, converter) in field_map.items():
+        meta_val = getattr(metadata, meta_attr, None)
+        entity_val = getattr(entity, entity_attr, None)
+        if meta_val and not entity_val:
+            updates[entity_attr] = converter(meta_val) if callable(converter) else meta_val
+
+
 def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
     """Apply metadata fields to a series entity."""
     updates: dict[str, object] = {}
 
-    if metadata.synopsis and not series.synopsis:
-        updates["synopsis"] = metadata.synopsis
+    # Always-overwrite fields
     if metadata.tmdb_id:
         updates["tmdb_id"] = TmdbId(metadata.tmdb_id)
     if metadata.imdb_id:
@@ -166,14 +179,21 @@ def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
         updates["start_year"] = Year(metadata.year)
     if metadata.end_year:
         updates["end_year"] = Year(metadata.end_year)
-    if metadata.genres and not series.genres:
-        updates["genres"] = [Genre(g) for g in metadata.genres]
-    if metadata.poster_url and not series.poster_path:
-        updates["poster_path"] = ImageUrl(metadata.poster_url)
-    if metadata.backdrop_url and not series.backdrop_path:
-        updates["backdrop_path"] = ImageUrl(metadata.backdrop_url)
-    if metadata.content_rating and not series.content_rating:
-        updates["content_rating"] = metadata.content_rating
+
+    # Don't-overwrite fields (only set if not already present)
+    _set_if_missing(
+        updates,
+        metadata,
+        series,
+        {
+            "synopsis": ("synopsis", None),
+            "genres": ("genres", lambda v: [Genre(g) for g in v]),
+            "poster_url": ("poster_path", ImageUrl),
+            "backdrop_url": ("backdrop_path", ImageUrl),
+            "content_rating": ("content_rating", None),
+            "trailer_url": ("trailer_url", None),
+        },
+    )
 
     _apply_localized(updates, series.localized, metadata)
 
