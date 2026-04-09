@@ -76,8 +76,13 @@ class GetSeriesByIdUseCase:
         Returns:
             SeriesOutput with all fields and nested seasons/episodes.
         """
-        episode_ids = [str(ep.id) for s in series.seasons for ep in s.episodes if ep.id]
-        progress_map = await self._progress_repo.find_by_media_ids(episode_ids)
+        series_id = str(series.id)
+        composite_ids = [
+            f"epi_{series_id}_{s.season_number}_{ep.episode_number}"
+            for s in series.seasons
+            for ep in s.episodes
+        ]
+        progress_map = await self._progress_repo.find_by_media_ids(composite_ids)
 
         return SeriesOutput(
             id=str(series.id),
@@ -96,7 +101,7 @@ class GetSeriesByIdUseCase:
             imdb_id=series.imdb_id.value if series.imdb_id else None,
             season_count=series.season_count,
             total_episodes=series.total_episodes,
-            seasons=[self._to_season_output(s, progress_map) for s in series.seasons],
+            seasons=[self._to_season_output(s, series_id, progress_map) for s in series.seasons],
             created_at=series.created_at.isoformat(),
             updated_at=series.updated_at.isoformat(),
         )
@@ -104,13 +109,15 @@ class GetSeriesByIdUseCase:
     def _to_season_output(
         self,
         season: Season,
+        series_id: str,
         progress_map: dict[str, WatchProgress],
     ) -> SeasonOutput:
         """Convert Season entity to output DTO.
 
         Args:
             season: The Season entity to convert.
-            progress_map: Map of episode ID to watch progress.
+            series_id: External series ID for composite key lookup.
+            progress_map: Map of composite media_id to watch progress.
 
         Returns:
             SeasonOutput with episode list.
@@ -123,25 +130,33 @@ class GetSeriesByIdUseCase:
             poster_path=season.poster_path.value if season.poster_path else None,
             air_date=season.air_date.value.isoformat() if season.air_date else None,
             episode_count=season.episode_count,
-            episodes=[self._to_episode_output(e, progress_map) for e in season.episodes],
+            episodes=[
+                self._to_episode_output(e, series_id, season.season_number, progress_map)
+                for e in season.episodes
+            ],
         )
 
     @staticmethod
     def _to_episode_output(
         episode: Episode,
+        series_id: str,
+        season_number: int,
         progress_map: dict[str, WatchProgress],
     ) -> EpisodeOutput:
         """Convert Episode entity to output DTO.
 
         Args:
             episode: The Episode entity to convert.
-            progress_map: Map of episode ID to watch progress.
+            series_id: External series ID for composite key lookup.
+            season_number: Season number for composite key lookup.
+            progress_map: Map of composite media_id to watch progress.
 
         Returns:
             EpisodeOutput with all fields including progress.
         """
         primary = episode.primary_file
-        progress = progress_map.get(str(episode.id)) if episode.id else None
+        composite_key = f"epi_{series_id}_{season_number}_{episode.episode_number}"
+        progress = progress_map.get(composite_key)
         return EpisodeOutput(
             id=str(episode.id) if episode.id else None,
             episode_number=episode.episode_number,

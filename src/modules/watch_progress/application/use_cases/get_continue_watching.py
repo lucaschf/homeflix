@@ -117,32 +117,71 @@ class GetContinueWatchingUseCase:
         progress: WatchProgress,
         lang: str,
     ) -> ContinueWatchingItem | None:
-        """Enrich an episode progress record with series metadata."""
-        from src.modules.media.domain.value_objects import EpisodeId
+        """Enrich an episode progress record with series metadata.
 
-        series = await self._series_repo.find_by_episode_id(EpisodeId(progress.media_id))
+        Supports two media_id formats:
+        - Standard EpisodeId: ``epi_<12chars>``
+        - Composite key: ``epi_<series_id>_<season>_<episode>``
+        """
+        parsed = self._parse_episode_media_id(progress.media_id)
+        if not parsed:
+            return None
+
+        series_id_str, season_num, episode_num = parsed
+
+        from src.modules.media.domain.value_objects import SeriesId
+
+        series = await self._series_repo.find_by_id(SeriesId(series_id_str))
         if not series:
             return None
 
-        for season in series.seasons:
-            for episode in season.episodes:
-                if str(episode.id) == progress.media_id:
-                    return ContinueWatchingItem(
-                        media_id=progress.media_id,
-                        media_type=progress.media_type,
-                        title=episode.title.value,
-                        poster_path=series.poster_path.value if series.poster_path else None,
-                        backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
-                        position_seconds=progress.position_seconds,
-                        duration_seconds=progress.duration_seconds,
-                        percentage=progress.percentage,
-                        last_watched_at=progress.last_watched_at.isoformat(),
-                        series_id=str(series.id),
-                        series_title=series.get_title(lang),
-                        season_number=season.season_number,
-                        episode_number=episode.episode_number,
-                    )
-        return None
+        season = series.get_season(season_num)
+        if not season:
+            return None
+
+        episode = season.get_episode(episode_num)
+        if not episode:
+            return None
+
+        return ContinueWatchingItem(
+            media_id=progress.media_id,
+            media_type=progress.media_type,
+            title=episode.title.value,
+            poster_path=series.poster_path.value if series.poster_path else None,
+            backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
+            position_seconds=progress.position_seconds,
+            duration_seconds=progress.duration_seconds,
+            percentage=progress.percentage,
+            last_watched_at=progress.last_watched_at.isoformat(),
+            series_id=str(series.id),
+            series_title=series.get_title(lang),
+            season_number=season.season_number,
+            episode_number=episode.episode_number,
+        )
+
+    @staticmethod
+    def _parse_episode_media_id(
+        media_id: str,
+    ) -> tuple[str, int, int] | None:
+        """Parse an episode media_id into (series_id, season, episode).
+
+        Handles composite format ``epi_ser_XXXX_S_E``.
+
+        Returns:
+            Tuple of (series_id, season_number, episode_number) or None.
+        """
+        if not media_id.startswith("epi_ser_"):
+            return None
+        # epi_ser_Hy9VjMfILYZe_3_2 → parts after "epi_" = "ser_Hy9VjMfILYZe_3_2"
+        rest = media_id[4:]  # "ser_Hy9VjMfILYZe_3_2"
+        parts = rest.rsplit("_", 2)
+        if len(parts) != 3:
+            return None
+        series_id_str, season_str, episode_str = parts
+        try:
+            return series_id_str, int(season_str), int(episode_str)
+        except ValueError:
+            return None
 
 
 __all__ = ["GetContinueWatchingUseCase"]
