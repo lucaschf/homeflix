@@ -135,5 +135,18 @@ class CustomListRepository(ABC):
             List of CustomListItem entities.
         """
 
+    @abstractmethod
+    async def get_next_position(self, list_id: str) -> int:
+        """Get the next available position for a new item in a list.
+
+        Uses a DB-level MAX query to avoid loading all items.
+
+        Args:
+            list_id: External ID of the list.
+
+        Returns:
+            The next position value (0-based).
+        """
+
 
 __all__ = ["CustomListRepository"]

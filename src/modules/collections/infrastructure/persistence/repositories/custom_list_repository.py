@@ -225,5 +225,18 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         result = await self._session.execute(stmt)
         return [CustomListItemMapper.to_entity(m) for m in result.scalars().all()]
 
+    async def get_next_position(self, list_id: str) -> int:
+        """Get the next available position via DB MAX query."""
+        internal_id = await self._get_list_internal_id(list_id)
+        if internal_id is None:
+            return 0
+
+        stmt = select(func.coalesce(func.max(CustomListItemModel.position), -1) + 1).where(
+            CustomListItemModel.custom_list_id == internal_id,
+            CustomListItemModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar() or 0
+
 
 __all__ = ["SQLAlchemyCustomListRepository"]

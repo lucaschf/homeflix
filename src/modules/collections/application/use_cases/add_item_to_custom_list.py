@@ -54,8 +54,7 @@ class AddItemToCustomListUseCase:
         # Validate item limit via domain entity
         updated_list = custom_list.increment_item_count()
 
-        items = await self._repo.list_items(input_dto.list_id)
-        next_position = max((i.position for i in items), default=-1) + 1
+        next_position = await self._repo.get_next_position(input_dto.list_id)
 
         item = CustomListItem.create(
             media_id=input_dto.media_id,
