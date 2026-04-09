@@ -258,6 +258,7 @@ class SeriesMapper:
             poster_path=entity.poster_path.value if entity.poster_path else None,
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
+            content_rating=entity.content_rating,
             localized=json.dumps(entity.localized, ensure_ascii=False)
             if entity.localized
             else None,
@@ -294,6 +295,7 @@ class SeriesMapper:
             poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
             backdrop_path=ImageUrl(model.backdrop_path) if model.backdrop_path else None,
             genres=genre_list,
+            content_rating=model.content_rating,
             localized=json.loads(model.localized) if model.localized else {},
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
             imdb_id=ImdbId(model.imdb_id) if model.imdb_id else None,
@@ -321,6 +323,7 @@ class SeriesMapper:
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
+        model.content_rating = entity.content_rating
         model.localized = (
             json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None
         )
