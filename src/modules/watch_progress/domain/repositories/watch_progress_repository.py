@@ -46,6 +46,17 @@ class WatchProgressRepository(ABC):
         """
 
     @abstractmethod
+    async def find_by_media_ids(self, media_ids: list[str]) -> dict[str, WatchProgress]:
+        """Find progress for multiple media items in a single query.
+
+        Args:
+            media_ids: List of external media IDs.
+
+        Returns:
+            Dict mapping media_id to WatchProgress for found records.
+        """
+
+    @abstractmethod
     async def delete(self, media_id: str) -> bool:
         """Soft-delete progress for a media item.
 

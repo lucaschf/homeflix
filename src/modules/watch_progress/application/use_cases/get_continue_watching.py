@@ -2,7 +2,7 @@
 
 import logging
 
-from src.modules.media.domain.repositories import MovieRepository
+from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.watch_progress.application.dtos import (
     ContinueWatchingItem,
     ContinueWatchingOutput,
@@ -29,15 +29,18 @@ class GetContinueWatchingUseCase:
         self,
         progress_repository: WatchProgressRepository,
         movie_repository: MovieRepository,
+        series_repository: SeriesRepository,
     ) -> None:
         """Initialize the use case.
 
         Args:
             progress_repository: Repository for watch progress.
             movie_repository: Repository for movie metadata.
+            series_repository: Repository for series metadata.
         """
         self._progress_repo = progress_repository
         self._movie_repo = movie_repository
+        self._series_repo = series_repository
 
     async def execute(self, input_dto: GetContinueWatchingInput) -> ContinueWatchingOutput:
         """Execute the use case.
@@ -81,24 +84,64 @@ class GetContinueWatchingUseCase:
             ContinueWatchingItem with metadata, or None if media not found.
         """
         if progress.media_type == "movie":
-            from src.modules.media.domain.value_objects import MovieId
+            return await self._enrich_movie(progress, lang)
+        if progress.media_type == "episode":
+            return await self._enrich_episode(progress, lang)
+        return None
 
-            movie = await self._movie_repo.find_by_id(MovieId(progress.media_id))
-            if not movie:
-                return None
-            return ContinueWatchingItem(
-                media_id=progress.media_id,
-                media_type=progress.media_type,
-                title=movie.get_title(lang),
-                poster_path=movie.poster_path.value if movie.poster_path else None,
-                backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
-                position_seconds=progress.position_seconds,
-                duration_seconds=progress.duration_seconds,
-                percentage=progress.percentage,
-                last_watched_at=progress.last_watched_at.isoformat(),
-            )
+    async def _enrich_movie(
+        self,
+        progress: WatchProgress,
+        lang: str,
+    ) -> ContinueWatchingItem | None:
+        """Enrich a movie progress record with metadata."""
+        from src.modules.media.domain.value_objects import MovieId
 
-        # TODO: episode support (requires series repo lookup)
+        movie = await self._movie_repo.find_by_id(MovieId(progress.media_id))
+        if not movie:
+            return None
+        return ContinueWatchingItem(
+            media_id=progress.media_id,
+            media_type=progress.media_type,
+            title=movie.get_title(lang),
+            poster_path=movie.poster_path.value if movie.poster_path else None,
+            backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
+            position_seconds=progress.position_seconds,
+            duration_seconds=progress.duration_seconds,
+            percentage=progress.percentage,
+            last_watched_at=progress.last_watched_at.isoformat(),
+        )
+
+    async def _enrich_episode(
+        self,
+        progress: WatchProgress,
+        lang: str,
+    ) -> ContinueWatchingItem | None:
+        """Enrich an episode progress record with series metadata."""
+        from src.modules.media.domain.value_objects import EpisodeId
+
+        series = await self._series_repo.find_by_episode_id(EpisodeId(progress.media_id))
+        if not series:
+            return None
+
+        for season in series.seasons:
+            for episode in season.episodes:
+                if str(episode.id) == progress.media_id:
+                    return ContinueWatchingItem(
+                        media_id=progress.media_id,
+                        media_type=progress.media_type,
+                        title=episode.title.value,
+                        poster_path=series.poster_path.value if series.poster_path else None,
+                        backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
+                        position_seconds=progress.position_seconds,
+                        duration_seconds=progress.duration_seconds,
+                        percentage=progress.percentage,
+                        last_watched_at=progress.last_watched_at.isoformat(),
+                        series_id=str(series.id),
+                        series_title=series.get_title(lang),
+                        season_number=season.season_number,
+                        episode_number=episode.episode_number,
+                    )
         return None
 
 

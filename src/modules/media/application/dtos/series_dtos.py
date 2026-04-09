@@ -39,6 +39,10 @@ class EpisodeOutput:
     files: list[MediaFileOutput]
     thumbnail_path: str | None
     air_date: str | None
+    progress_percentage: float | None = None
+    position_seconds: int | None = None
+    watch_status: str | None = None
+    last_watched_at: str | None = None
 
 
 @dataclass(frozen=True)

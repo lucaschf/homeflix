@@ -68,6 +68,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         WatchProgressContainer,
         session=infrastructure.session,
         movie_repository=media.movie_repository,
+        series_repository=media.series_repository,
     )
 
     collections = providers.Container(

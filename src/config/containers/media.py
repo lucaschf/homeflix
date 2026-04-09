@@ -38,6 +38,9 @@ from src.modules.media.infrastructure.persistence.repositories.series_repository
     SQLAlchemySeriesRepository,
 )
 from src.modules.media.infrastructure.streaming import HlsService, MediaProbeService
+from src.modules.watch_progress.infrastructure.persistence.repositories import (
+    SQLAlchemyWatchProgressRepository,
+)
 
 
 class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
@@ -76,6 +79,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         session=session,
     )
 
+    progress_repository = providers.Factory(
+        SQLAlchemyWatchProgressRepository,
+        session=session,
+    )
+
     # =========================================================================
     # Use Cases — Query
     # =========================================================================
@@ -104,6 +112,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     get_series_by_id = providers.Factory(
         GetSeriesByIdUseCase,
         series_repository=series_repository,
+        progress_repository=progress_repository,
     )
 
     list_series = providers.Factory(

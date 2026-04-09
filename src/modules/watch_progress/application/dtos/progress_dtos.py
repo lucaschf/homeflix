@@ -120,6 +120,10 @@ class ContinueWatchingItem:
     duration_seconds: int
     percentage: float
     last_watched_at: str
+    series_id: str | None = None
+    series_title: str | None = None
+    season_number: int | None = None
+    episode_number: int | None = None
 
 
 @dataclass(frozen=True)

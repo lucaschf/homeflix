@@ -74,6 +74,17 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
         result = await self._session.execute(stmt)
         return [WatchProgressMapper.to_entity(m) for m in result.scalars().all()]
 
+    async def find_by_media_ids(self, media_ids: list[str]) -> dict[str, WatchProgress]:
+        """Find progress for multiple media items in a single query."""
+        if not media_ids:
+            return {}
+        stmt = select(WatchProgressModel).where(
+            WatchProgressModel.media_id.in_(media_ids),
+            WatchProgressModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        return {m.media_id: WatchProgressMapper.to_entity(m) for m in result.scalars().all()}
+
     async def delete(self, media_id: str) -> bool:
         """Soft-delete progress for a media item."""
         stmt = select(WatchProgressModel).where(
