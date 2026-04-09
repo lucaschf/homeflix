@@ -58,15 +58,25 @@ src/
 
 ### Dependency Rule
 
+Arrows indicate **allowed import directions** — a module may only import from what it points to:
+
 ```
 modules → shared_kernel → building_blocks
 Presentation → Application → Domain ← Infrastructure
 ```
 
 - Modules do not import from each other (cross-module communication via domain events)
-- Domain has no outward dependencies
+- Domain has no outward dependencies — Infrastructure depends on Domain (not the reverse), implementing its interfaces
 - Application depends on interfaces defined in Domain
 - Infrastructure implements those interfaces
+
+**Example** — a media use case importing from each layer:
+
+```python
+from src.building_blocks.domain.entity import AggregateRoot          # building_blocks
+from src.shared_kernel.value_objects.file_path import FilePath        # shared_kernel
+from src.modules.media.domain.repositories import MovieRepository    # own domain
+```
 
 ## Quick Start
 
