@@ -8,6 +8,7 @@ from pydantic import Field, field_validator, model_validator
 
 from src.building_blocks.domain import AggregateRoot
 from src.building_blocks.domain.errors import BusinessRuleViolationException
+from src.building_blocks.domain.events import MediaCreatedEvent
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
     Genre,
@@ -188,12 +189,14 @@ class Series(AggregateRoot[SeriesId]):
         if isinstance(start_year, int):
             start_year = Year(start_year)
 
-        return cls(
+        series = cls(
             id=series_id,
             title=title,
             start_year=start_year,
             **kwargs,
         )
+        series.add_event(MediaCreatedEvent(media_id=str(series_id), media_type="series"))
+        return series
 
 
 __all__ = ["Series"]

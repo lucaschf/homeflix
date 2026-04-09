@@ -7,6 +7,7 @@ from typing import Any, Self
 from pydantic import Field, field_validator
 
 from src.building_blocks.domain import AggregateRoot
+from src.building_blocks.domain.events import MediaCreatedEvent
 from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixin
 from src.modules.media.domain.value_objects import (
     Duration,
@@ -178,7 +179,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
             is_primary=True,
         )
 
-        return cls(
+        movie = cls(
             id=movie_id,
             title=title,
             year=year,
@@ -186,6 +187,8 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
             files=[file],
             **kwargs,
         )
+        movie.add_event(MediaCreatedEvent(media_id=str(movie_id), media_type="movie"))
+        return movie
 
 
 __all__ = ["Movie"]
