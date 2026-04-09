@@ -1,7 +1,7 @@
 """Watchlist REST API routes."""
 
 from dataclasses import asdict
-from typing import Any, Literal
+from typing import Any
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
@@ -17,6 +17,7 @@ from src.modules.collections.application.use_cases import (
     GetWatchlistUseCase,
     ToggleWatchlistUseCase,
 )
+from src.shared_kernel.value_objects import CollectionMediaType
 
 router = APIRouter(prefix="/api/v1/watchlist", tags=["Watchlist"])
 
@@ -28,7 +29,7 @@ class ToggleWatchlistRequest(BaseModel):
     """Request body for toggling a watchlist item."""
 
     media_id: str
-    media_type: Literal["movie", "series"]
+    media_type: CollectionMediaType
 
 
 # -- Endpoints -----------------------------------------------------------------

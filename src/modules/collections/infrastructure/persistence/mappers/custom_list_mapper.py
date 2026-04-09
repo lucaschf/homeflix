@@ -1,11 +1,12 @@
 """Mapper between CustomList/CustomListItem entities and ORM models."""
 
 from src.modules.collections.domain.entities import CustomList, CustomListItem
-from src.modules.collections.domain.value_objects import ListId
+from src.modules.collections.domain.value_objects import CustomListItemId, ListId
 from src.modules.collections.infrastructure.persistence.models import (
     CustomListItemModel,
     CustomListModel,
 )
+from src.shared_kernel.value_objects import CollectionMediaType
 
 
 class CustomListMapper:
@@ -113,9 +114,9 @@ class CustomListItemMapper:
             Domain CustomListItem entity.
         """
         return CustomListItem(
-            id=ListId(model.external_id),
+            id=CustomListItemId(model.external_id),
             media_id=model.media_id,
-            media_type=model.media_type,
+            media_type=CollectionMediaType(model.media_type),
             position=model.position,
             added_at=model.added_at,
             created_at=model.created_at,

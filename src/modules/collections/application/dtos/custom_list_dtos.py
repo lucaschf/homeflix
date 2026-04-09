@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.modules.collections.domain.entities import CustomList, CustomListItem
+    from src.shared_kernel.value_objects import CollectionMediaType
 
 
 @dataclass(frozen=True)
@@ -82,7 +83,7 @@ class AddItemToCustomListInput:
 
     list_id: str
     media_id: str
-    media_type: Literal["movie", "series"]
+    media_type: CollectionMediaType
 
 
 @dataclass(frozen=True)
@@ -125,7 +126,7 @@ class CustomListItemOutput:
     """
 
     media_id: str
-    media_type: str
+    media_type: CollectionMediaType
     title: str
     poster_path: str | None
     position: int

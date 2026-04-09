@@ -11,36 +11,39 @@ from src.building_blocks.domain import (
     BusinessRuleViolationException,
     DomainEntity,
 )
-from src.modules.collections.domain.value_objects import ListId
+from src.modules.collections.domain.value_objects import CustomListItemId, ListId
+from src.shared_kernel.value_objects import (
+    CollectionMediaType,  # noqa: TCH001 — runtime for Pydantic
+)
 
 MAX_LISTS = 10
 MAX_ITEMS_PER_LIST = 100
 
 
-class CustomListItem(DomainEntity[ListId]):
+class CustomListItem(DomainEntity[CustomListItemId]):
     """An item within a custom list.
 
     Represents a movie or series added to a user-created list.
 
     Attributes:
-        id: External ID (lst_xxx format).
+        id: External ID (cli_xxx format).
         media_id: External ID of the media (mov_xxx or ser_xxx).
-        media_type: Type of media ("movie" or "series").
+        media_type: Type of media (movie or series).
         position: Ordering position within the list.
         added_at: Timestamp when the item was added.
 
     Example:
         >>> item = CustomListItem.create(
         ...     media_id="mov_abc123def456",
-        ...     media_type="movie",
+        ...     media_type=CollectionMediaType.MOVIE,
         ...     position=0,
         ... )
     """
 
-    id: ListId | None = Field(default=None)
+    id: CustomListItemId | None = Field(default=None)
 
     media_id: str
-    media_type: str  # "movie" or "series"
+    media_type: CollectionMediaType
     position: int = 0
     added_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -48,21 +51,21 @@ class CustomListItem(DomainEntity[ListId]):
     def create(
         cls,
         media_id: str,
-        media_type: str,
+        media_type: CollectionMediaType,
         position: int = 0,
     ) -> CustomListItem:
         """Factory method with automatic ID generation.
 
         Args:
             media_id: External ID of the media (mov_xxx or ser_xxx).
-            media_type: Type of media ("movie" or "series").
+            media_type: Type of media (movie or series).
             position: Ordering position within the list.
 
         Returns:
             A new CustomListItem instance.
         """
         return cls(
-            id=ListId.generate(),
+            id=CustomListItemId.generate(),
             media_id=media_id,
             media_type=media_type,
             position=position,

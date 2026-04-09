@@ -1,8 +1,8 @@
 """Custom list request/response schemas."""
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
+
+from src.shared_kernel.value_objects import CollectionMediaType
 
 
 class CreateCustomListRequest(BaseModel):
@@ -21,7 +21,7 @@ class AddItemToCustomListRequest(BaseModel):
     """Request body for adding an item to a custom list."""
 
     media_id: str
-    media_type: Literal["movie", "series"]
+    media_type: CollectionMediaType
 
 
 __all__ = [
