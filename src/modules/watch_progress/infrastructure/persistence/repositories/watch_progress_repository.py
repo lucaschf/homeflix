@@ -74,6 +74,20 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
         result = await self._session.execute(stmt)
         return [WatchProgressMapper.to_entity(m) for m in result.scalars().all()]
 
+    async def list_recently_watched(self, limit: int = 20) -> list[WatchProgress]:
+        """List recently watched items (in_progress + completed)."""
+        stmt = (
+            select(WatchProgressModel)
+            .where(
+                WatchProgressModel.status.in_(["in_progress", "completed"]),
+                WatchProgressModel.deleted_at.is_(None),
+            )
+            .order_by(WatchProgressModel.last_watched_at.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [WatchProgressMapper.to_entity(m) for m in result.scalars().all()]
+
     async def find_by_media_ids(self, media_ids: list[str]) -> dict[str, WatchProgress]:
         """Find progress for multiple media items in a single query."""
         if not media_ids:

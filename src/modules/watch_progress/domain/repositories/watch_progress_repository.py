@@ -46,6 +46,17 @@ class WatchProgressRepository(ABC):
         """
 
     @abstractmethod
+    async def list_recently_watched(self, limit: int = 20) -> list[WatchProgress]:
+        """List recently watched items (in_progress + completed) ordered by last watched.
+
+        Args:
+            limit: Maximum number of items to return.
+
+        Returns:
+            List of WatchProgress with status "in_progress" or "completed".
+        """
+
+    @abstractmethod
     async def find_by_media_ids(self, media_ids: list[str]) -> dict[str, WatchProgress]:
         """Find progress for multiple media items in a single query.
 
