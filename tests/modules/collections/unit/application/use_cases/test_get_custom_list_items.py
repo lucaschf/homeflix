@@ -1,8 +1,16 @@
 """Tests for GetCustomListItemsUseCase."""
 
-from unittest.mock import AsyncMock, MagicMock
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock
 
 import pytest
+
+if TYPE_CHECKING:
+    from tests.modules.collections.unit.application.use_cases.conftest import (
+        MediaMockFactory,
+    )
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.collections.application.dtos import (
@@ -16,28 +24,12 @@ from src.modules.media.domain.repositories import MovieRepository, SeriesReposit
 from src.shared_kernel.value_objects import CollectionMediaType
 
 
-def _create_movie_mock(media_id: str, title: str = "Test Movie") -> MagicMock:
-    movie = MagicMock()
-    movie.get_title.return_value = title
-    movie.poster_path = MagicMock(value="https://image.tmdb.org/poster.jpg")
-    movie.id = media_id
-    return movie
-
-
-def _create_series_mock(media_id: str, title: str = "Test Series") -> MagicMock:
-    series = MagicMock()
-    series.get_title.return_value = title
-    series.poster_path = MagicMock(value="https://image.tmdb.org/series.jpg")
-    series.id = media_id
-    return series
-
-
 @pytest.mark.unit
 class TestGetCustomListItemsUseCase:
     """Tests for getting custom list items with metadata."""
 
     @pytest.mark.asyncio
-    async def test_should_return_items_with_metadata(self) -> None:
+    async def test_should_return_items_with_metadata(self, movie_mock: MediaMockFactory) -> None:
         custom_list = CustomList.create(name="Test")
         items = [
             CustomListItem.create(
@@ -46,7 +38,7 @@ class TestGetCustomListItemsUseCase:
                 position=0,
             ),
         ]
-        movie = _create_movie_mock("mov_abc123def456", "Inception")
+        movie = movie_mock("mov_abc123def456", "Inception")
 
         mock_list_repo = AsyncMock(spec=CustomListRepository)
         mock_list_repo.find_by_id.return_value = custom_list
@@ -135,7 +127,9 @@ class TestGetCustomListItemsUseCase:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_should_handle_mixed_media_types(self) -> None:
+    async def test_should_handle_mixed_media_types(
+        self, movie_mock: MediaMockFactory, series_mock: MediaMockFactory
+    ) -> None:
         custom_list = CustomList.create(name="Mixed")
         items = [
             CustomListItem.create(
@@ -149,8 +143,8 @@ class TestGetCustomListItemsUseCase:
                 position=1,
             ),
         ]
-        movie = _create_movie_mock("mov_abc123def456", "Inception")
-        series = _create_series_mock("ser_xyz789abc123", "Breaking Bad")
+        movie = movie_mock("mov_abc123def456", "Inception")
+        series = series_mock("ser_xyz789abc123", "Breaking Bad")
 
         mock_list_repo = AsyncMock(spec=CustomListRepository)
         mock_list_repo.find_by_id.return_value = custom_list
@@ -175,7 +169,7 @@ class TestGetCustomListItemsUseCase:
         assert result[1].title == "Breaking Bad"
 
     @pytest.mark.asyncio
-    async def test_should_pass_language_to_get_title(self) -> None:
+    async def test_should_pass_language_to_get_title(self, movie_mock: MediaMockFactory) -> None:
         custom_list = CustomList.create(name="Test")
         items = [
             CustomListItem.create(
@@ -184,7 +178,7 @@ class TestGetCustomListItemsUseCase:
                 position=0,
             ),
         ]
-        movie = _create_movie_mock("mov_abc123def456")
+        movie = movie_mock("mov_abc123def456")
 
         mock_list_repo = AsyncMock(spec=CustomListRepository)
         mock_list_repo.find_by_id.return_value = custom_list
