@@ -367,6 +367,8 @@ class HlsService:
                 ],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
                 timeout=10,
             )
@@ -499,6 +501,8 @@ class HlsService:
                     ],
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     check=False,
                     timeout=60,
                 )
@@ -533,6 +537,8 @@ class HlsService:
                     ],
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     check=False,
                     timeout=60,
                 )
