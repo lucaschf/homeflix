@@ -4,14 +4,18 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from src.building_blocks.domain import (
     AggregateRoot,
     BusinessRuleViolationException,
     DomainEntity,
 )
-from src.modules.collections.domain.value_objects import CustomListItemId, ListId
+from src.modules.collections.domain.value_objects import (
+    CustomListItemId,
+    ListId,
+    ListName,
+)
 from src.shared_kernel.value_objects import (
     CollectionMediaType,  # noqa: TCH001 — runtime for Pydantic
 )
@@ -91,11 +95,17 @@ class CustomList(AggregateRoot[ListId]):
 
     id: ListId | None = Field(default=None)
 
-    name: str
+    name: ListName
     item_count: int = 0
 
+    @field_validator("name", mode="before")
     @classmethod
-    def create(cls, name: str) -> CustomList:
+    def convert_name(cls, v: str | ListName) -> ListName:
+        """Convert string to ListName if needed."""
+        return ListName(v) if isinstance(v, str) else v
+
+    @classmethod
+    def create(cls, name: str | ListName) -> CustomList:
         """Factory method with automatic ID generation.
 
         Args:
@@ -104,13 +114,15 @@ class CustomList(AggregateRoot[ListId]):
         Returns:
             A new CustomList instance.
         """
+        if isinstance(name, str):
+            name = ListName(name)
         return cls(
             id=ListId.generate(),
-            name=name.strip(),
+            name=name,
             item_count=0,
         )
 
-    def rename(self, new_name: str) -> CustomList:
+    def rename(self, new_name: str | ListName) -> CustomList:
         """Create a copy with the new name.
 
         Args:
@@ -119,7 +131,9 @@ class CustomList(AggregateRoot[ListId]):
         Returns:
             A new CustomList instance with updated name.
         """
-        return self.with_updates(name=new_name.strip())
+        if isinstance(new_name, str):
+            new_name = ListName(new_name)
+        return self.with_updates(name=new_name)
 
     def increment_item_count(self) -> CustomList:
         """Increment item count after adding an item.

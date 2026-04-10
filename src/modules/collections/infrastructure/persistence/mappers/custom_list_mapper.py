@@ -33,7 +33,7 @@ class CustomListMapper:
 
         return CustomListModel(
             external_id=str(entity.id),
-            name=entity.name,
+            name=entity.name.value,
             item_count=entity.item_count,
         )
 
@@ -66,7 +66,7 @@ class CustomListMapper:
         Returns:
             The updated model.
         """
-        model.name = entity.name
+        model.name = entity.name.value
         model.item_count = entity.item_count
         return model
 
