@@ -35,6 +35,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
 from src.modules.media.infrastructure.streaming.media_probe_service import (
     MediaProbeResult,
     MediaProbeService,
@@ -365,10 +366,7 @@ class HlsService:
                     "default=noprint_wrappers=1:nokey=1",
                     file_path,
                 ],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
+                **SUBPROCESS_TEXT_KWARGS,
                 check=False,
                 timeout=10,
             )
@@ -499,10 +497,7 @@ class HlsService:
                         "-y",
                         str(vtt_path),
                     ],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
+                    **SUBPROCESS_TEXT_KWARGS,
                     check=False,
                     timeout=60,
                 )
@@ -535,10 +530,7 @@ class HlsService:
                         "-y",
                         str(vtt_path),
                     ],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
+                    **SUBPROCESS_TEXT_KWARGS,
                     check=False,
                     timeout=60,
                 )

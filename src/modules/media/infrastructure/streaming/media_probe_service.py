@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
@@ -166,10 +167,7 @@ class MediaProbeService:
                     "json",
                     file_path,
                 ],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
+                **SUBPROCESS_TEXT_KWARGS,
                 check=False,
                 timeout=_FFPROBE_TIMEOUT,
             )
