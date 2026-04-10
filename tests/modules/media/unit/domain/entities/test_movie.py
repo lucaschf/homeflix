@@ -440,9 +440,15 @@ class TestMovieEvents:
             resolution="1080p",
         )
 
+        from dataclasses import dataclass
+
         from src.building_blocks.domain.events import DomainEvent
 
-        movie.add_event(DomainEvent())
+        @dataclass(frozen=True)
+        class _FakeEvent(DomainEvent):
+            pass
+
+        movie.add_event(_FakeEvent())
 
         events = movie.pull_events()
 

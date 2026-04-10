@@ -187,9 +187,15 @@ class TestSeriesEvents:
 
         series = Series.create(title="Breaking Bad", start_year=2008)
 
+        from dataclasses import dataclass
+
         from src.building_blocks.domain.events import DomainEvent
 
-        series.add_event(DomainEvent())
+        @dataclass(frozen=True)
+        class _FakeEvent(DomainEvent):
+            pass
+
+        series.add_event(_FakeEvent())
 
         events = series.pull_events()
 
