@@ -11,6 +11,7 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.building_blocks.infrastructure.in_process_event_bus import InProcessEventBus
+from src.config.persistence.session_manager import create_tracked_session
 from src.config.settings import Settings
 
 
@@ -66,7 +67,7 @@ class InfrastructureContainer(containers.DeclarativeContainer):  # type: ignore[
     )
 
     session = providers.Factory(
-        lambda factory: factory(),
+        create_tracked_session,
         factory=session_factory,
     )
 

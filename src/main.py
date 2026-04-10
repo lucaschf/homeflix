@@ -128,6 +128,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Session cleanup middleware (must be added before CORS)
+    from src.config.persistence.session_manager import SessionCleanupMiddleware
+
+    app.add_middleware(SessionCleanupMiddleware)
+
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
