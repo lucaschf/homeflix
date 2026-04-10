@@ -85,7 +85,10 @@ class TestEnrichEpisode:
         progress_repo, movie_repo, series_repo = repos
         series = _make_series_with_episode()
         progress = _make_progress("epi_ser_Hy9VjMfILYZe_3_2")
-        progress_repo.list_in_progress.return_value = [progress]
+        progress_repo.list_recently_watched.return_value = [progress]
+        progress_repo.find_by_media_ids.return_value = {
+            "epi_ser_Hy9VjMfILYZe_3_2": progress,
+        }
         series_repo.find_by_id.return_value = series
 
         use_case = GetContinueWatchingUseCase(
@@ -110,7 +113,7 @@ class TestEnrichEpisode:
     async def test_enrich_returns_none_for_standard_episode_id(self, repos):
         progress_repo, movie_repo, series_repo = repos
         progress = _make_progress("epi_03ZzYaQ77FaB")
-        progress_repo.list_in_progress.return_value = [progress]
+        progress_repo.list_recently_watched.return_value = [progress]
 
         use_case = GetContinueWatchingUseCase(
             progress_repository=progress_repo,
@@ -126,7 +129,7 @@ class TestEnrichEpisode:
     async def test_enrich_returns_none_for_missing_series(self, repos):
         progress_repo, movie_repo, series_repo = repos
         progress = _make_progress("epi_ser_NotExists123_1_1")
-        progress_repo.list_in_progress.return_value = [progress]
+        progress_repo.list_recently_watched.return_value = [progress]
         series_repo.find_by_id.return_value = None
 
         use_case = GetContinueWatchingUseCase(
@@ -145,7 +148,10 @@ class TestEnrichEpisode:
         series = _make_series_with_episode()
         # Request season 99 which doesn't exist
         progress = _make_progress("epi_ser_Hy9VjMfILYZe_99_1")
-        progress_repo.list_in_progress.return_value = [progress]
+        progress_repo.list_recently_watched.return_value = [progress]
+        progress_repo.find_by_media_ids.return_value = {
+            "epi_ser_Hy9VjMfILYZe_99_1": progress,
+        }
         series_repo.find_by_id.return_value = series
 
         use_case = GetContinueWatchingUseCase(
@@ -164,7 +170,10 @@ class TestEnrichEpisode:
         series = _make_series_with_episode()
         # Request episode 99 in season 3 which doesn't exist
         progress = _make_progress("epi_ser_Hy9VjMfILYZe_3_99")
-        progress_repo.list_in_progress.return_value = [progress]
+        progress_repo.list_recently_watched.return_value = [progress]
+        progress_repo.find_by_media_ids.return_value = {
+            "epi_ser_Hy9VjMfILYZe_3_99": progress,
+        }
         series_repo.find_by_id.return_value = series
 
         use_case = GetContinueWatchingUseCase(
@@ -181,7 +190,7 @@ class TestEnrichEpisode:
     async def test_enrich_returns_none_for_malformed_media_id(self, repos):
         progress_repo, movie_repo, series_repo = repos
         progress = _make_progress("epi_ser_broken")
-        progress_repo.list_in_progress.return_value = [progress]
+        progress_repo.list_recently_watched.return_value = [progress]
 
         use_case = GetContinueWatchingUseCase(
             progress_repository=progress_repo,
