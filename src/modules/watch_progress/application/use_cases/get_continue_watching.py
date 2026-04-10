@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.modules.watch_progress.application.dtos import (
@@ -21,6 +22,17 @@ if TYPE_CHECKING:
     from src.modules.watch_progress.domain.repositories import WatchProgressRepository
 
 _logger = logging.getLogger(__name__)
+
+
+@dataclass
+class EpisodeCandidate:
+    """An episode with its coordinates and optional progress."""
+
+    series_id: str
+    season_number: int
+    episode_number: int
+    media_id: str
+    progress: WatchProgress | None
 
 
 class GetContinueWatchingUseCase:
@@ -114,123 +126,120 @@ class GetContinueWatchingUseCase:
         if not series:
             return None
 
-        # Build composite IDs for all episodes and fetch progress in batch
-        all_episodes = [
-            (s.season_number, ep.episode_number)
-            for s in sorted(series.seasons, key=lambda s: s.season_number)
-            for ep in sorted(s.episodes, key=lambda e: e.episode_number)
-        ]
-        if not all_episodes:
+        candidates = await self._build_candidates(series_id, series)
+        if not candidates:
             return None
 
-        composite_ids = [
-            EpisodeCompositeId.build(series_id, sn, en).media_id for sn, en in all_episodes
-        ]
-        progress_map = await self._progress_repo.find_by_media_ids(composite_ids)
-
-        best_in_progress, last_completed = self._scan_episode_progress(
-            series_id,
-            all_episodes,
-            progress_map,
-        )
-
-        target = best_in_progress or self._find_next_unwatched(
-            series_id, all_episodes, progress_map, last_completed
-        )
-        if not target:
+        best, latest_watched_at = self._pick_series_episode(candidates)
+        if not best:
             return None
 
-        # Use the most recent last_watched_at from any episode in the series
-        # so the item sorts correctly even for "next unwatched" episodes
-        latest_watched_at = max(
-            (p.last_watched_at for p in progress_map.values()),
-            default=None,
-        )
+        return self._build_series_item(series, best, lang, latest_watched_at)
 
-        return self._build_series_item(
-            series,
-            target,
-            progress_map,
-            lang,
-            fallback_last_watched=latest_watched_at,
-        )
+    async def _build_candidates(
+        self,
+        series_id: str,
+        series: Series,
+    ) -> list[EpisodeCandidate]:
+        """Build EpisodeCandidate list with progress for all episodes."""
+        candidates: list[EpisodeCandidate] = []
+        media_ids: list[str] = []
+
+        for s in sorted(series.seasons, key=lambda s: s.season_number):
+            for ep in sorted(s.episodes, key=lambda e: e.episode_number):
+                mid = EpisodeCompositeId.build(
+                    series_id,
+                    s.season_number,
+                    ep.episode_number,
+                ).media_id
+                media_ids.append(mid)
+                candidates.append(
+                    EpisodeCandidate(
+                        series_id=series_id,
+                        season_number=s.season_number,
+                        episode_number=ep.episode_number,
+                        media_id=mid,
+                        progress=None,
+                    )
+                )
+
+        if not candidates:
+            return []
+
+        progress_map = await self._progress_repo.find_by_media_ids(media_ids)
+        for candidate in candidates:
+            candidate.progress = progress_map.get(candidate.media_id)
+
+        return candidates
 
     @staticmethod
-    def _scan_episode_progress(
-        series_id: str,
-        all_episodes: list[tuple[int, int]],
-        progress_map: dict[str, WatchProgress],
-    ) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
-        """Scan episodes and return (highest in-progress, highest completed)."""
-        best_in_progress: tuple[int, int] | None = None
-        last_completed: tuple[int, int] | None = None
-        for season_num, ep_num in all_episodes:
-            key = EpisodeCompositeId.build(series_id, season_num, ep_num).media_id
-            progress = progress_map.get(key)
-            if not progress:
-                continue
-            coords = (season_num, ep_num)
-            if progress.status == "in_progress" and (
-                not best_in_progress or coords > best_in_progress
-            ):
-                best_in_progress = coords
-            elif progress.status == "completed" and (not last_completed or coords > last_completed):
-                last_completed = coords
-        return best_in_progress, last_completed
+    def _pick_series_episode(
+        candidates: list[EpisodeCandidate],
+    ) -> tuple[EpisodeCandidate | None, datetime | None]:
+        """Pick the best episode to resume and the latest watched timestamp.
 
-    @staticmethod
-    def _find_next_unwatched(
-        series_id: str,
-        all_episodes: list[tuple[int, int]],
-        progress_map: dict[str, WatchProgress],
-        last_completed: tuple[int, int] | None,
-    ) -> tuple[int, int] | None:
-        """Find the next unwatched episode after the last completed one."""
-        if not last_completed:
-            return None
-        past_completed = False
-        for season_num, ep_num in all_episodes:
-            if (season_num, ep_num) == last_completed:
-                past_completed = True
+        Args:
+            candidates: Ordered list of episode candidates with progress.
+
+        Returns:
+            Tuple of (best candidate, latest last_watched_at).
+        """
+        best_in_progress: EpisodeCandidate | None = None
+        last_completed_idx: int | None = None
+        latest_watched_at: datetime | None = None
+
+        for idx, ep in enumerate(candidates):
+            if not ep.progress:
                 continue
-            if past_completed:
-                key = EpisodeCompositeId.build(series_id, season_num, ep_num).media_id
-                if key not in progress_map:
-                    return (season_num, ep_num)
-        return None
+            if not latest_watched_at or ep.progress.last_watched_at > latest_watched_at:
+                latest_watched_at = ep.progress.last_watched_at
+
+            if ep.progress.status == "in_progress":
+                coords = (ep.season_number, ep.episode_number)
+                if not best_in_progress or coords > (
+                    best_in_progress.season_number,
+                    best_in_progress.episode_number,
+                ):
+                    best_in_progress = ep
+            elif ep.progress.status == "completed":
+                last_completed_idx = max(last_completed_idx or -1, idx)
+
+        if best_in_progress:
+            return best_in_progress, latest_watched_at
+
+        if last_completed_idx is not None:
+            for ep in candidates[last_completed_idx + 1 :]:
+                if ep.progress is None:
+                    return ep, latest_watched_at
+
+        return None, latest_watched_at
 
     def _build_series_item(
         self,
         series: Series,
-        target: tuple[int, int],
-        progress_map: dict[str, WatchProgress],
+        candidate: EpisodeCandidate,
         lang: str,
         fallback_last_watched: datetime | None = None,
     ) -> ContinueWatchingItem | None:
-        """Build a ContinueWatchingItem for a specific series episode.
+        """Build a ContinueWatchingItem from a resolved candidate.
 
         Args:
             series: The series entity.
-            target: Tuple of (season_number, episode_number).
-            progress_map: Map of composite IDs to progress.
+            candidate: The selected episode candidate.
             lang: Language code.
             fallback_last_watched: Fallback timestamp for unwatched episodes.
 
         Returns:
-            ContinueWatchingItem or None if episode not found.
+            ContinueWatchingItem or None if episode not found in series.
         """
-        season_num, ep_num = target
-        season = series.get_season(season_num)
+        season = series.get_season(candidate.season_number)
         if not season:
             return None
-        episode = season.get_episode(ep_num)
+        episode = season.get_episode(candidate.episode_number)
         if not episode:
             return None
 
-        series_id = str(series.id)
-        composite_id = EpisodeCompositeId.build(series_id, season_num, ep_num).media_id
-        progress = progress_map.get(composite_id)
-
+        progress = candidate.progress
         last_watched = (
             progress.last_watched_at.isoformat()
             if progress
@@ -238,7 +247,7 @@ class GetContinueWatchingUseCase:
         )
 
         return ContinueWatchingItem(
-            media_id=composite_id,
+            media_id=candidate.media_id,
             media_type="episode",
             title=episode.title.value,
             poster_path=series.poster_path.value if series.poster_path else None,
@@ -247,10 +256,10 @@ class GetContinueWatchingUseCase:
             duration_seconds=progress.duration_seconds if progress else episode.duration.value,
             percentage=progress.percentage if progress else 0.0,
             last_watched_at=last_watched,
-            series_id=series_id,
+            series_id=str(series.id),
             series_title=series.get_title(lang),
-            season_number=season_num,
-            episode_number=ep_num,
+            season_number=candidate.season_number,
+            episode_number=candidate.episode_number,
         )
 
     async def _enrich_movie(
