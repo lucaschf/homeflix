@@ -1,4 +1,4 @@
-"""Base domain event and media-specific events."""
+"""Base domain event."""
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -15,17 +15,4 @@ class DomainEvent:
     occurred_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
-@dataclass(frozen=True)
-class MediaCreatedEvent(DomainEvent):
-    """Emitted when a new movie or series is created.
-
-    Attributes:
-        media_id: External ID of the media (mov_xxx or ser_xxx).
-        media_type: Type of media ("movie" or "series").
-    """
-
-    media_id: str = ""
-    media_type: str = ""
-
-
-__all__ = ["DomainEvent", "MediaCreatedEvent"]
+__all__ = ["DomainEvent"]

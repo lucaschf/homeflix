@@ -18,8 +18,8 @@ class InProcessEventBus(EventBus):
 
     Example:
         >>> bus = InProcessEventBus()
-        >>> bus.subscribe(MediaCreatedEvent, my_handler)
-        >>> await bus.publish(MediaCreatedEvent(media_id="mov_abc", media_type="movie"))
+        >>> bus.subscribe(MyEvent, my_handler)
+        >>> await bus.publish(MyEvent())
     """
 
     def __init__(self) -> None:

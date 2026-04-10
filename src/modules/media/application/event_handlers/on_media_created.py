@@ -4,7 +4,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from src.building_blocks.application.event_bus import EventHandler
-from src.building_blocks.domain.events import DomainEvent, MediaCreatedEvent
+from src.building_blocks.domain.events import DomainEvent
 from src.modules.media.application.dtos.enrichment_dtos import EnrichMediaInput
 from src.modules.media.application.use_cases.enrich_movie_metadata import (
     EnrichMovieMetadataUseCase,
@@ -12,6 +12,7 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
 from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
 )
+from src.modules.media.domain.events import MediaCreatedEvent
 
 _logger = logging.getLogger(__name__)
 

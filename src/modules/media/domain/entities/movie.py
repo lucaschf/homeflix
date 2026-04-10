@@ -7,8 +7,8 @@ from typing import Any, Self
 from pydantic import Field, field_validator
 
 from src.building_blocks.domain import AggregateRoot
-from src.building_blocks.domain.events import MediaCreatedEvent
 from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixin
+from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.value_objects import (
     Duration,
     FilePath,
