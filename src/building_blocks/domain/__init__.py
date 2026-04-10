@@ -12,7 +12,7 @@ from src.building_blocks.domain.errors import (
     ExceptionDetail,
     Severity,
 )
-from src.building_blocks.domain.events import DomainEvent, MediaCreatedEvent
+from src.building_blocks.domain.events import DomainEvent
 from src.building_blocks.domain.external_id import (
     BASE62_ALPHABET,
     RANDOM_PART_LENGTH,
@@ -46,7 +46,6 @@ __all__ = [
     "ExternalId",
     "FloatValueObject",
     "IntValueObject",
-    "MediaCreatedEvent",
     "RANDOM_PART_LENGTH",
     "Severity",
     "StringValueObject",

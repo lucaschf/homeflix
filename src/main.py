@@ -95,8 +95,8 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     Centralises event handler registration so it stays alongside
     the rest of the container configuration.
     """
-    from src.building_blocks.domain.events import MediaCreatedEvent
     from src.modules.media.application.event_handlers import OnMediaCreatedHandler
+    from src.modules.media.domain.events import MediaCreatedEvent
 
     event_bus = container.infrastructure.event_bus()
     handler = OnMediaCreatedHandler(

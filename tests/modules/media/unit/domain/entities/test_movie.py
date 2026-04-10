@@ -406,8 +406,8 @@ class TestMovieEvents:
     """Tests for Movie domain events."""
 
     def test_should_emit_media_created_event_on_create(self):
-        from src.building_blocks.domain.events import MediaCreatedEvent
         from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.events import MediaCreatedEvent
 
         movie = Movie.create(
             title="Inception",
@@ -440,7 +440,9 @@ class TestMovieEvents:
             resolution="1080p",
         )
 
-        movie.add_event({"type": "CustomEvent", "movie_id": str(movie.id)})
+        from src.building_blocks.domain.events import DomainEvent
+
+        movie.add_event(DomainEvent())
 
         events = movie.pull_events()
 
@@ -449,8 +451,8 @@ class TestMovieEvents:
         assert movie.has_pending_events is False
 
     def test_events_survive_with_updates(self):
-        from src.building_blocks.domain.events import MediaCreatedEvent
         from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.events import MediaCreatedEvent
         from src.modules.media.domain.value_objects import Year
 
         movie = Movie.create(

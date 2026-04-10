@@ -167,8 +167,8 @@ class TestSeriesEvents:
     """Tests for Series domain events."""
 
     def test_should_emit_media_created_event_on_create(self):
-        from src.building_blocks.domain.events import MediaCreatedEvent
         from src.modules.media.domain.entities import Series
+        from src.modules.media.domain.events import MediaCreatedEvent
 
         series = Series.create(title="Breaking Bad", start_year=2008)
 
@@ -187,7 +187,9 @@ class TestSeriesEvents:
 
         series = Series.create(title="Breaking Bad", start_year=2008)
 
-        series.add_event({"type": "CustomEvent", "series_id": str(series.id)})
+        from src.building_blocks.domain.events import DomainEvent
+
+        series.add_event(DomainEvent())
 
         events = series.pull_events()
 

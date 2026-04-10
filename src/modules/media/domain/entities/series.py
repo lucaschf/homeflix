@@ -8,7 +8,7 @@ from pydantic import Field, field_validator, model_validator
 
 from src.building_blocks.domain import AggregateRoot
 from src.building_blocks.domain.errors import BusinessRuleViolationException
-from src.building_blocks.domain.events import MediaCreatedEvent
+from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
     Genre,
