@@ -22,6 +22,7 @@ class WatchProgressContainer(containers.DeclarativeContainer):  # type: ignore[m
 
     session = providers.Dependency()
     movie_repository = providers.Dependency()
+    series_repository = providers.Dependency()
 
     # =========================================================================
     # Repositories
@@ -50,6 +51,7 @@ class WatchProgressContainer(containers.DeclarativeContainer):  # type: ignore[m
         GetContinueWatchingUseCase,
         progress_repository=progress_repository,
         movie_repository=movie_repository,
+        series_repository=series_repository,
     )
 
     clear_progress = providers.Factory(
