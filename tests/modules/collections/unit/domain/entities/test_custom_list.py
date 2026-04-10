@@ -21,13 +21,20 @@ from src.shared_kernel.value_objects import CollectionMediaType
 class TestCustomListCreation:
     """Tests for CustomList instantiation."""
 
-    def test_should_create_with_required_fields(self) -> None:
+    def test_should_create_with_string_name(self) -> None:
         custom_list = CustomList(name="Action Movies")
 
         assert custom_list.id is None
-        assert custom_list.name == ListName("Action Movies")
+        assert isinstance(custom_list.name, ListName)
         assert custom_list.name.value == "Action Movies"
         assert custom_list.item_count == 0
+
+    def test_should_create_with_list_name_instance(self) -> None:
+        name = ListName("Action Movies")
+        custom_list = CustomList(name=name)
+
+        assert custom_list.name is name
+        assert custom_list.name.value == "Action Movies"
 
     def test_should_create_via_factory_with_auto_id(self) -> None:
         custom_list = CustomList.create(name="Action Movies")
@@ -35,6 +42,12 @@ class TestCustomListCreation:
         assert custom_list.id is not None
         assert isinstance(custom_list.id, ListId)
         assert custom_list.id.prefix == "lst"
+
+    def test_factory_should_accept_list_name_instance(self) -> None:
+        name = ListName("Action Movies")
+        custom_list = CustomList.create(name=name)
+
+        assert custom_list.name.value == "Action Movies"
 
     def test_factory_should_strip_name_whitespace(self) -> None:
         custom_list = CustomList.create(name="  Action Movies  ")
@@ -46,7 +59,7 @@ class TestCustomListCreation:
 
         assert custom_list.item_count == 0
 
-    def test_should_accept_string_id_and_convert(self) -> None:
+    def test_should_accept_string_id(self) -> None:
         list_id = ListId.generate()
         custom_list = CustomList(id=list_id, name="Test")
 
@@ -75,6 +88,13 @@ class TestCustomListRename:
 
         assert renamed.name.value == "New Name"
         assert original.name.value == "Old Name"
+
+    def test_should_accept_list_name_instance(self) -> None:
+        original = CustomList.create(name="Old Name")
+        new_name = ListName("New Name")
+        renamed = original.rename(new_name)
+
+        assert renamed.name.value == "New Name"
 
     def test_should_preserve_id(self) -> None:
         original = CustomList.create(name="Old Name")

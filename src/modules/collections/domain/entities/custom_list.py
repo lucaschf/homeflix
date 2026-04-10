@@ -114,8 +114,6 @@ class CustomList(AggregateRoot[ListId]):
         Returns:
             A new CustomList instance.
         """
-        if isinstance(name, str):
-            name = ListName(name)
         return cls(
             id=ListId.generate(),
             name=name,
@@ -131,8 +129,6 @@ class CustomList(AggregateRoot[ListId]):
         Returns:
             A new CustomList instance with updated name.
         """
-        if isinstance(new_name, str):
-            new_name = ListName(new_name)
         return self.with_updates(name=new_name)
 
     def increment_item_count(self) -> CustomList:

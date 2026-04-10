@@ -151,13 +151,16 @@ class TestListNameCreation:
             ListName("   ")
 
     def test_should_reject_name_exceeding_max_length(self) -> None:
-        with pytest.raises(DomainValidationException, match="cannot exceed 100"):
-            ListName("A" * 101)
+        with pytest.raises(
+            DomainValidationException,
+            match=f"cannot exceed {ListName.MAX_LENGTH}",
+        ):
+            ListName("A" * (ListName.MAX_LENGTH + 1))
 
     def test_should_accept_name_at_max_length(self) -> None:
-        name = ListName("A" * 100)
+        name = ListName("A" * ListName.MAX_LENGTH)
 
-        assert len(name.value) == 100
+        assert len(name.value) == ListName.MAX_LENGTH
 
     def test_should_reject_non_string(self) -> None:
         with pytest.raises(DomainValidationException, match="must be a string"):

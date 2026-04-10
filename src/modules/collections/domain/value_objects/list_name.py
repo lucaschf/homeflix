@@ -1,6 +1,6 @@
 """List name value object."""
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import model_validator
 
@@ -27,7 +27,7 @@ class ListName(StringValueObject):
 
     @model_validator(mode="before")
     @classmethod
-    def validate_name(cls, value: str) -> str:
+    def validate_name(cls, value: Any) -> str:
         """Validate and normalize the list name.
 
         Args:
