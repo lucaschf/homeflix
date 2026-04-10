@@ -4,6 +4,7 @@ Tracks AsyncSession instances created during a request and ensures
 they are closed when the request finishes, preventing connection leaks.
 """
 
+import logging
 from contextvars import ContextVar
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -11,9 +12,9 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 
-_request_sessions: ContextVar[list[AsyncSession]] = ContextVar(
+_request_sessions: ContextVar[list[AsyncSession] | None] = ContextVar(
     "_request_sessions",
-    default=[],
+    default=None,
 )
 
 
@@ -27,12 +28,9 @@ def create_tracked_session(factory: async_sessionmaker[AsyncSession]) -> AsyncSe
         A new AsyncSession that will be closed automatically.
     """
     session = factory()
-    try:
-        sessions = _request_sessions.get()
-    except LookupError:
-        # No request context (e.g. startup code) — session is untracked
-        return session
-    sessions.append(session)
+    sessions = _request_sessions.get()
+    if sessions is not None:
+        sessions.append(session)
     return session
 
 
@@ -52,5 +50,11 @@ class SessionCleanupMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
             return response
         finally:
             for session in sessions:
-                await session.close()
+                try:
+                    await session.close()
+                except Exception:
+                    logging.getLogger(__name__).debug(
+                        "Failed to close session",
+                        exc_info=True,
+                    )
             _request_sessions.reset(token)
