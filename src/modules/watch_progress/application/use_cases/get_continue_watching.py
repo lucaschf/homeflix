@@ -10,6 +10,7 @@ from src.modules.watch_progress.application.dtos import (
 )
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.repositories import WatchProgressRepository
+from src.shared_kernel.episode_composite_id import EpisodeCompositeId
 
 _logger = logging.getLogger(__name__)
 
@@ -17,11 +18,11 @@ _logger = logging.getLogger(__name__)
 class GetContinueWatchingUseCase:
     """List in-progress media items with display metadata.
 
-    Joins progress records with movie data to provide title and
+    Joins progress records with movie/series data to provide title and
     poster for the "Continue Watching" UI section.
 
     Example:
-        >>> use_case = GetContinueWatchingUseCase(progress_repo, movie_repo)
+        >>> use_case = GetContinueWatchingUseCase(progress_repo, movie_repo, series_repo)
         >>> result = await use_case.execute(GetContinueWatchingInput(limit=10))
     """
 
@@ -89,6 +90,49 @@ class GetContinueWatchingUseCase:
             return await self._enrich_episode(progress, lang)
         return None
 
+    def _build_item(
+        self,
+        progress: WatchProgress,
+        *,
+        title: str,
+        poster_path: str | None,
+        backdrop_path: str | None,
+        series_id: str | None = None,
+        series_title: str | None = None,
+        season_number: int | None = None,
+        episode_number: int | None = None,
+    ) -> ContinueWatchingItem:
+        """Build a ContinueWatchingItem from progress and media metadata.
+
+        Args:
+            progress: The watch progress record.
+            title: Display title.
+            poster_path: Poster image path.
+            backdrop_path: Backdrop image path.
+            series_id: Series external ID (episodes only).
+            series_title: Series title (episodes only).
+            season_number: Season number (episodes only).
+            episode_number: Episode number (episodes only).
+
+        Returns:
+            A fully populated ContinueWatchingItem.
+        """
+        return ContinueWatchingItem(
+            media_id=progress.media_id,
+            media_type=progress.media_type,
+            title=title,
+            poster_path=poster_path,
+            backdrop_path=backdrop_path,
+            position_seconds=progress.position_seconds,
+            duration_seconds=progress.duration_seconds,
+            percentage=progress.percentage,
+            last_watched_at=progress.last_watched_at.isoformat(),
+            series_id=series_id,
+            series_title=series_title,
+            season_number=season_number,
+            episode_number=episode_number,
+        )
+
     async def _enrich_movie(
         self,
         progress: WatchProgress,
@@ -100,16 +144,11 @@ class GetContinueWatchingUseCase:
         movie = await self._movie_repo.find_by_id(MovieId(progress.media_id))
         if not movie:
             return None
-        return ContinueWatchingItem(
-            media_id=progress.media_id,
-            media_type=progress.media_type,
+        return self._build_item(
+            progress,
             title=movie.get_title(lang),
             poster_path=movie.poster_path.value if movie.poster_path else None,
             backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
-            position_seconds=progress.position_seconds,
-            duration_seconds=progress.duration_seconds,
-            percentage=progress.percentage,
-            last_watched_at=progress.last_watched_at.isoformat(),
         )
 
     async def _enrich_episode(
@@ -119,69 +158,37 @@ class GetContinueWatchingUseCase:
     ) -> ContinueWatchingItem | None:
         """Enrich an episode progress record with series metadata.
 
-        Supports two media_id formats:
-        - Standard EpisodeId: ``epi_<12chars>``
-        - Composite key: ``epi_<series_id>_<season>_<episode>``
+        Parses the composite media_id format (``epi_ser_XXX_S_E``)
+        to look up the series, season, and episode.
         """
-        parsed = self._parse_episode_media_id(progress.media_id)
+        parsed = EpisodeCompositeId.parse(progress.media_id)
         if not parsed:
             return None
 
-        series_id_str, season_num, episode_num = parsed
-
         from src.modules.media.domain.value_objects import SeriesId
 
-        series = await self._series_repo.find_by_id(SeriesId(series_id_str))
+        series = await self._series_repo.find_by_id(SeriesId(parsed.series_id))
         if not series:
             return None
 
-        season = series.get_season(season_num)
+        season = series.get_season(parsed.season_number)
         if not season:
             return None
 
-        episode = season.get_episode(episode_num)
+        episode = season.get_episode(parsed.episode_number)
         if not episode:
             return None
 
-        return ContinueWatchingItem(
-            media_id=progress.media_id,
-            media_type=progress.media_type,
+        return self._build_item(
+            progress,
             title=episode.title.value,
             poster_path=series.poster_path.value if series.poster_path else None,
             backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
-            position_seconds=progress.position_seconds,
-            duration_seconds=progress.duration_seconds,
-            percentage=progress.percentage,
-            last_watched_at=progress.last_watched_at.isoformat(),
             series_id=str(series.id),
             series_title=series.get_title(lang),
             season_number=season.season_number,
             episode_number=episode.episode_number,
         )
-
-    @staticmethod
-    def _parse_episode_media_id(
-        media_id: str,
-    ) -> tuple[str, int, int] | None:
-        """Parse an episode media_id into (series_id, season, episode).
-
-        Handles composite format ``epi_ser_XXXX_S_E``.
-
-        Returns:
-            Tuple of (series_id, season_number, episode_number) or None.
-        """
-        if not media_id.startswith("epi_ser_"):
-            return None
-        # epi_ser_Hy9VjMfILYZe_3_2 → parts after "epi_" = "ser_Hy9VjMfILYZe_3_2"
-        rest = media_id[4:]  # "ser_Hy9VjMfILYZe_3_2"
-        parts = rest.rsplit("_", 2)
-        if len(parts) != 3:
-            return None
-        series_id_str, season_str, episode_str = parts
-        try:
-            return series_id_str, int(season_str), int(episode_str)
-        except ValueError:
-            return None
 
 
 __all__ = ["GetContinueWatchingUseCase"]

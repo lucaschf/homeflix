@@ -15,6 +15,7 @@ from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import SeriesId
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.repositories import WatchProgressRepository
+from src.shared_kernel.episode_composite_id import EpisodeCompositeId
 
 
 class GetSeriesByIdUseCase:
@@ -64,28 +65,35 @@ class GetSeriesByIdUseCase:
         if series is None:
             raise ResourceNotFoundException.for_resource("Series", input_dto.series_id)
 
-        return await self._to_output(series, input_dto.lang)
-
-    async def _to_output(self, series: Series, lang: str = "en") -> SeriesOutput:
-        """Convert Series entity to output DTO.
-
-        Args:
-            series: The Series entity to convert.
-            lang: Language code for localized fields.
-
-        Returns:
-            SeriesOutput with all fields and nested seasons/episodes.
-        """
-        series_id = str(series.id)
+        series_id_str = str(series.id)
         composite_ids = [
-            f"epi_{series_id}_{s.season_number}_{ep.episode_number}"
+            EpisodeCompositeId.build(series_id_str, s.season_number, ep.episode_number).media_id
             for s in series.seasons
             for ep in s.episodes
         ]
         progress_map = await self._progress_repo.find_by_media_ids(composite_ids)
 
+        return self._to_output(series, input_dto.lang, progress_map)
+
+    def _to_output(
+        self,
+        series: Series,
+        lang: str,
+        progress_map: dict[str, WatchProgress],
+    ) -> SeriesOutput:
+        """Convert Series entity to output DTO.
+
+        Args:
+            series: The Series entity to convert.
+            lang: Language code for localized fields.
+            progress_map: Map of composite media_id to watch progress.
+
+        Returns:
+            SeriesOutput with all fields and nested seasons/episodes.
+        """
+        series_id = str(series.id)
         return SeriesOutput(
-            id=str(series.id),
+            id=series_id,
             title=series.get_title(lang),
             original_title=series.original_title.value if series.original_title else None,
             start_year=series.start_year.value,
@@ -106,8 +114,8 @@ class GetSeriesByIdUseCase:
             updated_at=series.updated_at.isoformat(),
         )
 
+    @staticmethod
     def _to_season_output(
-        self,
         season: Season,
         series_id: str,
         progress_map: dict[str, WatchProgress],
@@ -131,7 +139,12 @@ class GetSeriesByIdUseCase:
             air_date=season.air_date.value.isoformat() if season.air_date else None,
             episode_count=season.episode_count,
             episodes=[
-                self._to_episode_output(e, series_id, season.season_number, progress_map)
+                GetSeriesByIdUseCase._to_episode_output(
+                    e,
+                    series_id,
+                    season.season_number,
+                    progress_map,
+                )
                 for e in season.episodes
             ],
         )
@@ -155,7 +168,11 @@ class GetSeriesByIdUseCase:
             EpisodeOutput with all fields including progress.
         """
         primary = episode.primary_file
-        composite_key = f"epi_{series_id}_{season_number}_{episode.episode_number}"
+        composite_key = EpisodeCompositeId.build(
+            series_id,
+            season_number,
+            episode.episode_number,
+        ).media_id
         progress = progress_map.get(composite_key)
         return EpisodeOutput(
             id=str(episode.id) if episode.id else None,
