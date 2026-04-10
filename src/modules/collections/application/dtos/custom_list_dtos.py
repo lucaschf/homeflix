@@ -51,7 +51,7 @@ class CustomListOutput:
         """
         return cls(
             id=str(entity.id),
-            name=entity.name,
+            name=entity.name.value,
             item_count=entity.item_count,
             created_at=entity.created_at.isoformat(),
             updated_at=entity.updated_at.isoformat(),
