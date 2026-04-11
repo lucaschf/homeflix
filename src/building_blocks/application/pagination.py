@@ -34,6 +34,7 @@ layer (SQLAlchemy queries) can share the same shapes.
 from __future__ import annotations
 
 import base64
+import binascii
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -124,7 +125,12 @@ def decode_cursor(cursor: str | None) -> CursorValue | None:
     try:
         raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("ascii")
         return CursorValue(id=int(raw))
-    except (ValueError, UnicodeDecodeError):
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        # `binascii.Error` is technically a subclass of `ValueError` in
+        # CPython today, so the trailing `ValueError` would catch it
+        # too — listing it explicitly documents the contract for the
+        # next reader and protects against any future Python release
+        # that might split the hierarchy.
         return None
 
 

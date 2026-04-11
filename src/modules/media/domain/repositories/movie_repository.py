@@ -70,10 +70,16 @@ class MovieRepository(ABC):
     ) -> PaginatedResult[Movie]:
         """List movies in a single page using cursor-based pagination.
 
-        The page is ordered by ``(created_at DESC, id DESC)`` so newly
-        imported movies appear first. Cursors snapshot the
-        ``(created_at, id)`` of the last row of the previous page; the
-        next call resumes strictly after that pair.
+        The page is ordered by ``id DESC`` so the most recently
+        inserted rows appear first. Internal autoincrement id is
+        monotonic with insertion and matches "newest by ``created_at``"
+        in practice because ``created_at`` is server-generated on
+        insert and never edited later. The cursor snapshots only the
+        ``id`` of the last row of the previous page and the next call
+        resumes strictly after it. See
+        ``src/building_blocks/application/pagination.py`` for the
+        full justification (and the SQLite ``func.now()`` precision
+        quirk that ruled out a ``(created_at, id)`` composite cursor).
 
         Args:
             cursor: Opaque token from the previous page's

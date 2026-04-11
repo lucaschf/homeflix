@@ -445,9 +445,7 @@ class TestSQLAlchemyMovieRepositoryListPaginated:
 
         assert len(page.items) == 3
 
-    async def test_should_order_by_created_at_desc_then_id_desc(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_should_order_by_id_desc(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyMovieRepository(db_session)
         # Saving movies sequentially gives them monotonically increasing
         # internal ids — the test asserts the most recently saved row

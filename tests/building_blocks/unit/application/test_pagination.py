@@ -68,6 +68,13 @@ class TestDecodeCursorFallback:
     def test_should_return_none_for_garbage_string(self) -> None:
         assert decode_cursor("not-a-valid-cursor!!!") is None
 
+    def test_should_return_none_for_invalid_base64_padding(self) -> None:
+        # Strings whose length isn't a multiple of 4 raise
+        # `binascii.Error` from `base64.urlsafe_b64decode`. The cursor
+        # decoder must catch this explicitly so callers never see the
+        # raw exception during an infinite scroll.
+        assert decode_cursor("abc") is None
+
     def test_should_return_none_when_payload_is_not_an_integer(self) -> None:
         bogus = base64.urlsafe_b64encode(b"hello world").decode("ascii")
         assert decode_cursor(bogus) is None

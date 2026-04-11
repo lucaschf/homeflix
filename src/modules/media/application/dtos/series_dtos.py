@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE
+
 if TYPE_CHECKING:
     from src.modules.media.application.dtos.media_file_dtos import MediaFileOutput
 
@@ -179,7 +181,7 @@ class ListSeriesInput:
     """
 
     cursor: str | None = None
-    limit: int = 20
+    limit: int = DEFAULT_PAGE_SIZE
     include_total: bool = False
     lang: str = "en"
 
