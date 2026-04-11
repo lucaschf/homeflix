@@ -48,6 +48,22 @@ def _create_movie(
     )
 
 
+def _id_of(movie: Movie) -> MovieId:
+    """Return the movie's ID, asserting it is set (narrows the type)."""
+    assert movie.id is not None
+    return movie.id
+
+
+async def _seed_movies(repo: SQLAlchemyMovieRepository, count: int) -> list[Movie]:
+    """Save ``count`` movies with sequential titles and file paths."""
+    movies = [
+        _create_movie(title=f"Movie {i}", file_path=f"/movies/movie_{i}.mkv") for i in range(count)
+    ]
+    for movie in movies:
+        await repo.save(movie)
+    return movies
+
+
 @pytest.mark.integration
 class TestSQLAlchemyMovieRepository:
     """Integration tests for movie repository operations."""
@@ -240,13 +256,7 @@ class TestSQLAlchemyMovieRepositoryFindRandom:
         self, db_session: AsyncSession
     ) -> None:
         repo = SQLAlchemyMovieRepository(db_session)
-        for i in range(5):
-            await repo.save(
-                _create_movie(
-                    title=f"Movie {i}",
-                    file_path=f"/movies/movie_{i}.mkv",
-                ),
-            )
+        await _seed_movies(repo, count=5)
 
         result = await repo.find_random(limit=3)
 
@@ -256,8 +266,7 @@ class TestSQLAlchemyMovieRepositoryFindRandom:
         self, db_session: AsyncSession
     ) -> None:
         repo = SQLAlchemyMovieRepository(db_session)
-        await repo.save(_create_movie(title="A", file_path="/movies/a.mkv"))
-        await repo.save(_create_movie(title="B", file_path="/movies/b.mkv"))
+        await _seed_movies(repo, count=2)
 
         result = await repo.find_random(limit=10)
 
@@ -287,7 +296,7 @@ class TestSQLAlchemyMovieRepositoryFindRandom:
         deleted = _create_movie(title="Deleted", file_path="/movies/deleted.mkv")
         await repo.save(kept)
         await repo.save(deleted)
-        await repo.delete(deleted.id)  # type: ignore[arg-type]
+        await repo.delete(_id_of(deleted))
 
         result = await repo.find_random(limit=10)
 
@@ -312,24 +321,21 @@ class TestSQLAlchemyMovieRepositoryFindByIds:
         self, db_session: AsyncSession
     ) -> None:
         repo = SQLAlchemyMovieRepository(db_session)
-        movie_a = _create_movie(title="A", file_path="/movies/a.mkv")
-        movie_b = _create_movie(title="B", file_path="/movies/b.mkv")
-        await repo.save(movie_a)
-        await repo.save(movie_b)
+        movies = await _seed_movies(repo, count=2)
+        ids = [_id_of(m) for m in movies]
 
-        result = await repo.find_by_ids([movie_a.id, movie_b.id])  # type: ignore[list-item]
+        result = await repo.find_by_ids(ids)
 
         assert len(result) == 2
-        assert str(movie_a.id) in result
-        assert str(movie_b.id) in result
+        for movie_id in ids:
+            assert str(movie_id) in result
 
     async def test_find_by_ids_should_skip_missing(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyMovieRepository(db_session)
         movie = _create_movie(title="Exists", file_path="/movies/exists.mkv")
         await repo.save(movie)
-        missing_id = MovieId.generate()
 
-        result = await repo.find_by_ids([movie.id, missing_id])  # type: ignore[list-item]
+        result = await repo.find_by_ids([_id_of(movie), MovieId.generate()])
 
         assert len(result) == 1
         assert str(movie.id) in result
@@ -338,9 +344,10 @@ class TestSQLAlchemyMovieRepositoryFindByIds:
         repo = SQLAlchemyMovieRepository(db_session)
         movie = _create_movie(title="Deleted", file_path="/movies/del.mkv")
         await repo.save(movie)
-        await repo.delete(movie.id)  # type: ignore[arg-type]
+        movie_id = _id_of(movie)
+        await repo.delete(movie_id)
 
-        result = await repo.find_by_ids([movie.id])  # type: ignore[list-item]
+        result = await repo.find_by_ids([movie_id])
 
         assert result == {}
 
@@ -353,12 +360,13 @@ class TestSQLAlchemyMovieRepositorySaveRestore:
         repo = SQLAlchemyMovieRepository(db_session)
         movie = _create_movie(title="Restored", file_path="/movies/r.mkv")
         await repo.save(movie)
-        await repo.delete(movie.id)  # type: ignore[arg-type]
+        movie_id = _id_of(movie)
+        await repo.delete(movie_id)
 
         # Re-save the same entity
         restored = await repo.save(movie)
 
         assert restored.id == movie.id
-        found = await repo.find_by_id(movie.id)  # type: ignore[arg-type]
+        found = await repo.find_by_id(movie_id)
         assert found is not None
         assert found.title.value == "Restored"
