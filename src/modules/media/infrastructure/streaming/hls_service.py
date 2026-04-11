@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,13 @@ _BROWSER_SAFE_CODECS = {"h264"}
 # source position the encoder is writing to (no natural buffer build-up).
 _MIN_SEGMENTS_FRESH = 1
 _MIN_SEGMENTS_WITH_SEEK = 3
+
+# Idle eviction defaults: kill ffmpeg after this many seconds with no
+# segment requests. Trade-off: short timeout frees CPU faster after the
+# user navigates away, but a paused user beyond this window will see the
+# next segment fail and the player rebuffer when they resume.
+_DEFAULT_IDLE_TIMEOUT = 30.0
+_EVICTION_INTERVAL = 10.0
 
 _VIDEO_DIR = "video"
 
@@ -100,18 +108,77 @@ class HlsService:
     Args:
         cache_dir: Directory to store generated HLS files.
         probe_service: Service to discover audio/subtitle tracks.
+        idle_timeout: Seconds without segment requests before a running
+            ffmpeg process is considered idle and killed. Defaults to 30s.
+        enable_eviction: Whether to start the background eviction daemon.
+            Defaults to False so unit tests don't leak threads — production
+            code should pass True via the DI container.
     """
 
     def __init__(
         self,
         cache_dir: str = "./hls_cache",
         probe_service: MediaProbeService | None = None,
+        idle_timeout: float = _DEFAULT_IDLE_TIMEOUT,
+        enable_eviction: bool = False,
     ) -> None:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._probe = probe_service or MediaProbeService()
         self._processes: dict[str, list[subprocess.Popen[bytes]]] = {}
+        # path_hash → monotonic timestamp of the most recent activity
+        # (playlist request OR segment fetch). The eviction loop reads
+        # this to decide which ffmpeg processes are idle.
+        self._last_access: dict[str, float] = {}
         self._lock = threading.Lock()
+        self._idle_timeout = idle_timeout
+        if enable_eviction:
+            self._start_eviction_thread()
+
+    def _start_eviction_thread(self) -> None:
+        """Spawn a daemon thread that periodically evicts idle processes."""
+        thread = threading.Thread(
+            target=self._eviction_loop,
+            daemon=True,
+            name="hls-eviction",
+        )
+        thread.start()
+
+    def _eviction_loop(self) -> None:
+        """Background loop: wake up periodically and evict idle ffmpegs."""
+        while True:
+            time.sleep(_EVICTION_INTERVAL)
+            try:
+                self.evict_idle()
+            except Exception:
+                _logger.exception("HLS eviction loop error")
+
+    def _touch_access(self, path_hash: str) -> None:
+        """Record that this cache bucket was just used."""
+        with self._lock:
+            self._last_access[path_hash] = time.monotonic()
+
+    def evict_idle(self) -> list[str]:
+        """Kill ffmpeg processes that haven't seen activity recently.
+
+        Returns the list of evicted path_hashes (useful for tests).
+        """
+        now = time.monotonic()
+        with self._lock:
+            stale = [
+                ph
+                for ph, last in self._last_access.items()
+                if now - last > self._idle_timeout and ph in self._processes
+            ]
+        evicted: list[str] = []
+        for path_hash in stale:
+            idle_for = now - self._last_access.get(path_hash, now)
+            _logger.info("Evicting idle ffmpeg for %s (idle %.0fs)", path_hash, idle_for)
+            self._kill_processes(path_hash)
+            with self._lock:
+                self._last_access.pop(path_hash, None)
+            evicted.append(path_hash)
+        return evicted
 
     # -- Public API ------------------------------------------------------------
 
@@ -134,6 +201,8 @@ class HlsService:
         """Get any file from cache by hash + relative path.
 
         Includes path traversal protection via ``Path.is_relative_to``.
+        Touches the access timestamp on hit so the eviction loop knows
+        the cache is still being consumed by a player.
         """
         cache_root = (self._cache_dir / path_hash).resolve()
         target = (cache_root / relative_path).resolve()
@@ -143,7 +212,10 @@ class HlsService:
         except ValueError:
             return None
 
-        return target if target.is_file() else None
+        if not target.is_file():
+            return None
+        self._touch_access(path_hash)
+        return target
 
     def is_complete(self, path_hash: str) -> bool:
         """Check if generation is fully complete."""
@@ -162,14 +234,20 @@ class HlsService:
             return False
 
     def get_master_playlist(self, path_hash: str) -> str | None:
-        """Get master playlist content, falling back to legacy flat playlist."""
+        """Get master playlist content, falling back to legacy flat playlist.
+
+        Touches access time on hit so the player attaching to a still-warm
+        cache resets the idle timer immediately.
+        """
         for name in ("master.m3u8", "playlist.m3u8"):
             path = self._cache_dir / path_hash / name
             if path.is_file():
                 try:
-                    return path.read_text(encoding="utf-8")
+                    content = path.read_text(encoding="utf-8")
                 except OSError:
                     continue
+                self._touch_access(path_hash)
+                return content
         return None
 
     def get_cached_tracks(self, path_hash: str) -> dict[str, Any] | None:
@@ -200,6 +278,10 @@ class HlsService:
             FileNotFoundError: If the source file does not exist.
         """
         path_hash = self.get_path_hash(file_path, start_seconds)
+        # Touch immediately so the eviction loop never kills a process
+        # that the user just asked for, even if no segments have been
+        # served yet (e.g. while waiting for ffmpeg to start).
+        self._touch_access(path_hash)
 
         if self.is_complete(path_hash):
             return path_hash
@@ -285,6 +367,7 @@ class HlsService:
             for proc in self._processes.pop(path_hash, []):
                 if proc.poll() is None:
                     proc.kill()
+            self._last_access.pop(path_hash, None)
 
     def _handle_generation_failure(
         self,
@@ -370,6 +453,7 @@ class HlsService:
             self._build_master_playlist(output_dir, probe_result)
 
             self._processes[path_hash] = procs
+            self._last_access[path_hash] = time.monotonic()
 
         return path_hash
 

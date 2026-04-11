@@ -554,3 +554,101 @@ class TestHlsServiceValidateSource:
         result = HlsService._validate_source(str(source))
 
         assert result == source.resolve()
+
+
+@pytest.mark.unit
+class TestHlsServiceEvictIdle:
+    """Tests for the idle ffmpeg eviction logic."""
+
+    def _make_alive_proc(self) -> MagicMock:
+        proc = MagicMock()
+        proc.poll.return_value = None  # still running
+        return proc
+
+    def test_should_not_evict_when_no_processes(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), idle_timeout=0.0)
+        evicted = service.evict_idle()
+        assert evicted == []
+
+    def test_should_evict_process_idle_longer_than_timeout(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), idle_timeout=0.5)
+        proc = self._make_alive_proc()
+        service._processes["abc"] = [proc]
+        # Set last access far in the past
+        service._last_access["abc"] = 0.0  # epoch — definitely > 0.5s ago
+
+        evicted = service.evict_idle()
+
+        assert evicted == ["abc"]
+        proc.kill.assert_called_once()
+        assert "abc" not in service._processes
+        assert "abc" not in service._last_access
+
+    def test_should_not_evict_recently_accessed_process(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), idle_timeout=60.0)
+        proc = self._make_alive_proc()
+        service._processes["abc"] = [proc]
+        # Touch with monotonic now — fresh
+        service._last_access["abc"] = service._last_access.get("abc", 0)
+        service._touch_access("abc")
+
+        evicted = service.evict_idle()
+
+        assert evicted == []
+        proc.kill.assert_not_called()
+        assert "abc" in service._processes
+
+    def test_should_evict_only_stale_entries(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), idle_timeout=0.5)
+        stale_proc = self._make_alive_proc()
+        fresh_proc = self._make_alive_proc()
+        service._processes["stale"] = [stale_proc]
+        service._processes["fresh"] = [fresh_proc]
+        service._last_access["stale"] = 0.0  # ancient
+        service._touch_access("fresh")  # right now
+
+        evicted = service.evict_idle()
+
+        assert evicted == ["stale"]
+        stale_proc.kill.assert_called_once()
+        fresh_proc.kill.assert_not_called()
+        assert "fresh" in service._processes
+
+    def test_get_file_by_hash_should_touch_access_on_hit(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        cache_dir = tmp_path / "abc"
+        cache_dir.mkdir()
+        (cache_dir / "segment_0000.ts").write_text("data")
+
+        result = service.get_file_by_hash("abc", "segment_0000.ts")
+
+        assert result is not None
+        assert "abc" in service._last_access
+
+    def test_get_file_by_hash_should_not_touch_access_on_miss(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        result = service.get_file_by_hash("abc", "missing.ts")
+
+        assert result is None
+        assert "abc" not in service._last_access
+
+    def test_get_master_playlist_should_touch_access_on_hit(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        cache_dir = tmp_path / "abc"
+        cache_dir.mkdir()
+        (cache_dir / "master.m3u8").write_text("#EXTM3U")
+
+        result = service.get_master_playlist("abc")
+
+        assert result == "#EXTM3U"
+        assert "abc" in service._last_access
+
+    def test_kill_processes_should_remove_last_access_entry(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        service._processes["abc"] = [self._make_alive_proc()]
+        service._touch_access("abc")
+
+        service._kill_processes("abc")
+
+        assert "abc" not in service._processes
+        assert "abc" not in service._last_access

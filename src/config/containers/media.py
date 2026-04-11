@@ -162,6 +162,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         HlsService,
         cache_dir=hls_cache_directory,
         probe_service=media_probe_service,
+        enable_eviction=True,
     )
 
     # =========================================================================
