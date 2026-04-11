@@ -4,6 +4,7 @@
 import pytest
 
 from src.building_blocks.domain.errors import DomainValidationException
+from src.shared_kernel.value_objects import FilePath
 
 
 class TestFilePathCreation:
@@ -113,6 +114,43 @@ class TestFilePathProperties:
 
         # Platform-independent check
         assert file_path.directory.endswith("action") or "movies" in file_path.directory
+
+    @pytest.mark.parametrize(
+        ("path", "expected_filename", "expected_extension", "directory_contains"),
+        [
+            (
+                "C:\\Movies\\action\\inception.mkv",
+                "inception.mkv",
+                ".mkv",
+                ["action", "Movies"],
+            ),
+            (
+                "D:\\Media\\series\\show.mp4",
+                "show.mp4",
+                ".mp4",
+                ["series", "Media"],
+            ),
+            (
+                "C:\\Movies\\no_extension",
+                "no_extension",
+                "",
+                ["Movies"],
+            ),
+        ],
+    )
+    def test_windows_path_properties(
+        self,
+        path: str,
+        expected_filename: str,
+        expected_extension: str,
+        directory_contains: list[str],
+    ) -> None:
+        file_path = FilePath(path)
+
+        assert file_path.filename == expected_filename
+        assert file_path.extension == expected_extension
+        for segment in directory_contains:
+            assert segment in file_path.directory
 
 
 class TestFilePathEquality:
