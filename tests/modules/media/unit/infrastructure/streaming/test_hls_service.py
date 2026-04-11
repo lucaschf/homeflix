@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import subprocess
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -652,3 +654,184 @@ class TestHlsServiceEvictIdle:
 
         assert "abc" not in service._processes
         assert "abc" not in service._last_access
+
+
+@pytest.mark.unit
+class TestHlsServiceWaitForSubtitle:
+    """Tests for the per-subtitle readiness wait."""
+
+    def test_should_return_true_immediately_when_no_event_registered(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+
+        # Untracked bucket → not being extracted → caller falls through
+        # to a normal filesystem lookup, so we report ready.
+        assert service.wait_for_subtitle("missing", 0, timeout=0.0) is True
+
+    def test_should_return_true_when_event_is_already_set(self, tmp_path: Path) -> None:
+        import threading
+
+        service = HlsService(cache_dir=str(tmp_path))
+        event = threading.Event()
+        event.set()
+        service._subtitle_events["abc"] = {2: event}
+
+        assert service.wait_for_subtitle("abc", 2, timeout=0.0) is True
+
+    def test_should_return_false_when_timeout_elapses(self, tmp_path: Path) -> None:
+        import threading
+
+        service = HlsService(cache_dir=str(tmp_path))
+        # Unset event — wait will time out
+        service._subtitle_events["abc"] = {0: threading.Event()}
+
+        assert service.wait_for_subtitle("abc", 0, timeout=0.05) is False
+
+    def test_should_unblock_after_event_is_set(self, tmp_path: Path) -> None:
+        import threading
+
+        service = HlsService(cache_dir=str(tmp_path))
+        event = threading.Event()
+        service._subtitle_events["abc"] = {0: event}
+
+        # Set the event from a worker after a tiny delay so the main
+        # thread has a chance to enter the wait first.
+        def _release() -> None:
+            time.sleep(0.05)
+            event.set()
+
+        worker = threading.Thread(target=_release, daemon=True)
+        worker.start()
+
+        assert service.wait_for_subtitle("abc", 0, timeout=2.0) is True
+        worker.join(timeout=1.0)
+
+
+@pytest.mark.unit
+class TestHlsServiceExtractOneSubtitle:
+    """Tests for the per-track subtitle extraction worker."""
+
+    def _make_service(self, tmp_path: Path) -> tuple[HlsService, Path]:
+        service = HlsService(cache_dir=str(tmp_path))
+        output_dir = tmp_path / "abc"
+        output_dir.mkdir()
+        return service, output_dir
+
+    def test_should_set_event_after_successful_embedded_extraction(self, tmp_path: Path) -> None:
+        import threading
+
+        service, output_dir = self._make_service(tmp_path)
+        event = threading.Event()
+        service._subtitle_events["abc"] = {3: event}
+
+        track = _make_subtitle_track(index=3, fmt="srt")
+
+        def _fake_run(cmd: list[str], **_: object) -> MagicMock:
+            # Simulate ffmpeg writing the .vtt before exiting
+            (output_dir / "sub_3" / "sub.vtt").write_text("WEBVTT\n")
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=_fake_run):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                start_seconds=0.0,
+                path_hash="abc",
+            )
+
+        assert event.is_set()
+        assert (output_dir / "sub_3" / "sub.vtt").is_file()
+        # _write_subtitle_playlist should have been called
+        assert (output_dir / "sub_3" / "playlist.m3u8").is_file()
+
+    def test_should_set_event_even_when_ffmpeg_fails_to_write_vtt(self, tmp_path: Path) -> None:
+        import threading
+
+        service, output_dir = self._make_service(tmp_path)
+        event = threading.Event()
+        service._subtitle_events["abc"] = {0: event}
+
+        track = _make_subtitle_track(index=0, fmt="srt")
+
+        # ffmpeg "succeeds" but never produces the .vtt → route waiters
+        # must still wake up so they can fall through to a 404.
+        with patch("subprocess.run", return_value=MagicMock(returncode=1)):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                start_seconds=0.0,
+                path_hash="abc",
+            )
+
+        assert event.is_set()
+        assert not (output_dir / "sub_0" / "sub.vtt").exists()
+        assert not (output_dir / "sub_0" / "playlist.m3u8").exists()
+
+    def test_should_set_event_on_subprocess_timeout(self, tmp_path: Path) -> None:
+        import threading
+
+        service, output_dir = self._make_service(tmp_path)
+        event = threading.Event()
+        service._subtitle_events["abc"] = {1: event}
+
+        track = _make_subtitle_track(index=1, fmt="srt")
+
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="ffmpeg", timeout=120),
+        ):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                start_seconds=0.0,
+                path_hash="abc",
+            )
+
+        assert event.is_set()
+
+    def test_should_pass_ss_args_when_start_seconds_is_positive(self, tmp_path: Path) -> None:
+        import threading
+
+        service, output_dir = self._make_service(tmp_path)
+        service._subtitle_events["abc"] = {0: threading.Event()}
+        track = _make_subtitle_track(index=0, fmt="srt")
+
+        captured: dict[str, list[str]] = {}
+
+        def _capture(cmd: list[str], **_: object) -> MagicMock:
+            captured["cmd"] = cmd
+            (output_dir / "sub_0" / "sub.vtt").write_text("WEBVTT\n")
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=_capture):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                start_seconds=42.0,
+                path_hash="abc",
+            )
+
+        cmd = captured["cmd"]
+        assert "-ss" in cmd
+        ss_index = cmd.index("-ss")
+        assert cmd[ss_index + 1] == "42.0"
+        # -ss must come before -i for fast demuxer-level seek
+        assert cmd.index("-ss") < cmd.index("-i")
+
+    def test_kill_processes_should_release_subtitle_waiters(self, tmp_path: Path) -> None:
+        import threading
+
+        service = HlsService(cache_dir=str(tmp_path))
+        proc = MagicMock()
+        proc.poll.return_value = None
+        service._processes["abc"] = [proc]
+        event = threading.Event()
+        service._subtitle_events["abc"] = {0: event}
+
+        service._kill_processes("abc")
+
+        assert event.is_set()
+        assert "abc" not in service._subtitle_events
