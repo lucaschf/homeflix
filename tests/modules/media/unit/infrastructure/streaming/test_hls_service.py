@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import subprocess
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -102,6 +104,26 @@ class TestHlsServiceGetPathHash:
     def test_should_differ_for_different_paths(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path / "hls"))
         assert service.get_path_hash("/a.mkv") != service.get_path_hash("/b.mkv")
+
+    def test_should_match_default_hash_when_start_seconds_is_zero(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        path = "/movies/test.mkv"
+        assert service.get_path_hash(path) == service.get_path_hash(path, 0.0)
+
+    def test_should_differ_for_different_start_seconds(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        path = "/movies/test.mkv"
+        hash_zero = service.get_path_hash(path, 0.0)
+        hash_middle = service.get_path_hash(path, 1800.0)
+        hash_end = service.get_path_hash(path, 5400.0)
+        assert hash_zero != hash_middle
+        assert hash_middle != hash_end
+        assert hash_zero != hash_end
+
+    def test_should_be_deterministic_with_start_seconds(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        path = "/movies/test.mkv"
+        assert service.get_path_hash(path, 1234.5) == service.get_path_hash(path, 1234.5)
 
 
 @pytest.mark.unit
@@ -272,6 +294,24 @@ class TestHlsServiceBuildAudioCmd:
 
         assert "aac" in cmd
 
+    def test_should_not_include_ss_when_start_is_zero(self, tmp_path: Path) -> None:
+        cmd = HlsService._build_audio_cmd(
+            "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=0.0
+        )
+
+        assert "-ss" not in cmd
+
+    def test_should_include_ss_before_input_when_start_is_set(self, tmp_path: Path) -> None:
+        cmd = HlsService._build_audio_cmd(
+            "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=1800.0
+        )
+
+        assert "-ss" in cmd
+        ss_idx = cmd.index("-ss")
+        i_idx = cmd.index("-i")
+        assert ss_idx < i_idx, "-ss must come before -i for fast seek"
+        assert cmd[ss_idx + 1] == "1800.0"
+
 
 @pytest.mark.unit
 class TestHlsServiceBuildVideoCmd:
@@ -306,6 +346,30 @@ class TestHlsServiceBuildVideoCmd:
             cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "0:a:3" in cmd
+
+    def test_should_not_include_ss_when_start_is_zero(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start_seconds=0.0)
+
+        assert "-ss" not in cmd
+
+    def test_should_include_ss_before_input_when_start_is_set(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd(
+                "/movies/test.mkv", tmp_path, probe, start_seconds=5400.0
+            )
+
+        assert "-ss" in cmd
+        ss_idx = cmd.index("-ss")
+        i_idx = cmd.index("-i")
+        assert ss_idx < i_idx, "-ss must come before -i for fast seek"
+        assert cmd[ss_idx + 1] == "5400.0"
 
 
 @pytest.mark.unit
@@ -492,3 +556,282 @@ class TestHlsServiceValidateSource:
         result = HlsService._validate_source(str(source))
 
         assert result == source.resolve()
+
+
+@pytest.mark.unit
+class TestHlsServiceEvictIdle:
+    """Tests for the idle ffmpeg eviction logic."""
+
+    def _make_alive_proc(self) -> MagicMock:
+        proc = MagicMock()
+        proc.poll.return_value = None  # still running
+        return proc
+
+    def test_should_not_evict_when_no_processes(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), idle_timeout=0.0)
+        evicted = service.evict_idle()
+        assert evicted == []
+
+    def test_should_evict_process_idle_longer_than_timeout(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), idle_timeout=0.5)
+        proc = self._make_alive_proc()
+        service._processes["abc"] = [proc]
+        # Set last access far in the past
+        service._last_access["abc"] = 0.0  # epoch — definitely > 0.5s ago
+
+        evicted = service.evict_idle()
+
+        assert evicted == ["abc"]
+        proc.kill.assert_called_once()
+        assert "abc" not in service._processes
+        assert "abc" not in service._last_access
+
+    def test_should_not_evict_recently_accessed_process(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), idle_timeout=60.0)
+        proc = self._make_alive_proc()
+        service._processes["abc"] = [proc]
+        # Touch with monotonic now — fresh
+        service._last_access["abc"] = service._last_access.get("abc", 0)
+        service._touch_access("abc")
+
+        evicted = service.evict_idle()
+
+        assert evicted == []
+        proc.kill.assert_not_called()
+        assert "abc" in service._processes
+
+    def test_should_evict_only_stale_entries(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), idle_timeout=0.5)
+        stale_proc = self._make_alive_proc()
+        fresh_proc = self._make_alive_proc()
+        service._processes["stale"] = [stale_proc]
+        service._processes["fresh"] = [fresh_proc]
+        service._last_access["stale"] = 0.0  # ancient
+        service._touch_access("fresh")  # right now
+
+        evicted = service.evict_idle()
+
+        assert evicted == ["stale"]
+        stale_proc.kill.assert_called_once()
+        fresh_proc.kill.assert_not_called()
+        assert "fresh" in service._processes
+
+    def test_get_file_by_hash_should_touch_access_on_hit(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        cache_dir = tmp_path / "abc"
+        cache_dir.mkdir()
+        (cache_dir / "segment_0000.ts").write_text("data")
+
+        result = service.get_file_by_hash("abc", "segment_0000.ts")
+
+        assert result is not None
+        assert "abc" in service._last_access
+
+    def test_get_file_by_hash_should_not_touch_access_on_miss(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        result = service.get_file_by_hash("abc", "missing.ts")
+
+        assert result is None
+        assert "abc" not in service._last_access
+
+    def test_get_master_playlist_should_touch_access_on_hit(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        cache_dir = tmp_path / "abc"
+        cache_dir.mkdir()
+        (cache_dir / "master.m3u8").write_text("#EXTM3U")
+
+        result = service.get_master_playlist("abc")
+
+        assert result == "#EXTM3U"
+        assert "abc" in service._last_access
+
+    def test_kill_processes_should_remove_last_access_entry(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        service._processes["abc"] = [self._make_alive_proc()]
+        service._touch_access("abc")
+
+        service._kill_processes("abc")
+
+        assert "abc" not in service._processes
+        assert "abc" not in service._last_access
+
+
+@pytest.mark.unit
+class TestHlsServiceWaitForSubtitle:
+    """Tests for the per-subtitle readiness wait."""
+
+    def test_should_return_true_immediately_when_no_event_registered(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+
+        # Untracked bucket → not being extracted → caller falls through
+        # to a normal filesystem lookup, so we report ready.
+        assert service.wait_for_subtitle("missing", 0, timeout=0.0) is True
+
+    def test_should_return_true_when_event_is_already_set(self, tmp_path: Path) -> None:
+        import threading
+
+        service = HlsService(cache_dir=str(tmp_path))
+        event = threading.Event()
+        event.set()
+        service._subtitle_events["abc"] = {2: event}
+
+        assert service.wait_for_subtitle("abc", 2, timeout=0.0) is True
+
+    def test_should_return_false_when_timeout_elapses(self, tmp_path: Path) -> None:
+        import threading
+
+        service = HlsService(cache_dir=str(tmp_path))
+        # Unset event — wait will time out
+        service._subtitle_events["abc"] = {0: threading.Event()}
+
+        assert service.wait_for_subtitle("abc", 0, timeout=0.05) is False
+
+    def test_should_unblock_after_event_is_set(self, tmp_path: Path) -> None:
+        import threading
+
+        service = HlsService(cache_dir=str(tmp_path))
+        event = threading.Event()
+        service._subtitle_events["abc"] = {0: event}
+
+        # Set the event from a worker after a tiny delay so the main
+        # thread has a chance to enter the wait first.
+        def _release() -> None:
+            time.sleep(0.05)
+            event.set()
+
+        worker = threading.Thread(target=_release, daemon=True)
+        worker.start()
+
+        assert service.wait_for_subtitle("abc", 0, timeout=2.0) is True
+        worker.join(timeout=1.0)
+
+
+@pytest.mark.unit
+class TestHlsServiceExtractOneSubtitle:
+    """Tests for the per-track subtitle extraction worker."""
+
+    def _make_service(self, tmp_path: Path) -> tuple[HlsService, Path]:
+        service = HlsService(cache_dir=str(tmp_path))
+        output_dir = tmp_path / "abc"
+        output_dir.mkdir()
+        return service, output_dir
+
+    def test_should_set_event_after_successful_embedded_extraction(self, tmp_path: Path) -> None:
+        import threading
+
+        service, output_dir = self._make_service(tmp_path)
+        event = threading.Event()
+        service._subtitle_events["abc"] = {3: event}
+
+        track = _make_subtitle_track(index=3, fmt="srt")
+
+        def _fake_run(cmd: list[str], **_: object) -> MagicMock:
+            # Simulate ffmpeg writing the .vtt before exiting
+            (output_dir / "sub_3" / "sub.vtt").write_text("WEBVTT\n")
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=_fake_run):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                start_seconds=0.0,
+                path_hash="abc",
+            )
+
+        assert event.is_set()
+        assert (output_dir / "sub_3" / "sub.vtt").is_file()
+        # _write_subtitle_playlist should have been called
+        assert (output_dir / "sub_3" / "playlist.m3u8").is_file()
+
+    def test_should_set_event_even_when_ffmpeg_fails_to_write_vtt(self, tmp_path: Path) -> None:
+        import threading
+
+        service, output_dir = self._make_service(tmp_path)
+        event = threading.Event()
+        service._subtitle_events["abc"] = {0: event}
+
+        track = _make_subtitle_track(index=0, fmt="srt")
+
+        # ffmpeg "succeeds" but never produces the .vtt → route waiters
+        # must still wake up so they can fall through to a 404.
+        with patch("subprocess.run", return_value=MagicMock(returncode=1)):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                start_seconds=0.0,
+                path_hash="abc",
+            )
+
+        assert event.is_set()
+        assert not (output_dir / "sub_0" / "sub.vtt").exists()
+        assert not (output_dir / "sub_0" / "playlist.m3u8").exists()
+
+    def test_should_set_event_on_subprocess_timeout(self, tmp_path: Path) -> None:
+        import threading
+
+        service, output_dir = self._make_service(tmp_path)
+        event = threading.Event()
+        service._subtitle_events["abc"] = {1: event}
+
+        track = _make_subtitle_track(index=1, fmt="srt")
+
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="ffmpeg", timeout=120),
+        ):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                start_seconds=0.0,
+                path_hash="abc",
+            )
+
+        assert event.is_set()
+
+    def test_should_pass_ss_args_when_start_seconds_is_positive(self, tmp_path: Path) -> None:
+        import threading
+
+        service, output_dir = self._make_service(tmp_path)
+        service._subtitle_events["abc"] = {0: threading.Event()}
+        track = _make_subtitle_track(index=0, fmt="srt")
+
+        captured: dict[str, list[str]] = {}
+
+        def _capture(cmd: list[str], **_: object) -> MagicMock:
+            captured["cmd"] = cmd
+            (output_dir / "sub_0" / "sub.vtt").write_text("WEBVTT\n")
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=_capture):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                start_seconds=42.0,
+                path_hash="abc",
+            )
+
+        cmd = captured["cmd"]
+        assert "-ss" in cmd
+        ss_index = cmd.index("-ss")
+        assert cmd[ss_index + 1] == "42.0"
+        # -ss must come before -i for fast demuxer-level seek
+        assert cmd.index("-ss") < cmd.index("-i")
+
+    def test_kill_processes_should_release_subtitle_waiters(self, tmp_path: Path) -> None:
+        import threading
+
+        service = HlsService(cache_dir=str(tmp_path))
+        proc = MagicMock()
+        proc.poll.return_value = None
+        service._processes["abc"] = [proc]
+        event = threading.Event()
+        service._subtitle_events["abc"] = {0: event}
+
+        service._kill_processes("abc")
+
+        assert event.is_set()
+        assert "abc" not in service._subtitle_events

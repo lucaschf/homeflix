@@ -6,6 +6,7 @@ Segment endpoints use a path-hash scheme so they never touch the
 database — only the initial playlist request needs a DB lookup.
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -20,6 +21,7 @@ from src.modules.media.application.dtos.series_dtos import GetSeriesByIdInput
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.infrastructure.streaming.hls_service import (
+    SUB_PATH_RE,
     HlsService,
     media_type_for,
     rewrite_m3u8,
@@ -27,6 +29,12 @@ from src.modules.media.infrastructure.streaming.hls_service import (
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeResult
 
 _logger = logging.getLogger(__name__)
+
+# Hard cap on how long the file route will park a request waiting for
+# a background subtitle extraction. Must comfortably exceed the per-track
+# ffmpeg timeout in HlsService so the player gets the .vtt instead of a
+# 404 when it picks a slow track right after playback starts.
+_SUBTITLE_WAIT_TIMEOUT = 60.0
 
 router = APIRouter(prefix="/api/v1/stream", tags=["Streaming"])
 
@@ -102,8 +110,19 @@ async def hls_file(
     """Serve any HLS file (segment, sub-playlist, VTT) by cache hash.
 
     For .m3u8 files, rewrites relative references to absolute URLs.
-    No database access needed.
+    Subtitle requests block on the matching readiness event so the
+    player gets the .vtt as soon as ffmpeg finishes extracting it,
+    instead of getting an early 404 and giving up. No database access
+    needed.
     """
+    sub_match = SUB_PATH_RE.match(file_path)
+    if sub_match:
+        sub_index = int(sub_match.group(1))
+        # Offload the blocking Event.wait so we don't pin an event
+        # loop thread for tens of seconds while ffmpeg is still
+        # demuxing the source container.
+        await asyncio.to_thread(hls.wait_for_subtitle, path_hash, sub_index, _SUBTITLE_WAIT_TIMEOUT)
+
     resolved = hls.get_file_by_hash(path_hash, file_path)
     if not resolved:
         raise HTTPException(status_code=404, detail="File not found")
@@ -139,6 +158,7 @@ async def hls_file(
 @inject  # type: ignore[misc]
 async def movie_hls_playlist(
     movie_id: str,
+    start: float = 0.0,
     use_case: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
@@ -146,14 +166,26 @@ async def movie_hls_playlist(
         Provide[ApplicationContainer.media.hls_service],
     ),
 ) -> Response:
-    """Generate and serve HLS master playlist for a movie."""
+    """Generate and serve HLS master playlist for a movie.
+
+    The ``start`` query parameter (default 0) is an optional seek offset
+    in seconds. FFmpeg trims the source so the HLS output starts at
+    (original time = start), which lets the client resume mid-file
+    without waiting for segments to be produced from position 0.
+    """
     movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
     file_path = _resolve_file(movie.file_path)
+    start_seconds = max(0.0, start)
 
     try:
-        path_hash = await hls.ensure_playlist(str(file_path))
+        path_hash = await hls.ensure_playlist(str(file_path), start_seconds)
     except Exception as e:
-        _logger.exception("HLS generation failed for movie %s (file=%s)", movie_id, file_path)
+        _logger.exception(
+            "HLS generation failed for movie %s (file=%s, start=%ss)",
+            movie_id,
+            file_path,
+            start_seconds,
+        )
         detail = str(e) or f"{type(e).__name__}: check server logs"
         raise HTTPException(status_code=500, detail=detail) from e
 
@@ -166,6 +198,7 @@ async def episode_hls_playlist(
     series_id: str,
     season_number: int,
     episode_number: int,
+    start: float = 0.0,
     use_case: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
@@ -173,19 +206,25 @@ async def episode_hls_playlist(
         Provide[ApplicationContainer.media.hls_service],
     ),
 ) -> Response:
-    """Generate and serve HLS master playlist for an episode."""
+    """Generate and serve HLS master playlist for an episode.
+
+    The ``start`` query parameter (default 0) is an optional seek offset
+    in seconds — same semantics as the movie endpoint.
+    """
     file_path = await _find_episode_file(use_case, series_id, season_number, episode_number)
     path = _resolve_file(file_path)
+    start_seconds = max(0.0, start)
 
     try:
-        path_hash = await hls.ensure_playlist(str(path))
+        path_hash = await hls.ensure_playlist(str(path), start_seconds)
     except Exception as e:
         _logger.exception(
-            "HLS generation failed for episode %s/S%sE%s (file=%s)",
+            "HLS generation failed for episode %s/S%sE%s (file=%s, start=%ss)",
             series_id,
             season_number,
             episode_number,
             path,
+            start_seconds,
         )
         detail = str(e) or f"{type(e).__name__}: check server logs"
         raise HTTPException(status_code=500, detail=detail) from e

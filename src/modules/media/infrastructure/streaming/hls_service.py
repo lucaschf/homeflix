@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,7 @@ from src.modules.media.infrastructure.streaming.media_probe_service import (
     MediaProbeResult,
     MediaProbeService,
 )
+from src.shared_kernel.value_objects.tracks import SubtitleTrack
 
 _logger = logging.getLogger(__name__)
 
@@ -47,6 +49,20 @@ _SEGMENT_DURATION = 10  # seconds per segment
 _POLL_INTERVAL = 0.5  # seconds between readiness checks
 _POLL_TIMEOUT = 120  # max seconds to wait for first segment
 _BROWSER_SAFE_CODECS = {"h264"}
+
+# Number of segments ffmpeg must produce before ensure_playlist returns.
+# When start_seconds > 0 we wait for more segments to give ffmpeg a head
+# start over the player, since the player begins consuming from the same
+# source position the encoder is writing to (no natural buffer build-up).
+_MIN_SEGMENTS_FRESH = 1
+_MIN_SEGMENTS_WITH_SEEK = 3
+
+# Idle eviction defaults: kill ffmpeg after this many seconds with no
+# segment requests. Trade-off: short timeout frees CPU faster after the
+# user navigates away, but a paused user beyond this window will see the
+# next segment fail and the player rebuffer when they resume.
+_DEFAULT_IDLE_TIMEOUT = 30.0
+_EVICTION_INTERVAL = 10.0
 
 _VIDEO_DIR = "video"
 
@@ -59,6 +75,9 @@ _RELATIVE_REF_RE = re.compile(
 )
 # Matches URI="..." with relative paths only (skip absolute/protocol URIs)
 _URI_ATTR_RE = re.compile(r'URI="(?!https?://)(?!/)([^"]+)"')
+# Identifies cache-relative paths under a sub_<index>/ directory so route
+# handlers can wait on the right per-subtitle extraction event.
+SUB_PATH_RE = re.compile(r"^sub_(\d+)/")
 
 _MEDIA_TYPES: dict[str, str] = {
     ".m3u8": "application/vnd.apple.mpegurl",
@@ -93,29 +112,106 @@ class HlsService:
     Args:
         cache_dir: Directory to store generated HLS files.
         probe_service: Service to discover audio/subtitle tracks.
+        idle_timeout: Seconds without segment requests before a running
+            ffmpeg process is considered idle and killed. Defaults to 30s.
+        enable_eviction: Whether to start the background eviction daemon.
+            Defaults to False so unit tests don't leak threads — production
+            code should pass True via the DI container.
     """
 
     def __init__(
         self,
         cache_dir: str = "./hls_cache",
         probe_service: MediaProbeService | None = None,
+        idle_timeout: float = _DEFAULT_IDLE_TIMEOUT,
+        enable_eviction: bool = False,
     ) -> None:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._probe = probe_service or MediaProbeService()
         self._processes: dict[str, list[subprocess.Popen[bytes]]] = {}
+        # path_hash → monotonic timestamp of the most recent activity
+        # (playlist request OR segment fetch). The eviction loop reads
+        # this to decide which ffmpeg processes are idle.
+        self._last_access: dict[str, float] = {}
+        # path_hash → {subtitle_index: Event}. Set when a subtitle's
+        # background extraction finishes (success or failure). The file
+        # route uses these to block its response until the requested
+        # subtitle is on disk, instead of returning a premature 404.
+        self._subtitle_events: dict[str, dict[int, threading.Event]] = {}
         self._lock = threading.Lock()
+        self._idle_timeout = idle_timeout
+        if enable_eviction:
+            self._start_eviction_thread()
+
+    def _start_eviction_thread(self) -> None:
+        """Spawn a daemon thread that periodically evicts idle processes."""
+        thread = threading.Thread(
+            target=self._eviction_loop,
+            daemon=True,
+            name="hls-eviction",
+        )
+        thread.start()
+
+    def _eviction_loop(self) -> None:
+        """Background loop: wake up periodically and evict idle ffmpegs."""
+        while True:
+            time.sleep(_EVICTION_INTERVAL)
+            try:
+                self.evict_idle()
+            except Exception:
+                _logger.exception("HLS eviction loop error")
+
+    def _touch_access(self, path_hash: str) -> None:
+        """Record that this cache bucket was just used."""
+        with self._lock:
+            self._last_access[path_hash] = time.monotonic()
+
+    def evict_idle(self) -> list[str]:
+        """Kill ffmpeg processes that haven't seen activity recently.
+
+        Returns the list of evicted path_hashes (useful for tests).
+        """
+        now = time.monotonic()
+        with self._lock:
+            stale = [
+                ph
+                for ph, last in self._last_access.items()
+                if now - last > self._idle_timeout and ph in self._processes
+            ]
+        evicted: list[str] = []
+        for path_hash in stale:
+            idle_for = now - self._last_access.get(path_hash, now)
+            _logger.info("Evicting idle ffmpeg for %s (idle %.0fs)", path_hash, idle_for)
+            self._kill_processes(path_hash)
+            with self._lock:
+                self._last_access.pop(path_hash, None)
+            evicted.append(path_hash)
+        return evicted
 
     # -- Public API ------------------------------------------------------------
 
-    def get_path_hash(self, file_path: str) -> str:
-        """Get the hash key for a file path."""
-        return hashlib.md5(file_path.encode()).hexdigest()
+    def get_path_hash(self, file_path: str, start_seconds: float = 0.0) -> str:
+        """Get the hash key for a (file path, start offset) pair.
+
+        Args:
+            file_path: Absolute path to the source video file.
+            start_seconds: Start offset in seconds for partial transcodes.
+
+        Returns:
+            Hex MD5 digest uniquely identifying the cache bucket. Different
+            start offsets produce different hashes so partial transcodes do
+            not collide with full transcodes on disk.
+        """
+        key = f"{file_path}:{start_seconds}" if start_seconds else file_path
+        return hashlib.md5(key.encode()).hexdigest()
 
     def get_file_by_hash(self, path_hash: str, relative_path: str) -> Path | None:
         """Get any file from cache by hash + relative path.
 
         Includes path traversal protection via ``Path.is_relative_to``.
+        Touches the access timestamp on hit so the eviction loop knows
+        the cache is still being consumed by a player.
         """
         cache_root = (self._cache_dir / path_hash).resolve()
         target = (cache_root / relative_path).resolve()
@@ -125,7 +221,10 @@ class HlsService:
         except ValueError:
             return None
 
-        return target if target.is_file() else None
+        if not target.is_file():
+            return None
+        self._touch_access(path_hash)
+        return target
 
     def is_complete(self, path_hash: str) -> bool:
         """Check if generation is fully complete."""
@@ -144,15 +243,48 @@ class HlsService:
             return False
 
     def get_master_playlist(self, path_hash: str) -> str | None:
-        """Get master playlist content, falling back to legacy flat playlist."""
+        """Get master playlist content, falling back to legacy flat playlist.
+
+        Touches access time on hit so the player attaching to a still-warm
+        cache resets the idle timer immediately.
+        """
         for name in ("master.m3u8", "playlist.m3u8"):
             path = self._cache_dir / path_hash / name
             if path.is_file():
                 try:
-                    return path.read_text(encoding="utf-8")
+                    content = path.read_text(encoding="utf-8")
                 except OSError:
                     continue
+                self._touch_access(path_hash)
+                return content
         return None
+
+    def wait_for_subtitle(
+        self,
+        path_hash: str,
+        sub_index: int,
+        timeout: float,
+    ) -> bool:
+        """Block until a specific subtitle has finished extracting.
+
+        Args:
+            path_hash: Cache bucket hash returned by ``get_path_hash``.
+            sub_index: Track index used to build ``sub_<index>/`` on disk.
+            timeout: Max seconds to block. Should be longer than the
+                worst-case ffmpeg subtitle extraction so the player gets
+                the .vtt instead of a 404.
+
+        Returns:
+            ``True`` if the readiness event fired (extraction is done),
+            or if the subtitle isn't being tracked at all (caller should
+            fall through to a normal filesystem lookup). ``False`` only
+            when the timeout elapsed before extraction completed.
+        """
+        with self._lock:
+            event = self._subtitle_events.get(path_hash, {}).get(sub_index)
+        if event is None:
+            return True
+        return event.wait(timeout)
 
     def get_cached_tracks(self, path_hash: str) -> dict[str, Any] | None:
         """Get cached probe result from tracks.json."""
@@ -165,20 +297,27 @@ class HlsService:
         except (OSError, json.JSONDecodeError):
             return None
 
-    async def ensure_playlist(self, file_path: str) -> str:
+    async def ensure_playlist(self, file_path: str, start_seconds: float = 0.0) -> str:
         """Start generation and wait until the first segments are ready.
 
         Args:
             file_path: Absolute path to the source video file.
+            start_seconds: Start offset in seconds. FFmpeg seeks to this
+                position before transcoding, so the first produced segment
+                corresponds to (original time = start_seconds).
 
         Returns:
-            The path hash for this file.
+            The path hash for this (file, start) pair.
 
         Raises:
             RuntimeError: If FFmpeg is not available, fails, or times out.
             FileNotFoundError: If the source file does not exist.
         """
-        path_hash = self.get_path_hash(file_path)
+        path_hash = self.get_path_hash(file_path, start_seconds)
+        # Touch immediately so the eviction loop never kills a process
+        # that the user just asked for, even if no segments have been
+        # served yet (e.g. while waiting for ffmpeg to start).
+        self._touch_access(path_hash)
 
         if self.is_complete(path_hash):
             return path_hash
@@ -192,15 +331,20 @@ class HlsService:
             msg = f"Source file not found: {file_path}"
             raise FileNotFoundError(msg)
 
-        await asyncio.to_thread(self._start_generation, file_path)
+        await asyncio.to_thread(self._start_generation, file_path, start_seconds)
 
         video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
+        min_segments = _MIN_SEGMENTS_WITH_SEEK if start_seconds > 0 else _MIN_SEGMENTS_FRESH
         attempts = int(_POLL_TIMEOUT / _POLL_INTERVAL)
         for _ in range(attempts):
             if video_playlist.is_file():
                 try:
                     content = video_playlist.read_text(encoding="utf-8")
-                    if "segment_" in content:
+                    # Count #EXTINF directives — these are only added by
+                    # ffmpeg AFTER a segment is fully written and renamed,
+                    # so anything counted here is safe to serve.
+                    extinf_count = content.count("#EXTINF:")
+                    if extinf_count >= min_segments:
                         return path_hash
                 except OSError:
                     pass
@@ -222,14 +366,20 @@ class HlsService:
             return self._deserialize_probe(cached)
         return self._probe.probe(file_path)
 
-    def clear_cache(self, file_path: str | None = None) -> None:
+    def clear_cache(
+        self,
+        file_path: str | None = None,
+        start_seconds: float = 0.0,
+    ) -> None:
         """Clear cached HLS segments.
 
         Args:
             file_path: Clear cache for specific file, or all if None.
+            start_seconds: When ``file_path`` is given, targets the specific
+                (file, start) bucket. Ignored when clearing the full cache.
         """
         if file_path:
-            path_hash = self.get_path_hash(file_path)
+            path_hash = self.get_path_hash(file_path, start_seconds)
             self._kill_processes(path_hash)
             shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
         else:
@@ -248,11 +398,20 @@ class HlsService:
         return procs[0] if procs else None
 
     def _kill_processes(self, path_hash: str) -> None:
-        """Kill all running FFmpeg processes for a path hash."""
+        """Kill all running FFmpeg processes for a path hash.
+
+        Also releases any waiters parked on subtitle readiness events for
+        this bucket so they don't block their full timeout after we've
+        already torn down the cache.
+        """
         with self._lock:
             for proc in self._processes.pop(path_hash, []):
                 if proc.poll() is None:
                     proc.kill()
+            self._last_access.pop(path_hash, None)
+            events = self._subtitle_events.pop(path_hash, {})
+        for event in events.values():
+            event.set()
 
     def _handle_generation_failure(
         self,
@@ -268,17 +427,33 @@ class HlsService:
 
     # -- Private: generation ---------------------------------------------------
 
-    def _start_generation(self, file_path: str) -> str:
-        """Start all FFmpeg processes for multi-track HLS generation."""
+    def _start_generation(self, file_path: str, start_seconds: float = 0.0) -> str:
+        """Start all FFmpeg processes for multi-track HLS generation.
+
+        Args:
+            file_path: Absolute path to the source video file.
+            start_seconds: Seek to this position before transcoding so the
+                output starts at (original time = start_seconds).
+        """
         source = self._validate_source(file_path)
         safe_path = str(source)
-        path_hash = self.get_path_hash(file_path)
+        path_hash = self.get_path_hash(file_path, start_seconds)
 
         if self.is_complete(path_hash):
             return path_hash
 
         # Probe outside the lock (potentially slow I/O)
         probe_result = self._probe.probe(safe_path)
+
+        # Pick the subtitles we'll actually try to convert. Image-based
+        # tracks (PGS, VOBSUB) and externals without a resolved file path
+        # are filtered out so we don't create dangling readiness events
+        # the file route would block on indefinitely.
+        text_subs: list[SubtitleTrack] = [
+            s
+            for s in probe_result.all_subtitles
+            if s.is_text_based and (not s.is_external or s.file_path is not None)
+        ]
 
         with self._lock:
             # Re-check after acquiring lock
@@ -304,8 +479,8 @@ class HlsService:
             # 1. Main: video + default audio (always first in list)
             video_dir = output_dir / _VIDEO_DIR
             video_dir.mkdir()
-            cmd = self._build_video_cmd(safe_path, video_dir, probe_result)
-            _logger.info("Starting video HLS for %s", safe_path)
+            cmd = self._build_video_cmd(safe_path, video_dir, probe_result, start_seconds)
+            _logger.info("Starting video HLS for %s (start=%ss)", safe_path, start_seconds)
             procs.append(self._spawn_ffmpeg(cmd))
 
             # 2. Additional audio tracks (audio-only HLS)
@@ -315,22 +490,45 @@ class HlsService:
                     continue
                 audio_dir = output_dir / f"audio_{track.index}"
                 audio_dir.mkdir()
-                cmd = self._build_audio_cmd(safe_path, audio_dir, track.index)
+                cmd = self._build_audio_cmd(safe_path, audio_dir, track.index, start_seconds)
                 _logger.info(
-                    "Starting audio HLS for track %d (%s) of %s",
+                    "Starting audio HLS for track %d (%s) of %s (start=%ss)",
                     track.index,
                     track.language.value,
                     safe_path,
+                    start_seconds,
                 )
                 procs.append(self._spawn_ffmpeg(cmd))
 
-            # 3. Extract subtitles to WebVTT (synchronous, fast)
-            self._extract_subtitles(safe_path, output_dir, probe_result)
-
-            # 4. Build master playlist
+            # 3. Build master playlist now — it references sub_N/playlist.m3u8
+            # paths that get filled in by the background subtitle extraction
+            # below. The player only fetches those URIs when the user enables
+            # a subtitle (all entries are emitted as DEFAULT=NO,AUTOSELECT=NO),
+            # so racing them against playback start is safe.
             self._build_master_playlist(output_dir, probe_result)
 
+            # 4. Pre-create per-subtitle readiness events. They MUST be
+            # registered before _start_generation returns so the file
+            # route can find them the instant the player picks a track.
+            if text_subs:
+                self._subtitle_events[path_hash] = {
+                    sub.index: threading.Event() for sub in text_subs
+                }
+
             self._processes[path_hash] = procs
+            self._last_access[path_hash] = time.monotonic()
+
+        # 5. Extract each subtitle in its own background thread. Running
+        # them in parallel (instead of one big serial thread) means a
+        # user-selected subtitle only waits for its own ffmpeg, not for
+        # every other track that happens to be earlier in the list.
+        for sub in text_subs:
+            threading.Thread(
+                target=self._extract_one_subtitle,
+                args=(safe_path, output_dir, sub, start_seconds, path_hash),
+                daemon=True,
+                name=f"hls-sub-{path_hash[:8]}-{sub.index}",
+            ).start()
 
         return path_hash
 
@@ -380,8 +578,14 @@ class HlsService:
         file_path: str,
         output_dir: Path,
         probe: MediaProbeResult,
+        start_seconds: float = 0.0,
     ) -> list[str]:
-        """Build FFmpeg command for video + default audio."""
+        """Build FFmpeg command for video + default audio.
+
+        When ``start_seconds > 0``, ``-ss`` is placed before ``-i`` so FFmpeg
+        does a fast demuxer-level seek to the nearest keyframe before the
+        requested position.
+        """
         codec = self._probe_video_codec(file_path)
         needs_transcode = codec not in _BROWSER_SAFE_CODECS
 
@@ -395,154 +599,189 @@ class HlsService:
         primary_idx = _primary_audio_index(probe)
         audio_map = f"0:a:{primary_idx}"
 
-        return [
-            "ffmpeg",
-            "-i",
-            file_path,
-            "-map",
-            "0:v:0",
-            "-map",
-            audio_map,
-            "-sn",
-            *video_args,
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-ar",
-            "48000",
-            "-hls_time",
-            str(_SEGMENT_DURATION),
-            "-hls_list_size",
-            "0",
-            "-hls_playlist_type",
-            "event",
-            "-hls_segment_filename",
-            str(output_dir / "segment_%04d.ts"),
-            "-loglevel",
-            "error",
-            "-y",
-            str(output_dir / "playlist.m3u8"),
-        ]
+        cmd = ["ffmpeg"]
+        if start_seconds > 0:
+            cmd.extend(["-ss", str(start_seconds)])
+        cmd.extend(
+            [
+                "-i",
+                file_path,
+                "-map",
+                "0:v:0",
+                "-map",
+                audio_map,
+                "-sn",
+                *video_args,
+                "-c:a",
+                "aac",
+                "-ac",
+                "2",
+                "-ar",
+                "48000",
+                "-hls_time",
+                str(_SEGMENT_DURATION),
+                "-hls_list_size",
+                "0",
+                "-hls_playlist_type",
+                "event",
+                # temp_file: write each segment to .ts.tmp and rename to .ts
+                # only after it's fully written. Prevents the player from
+                # racing the encoder and grabbing partial bytes.
+                "-hls_flags",
+                "temp_file",
+                "-hls_segment_filename",
+                str(output_dir / "segment_%04d.ts"),
+                "-loglevel",
+                "error",
+                "-y",
+                str(output_dir / "playlist.m3u8"),
+            ]
+        )
+        return cmd
 
     @staticmethod
     def _build_audio_cmd(
         file_path: str,
         output_dir: Path,
         audio_index: int,
+        start_seconds: float = 0.0,
     ) -> list[str]:
-        """Build FFmpeg command for audio-only HLS track."""
-        return [
-            "ffmpeg",
-            "-i",
-            file_path,
-            "-map",
-            f"0:a:{audio_index}",
-            "-vn",
-            "-sn",
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-ar",
-            "48000",
-            "-hls_time",
-            str(_SEGMENT_DURATION),
-            "-hls_list_size",
-            "0",
-            "-hls_playlist_type",
-            "event",
-            "-hls_segment_filename",
-            str(output_dir / "segment_%04d.ts"),
-            "-loglevel",
-            "error",
-            "-y",
-            str(output_dir / "playlist.m3u8"),
-        ]
+        """Build FFmpeg command for audio-only HLS track.
+
+        When ``start_seconds > 0``, ``-ss`` is placed before ``-i`` so the
+        audio track stays aligned with the video track (both start at the
+        same source position).
+        """
+        cmd = ["ffmpeg"]
+        if start_seconds > 0:
+            cmd.extend(["-ss", str(start_seconds)])
+        cmd.extend(
+            [
+                "-i",
+                file_path,
+                "-map",
+                f"0:a:{audio_index}",
+                "-vn",
+                "-sn",
+                "-c:a",
+                "aac",
+                "-ac",
+                "2",
+                "-ar",
+                "48000",
+                "-hls_time",
+                str(_SEGMENT_DURATION),
+                "-hls_list_size",
+                "0",
+                "-hls_playlist_type",
+                "event",
+                "-hls_flags",
+                "temp_file",
+                "-hls_segment_filename",
+                str(output_dir / "segment_%04d.ts"),
+                "-loglevel",
+                "error",
+                "-y",
+                str(output_dir / "playlist.m3u8"),
+            ]
+        )
+        return cmd
 
     # -- Private: subtitle extraction ------------------------------------------
 
-    @staticmethod
-    def _extract_subtitles(
+    def _extract_one_subtitle(
+        self,
         file_path: str,
         output_dir: Path,
-        probe: MediaProbeResult,
+        track: SubtitleTrack,
+        start_seconds: float,
+        path_hash: str,
     ) -> None:
-        """Extract text-based subtitles to WebVTT files."""
-        for track in probe.subtitle_tracks:
-            if not track.is_text_based:
-                _logger.info(
-                    "Skipping image-based subtitle track %d (%s)",
-                    track.index,
-                    track.format,
-                )
-                continue
+        """Extract a single text-based subtitle to WebVTT.
 
+        Runs ffmpeg synchronously and signals the readiness Event for this
+        track in ``self._subtitle_events`` from a ``finally`` block, so any
+        route handler waiting on it always unblocks (even on ffmpeg failure
+        or timeout) and gets a chance to respond — typically with a 404 if
+        extraction never produced a file.
+
+        When ``start_seconds > 0``, ``-ss`` is applied so subtitle timestamps
+        are rebased to match the trimmed video output (both start at 0).
+
+        Note: ffmpeg is invoked with two separate inline literal-list calls
+        (embedded vs external) instead of building one ``cmd`` variable so
+        the static-analysis rule against passing a non-literal command to
+        ``subprocess.run`` stays happy. The arguments themselves still come
+        from validated repository paths.
+        """
+        try:
             sub_dir = output_dir / f"sub_{track.index}"
             sub_dir.mkdir(exist_ok=True)
             vtt_path = sub_dir / "sub.vtt"
+            ss_args = ["-ss", str(start_seconds)] if start_seconds > 0 else []
 
-            try:
-                subprocess.run(
-                    [
-                        "ffmpeg",
-                        "-i",
-                        file_path,
-                        "-map",
-                        f"0:s:{track.index}",
-                        "-c:s",
-                        "webvtt",
-                        "-loglevel",
-                        "error",
-                        "-y",
-                        str(vtt_path),
-                    ],
-                    **SUBPROCESS_TEXT_KWARGS,
-                    check=False,
-                    timeout=60,
-                )
-                if vtt_path.is_file():
-                    _write_subtitle_playlist(sub_dir)
-                    _logger.info("Extracted subtitle track %d to %s", track.index, vtt_path)
-                else:
-                    _logger.warning("Failed to extract subtitle track %d", track.index)
-            except subprocess.TimeoutExpired:
-                _logger.warning("Subtitle extraction timed out for track %d", track.index)
-
-        for track in probe.external_subtitles:
-            if not track.is_text_based or not track.file_path:
-                continue
-
-            sub_dir = output_dir / f"sub_{track.index}"
-            sub_dir.mkdir(exist_ok=True)
-            vtt_path = sub_dir / "sub.vtt"
-
-            try:
-                subprocess.run(
-                    [
-                        "ffmpeg",
-                        "-i",
-                        track.file_path.value,
-                        "-c:s",
-                        "webvtt",
-                        "-loglevel",
-                        "error",
-                        "-y",
-                        str(vtt_path),
-                    ],
-                    **SUBPROCESS_TEXT_KWARGS,
-                    check=False,
-                    timeout=60,
-                )
-                if vtt_path.is_file():
-                    _write_subtitle_playlist(sub_dir)
-                    _logger.info(
-                        "Converted external subtitle %s to %s",
-                        track.file_path.value,
-                        vtt_path,
+            if track.is_external:
+                if track.file_path is None:
+                    return
+                input_arg = track.file_path.value
+                log_label = f"external subtitle {input_arg}"
+                try:
+                    subprocess.run(
+                        [
+                            "ffmpeg",
+                            *ss_args,
+                            "-i",
+                            input_arg,
+                            "-c:s",
+                            "webvtt",
+                            "-loglevel",
+                            "error",
+                            "-y",
+                            str(vtt_path),
+                        ],
+                        **SUBPROCESS_TEXT_KWARGS,
+                        check=False,
+                        timeout=120,
                     )
-            except subprocess.TimeoutExpired:
-                _logger.warning("External subtitle conversion timed out for %s", track.file_path)
+                except subprocess.TimeoutExpired:
+                    _logger.warning("Extraction timed out for %s", log_label)
+                    return
+            else:
+                log_label = f"subtitle track {track.index}"
+                try:
+                    subprocess.run(
+                        [
+                            "ffmpeg",
+                            *ss_args,
+                            "-i",
+                            file_path,
+                            "-map",
+                            f"0:s:{track.index}",
+                            "-c:s",
+                            "webvtt",
+                            "-loglevel",
+                            "error",
+                            "-y",
+                            str(vtt_path),
+                        ],
+                        **SUBPROCESS_TEXT_KWARGS,
+                        check=False,
+                        timeout=120,
+                    )
+                except subprocess.TimeoutExpired:
+                    _logger.warning("Extraction timed out for %s", log_label)
+                    return
+
+            if vtt_path.is_file():
+                _write_subtitle_playlist(sub_dir)
+                _logger.info("Extracted %s to %s", log_label, vtt_path)
+            else:
+                _logger.warning("Failed to extract %s", log_label)
+        finally:
+            with self._lock:
+                event = self._subtitle_events.get(path_hash, {}).get(track.index)
+            if event is not None:
+                event.set()
 
     # -- Private: master playlist ----------------------------------------------
 
