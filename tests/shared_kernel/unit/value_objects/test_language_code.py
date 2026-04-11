@@ -51,6 +51,10 @@ class TestLanguageCodeValidation:
         with pytest.raises(DomainValidationException, match="ISO 639-1"):
             LanguageCode("")
 
+    def test_should_raise_error_for_non_string_input(self):
+        with pytest.raises(DomainValidationException, match="must be a string"):
+            LanguageCode(123)  # type: ignore[arg-type]
+
 
 class TestLanguageCodeFactories:
     """Tests for LanguageCode factory methods."""

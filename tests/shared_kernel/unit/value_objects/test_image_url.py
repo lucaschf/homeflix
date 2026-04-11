@@ -37,6 +37,10 @@ class TestImageUrlCreation:
         with pytest.raises(DomainValidationException):
             ImageUrl("not a url or path")
 
+    def test_should_raise_for_non_string_input(self):
+        with pytest.raises(DomainValidationException, match="must be a string"):
+            ImageUrl(123)  # type: ignore[arg-type]
+
 
 class TestImageUrlBehavior:
     """Tests for ImageUrl behavior."""
