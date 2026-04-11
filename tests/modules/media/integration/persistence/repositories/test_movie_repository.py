@@ -230,3 +230,135 @@ class TestSQLAlchemyMovieRepository:
         assert "Horror" in genre_values
         assert "Thriller" in genre_values
         assert "Mystery" in genre_values
+
+
+@pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryFindRandom:
+    """Tests for find_random."""
+
+    async def test_find_random_should_return_requested_limit(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        for i in range(5):
+            await repo.save(
+                _create_movie(
+                    title=f"Movie {i}",
+                    file_path=f"/movies/movie_{i}.mkv",
+                ),
+            )
+
+        result = await repo.find_random(limit=3)
+
+        assert len(result) == 3
+
+    async def test_find_random_should_return_all_when_limit_exceeds_total(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="A", file_path="/movies/a.mkv"))
+        await repo.save(_create_movie(title="B", file_path="/movies/b.mkv"))
+
+        result = await repo.find_random(limit=10)
+
+        assert len(result) == 2
+
+    async def test_find_random_with_backdrop_should_filter_without_backdrop(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(
+            _create_movie(
+                title="With Backdrop",
+                file_path="/movies/with.mkv",
+                backdrop_path=ImageUrl("https://image.tmdb.org/backdrop.jpg"),
+            ),
+        )
+        await repo.save(_create_movie(title="No Backdrop", file_path="/movies/no.mkv"))
+
+        result = await repo.find_random(limit=10, with_backdrop=True)
+
+        assert len(result) == 1
+        assert result[0].title.value == "With Backdrop"
+
+    async def test_find_random_should_exclude_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        kept = _create_movie(title="Kept", file_path="/movies/kept.mkv")
+        deleted = _create_movie(title="Deleted", file_path="/movies/deleted.mkv")
+        await repo.save(kept)
+        await repo.save(deleted)
+        await repo.delete(deleted.id)  # type: ignore[arg-type]
+
+        result = await repo.find_random(limit=10)
+
+        assert len(result) == 1
+        assert result[0].title.value == "Kept"
+
+
+@pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryFindByIds:
+    """Tests for find_by_ids."""
+
+    async def test_find_by_ids_should_return_empty_dict_for_empty_input(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+
+        result = await repo.find_by_ids([])
+
+        assert result == {}
+
+    async def test_find_by_ids_should_return_mapping_by_external_id(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie_a = _create_movie(title="A", file_path="/movies/a.mkv")
+        movie_b = _create_movie(title="B", file_path="/movies/b.mkv")
+        await repo.save(movie_a)
+        await repo.save(movie_b)
+
+        result = await repo.find_by_ids([movie_a.id, movie_b.id])  # type: ignore[list-item]
+
+        assert len(result) == 2
+        assert str(movie_a.id) in result
+        assert str(movie_b.id) in result
+
+    async def test_find_by_ids_should_skip_missing(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _create_movie(title="Exists", file_path="/movies/exists.mkv")
+        await repo.save(movie)
+        missing_id = MovieId.generate()
+
+        result = await repo.find_by_ids([movie.id, missing_id])  # type: ignore[list-item]
+
+        assert len(result) == 1
+        assert str(movie.id) in result
+
+    async def test_find_by_ids_should_exclude_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _create_movie(title="Deleted", file_path="/movies/del.mkv")
+        await repo.save(movie)
+        await repo.delete(movie.id)  # type: ignore[arg-type]
+
+        result = await repo.find_by_ids([movie.id])  # type: ignore[list-item]
+
+        assert result == {}
+
+
+@pytest.mark.integration
+class TestSQLAlchemyMovieRepositorySaveRestore:
+    """Tests for save restoring soft-deleted records."""
+
+    async def test_save_should_restore_soft_deleted_movie(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _create_movie(title="Restored", file_path="/movies/r.mkv")
+        await repo.save(movie)
+        await repo.delete(movie.id)  # type: ignore[arg-type]
+
+        # Re-save the same entity
+        restored = await repo.save(movie)
+
+        assert restored.id == movie.id
+        found = await repo.find_by_id(movie.id)  # type: ignore[arg-type]
+        assert found is not None
+        assert found.title.value == "Restored"
