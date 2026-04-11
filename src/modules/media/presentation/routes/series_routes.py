@@ -5,6 +5,7 @@ from typing import Any
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 
+from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.media_file_dtos import (
     AddFileVariantInput,
@@ -34,18 +35,41 @@ router = APIRouter(prefix="/api/v1/series", tags=["Series"])
 @router.get("")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def list_series(
-    limit: int | None = None,
+    cursor: str | None = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+    include_count: bool = False,
     lang: str = "en",
     use_case: ListSeriesUseCase = Depends(
         Provide[ApplicationContainer.media.list_series],
     ),
 ) -> dict[str, Any]:
-    """List all series."""
-    result = await use_case.execute(ListSeriesInput(limit=limit, lang=lang))
+    """List one cursor-paginated page of series.
+
+    Same query-param contract as ``GET /api/v1/movies`` — see that
+    endpoint for the full description of ``cursor``, ``limit``,
+    ``include_count``, and the response shape.
+    """
+    clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
+    result = await use_case.execute(
+        ListSeriesInput(
+            cursor=cursor,
+            limit=clamped_limit,
+            include_total=include_count,
+            lang=lang,
+        )
+    )
+    metadata: dict[str, Any] = {
+        "pagination": {
+            "next_cursor": result.next_cursor,
+            "has_more": result.has_more,
+        },
+    }
+    if result.total_count is not None:
+        metadata["total_count"] = result.total_count
     return {
         "type": "list",
         "data": [_dataclass_to_dict(s) for s in result.series],
-        "metadata": {"total_count": result.total_count},
+        "metadata": metadata,
     }
 
 

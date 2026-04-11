@@ -5,6 +5,7 @@ from typing import Any
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 
+from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.media_file_dtos import (
     AddFileVariantInput,
@@ -39,18 +40,50 @@ router = APIRouter(prefix="/api/v1/movies", tags=["Movies"])
 @router.get("")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def list_movies(
-    limit: int | None = None,
+    cursor: str | None = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+    include_count: bool = False,
     lang: str = "en",
     use_case: ListMoviesUseCase = Depends(
         Provide[ApplicationContainer.media.list_movies],
     ),
 ) -> dict[str, Any]:
-    """List all movies."""
-    result = await use_case.execute(ListMoviesInput(limit=limit, lang=lang))
+    """List one cursor-paginated page of movies.
+
+    Query params:
+        cursor: Opaque token returned by the previous page's
+            ``metadata.pagination.next_cursor``. Omit on the first
+            request. Invalid / tampered cursors silently start over
+            from the beginning.
+        limit: Page size, clamped to ``[1, MAX_PAGE_SIZE]``. Defaults
+            to ``DEFAULT_PAGE_SIZE`` (20).
+        include_count: When ``true``, the response includes
+            ``metadata.total_count``. Defaults to ``false`` to skip
+            the extra ``COUNT(*)`` query that infinite-scroll
+            consumers don't need.
+        lang: Language code for localized metadata.
+    """
+    clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
+    result = await use_case.execute(
+        ListMoviesInput(
+            cursor=cursor,
+            limit=clamped_limit,
+            include_total=include_count,
+            lang=lang,
+        )
+    )
+    metadata: dict[str, Any] = {
+        "pagination": {
+            "next_cursor": result.next_cursor,
+            "has_more": result.has_more,
+        },
+    }
+    if result.total_count is not None:
+        metadata["total_count"] = result.total_count
     return {
         "type": "list",
         "data": [_dataclass_to_dict(m) for m in result.movies],
-        "metadata": {"total_count": result.total_count},
+        "metadata": metadata,
     }
 
 

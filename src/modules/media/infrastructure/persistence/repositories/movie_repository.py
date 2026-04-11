@@ -2,10 +2,16 @@
 
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.building_blocks.application.pagination import (
+    PaginatedResult,
+    Pagination,
+    decode_cursor,
+    encode_cursor,
+)
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
 from src.modules.media.domain.value_objects import FilePath, MovieId
@@ -135,6 +141,63 @@ class SQLAlchemyMovieRepository(MovieRepository):
         models = result.scalars().all()
 
         return [MovieMapper.to_entity(model) for model in models]
+
+    async def list_paginated(
+        self,
+        cursor: str | None,
+        limit: int,
+        *,
+        include_total: bool = False,
+    ) -> PaginatedResult[Movie]:
+        """List movies in a single cursor-paginated page.
+
+        Sorted by ``id DESC`` so the most recently inserted rows
+        appear first. Internal autoincrement id is monotonic with
+        insertion and matches "newest by ``created_at``" in practice
+        because ``created_at`` is server-generated on insert and never
+        edited later — see ``building_blocks/application/pagination.py``
+        for the full justification.
+
+        Soft-deleted rows are filtered out the same way as ``list_all``.
+        Fetches ``limit + 1`` rows to detect ``has_more`` cheaply
+        without an extra query.
+        """
+        decoded = decode_cursor(cursor)
+
+        stmt = (
+            select(MovieModel)
+            .where(MovieModel.deleted_at.is_(None))
+            .options(selectinload(MovieModel.file_variants))
+        )
+
+        if decoded is not None:
+            stmt = stmt.where(MovieModel.id < decoded.id)
+
+        stmt = stmt.order_by(MovieModel.id.desc()).limit(limit + 1)
+
+        result = await self._session.execute(stmt)
+        models = list(result.scalars().all())
+
+        has_more = len(models) > limit
+        if has_more:
+            models = models[:limit]
+
+        next_cursor: str | None = None
+        if has_more and models:
+            next_cursor = encode_cursor(models[-1].id)
+
+        total_count: int | None = None
+        if include_total:
+            count_stmt = (
+                select(func.count()).select_from(MovieModel).where(MovieModel.deleted_at.is_(None))
+            )
+            total_count = (await self._session.execute(count_stmt)).scalar_one()
+
+        return PaginatedResult(
+            items=[MovieMapper.to_entity(m) for m in models],
+            pagination=Pagination(next_cursor=next_cursor, has_more=has_more),
+            total_count=total_count,
+        )
 
     async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Movie]:
         """Return random movies."""

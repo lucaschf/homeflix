@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
+from src.building_blocks.application.pagination import PaginatedResult
 from src.modules.media.domain.entities.series import Series
 from src.modules.media.domain.value_objects import EpisodeId, FilePath, SeriesId, Title
 
@@ -56,6 +57,43 @@ class SeriesRepository(ABC):
 
         Returns:
             Sequence of all series.
+        """
+        ...
+
+    @abstractmethod
+    async def list_paginated(
+        self,
+        cursor: str | None,
+        limit: int,
+        *,
+        include_total: bool = False,
+    ) -> PaginatedResult[Series]:
+        """List series in a single page using cursor-based pagination.
+
+        Sorted by ``id DESC`` so the most recently inserted rows
+        appear first. Internal autoincrement id is monotonic with
+        insertion and matches "newest by ``created_at``" in practice
+        because ``created_at`` is server-generated on insert and never
+        edited later. The cursor snapshots only the ``id`` of the last
+        row of the previous page. See
+        ``src/building_blocks/application/pagination.py`` for the
+        full justification (and the SQLite ``func.now()`` precision
+        quirk that ruled out a ``(created_at, id)`` composite cursor).
+
+        Args:
+            cursor: Opaque token from the previous page's
+                ``next_cursor``, or ``None`` for the first page.
+                Invalid / undecodable cursors silently fall back to
+                the first page.
+            limit: Page size. Callers should clamp this in the route.
+            include_total: When ``True`` the implementation runs an
+                extra ``COUNT(*)`` to populate
+                ``PaginatedResult.total_count``. Defaults to ``False``.
+
+        Returns:
+            ``PaginatedResult`` containing the page items, the
+            ``Pagination`` (next_cursor + has_more), and the optional
+            total count.
         """
         ...
 

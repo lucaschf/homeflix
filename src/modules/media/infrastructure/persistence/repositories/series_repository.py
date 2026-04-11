@@ -3,10 +3,16 @@
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.building_blocks.application.pagination import (
+    PaginatedResult,
+    Pagination,
+    decode_cursor,
+    encode_cursor,
+)
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import EpisodeId, FilePath, SeasonId, SeriesId, Title
@@ -161,6 +167,63 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         models = result.scalars().all()
 
         return [SeriesMapper.to_entity(model) for model in models]
+
+    async def list_paginated(
+        self,
+        cursor: str | None,
+        limit: int,
+        *,
+        include_total: bool = False,
+    ) -> PaginatedResult[Series]:
+        """List series in a single cursor-paginated page.
+
+        Sorted by ``id DESC`` so the most recently inserted rows appear
+        first — see the building-block docstring and the matching
+        ``MovieRepository.list_paginated`` for the full justification.
+        Soft-deleted rows are filtered out the same way as ``list_all``.
+        Fetches ``limit + 1`` rows to detect ``has_more`` cheaply
+        without an extra query. The full season / episode hierarchy is
+        loaded via the same options as ``list_all``; if that turns out
+        to be a perf issue we'll add a shallow variant later.
+        """
+        decoded = decode_cursor(cursor)
+
+        stmt = (
+            select(SeriesModel)
+            .where(SeriesModel.deleted_at.is_(None))
+            .options(*self._series_load_options())
+        )
+
+        if decoded is not None:
+            stmt = stmt.where(SeriesModel.id < decoded.id)
+
+        stmt = stmt.order_by(SeriesModel.id.desc()).limit(limit + 1)
+
+        result = await self._session.execute(stmt)
+        models = list(result.scalars().all())
+
+        has_more = len(models) > limit
+        if has_more:
+            models = models[:limit]
+
+        next_cursor: str | None = None
+        if has_more and models:
+            next_cursor = encode_cursor(models[-1].id)
+
+        total_count: int | None = None
+        if include_total:
+            count_stmt = (
+                select(func.count())
+                .select_from(SeriesModel)
+                .where(SeriesModel.deleted_at.is_(None))
+            )
+            total_count = (await self._session.execute(count_stmt)).scalar_one()
+
+        return PaginatedResult(
+            items=[SeriesMapper.to_entity(m) for m in models],
+            pagination=Pagination(next_cursor=next_cursor, has_more=has_more),
+            total_count=total_count,
+        )
 
     async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Series]:
         """Return random series."""

@@ -1,4 +1,4 @@
-"""ListSeriesUseCase - List all series in the library."""
+"""ListSeriesUseCase - List series in the library, paginated."""
 
 from src.modules.media.application.dtos.series_dtos import (
     ListSeriesInput,
@@ -10,16 +10,20 @@ from src.modules.media.domain.repositories import SeriesRepository
 
 
 class ListSeriesUseCase:
-    """List all series in the library.
+    """List one page of series using cursor-based pagination.
 
-    Returns a list of series summaries suitable for grid/list display.
-    Does not include full episode hierarchy for performance.
+    Delegates the page query to ``SeriesRepository.list_paginated`` and
+    converts the resulting ``Series`` entities into
+    ``SeriesSummaryOutput`` DTOs. The cursor is passed through
+    opaquely.
 
     Example:
         >>> use_case = ListSeriesUseCase(series_repository)
         >>> result = await use_case.execute(ListSeriesInput())
         >>> len(result.series)
-        15
+        20
+        >>> result.has_more
+        True
     """
 
     def __init__(self, series_repository: SeriesRepository) -> None:
@@ -34,21 +38,25 @@ class ListSeriesUseCase:
         """Execute the use case.
 
         Args:
-            input_dto: Contains optional limit.
+            input_dto: ``cursor`` (opaque), ``limit``, ``include_total``,
+                and ``lang``.
 
         Returns:
-            ListSeriesOutput with series summaries.
+            ``ListSeriesOutput`` with the page items, the next cursor,
+            ``has_more``, and an optional ``total_count`` (only when
+            ``include_total=True``).
         """
-        all_series = await self._series_repository.list_all()
-
-        total_count = len(all_series)
-
-        if input_dto.limit is not None:
-            all_series = all_series[: input_dto.limit]
+        page = await self._series_repository.list_paginated(
+            cursor=input_dto.cursor,
+            limit=input_dto.limit,
+            include_total=input_dto.include_total,
+        )
 
         return ListSeriesOutput(
-            series=[self._to_summary(s, input_dto.lang) for s in all_series],
-            total_count=total_count,
+            series=[self._to_summary(s, input_dto.lang) for s in page.items],
+            next_cursor=page.pagination.next_cursor,
+            has_more=page.pagination.has_more,
+            total_count=page.total_count,
         )
 
     @staticmethod
