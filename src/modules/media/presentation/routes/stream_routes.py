@@ -6,6 +6,7 @@ Segment endpoints use a path-hash scheme so they never touch the
 database — only the initial playlist request needs a DB lookup.
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -20,6 +21,7 @@ from src.modules.media.application.dtos.series_dtos import GetSeriesByIdInput
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.infrastructure.streaming.hls_service import (
+    SUB_PATH_RE,
     HlsService,
     media_type_for,
     rewrite_m3u8,
@@ -27,6 +29,12 @@ from src.modules.media.infrastructure.streaming.hls_service import (
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeResult
 
 _logger = logging.getLogger(__name__)
+
+# Hard cap on how long the file route will park a request waiting for
+# a background subtitle extraction. Must comfortably exceed the per-track
+# ffmpeg timeout in HlsService so the player gets the .vtt instead of a
+# 404 when it picks a slow track right after playback starts.
+_SUBTITLE_WAIT_TIMEOUT = 60.0
 
 router = APIRouter(prefix="/api/v1/stream", tags=["Streaming"])
 
@@ -102,8 +110,19 @@ async def hls_file(
     """Serve any HLS file (segment, sub-playlist, VTT) by cache hash.
 
     For .m3u8 files, rewrites relative references to absolute URLs.
-    No database access needed.
+    Subtitle requests block on the matching readiness event so the
+    player gets the .vtt as soon as ffmpeg finishes extracting it,
+    instead of getting an early 404 and giving up. No database access
+    needed.
     """
+    sub_match = SUB_PATH_RE.match(file_path)
+    if sub_match:
+        sub_index = int(sub_match.group(1))
+        # Offload the blocking Event.wait so we don't pin an event
+        # loop thread for tens of seconds while ffmpeg is still
+        # demuxing the source container.
+        await asyncio.to_thread(hls.wait_for_subtitle, path_hash, sub_index, _SUBTITLE_WAIT_TIMEOUT)
+
     resolved = hls.get_file_by_hash(path_hash, file_path)
     if not resolved:
         raise HTTPException(status_code=404, detail="File not found")

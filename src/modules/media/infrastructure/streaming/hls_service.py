@@ -41,6 +41,7 @@ from src.modules.media.infrastructure.streaming.media_probe_service import (
     MediaProbeResult,
     MediaProbeService,
 )
+from src.shared_kernel.value_objects.tracks import SubtitleTrack
 
 _logger = logging.getLogger(__name__)
 
@@ -74,6 +75,9 @@ _RELATIVE_REF_RE = re.compile(
 )
 # Matches URI="..." with relative paths only (skip absolute/protocol URIs)
 _URI_ATTR_RE = re.compile(r'URI="(?!https?://)(?!/)([^"]+)"')
+# Identifies cache-relative paths under a sub_<index>/ directory so route
+# handlers can wait on the right per-subtitle extraction event.
+SUB_PATH_RE = re.compile(r"^sub_(\d+)/")
 
 _MEDIA_TYPES: dict[str, str] = {
     ".m3u8": "application/vnd.apple.mpegurl",
@@ -130,6 +134,11 @@ class HlsService:
         # (playlist request OR segment fetch). The eviction loop reads
         # this to decide which ffmpeg processes are idle.
         self._last_access: dict[str, float] = {}
+        # path_hash → {subtitle_index: Event}. Set when a subtitle's
+        # background extraction finishes (success or failure). The file
+        # route uses these to block its response until the requested
+        # subtitle is on disk, instead of returning a premature 404.
+        self._subtitle_events: dict[str, dict[int, threading.Event]] = {}
         self._lock = threading.Lock()
         self._idle_timeout = idle_timeout
         if enable_eviction:
@@ -250,6 +259,33 @@ class HlsService:
                 return content
         return None
 
+    def wait_for_subtitle(
+        self,
+        path_hash: str,
+        sub_index: int,
+        timeout: float,
+    ) -> bool:
+        """Block until a specific subtitle has finished extracting.
+
+        Args:
+            path_hash: Cache bucket hash returned by ``get_path_hash``.
+            sub_index: Track index used to build ``sub_<index>/`` on disk.
+            timeout: Max seconds to block. Should be longer than the
+                worst-case ffmpeg subtitle extraction so the player gets
+                the .vtt instead of a 404.
+
+        Returns:
+            ``True`` if the readiness event fired (extraction is done),
+            or if the subtitle isn't being tracked at all (caller should
+            fall through to a normal filesystem lookup). ``False`` only
+            when the timeout elapsed before extraction completed.
+        """
+        with self._lock:
+            event = self._subtitle_events.get(path_hash, {}).get(sub_index)
+        if event is None:
+            return True
+        return event.wait(timeout)
+
     def get_cached_tracks(self, path_hash: str) -> dict[str, Any] | None:
         """Get cached probe result from tracks.json."""
         tracks_file = self._cache_dir / path_hash / "tracks.json"
@@ -362,12 +398,20 @@ class HlsService:
         return procs[0] if procs else None
 
     def _kill_processes(self, path_hash: str) -> None:
-        """Kill all running FFmpeg processes for a path hash."""
+        """Kill all running FFmpeg processes for a path hash.
+
+        Also releases any waiters parked on subtitle readiness events for
+        this bucket so they don't block their full timeout after we've
+        already torn down the cache.
+        """
         with self._lock:
             for proc in self._processes.pop(path_hash, []):
                 if proc.poll() is None:
                     proc.kill()
             self._last_access.pop(path_hash, None)
+            events = self._subtitle_events.pop(path_hash, {})
+        for event in events.values():
+            event.set()
 
     def _handle_generation_failure(
         self,
@@ -400,6 +444,16 @@ class HlsService:
 
         # Probe outside the lock (potentially slow I/O)
         probe_result = self._probe.probe(safe_path)
+
+        # Pick the subtitles we'll actually try to convert. Image-based
+        # tracks (PGS, VOBSUB) and externals without a resolved file path
+        # are filtered out so we don't create dangling readiness events
+        # the file route would block on indefinitely.
+        text_subs: list[SubtitleTrack] = [
+            s
+            for s in probe_result.all_subtitles
+            if s.is_text_based and (not s.is_external or s.file_path is not None)
+        ]
 
         with self._lock:
             # Re-check after acquiring lock
@@ -446,14 +500,35 @@ class HlsService:
                 )
                 procs.append(self._spawn_ffmpeg(cmd))
 
-            # 3. Extract subtitles to WebVTT (synchronous, fast)
-            self._extract_subtitles(safe_path, output_dir, probe_result, start_seconds)
-
-            # 4. Build master playlist
+            # 3. Build master playlist now — it references sub_N/playlist.m3u8
+            # paths that get filled in by the background subtitle extraction
+            # below. The player only fetches those URIs when the user enables
+            # a subtitle (all entries are emitted as DEFAULT=NO,AUTOSELECT=NO),
+            # so racing them against playback start is safe.
             self._build_master_playlist(output_dir, probe_result)
+
+            # 4. Pre-create per-subtitle readiness events. They MUST be
+            # registered before _start_generation returns so the file
+            # route can find them the instant the player picks a track.
+            if text_subs:
+                self._subtitle_events[path_hash] = {
+                    sub.index: threading.Event() for sub in text_subs
+                }
 
             self._processes[path_hash] = procs
             self._last_access[path_hash] = time.monotonic()
+
+        # 5. Extract each subtitle in its own background thread. Running
+        # them in parallel (instead of one big serial thread) means a
+        # user-selected subtitle only waits for its own ffmpeg, not for
+        # every other track that happens to be earlier in the list.
+        for sub in text_subs:
+            threading.Thread(
+                target=self._extract_one_subtitle,
+                args=(safe_path, output_dir, sub, start_seconds, path_hash),
+                daemon=True,
+                name=f"hls-sub-{path_hash[:8]}-{sub.index}",
+            ).start()
 
         return path_hash
 
@@ -614,96 +689,84 @@ class HlsService:
 
     # -- Private: subtitle extraction ------------------------------------------
 
-    @staticmethod
-    def _extract_subtitles(
+    def _extract_one_subtitle(
+        self,
         file_path: str,
         output_dir: Path,
-        probe: MediaProbeResult,
-        start_seconds: float = 0.0,
+        track: SubtitleTrack,
+        start_seconds: float,
+        path_hash: str,
     ) -> None:
-        """Extract text-based subtitles to WebVTT files.
+        """Extract a single text-based subtitle to WebVTT.
+
+        Runs ffmpeg synchronously and signals the readiness Event for this
+        track in ``self._subtitle_events`` from a ``finally`` block, so any
+        route handler waiting on it always unblocks (even on ffmpeg failure
+        or timeout) and gets a chance to respond — typically with a 404 if
+        extraction never produced a file.
 
         When ``start_seconds > 0``, ``-ss`` is applied so subtitle timestamps
         are rebased to match the trimmed video output (both start at 0).
         """
-        ss_args = ["-ss", str(start_seconds)] if start_seconds > 0 else []
-
-        for track in probe.subtitle_tracks:
-            if not track.is_text_based:
-                _logger.info(
-                    "Skipping image-based subtitle track %d (%s)",
-                    track.index,
-                    track.format,
-                )
-                continue
-
+        try:
             sub_dir = output_dir / f"sub_{track.index}"
             sub_dir.mkdir(exist_ok=True)
             vtt_path = sub_dir / "sub.vtt"
+            ss_args = ["-ss", str(start_seconds)] if start_seconds > 0 else []
+
+            if track.is_external:
+                if track.file_path is None:
+                    return
+                input_arg = track.file_path.value
+                cmd = [
+                    "ffmpeg",
+                    *ss_args,
+                    "-i",
+                    input_arg,
+                    "-c:s",
+                    "webvtt",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    str(vtt_path),
+                ]
+                log_label = f"external subtitle {input_arg}"
+            else:
+                cmd = [
+                    "ffmpeg",
+                    *ss_args,
+                    "-i",
+                    file_path,
+                    "-map",
+                    f"0:s:{track.index}",
+                    "-c:s",
+                    "webvtt",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    str(vtt_path),
+                ]
+                log_label = f"subtitle track {track.index}"
 
             try:
                 subprocess.run(
-                    [
-                        "ffmpeg",
-                        *ss_args,
-                        "-i",
-                        file_path,
-                        "-map",
-                        f"0:s:{track.index}",
-                        "-c:s",
-                        "webvtt",
-                        "-loglevel",
-                        "error",
-                        "-y",
-                        str(vtt_path),
-                    ],
+                    cmd,
                     **SUBPROCESS_TEXT_KWARGS,
                     check=False,
-                    timeout=60,
+                    timeout=120,
                 )
                 if vtt_path.is_file():
                     _write_subtitle_playlist(sub_dir)
-                    _logger.info("Extracted subtitle track %d to %s", track.index, vtt_path)
+                    _logger.info("Extracted %s to %s", log_label, vtt_path)
                 else:
-                    _logger.warning("Failed to extract subtitle track %d", track.index)
+                    _logger.warning("Failed to extract %s", log_label)
             except subprocess.TimeoutExpired:
-                _logger.warning("Subtitle extraction timed out for track %d", track.index)
-
-        for track in probe.external_subtitles:
-            if not track.is_text_based or not track.file_path:
-                continue
-
-            sub_dir = output_dir / f"sub_{track.index}"
-            sub_dir.mkdir(exist_ok=True)
-            vtt_path = sub_dir / "sub.vtt"
-
-            try:
-                subprocess.run(
-                    [
-                        "ffmpeg",
-                        *ss_args,
-                        "-i",
-                        track.file_path.value,
-                        "-c:s",
-                        "webvtt",
-                        "-loglevel",
-                        "error",
-                        "-y",
-                        str(vtt_path),
-                    ],
-                    **SUBPROCESS_TEXT_KWARGS,
-                    check=False,
-                    timeout=60,
-                )
-                if vtt_path.is_file():
-                    _write_subtitle_playlist(sub_dir)
-                    _logger.info(
-                        "Converted external subtitle %s to %s",
-                        track.file_path.value,
-                        vtt_path,
-                    )
-            except subprocess.TimeoutExpired:
-                _logger.warning("External subtitle conversion timed out for %s", track.file_path)
+                _logger.warning("Extraction timed out for %s", log_label)
+        finally:
+            with self._lock:
+                event = self._subtitle_events.get(path_hash, {}).get(track.index)
+            if event is not None:
+                event.set()
 
     # -- Private: master playlist ----------------------------------------------
 
