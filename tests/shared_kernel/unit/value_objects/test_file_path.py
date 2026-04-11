@@ -4,6 +4,7 @@
 import pytest
 
 from src.building_blocks.domain.errors import DomainValidationException
+from src.shared_kernel.value_objects import FilePath
 
 
 class TestFilePathCreation:
@@ -114,28 +115,42 @@ class TestFilePathProperties:
         # Platform-independent check
         assert file_path.directory.endswith("action") or "movies" in file_path.directory
 
-    def test_filename_should_work_with_windows_path(self):
-        from src.modules.media.domain.value_objects import FilePath
+    @pytest.mark.parametrize(
+        ("path", "expected_filename", "expected_extension", "directory_contains"),
+        [
+            (
+                "C:\\Movies\\action\\inception.mkv",
+                "inception.mkv",
+                ".mkv",
+                ["action", "Movies"],
+            ),
+            (
+                "D:\\Media\\series\\show.mp4",
+                "show.mp4",
+                ".mp4",
+                ["series", "Media"],
+            ),
+            (
+                "C:\\Movies\\no_extension",
+                "no_extension",
+                "",
+                ["Movies"],
+            ),
+        ],
+    )
+    def test_windows_path_properties(
+        self,
+        path: str,
+        expected_filename: str,
+        expected_extension: str,
+        directory_contains: list[str],
+    ) -> None:
+        file_path = FilePath(path)
 
-        file_path = FilePath("C:\\Movies\\action\\inception.mkv")
-
-        assert file_path.filename == "inception.mkv"
-
-    def test_extension_should_work_with_windows_path(self):
-        from src.modules.media.domain.value_objects import FilePath
-
-        file_path = FilePath("C:\\Movies\\inception.mkv")
-
-        assert file_path.extension == ".mkv"
-
-    def test_directory_should_work_with_windows_path(self):
-        from src.modules.media.domain.value_objects import FilePath
-
-        file_path = FilePath("C:\\Movies\\action\\inception.mkv")
-
-        # PureWindowsPath parent for this path is C:\Movies\action
-        assert "action" in file_path.directory
-        assert "Movies" in file_path.directory
+        assert file_path.filename == expected_filename
+        assert file_path.extension == expected_extension
+        for segment in directory_contains:
+            assert segment in file_path.directory
 
 
 class TestFilePathEquality:
