@@ -215,17 +215,21 @@ class HlsService:
 
         await asyncio.to_thread(self._start_generation, file_path, start_seconds)
 
-        video_dir = self._cache_dir / path_hash / _VIDEO_DIR
+        video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
         min_segments = _MIN_SEGMENTS_WITH_SEEK if start_seconds > 0 else _MIN_SEGMENTS_FRESH
         attempts = int(_POLL_TIMEOUT / _POLL_INTERVAL)
         for _ in range(attempts):
-            if video_dir.is_dir():
-                # Count actual segment files on disk; this is more reliable
-                # than parsing the playlist (ffmpeg writes the playlist
-                # incrementally, so it may briefly contain dangling refs).
-                segment_count = sum(1 for _f in video_dir.glob("segment_*.ts"))
-                if segment_count >= min_segments:
-                    return path_hash
+            if video_playlist.is_file():
+                try:
+                    content = video_playlist.read_text(encoding="utf-8")
+                    # Count #EXTINF directives — these are only added by
+                    # ffmpeg AFTER a segment is fully written and renamed,
+                    # so anything counted here is safe to serve.
+                    extinf_count = content.count("#EXTINF:")
+                    if extinf_count >= min_segments:
+                        return path_hash
+                except OSError:
+                    pass
 
             main_proc = self._get_main_process(path_hash)
             if main_proc and main_proc.poll() is not None:
@@ -461,6 +465,11 @@ class HlsService:
                 "0",
                 "-hls_playlist_type",
                 "event",
+                # temp_file: write each segment to .ts.tmp and rename to .ts
+                # only after it's fully written. Prevents the player from
+                # racing the encoder and grabbing partial bytes.
+                "-hls_flags",
+                "temp_file",
                 "-hls_segment_filename",
                 str(output_dir / "segment_%04d.ts"),
                 "-loglevel",
@@ -507,6 +516,8 @@ class HlsService:
                 "0",
                 "-hls_playlist_type",
                 "event",
+                "-hls_flags",
+                "temp_file",
                 "-hls_segment_filename",
                 str(output_dir / "segment_%04d.ts"),
                 "-loglevel",
