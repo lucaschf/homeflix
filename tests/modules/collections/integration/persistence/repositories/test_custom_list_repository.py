@@ -9,13 +9,17 @@ from src.modules.collections.infrastructure.persistence.repositories import (
 )
 from src.shared_kernel.value_objects import CollectionMediaType
 
+SAMPLE_MOVIE_ID = "mov_abc123def456"
+MISSING_LIST_ID = "lst_nonexistent00"
+MISSING_ITEM_ID = "mov_notinlist0000"
+
 
 def _create_list(name: str = "Test List") -> CustomList:
     return CustomList.create(name=name)
 
 
 def _create_item(
-    media_id: str = "mov_abc123def456",
+    media_id: str = SAMPLE_MOVIE_ID,
     media_type: CollectionMediaType = CollectionMediaType.MOVIE,
     position: int = 0,
 ) -> CustomListItem:
@@ -56,7 +60,7 @@ class TestSQLAlchemyCustomListRepositoryCRUD:
     ) -> None:
         repo = SQLAlchemyCustomListRepository(db_session)
 
-        found = await repo.find_by_id("lst_nonexistent00")
+        found = await repo.find_by_id(MISSING_LIST_ID)
 
         assert found is None
 
@@ -123,7 +127,7 @@ class TestSQLAlchemyCustomListRepositoryCRUD:
     ) -> None:
         repo = SQLAlchemyCustomListRepository(db_session)
 
-        removed = await repo.remove("lst_nonexistent00")
+        removed = await repo.remove(MISSING_LIST_ID)
 
         assert removed is False
 
@@ -194,26 +198,26 @@ class TestSQLAlchemyCustomListRepositoryItems:
         item = _create_item()
 
         with pytest.raises(ValueError, match="not found"):
-            await repo.add_item("lst_nonexistent00", item)
+            await repo.add_item(MISSING_LIST_ID, item)
 
     async def test_find_item_should_return_item(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyCustomListRepository(db_session)
         custom_list = _create_list()
         await repo.add(custom_list)
-        item = _create_item(media_id="mov_abc123def456")
+        item = _create_item(media_id=SAMPLE_MOVIE_ID)
         await repo.add_item(str(custom_list.id), item)
 
-        found = await repo.find_item(str(custom_list.id), "mov_abc123def456")
+        found = await repo.find_item(str(custom_list.id), SAMPLE_MOVIE_ID)
 
         assert found is not None
-        assert found.media_id == "mov_abc123def456"
+        assert found.media_id == SAMPLE_MOVIE_ID
 
     async def test_find_item_should_return_none_when_list_not_found(
         self, db_session: AsyncSession
     ) -> None:
         repo = SQLAlchemyCustomListRepository(db_session)
 
-        found = await repo.find_item("lst_nonexistent00", "mov_abc123def456")
+        found = await repo.find_item(MISSING_LIST_ID, SAMPLE_MOVIE_ID)
 
         assert found is None
 
@@ -224,7 +228,7 @@ class TestSQLAlchemyCustomListRepositoryItems:
         custom_list = _create_list()
         await repo.add(custom_list)
 
-        found = await repo.find_item(str(custom_list.id), "mov_notinlist0000")
+        found = await repo.find_item(str(custom_list.id), MISSING_ITEM_ID)
 
         assert found is None
 
@@ -232,13 +236,13 @@ class TestSQLAlchemyCustomListRepositoryItems:
         repo = SQLAlchemyCustomListRepository(db_session)
         custom_list = _create_list()
         await repo.add(custom_list)
-        item = _create_item(media_id="mov_abc123def456")
+        item = _create_item(media_id=SAMPLE_MOVIE_ID)
         await repo.add_item(str(custom_list.id), item)
 
-        removed = await repo.remove_item(str(custom_list.id), "mov_abc123def456")
+        removed = await repo.remove_item(str(custom_list.id), SAMPLE_MOVIE_ID)
 
         assert removed is True
-        found = await repo.find_item(str(custom_list.id), "mov_abc123def456")
+        found = await repo.find_item(str(custom_list.id), SAMPLE_MOVIE_ID)
         assert found is None
 
     async def test_remove_item_should_return_false_when_not_found(
@@ -248,7 +252,7 @@ class TestSQLAlchemyCustomListRepositoryItems:
         custom_list = _create_list()
         await repo.add(custom_list)
 
-        removed = await repo.remove_item(str(custom_list.id), "mov_notinlist0000")
+        removed = await repo.remove_item(str(custom_list.id), MISSING_ITEM_ID)
 
         assert removed is False
 
@@ -284,7 +288,7 @@ class TestSQLAlchemyCustomListRepositoryItems:
     ) -> None:
         repo = SQLAlchemyCustomListRepository(db_session)
 
-        items = await repo.list_items("lst_nonexistent00")
+        items = await repo.list_items(MISSING_LIST_ID)
 
         assert items == []
 
@@ -321,7 +325,7 @@ class TestSQLAlchemyCustomListRepositoryItems:
     ) -> None:
         repo = SQLAlchemyCustomListRepository(db_session)
 
-        position = await repo.get_next_position("lst_nonexistent00")
+        position = await repo.get_next_position(MISSING_LIST_ID)
 
         assert position == 0
 
@@ -329,12 +333,12 @@ class TestSQLAlchemyCustomListRepositoryItems:
         repo = SQLAlchemyCustomListRepository(db_session)
         custom_list = _create_list()
         await repo.add(custom_list)
-        original_item = _create_item(media_id="mov_abc123def456", position=0)
+        original_item = _create_item(media_id=SAMPLE_MOVIE_ID, position=0)
         await repo.add_item(str(custom_list.id), original_item)
-        await repo.remove_item(str(custom_list.id), "mov_abc123def456")
+        await repo.remove_item(str(custom_list.id), SAMPLE_MOVIE_ID)
 
-        new_item = _create_item(media_id="mov_abc123def456", position=5)
+        new_item = _create_item(media_id=SAMPLE_MOVIE_ID, position=5)
         restored = await repo.add_item(str(custom_list.id), new_item)
 
-        assert restored.media_id == "mov_abc123def456"
+        assert restored.media_id == SAMPLE_MOVIE_ID
         assert restored.position == 5

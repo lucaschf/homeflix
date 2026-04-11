@@ -9,9 +9,11 @@ from src.modules.collections.infrastructure.persistence.repositories import (
 )
 from src.shared_kernel.value_objects import CollectionMediaType
 
+SAMPLE_MOVIE_ID = "mov_abc123def456"
+
 
 def _create_item(
-    media_id: str = "mov_abc123def456",
+    media_id: str = SAMPLE_MOVIE_ID,
     media_type: CollectionMediaType = CollectionMediaType.MOVIE,
 ) -> WatchlistItem:
     return WatchlistItem.create(media_id=media_id, media_type=media_type)
@@ -32,31 +34,31 @@ class TestSQLAlchemyWatchlistRepository:
 
     async def test_find_by_media_id_should_return_item(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyWatchlistRepository(db_session)
-        item = _create_item(media_id="mov_abc123def456")
+        item = _create_item(media_id=SAMPLE_MOVIE_ID)
         await repo.add(item)
 
-        found = await repo.find_by_media_id("mov_abc123def456")
+        found = await repo.find_by_media_id(SAMPLE_MOVIE_ID)
 
         assert found is not None
-        assert found.media_id == "mov_abc123def456"
+        assert found.media_id == SAMPLE_MOVIE_ID
 
     async def test_find_by_media_id_should_return_none_when_not_found(
         self, db_session: AsyncSession
     ) -> None:
         repo = SQLAlchemyWatchlistRepository(db_session)
 
-        found = await repo.find_by_media_id("mov_abc123def456")
+        found = await repo.find_by_media_id(SAMPLE_MOVIE_ID)
 
         assert found is None
 
     async def test_remove_should_soft_delete(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyWatchlistRepository(db_session)
-        await repo.add(_create_item(media_id="mov_abc123def456"))
+        await repo.add(_create_item(media_id=SAMPLE_MOVIE_ID))
 
-        removed = await repo.remove("mov_abc123def456")
+        removed = await repo.remove(SAMPLE_MOVIE_ID)
 
         assert removed is True
-        found = await repo.find_by_media_id("mov_abc123def456")
+        found = await repo.find_by_media_id(SAMPLE_MOVIE_ID)
         assert found is None
 
     async def test_remove_should_return_false_when_not_found(
@@ -64,22 +66,22 @@ class TestSQLAlchemyWatchlistRepository:
     ) -> None:
         repo = SQLAlchemyWatchlistRepository(db_session)
 
-        removed = await repo.remove("mov_abc123def456")
+        removed = await repo.remove(SAMPLE_MOVIE_ID)
 
         assert removed is False
 
     async def test_exists_should_return_true_when_present(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyWatchlistRepository(db_session)
-        await repo.add(_create_item(media_id="mov_abc123def456"))
+        await repo.add(_create_item(media_id=SAMPLE_MOVIE_ID))
 
-        exists = await repo.exists("mov_abc123def456")
+        exists = await repo.exists(SAMPLE_MOVIE_ID)
 
         assert exists is True
 
     async def test_exists_should_return_false_when_absent(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyWatchlistRepository(db_session)
 
-        exists = await repo.exists("mov_abc123def456")
+        exists = await repo.exists(SAMPLE_MOVIE_ID)
 
         assert exists is False
 
@@ -87,10 +89,10 @@ class TestSQLAlchemyWatchlistRepository:
         self, db_session: AsyncSession
     ) -> None:
         repo = SQLAlchemyWatchlistRepository(db_session)
-        await repo.add(_create_item(media_id="mov_abc123def456"))
-        await repo.remove("mov_abc123def456")
+        await repo.add(_create_item(media_id=SAMPLE_MOVIE_ID))
+        await repo.remove(SAMPLE_MOVIE_ID)
 
-        exists = await repo.exists("mov_abc123def456")
+        exists = await repo.exists(SAMPLE_MOVIE_ID)
 
         assert exists is False
 
@@ -127,15 +129,15 @@ class TestSQLAlchemyWatchlistRepository:
 
     async def test_add_should_restore_soft_deleted(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyWatchlistRepository(db_session)
-        await repo.add(_create_item(media_id="mov_abc123def456"))
-        await repo.remove("mov_abc123def456")
+        await repo.add(_create_item(media_id=SAMPLE_MOVIE_ID))
+        await repo.remove(SAMPLE_MOVIE_ID)
 
         # Re-add the same media_id
-        restored = await repo.add(_create_item(media_id="mov_abc123def456"))
+        restored = await repo.add(_create_item(media_id=SAMPLE_MOVIE_ID))
 
-        assert restored.media_id == "mov_abc123def456"
+        assert restored.media_id == SAMPLE_MOVIE_ID
         # Should be findable again
-        found = await repo.find_by_media_id("mov_abc123def456")
+        found = await repo.find_by_media_id(SAMPLE_MOVIE_ID)
         assert found is not None
 
     async def test_should_handle_series_type(self, db_session: AsyncSession) -> None:
