@@ -48,6 +48,13 @@ _POLL_INTERVAL = 0.5  # seconds between readiness checks
 _POLL_TIMEOUT = 120  # max seconds to wait for first segment
 _BROWSER_SAFE_CODECS = {"h264"}
 
+# Number of segments ffmpeg must produce before ensure_playlist returns.
+# When start_seconds > 0 we wait for more segments to give ffmpeg a head
+# start over the player, since the player begins consuming from the same
+# source position the encoder is writing to (no natural buffer build-up).
+_MIN_SEGMENTS_FRESH = 1
+_MIN_SEGMENTS_WITH_SEEK = 3
+
 _VIDEO_DIR = "video"
 
 # -- Playlist rewriting utilities (used by routes) ----------------------------
@@ -208,16 +215,17 @@ class HlsService:
 
         await asyncio.to_thread(self._start_generation, file_path, start_seconds)
 
-        video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
+        video_dir = self._cache_dir / path_hash / _VIDEO_DIR
+        min_segments = _MIN_SEGMENTS_WITH_SEEK if start_seconds > 0 else _MIN_SEGMENTS_FRESH
         attempts = int(_POLL_TIMEOUT / _POLL_INTERVAL)
         for _ in range(attempts):
-            if video_playlist.is_file():
-                try:
-                    content = video_playlist.read_text(encoding="utf-8")
-                    if "segment_" in content:
-                        return path_hash
-                except OSError:
-                    pass
+            if video_dir.is_dir():
+                # Count actual segment files on disk; this is more reliable
+                # than parsing the playlist (ffmpeg writes the playlist
+                # incrementally, so it may briefly contain dangling refs).
+                segment_count = sum(1 for _f in video_dir.glob("segment_*.ts"))
+                if segment_count >= min_segments:
+                    return path_hash
 
             main_proc = self._get_main_process(path_hash)
             if main_proc and main_proc.poll() is not None:
@@ -412,8 +420,8 @@ class HlsService:
         """Build FFmpeg command for video + default audio.
 
         When ``start_seconds > 0``, ``-ss`` is placed before ``-i`` so FFmpeg
-        seeks in the source demuxer (fast seek to the nearest keyframe).
-        Output timestamps are reset so the produced HLS starts at 0.
+        does a fast demuxer-level seek to the nearest keyframe before the
+        requested position.
         """
         codec = self._probe_video_codec(file_path)
         needs_transcode = codec not in _BROWSER_SAFE_CODECS
@@ -447,8 +455,6 @@ class HlsService:
                 "2",
                 "-ar",
                 "48000",
-                "-avoid_negative_ts",
-                "make_zero",
                 "-hls_time",
                 str(_SEGMENT_DURATION),
                 "-hls_list_size",
@@ -495,8 +501,6 @@ class HlsService:
                 "2",
                 "-ar",
                 "48000",
-                "-avoid_negative_ts",
-                "make_zero",
                 "-hls_time",
                 str(_SEGMENT_DURATION),
                 "-hls_list_size",

@@ -369,15 +369,6 @@ class TestHlsServiceBuildVideoCmd:
         assert ss_idx < i_idx, "-ss must come before -i for fast seek"
         assert cmd[ss_idx + 1] == "5400.0"
 
-    def test_should_include_avoid_negative_ts_flag(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
-        probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
-
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
-
-        assert "-avoid_negative_ts" in cmd
-
 
 @pytest.mark.unit
 class TestHlsServiceBuildMasterPlaylist:
