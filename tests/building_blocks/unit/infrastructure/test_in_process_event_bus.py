@@ -46,55 +46,68 @@ class FailingHandler(EventHandler):
 
 @pytest.mark.unit
 class TestInProcessEventBusSubscribe:
-    """Tests for subscribe."""
+    """Tests for subscribe observed through publish behavior."""
 
-    def test_should_register_single_handler(self) -> None:
+    @pytest.mark.asyncio
+    async def test_subscribed_handler_should_receive_published_event(self) -> None:
         bus = InProcessEventBus()
         handler = RecordingHandler()
 
         bus.subscribe(FakeEvent, handler)
+        await bus.publish(FakeEvent(payload="hello"))
 
-        assert len(bus._handlers[FakeEvent]) == 1
-        assert bus._handlers[FakeEvent][0] is handler
+        assert len(handler.events) == 1
 
-    def test_should_register_multiple_handlers_for_same_event(self) -> None:
+    @pytest.mark.asyncio
+    async def test_multiple_handlers_should_all_be_invoked(self) -> None:
         bus = InProcessEventBus()
         h1 = RecordingHandler()
         h2 = RecordingHandler()
 
         bus.subscribe(FakeEvent, h1)
         bus.subscribe(FakeEvent, h2)
+        await bus.publish(FakeEvent())
 
-        assert len(bus._handlers[FakeEvent]) == 2
+        assert len(h1.events) == 1
+        assert len(h2.events) == 1
 
-    def test_should_allow_same_handler_twice(self) -> None:
+    @pytest.mark.asyncio
+    async def test_duplicate_subscription_should_invoke_handler_twice(self) -> None:
         bus = InProcessEventBus()
         handler = RecordingHandler()
 
         bus.subscribe(FakeEvent, handler)
         bus.subscribe(FakeEvent, handler)
+        await bus.publish(FakeEvent())
 
         # Duplicate subscription is not deduped
-        assert len(bus._handlers[FakeEvent]) == 2
+        assert len(handler.events) == 2
 
-    def test_should_isolate_different_event_types(self) -> None:
+    @pytest.mark.asyncio
+    async def test_handlers_for_different_event_types_should_be_isolated(self) -> None:
         bus = InProcessEventBus()
-        h1 = RecordingHandler()
-        h2 = RecordingHandler()
+        fake_handler = RecordingHandler()
+        other_handler = RecordingHandler()
 
-        bus.subscribe(FakeEvent, h1)
-        bus.subscribe(OtherEvent, h2)
+        bus.subscribe(FakeEvent, fake_handler)
+        bus.subscribe(OtherEvent, other_handler)
+        await bus.publish(FakeEvent())
 
-        assert bus._handlers[FakeEvent] == [h1]
-        assert bus._handlers[OtherEvent] == [h2]
+        assert len(fake_handler.events) == 1
+        assert len(other_handler.events) == 0
+
+        await bus.publish(OtherEvent())
+
+        assert len(fake_handler.events) == 1
+        assert len(other_handler.events) == 1
 
 
 @pytest.mark.unit
 class TestInProcessEventBusPublish:
-    """Tests for publish."""
+    """Tests for publish semantics beyond basic routing."""
 
     @pytest.mark.asyncio
-    async def test_should_dispatch_to_single_handler(self) -> None:
+    async def test_should_preserve_event_identity(self) -> None:
         bus = InProcessEventBus()
         handler = RecordingHandler()
         bus.subscribe(FakeEvent, handler)
@@ -102,38 +115,7 @@ class TestInProcessEventBusPublish:
 
         await bus.publish(event)
 
-        assert len(handler.events) == 1
         assert handler.events[0] is event
-
-    @pytest.mark.asyncio
-    async def test_should_dispatch_to_all_registered_handlers(self) -> None:
-        bus = InProcessEventBus()
-        h1 = RecordingHandler()
-        h2 = RecordingHandler()
-        h3 = RecordingHandler()
-        bus.subscribe(FakeEvent, h1)
-        bus.subscribe(FakeEvent, h2)
-        bus.subscribe(FakeEvent, h3)
-        event = FakeEvent(payload="broadcast")
-
-        await bus.publish(event)
-
-        assert h1.events == [event]
-        assert h2.events == [event]
-        assert h3.events == [event]
-
-    @pytest.mark.asyncio
-    async def test_should_not_dispatch_to_other_event_types(self) -> None:
-        bus = InProcessEventBus()
-        fake_handler = RecordingHandler()
-        other_handler = RecordingHandler()
-        bus.subscribe(FakeEvent, fake_handler)
-        bus.subscribe(OtherEvent, other_handler)
-
-        await bus.publish(FakeEvent(payload="only-fake"))
-
-        assert len(fake_handler.events) == 1
-        assert len(other_handler.events) == 0
 
     @pytest.mark.asyncio
     async def test_should_isolate_handler_failures(self) -> None:
