@@ -1,6 +1,6 @@
 """Tests for EnrichSeriesMetadataUseCase."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -8,13 +8,16 @@ from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.enrichment_dtos import EnrichMediaInput
 from src.modules.media.application.ports import (
     EpisodeMetadata,
+    LocalizedFields,
     MediaMetadata,
     MetadataProvider,
     SeasonMetadata,
 )
 from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
+    _clean_series_title,
     _detect_multi_episode,
+    _parse_date,
 )
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
@@ -312,3 +315,212 @@ class TestDetectMultiEpisode:
 
     def test_empty_title(self):
         assert _detect_multi_episode("") == 1
+
+
+@pytest.mark.unit
+class TestCleanSeriesTitle:
+    """Tests for the _clean_series_title helper."""
+
+    def test_should_remove_quality_tags(self):
+        assert _clean_series_title("Breaking Bad BluRay").strip() == "Breaking Bad"
+
+    def test_should_remove_codec_tags(self):
+        assert _clean_series_title("Breaking Bad x264 AAC").strip() == "Breaking Bad"
+
+    def test_should_remove_brackets(self):
+        assert _clean_series_title("Breaking Bad [2008]").strip() == "Breaking Bad"
+
+    def test_should_preserve_clean_title(self):
+        assert _clean_series_title("Breaking Bad").strip() == "Breaking Bad"
+
+    def test_should_fallback_to_original_when_empty(self):
+        assert _clean_series_title("[2008]").strip() == "[2008]"
+
+
+@pytest.mark.unit
+class TestParseDate:
+    """Tests for the _parse_date helper."""
+
+    def test_should_parse_iso_date(self):
+        from datetime import date
+
+        result = _parse_date("2008-01-20")
+        assert result == date(2008, 1, 20)
+
+    def test_should_return_none_on_invalid_date(self):
+        assert _parse_date("not-a-date") is None
+
+    def test_should_return_none_on_empty(self):
+        assert _parse_date("") is None
+
+
+@pytest.mark.unit
+class TestEnrichSeriesByTmdbId:
+    """Tests for fetching series metadata by existing TMDB ID."""
+
+    @pytest.mark.asyncio
+    async def test_should_fetch_by_tmdb_id_when_force(self) -> None:
+        series = _make_series().with_updates(tmdb_id=TmdbId(1396))
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+        repo.save.side_effect = lambda s: s
+
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.get_series_by_id.return_value = _make_metadata()
+
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        result = await use_case.execute(EnrichMediaInput(media_id=str(series.id), force=True))
+
+        assert result.enriched is True
+        provider.get_series_by_id.assert_awaited_once_with(1396)
+
+    @pytest.mark.asyncio
+    async def test_should_retry_with_cleaned_title(self) -> None:
+        series = Series.create(title="Breaking Bad 1080p BluRay", start_year=2008)
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+        repo.save.side_effect = lambda s: s
+
+        provider = AsyncMock(spec=MetadataProvider)
+        # First call (with year): None. Second call (cleaned): success
+        provider.search_series.side_effect = [None, _make_metadata()]
+
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        assert result.enriched is True
+        assert provider.search_series.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_should_use_fallback_when_primary_fails(self) -> None:
+        series = _make_series()
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+        repo.save.side_effect = lambda s: s
+
+        primary = AsyncMock(spec=MetadataProvider)
+        primary.search_series.return_value = None
+
+        fallback = AsyncMock(spec=MetadataProvider)
+        fallback.search_series.return_value = _make_metadata()
+
+        use_case = EnrichSeriesMetadataUseCase(
+            series_repository=repo,
+            primary_provider=primary,
+            fallback_provider=fallback,
+        )
+        result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        assert result.enriched is True
+        assert result.provider == "omdb"
+
+    @pytest.mark.asyncio
+    async def test_should_return_error_when_no_metadata_found(self) -> None:
+        series = _make_series()
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = None
+
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        assert result.enriched is False
+        assert result.error is not None
+
+    @pytest.mark.asyncio
+    async def test_should_use_localized_metadata_when_available(self) -> None:
+        series = _make_series()
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+        repo.save.side_effect = lambda s: s
+
+        provider = MagicMock(spec=["search_series", "get_series_by_id", "get_series_localized"])
+        provider.search_series = AsyncMock(return_value=_make_metadata())
+        localized_meta = MediaMetadata(
+            title="Breaking Bad",
+            tmdb_id=1396,
+            localized={
+                "pt-BR": LocalizedFields(title="Breaking Bad", synopsis="Sinopse pt-BR"),
+            },
+        )
+        provider.get_series_localized = AsyncMock(return_value=localized_meta)
+
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        assert result.enriched is True
+        provider.get_series_localized.assert_awaited_once_with(1396)
+        saved = repo.save.call_args[0][0]
+        assert "pt-BR" in saved.localized
+
+
+@pytest.mark.unit
+class TestApplySeriesFields:
+    """Tests verifying _apply_series_metadata covers all field branches."""
+
+    @pytest.mark.asyncio
+    async def test_should_apply_all_top_level_fields(self) -> None:
+        series = _make_series()
+        metadata = MediaMetadata(
+            title="Breaking Bad",
+            original_title="Breaking Bad",
+            year=2008,
+            end_year=2013,
+            synopsis="Crime drama.",
+            genres=["Drama"],
+            tmdb_id=1396,
+            imdb_id="tt0903747",
+            poster_url="https://image.tmdb.org/poster.jpg",
+            backdrop_url="https://image.tmdb.org/backdrop.jpg",
+            content_rating="TV-MA",
+            trailer_url="https://youtube.com/abc",
+        )
+
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+        repo.save.side_effect = lambda s: s
+
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = metadata
+
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        saved = repo.save.call_args[0][0]
+        assert saved.tmdb_id == TmdbId(1396)
+        assert saved.end_year is not None
+        assert saved.synopsis == "Crime drama."
+        assert saved.poster_path is not None
+        assert saved.backdrop_path is not None
+        assert saved.content_rating == "TV-MA"
+        assert saved.trailer_url == "https://youtube.com/abc"
+
+    @pytest.mark.asyncio
+    async def test_should_apply_localized_series_fields(self) -> None:
+        series = _make_series()
+        metadata = MediaMetadata(
+            title="Breaking Bad",
+            tmdb_id=1396,
+            localized={
+                "pt-BR": LocalizedFields(
+                    title="Breaking Bad",
+                    synopsis="Drama de crime.",
+                    genres=["Drama"],
+                ),
+            },
+        )
+
+        repo = AsyncMock(spec=SeriesRepository)
+        repo.find_by_id.return_value = series
+        repo.save.side_effect = lambda s: s
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = metadata
+
+        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        saved = repo.save.call_args[0][0]
+        assert "pt-BR" in saved.localized
+        assert saved.localized["pt-BR"]["synopsis"] == "Drama de crime."
