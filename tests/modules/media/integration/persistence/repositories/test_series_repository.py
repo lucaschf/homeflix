@@ -676,3 +676,115 @@ class TestSQLAlchemySeriesRepositorySaveRestore:
         found = await repo.find_by_id(series_id)
         assert found is not None
         assert found.title.value == "Restored"
+
+
+@pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryListPaginated:
+    """Integration tests for the cursor-paginated listing."""
+
+    async def test_should_return_first_page_when_cursor_is_none(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await _seed_series(repo, count=5)
+
+        page = await repo.list_paginated(cursor=None, limit=3)
+
+        assert len(page.items) == 3
+        assert page.pagination.has_more is True
+        assert page.pagination.next_cursor is not None
+        assert page.total_count is None
+
+    async def test_should_walk_to_the_next_page_via_cursor(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await _seed_series(repo, count=5)
+
+        page1 = await repo.list_paginated(cursor=None, limit=2)
+        page2 = await repo.list_paginated(cursor=page1.pagination.next_cursor, limit=2)
+        page3 = await repo.list_paginated(cursor=page2.pagination.next_cursor, limit=2)
+
+        page1_ids = {_id_of(s) for s in page1.items}
+        page2_ids = {_id_of(s) for s in page2.items}
+        page3_ids = {_id_of(s) for s in page3.items}
+
+        assert page1_ids.isdisjoint(page2_ids)
+        assert page2_ids.isdisjoint(page3_ids)
+        assert len(page1.items) == 2
+        assert len(page2.items) == 2
+        assert len(page3.items) == 1
+        assert page3.pagination.has_more is False
+        assert page3.pagination.next_cursor is None
+
+    async def test_should_return_has_more_false_when_exact_fit(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await _seed_series(repo, count=3)
+
+        page = await repo.list_paginated(cursor=None, limit=3)
+
+        assert len(page.items) == 3
+        assert page.pagination.has_more is False
+        assert page.pagination.next_cursor is None
+
+    async def test_should_return_empty_page_when_no_series(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+
+        page = await repo.list_paginated(cursor=None, limit=20)
+
+        assert page.items == []
+        assert page.pagination.has_more is False
+        assert page.pagination.next_cursor is None
+
+    async def test_should_silently_fall_back_to_first_page_on_invalid_cursor(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await _seed_series(repo, count=3)
+
+        page = await repo.list_paginated(cursor="not-a-valid-cursor", limit=10)
+
+        assert len(page.items) == 3
+
+    async def test_should_order_by_id_desc(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        seeded = await _seed_series(repo, count=4)
+
+        page = await repo.list_paginated(cursor=None, limit=4)
+
+        returned_titles = [s.title.value for s in page.items]
+        seeded_titles = [s.title.value for s in seeded]
+        assert returned_titles == list(reversed(seeded_titles))
+
+    async def test_should_exclude_soft_deleted_series(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series_list = await _seed_series(repo, count=3)
+        await repo.delete(_id_of(series_list[0]))
+
+        page = await repo.list_paginated(cursor=None, limit=10)
+
+        assert len(page.items) == 2
+        returned_ids = {_id_of(s) for s in page.items}
+        assert _id_of(series_list[0]) not in returned_ids
+
+    async def test_should_populate_total_count_when_requested(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await _seed_series(repo, count=7)
+
+        page = await repo.list_paginated(cursor=None, limit=3, include_total=True)
+
+        assert page.total_count == 7
+        assert len(page.items) == 3
+        assert page.pagination.has_more is True
+
+    async def test_should_not_count_soft_deleted_in_total(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series_list = await _seed_series(repo, count=5)
+        await repo.delete(_id_of(series_list[0]))
+        await repo.delete(_id_of(series_list[1]))
+
+        page = await repo.list_paginated(cursor=None, limit=10, include_total=True)
+
+        assert page.total_count == 3

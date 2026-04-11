@@ -119,11 +119,22 @@ class ListMoviesInput:
     """Input for ListMoviesUseCase.
 
     Attributes:
-        limit: Maximum number of movies to return (optional, default: all).
+        cursor: Opaque pagination cursor from the previous page's
+            ``next_cursor``. ``None`` (or any invalid token) starts at
+            the first page.
+        limit: Page size. Routes clamp this to ``[1, MAX_PAGE_SIZE]``
+            before constructing the input.
+        include_total: When ``True`` the use case asks the repository
+            for an extra ``COUNT(*)`` so ``total_count`` is populated.
+            Defaults to ``False`` because computing the total is the
+            most expensive part of the query and is rarely needed by
+            infinite-scroll consumers.
         lang: Language code for localized metadata.
     """
 
-    limit: int | None = None
+    cursor: str | None = None
+    limit: int = 20
+    include_total: bool = False
     lang: str = "en"
 
 
@@ -132,12 +143,21 @@ class ListMoviesOutput:
     """Output for ListMoviesUseCase.
 
     Attributes:
-        movies: List of movie summaries.
-        total_count: Total number of movies in the library.
+        movies: List of movie summaries on this page.
+        next_cursor: Opaque token to pass back as ``cursor`` on the
+            next request, or ``None`` when there are no more pages.
+        has_more: Convenience flag — equivalent to
+            ``next_cursor is not None`` but explicit so clients don't
+            have to infer it.
+        total_count: Total number of (non-deleted) movies in the
+            library, or ``None`` when the caller did not request it
+            via ``include_total``.
     """
 
     movies: list[MovieSummaryOutput]
-    total_count: int
+    next_cursor: str | None
+    has_more: bool
+    total_count: int | None = None
 
 
 __all__ = [

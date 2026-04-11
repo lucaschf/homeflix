@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
+from src.building_blocks.application.pagination import PaginatedResult
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.value_objects import FilePath, MovieId
 
@@ -56,6 +57,40 @@ class MovieRepository(ABC):
 
         Returns:
             Sequence of all movies.
+        """
+        ...
+
+    @abstractmethod
+    async def list_paginated(
+        self,
+        cursor: str | None,
+        limit: int,
+        *,
+        include_total: bool = False,
+    ) -> PaginatedResult[Movie]:
+        """List movies in a single page using cursor-based pagination.
+
+        The page is ordered by ``(created_at DESC, id DESC)`` so newly
+        imported movies appear first. Cursors snapshot the
+        ``(created_at, id)`` of the last row of the previous page; the
+        next call resumes strictly after that pair.
+
+        Args:
+            cursor: Opaque token from the previous page's
+                ``next_cursor``, or ``None`` for the first page.
+                Invalid / undecodable cursors silently fall back to the
+                first page so a stale token doesn't break a scroll.
+            limit: Page size. Callers should clamp this in the route.
+            include_total: When ``True`` the implementation runs an
+                extra ``COUNT(*)`` to populate
+                ``PaginatedResult.total_count``. Defaults to ``False``
+                because the count is the most expensive part of the
+                query and is rarely needed by infinite-scroll consumers.
+
+        Returns:
+            ``PaginatedResult`` containing the page items, the
+            ``Pagination`` (next_cursor + has_more), and the optional
+            total count.
         """
         ...
 
