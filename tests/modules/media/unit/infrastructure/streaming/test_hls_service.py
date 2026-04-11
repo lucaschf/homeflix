@@ -103,6 +103,26 @@ class TestHlsServiceGetPathHash:
         service = HlsService(cache_dir=str(tmp_path / "hls"))
         assert service.get_path_hash("/a.mkv") != service.get_path_hash("/b.mkv")
 
+    def test_should_match_default_hash_when_start_seconds_is_zero(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        path = "/movies/test.mkv"
+        assert service.get_path_hash(path) == service.get_path_hash(path, 0.0)
+
+    def test_should_differ_for_different_start_seconds(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        path = "/movies/test.mkv"
+        hash_zero = service.get_path_hash(path, 0.0)
+        hash_middle = service.get_path_hash(path, 1800.0)
+        hash_end = service.get_path_hash(path, 5400.0)
+        assert hash_zero != hash_middle
+        assert hash_middle != hash_end
+        assert hash_zero != hash_end
+
+    def test_should_be_deterministic_with_start_seconds(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        path = "/movies/test.mkv"
+        assert service.get_path_hash(path, 1234.5) == service.get_path_hash(path, 1234.5)
+
 
 @pytest.mark.unit
 class TestHlsServiceGetFileByHash:
@@ -272,6 +292,24 @@ class TestHlsServiceBuildAudioCmd:
 
         assert "aac" in cmd
 
+    def test_should_not_include_ss_when_start_is_zero(self, tmp_path: Path) -> None:
+        cmd = HlsService._build_audio_cmd(
+            "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=0.0
+        )
+
+        assert "-ss" not in cmd
+
+    def test_should_include_ss_before_input_when_start_is_set(self, tmp_path: Path) -> None:
+        cmd = HlsService._build_audio_cmd(
+            "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=1800.0
+        )
+
+        assert "-ss" in cmd
+        ss_idx = cmd.index("-ss")
+        i_idx = cmd.index("-i")
+        assert ss_idx < i_idx, "-ss must come before -i for fast seek"
+        assert cmd[ss_idx + 1] == "1800.0"
+
 
 @pytest.mark.unit
 class TestHlsServiceBuildVideoCmd:
@@ -306,6 +344,39 @@ class TestHlsServiceBuildVideoCmd:
             cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "0:a:3" in cmd
+
+    def test_should_not_include_ss_when_start_is_zero(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start_seconds=0.0)
+
+        assert "-ss" not in cmd
+
+    def test_should_include_ss_before_input_when_start_is_set(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd(
+                "/movies/test.mkv", tmp_path, probe, start_seconds=5400.0
+            )
+
+        assert "-ss" in cmd
+        ss_idx = cmd.index("-ss")
+        i_idx = cmd.index("-i")
+        assert ss_idx < i_idx, "-ss must come before -i for fast seek"
+        assert cmd[ss_idx + 1] == "5400.0"
+
+    def test_should_include_avoid_negative_ts_flag(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert "-avoid_negative_ts" in cmd
 
 
 @pytest.mark.unit

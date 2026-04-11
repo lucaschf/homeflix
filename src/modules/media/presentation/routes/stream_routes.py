@@ -139,6 +139,7 @@ async def hls_file(
 @inject  # type: ignore[misc]
 async def movie_hls_playlist(
     movie_id: str,
+    start: float = 0.0,
     use_case: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
@@ -146,14 +147,26 @@ async def movie_hls_playlist(
         Provide[ApplicationContainer.media.hls_service],
     ),
 ) -> Response:
-    """Generate and serve HLS master playlist for a movie."""
+    """Generate and serve HLS master playlist for a movie.
+
+    The ``start`` query parameter (default 0) is an optional seek offset
+    in seconds. FFmpeg trims the source so the HLS output starts at
+    (original time = start), which lets the client resume mid-file
+    without waiting for segments to be produced from position 0.
+    """
     movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
     file_path = _resolve_file(movie.file_path)
+    start_seconds = max(0.0, start)
 
     try:
-        path_hash = await hls.ensure_playlist(str(file_path))
+        path_hash = await hls.ensure_playlist(str(file_path), start_seconds)
     except Exception as e:
-        _logger.exception("HLS generation failed for movie %s (file=%s)", movie_id, file_path)
+        _logger.exception(
+            "HLS generation failed for movie %s (file=%s, start=%ss)",
+            movie_id,
+            file_path,
+            start_seconds,
+        )
         detail = str(e) or f"{type(e).__name__}: check server logs"
         raise HTTPException(status_code=500, detail=detail) from e
 
@@ -166,6 +179,7 @@ async def episode_hls_playlist(
     series_id: str,
     season_number: int,
     episode_number: int,
+    start: float = 0.0,
     use_case: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
@@ -173,19 +187,25 @@ async def episode_hls_playlist(
         Provide[ApplicationContainer.media.hls_service],
     ),
 ) -> Response:
-    """Generate and serve HLS master playlist for an episode."""
+    """Generate and serve HLS master playlist for an episode.
+
+    The ``start`` query parameter (default 0) is an optional seek offset
+    in seconds — same semantics as the movie endpoint.
+    """
     file_path = await _find_episode_file(use_case, series_id, season_number, episode_number)
     path = _resolve_file(file_path)
+    start_seconds = max(0.0, start)
 
     try:
-        path_hash = await hls.ensure_playlist(str(path))
+        path_hash = await hls.ensure_playlist(str(path), start_seconds)
     except Exception as e:
         _logger.exception(
-            "HLS generation failed for episode %s/S%sE%s (file=%s)",
+            "HLS generation failed for episode %s/S%sE%s (file=%s, start=%ss)",
             series_id,
             season_number,
             episode_number,
             path,
+            start_seconds,
         )
         detail = str(e) or f"{type(e).__name__}: check server logs"
         raise HTTPException(status_code=500, detail=detail) from e

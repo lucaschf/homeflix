@@ -108,9 +108,20 @@ class HlsService:
 
     # -- Public API ------------------------------------------------------------
 
-    def get_path_hash(self, file_path: str) -> str:
-        """Get the hash key for a file path."""
-        return hashlib.md5(file_path.encode()).hexdigest()
+    def get_path_hash(self, file_path: str, start_seconds: float = 0.0) -> str:
+        """Get the hash key for a (file path, start offset) pair.
+
+        Args:
+            file_path: Absolute path to the source video file.
+            start_seconds: Start offset in seconds for partial transcodes.
+
+        Returns:
+            Hex MD5 digest uniquely identifying the cache bucket. Different
+            start offsets produce different hashes so partial transcodes do
+            not collide with full transcodes on disk.
+        """
+        key = f"{file_path}:{start_seconds}" if start_seconds else file_path
+        return hashlib.md5(key.encode()).hexdigest()
 
     def get_file_by_hash(self, path_hash: str, relative_path: str) -> Path | None:
         """Get any file from cache by hash + relative path.
@@ -165,20 +176,23 @@ class HlsService:
         except (OSError, json.JSONDecodeError):
             return None
 
-    async def ensure_playlist(self, file_path: str) -> str:
+    async def ensure_playlist(self, file_path: str, start_seconds: float = 0.0) -> str:
         """Start generation and wait until the first segments are ready.
 
         Args:
             file_path: Absolute path to the source video file.
+            start_seconds: Start offset in seconds. FFmpeg seeks to this
+                position before transcoding, so the first produced segment
+                corresponds to (original time = start_seconds).
 
         Returns:
-            The path hash for this file.
+            The path hash for this (file, start) pair.
 
         Raises:
             RuntimeError: If FFmpeg is not available, fails, or times out.
             FileNotFoundError: If the source file does not exist.
         """
-        path_hash = self.get_path_hash(file_path)
+        path_hash = self.get_path_hash(file_path, start_seconds)
 
         if self.is_complete(path_hash):
             return path_hash
@@ -192,7 +206,7 @@ class HlsService:
             msg = f"Source file not found: {file_path}"
             raise FileNotFoundError(msg)
 
-        await asyncio.to_thread(self._start_generation, file_path)
+        await asyncio.to_thread(self._start_generation, file_path, start_seconds)
 
         video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
         attempts = int(_POLL_TIMEOUT / _POLL_INTERVAL)
@@ -222,14 +236,20 @@ class HlsService:
             return self._deserialize_probe(cached)
         return self._probe.probe(file_path)
 
-    def clear_cache(self, file_path: str | None = None) -> None:
+    def clear_cache(
+        self,
+        file_path: str | None = None,
+        start_seconds: float = 0.0,
+    ) -> None:
         """Clear cached HLS segments.
 
         Args:
             file_path: Clear cache for specific file, or all if None.
+            start_seconds: When ``file_path`` is given, targets the specific
+                (file, start) bucket. Ignored when clearing the full cache.
         """
         if file_path:
-            path_hash = self.get_path_hash(file_path)
+            path_hash = self.get_path_hash(file_path, start_seconds)
             self._kill_processes(path_hash)
             shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
         else:
@@ -268,11 +288,17 @@ class HlsService:
 
     # -- Private: generation ---------------------------------------------------
 
-    def _start_generation(self, file_path: str) -> str:
-        """Start all FFmpeg processes for multi-track HLS generation."""
+    def _start_generation(self, file_path: str, start_seconds: float = 0.0) -> str:
+        """Start all FFmpeg processes for multi-track HLS generation.
+
+        Args:
+            file_path: Absolute path to the source video file.
+            start_seconds: Seek to this position before transcoding so the
+                output starts at (original time = start_seconds).
+        """
         source = self._validate_source(file_path)
         safe_path = str(source)
-        path_hash = self.get_path_hash(file_path)
+        path_hash = self.get_path_hash(file_path, start_seconds)
 
         if self.is_complete(path_hash):
             return path_hash
@@ -304,8 +330,8 @@ class HlsService:
             # 1. Main: video + default audio (always first in list)
             video_dir = output_dir / _VIDEO_DIR
             video_dir.mkdir()
-            cmd = self._build_video_cmd(safe_path, video_dir, probe_result)
-            _logger.info("Starting video HLS for %s", safe_path)
+            cmd = self._build_video_cmd(safe_path, video_dir, probe_result, start_seconds)
+            _logger.info("Starting video HLS for %s (start=%ss)", safe_path, start_seconds)
             procs.append(self._spawn_ffmpeg(cmd))
 
             # 2. Additional audio tracks (audio-only HLS)
@@ -315,17 +341,18 @@ class HlsService:
                     continue
                 audio_dir = output_dir / f"audio_{track.index}"
                 audio_dir.mkdir()
-                cmd = self._build_audio_cmd(safe_path, audio_dir, track.index)
+                cmd = self._build_audio_cmd(safe_path, audio_dir, track.index, start_seconds)
                 _logger.info(
-                    "Starting audio HLS for track %d (%s) of %s",
+                    "Starting audio HLS for track %d (%s) of %s (start=%ss)",
                     track.index,
                     track.language.value,
                     safe_path,
+                    start_seconds,
                 )
                 procs.append(self._spawn_ffmpeg(cmd))
 
             # 3. Extract subtitles to WebVTT (synchronous, fast)
-            self._extract_subtitles(safe_path, output_dir, probe_result)
+            self._extract_subtitles(safe_path, output_dir, probe_result, start_seconds)
 
             # 4. Build master playlist
             self._build_master_playlist(output_dir, probe_result)
@@ -380,8 +407,14 @@ class HlsService:
         file_path: str,
         output_dir: Path,
         probe: MediaProbeResult,
+        start_seconds: float = 0.0,
     ) -> list[str]:
-        """Build FFmpeg command for video + default audio."""
+        """Build FFmpeg command for video + default audio.
+
+        When ``start_seconds > 0``, ``-ss`` is placed before ``-i`` so FFmpeg
+        seeks in the source demuxer (fast seek to the nearest keyframe).
+        Output timestamps are reset so the produced HLS starts at 0.
+        """
         codec = self._probe_video_codec(file_path)
         needs_transcode = codec not in _BROWSER_SAFE_CODECS
 
@@ -395,70 +428,90 @@ class HlsService:
         primary_idx = _primary_audio_index(probe)
         audio_map = f"0:a:{primary_idx}"
 
-        return [
-            "ffmpeg",
-            "-i",
-            file_path,
-            "-map",
-            "0:v:0",
-            "-map",
-            audio_map,
-            "-sn",
-            *video_args,
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-ar",
-            "48000",
-            "-hls_time",
-            str(_SEGMENT_DURATION),
-            "-hls_list_size",
-            "0",
-            "-hls_playlist_type",
-            "event",
-            "-hls_segment_filename",
-            str(output_dir / "segment_%04d.ts"),
-            "-loglevel",
-            "error",
-            "-y",
-            str(output_dir / "playlist.m3u8"),
-        ]
+        cmd = ["ffmpeg"]
+        if start_seconds > 0:
+            cmd.extend(["-ss", str(start_seconds)])
+        cmd.extend(
+            [
+                "-i",
+                file_path,
+                "-map",
+                "0:v:0",
+                "-map",
+                audio_map,
+                "-sn",
+                *video_args,
+                "-c:a",
+                "aac",
+                "-ac",
+                "2",
+                "-ar",
+                "48000",
+                "-avoid_negative_ts",
+                "make_zero",
+                "-hls_time",
+                str(_SEGMENT_DURATION),
+                "-hls_list_size",
+                "0",
+                "-hls_playlist_type",
+                "event",
+                "-hls_segment_filename",
+                str(output_dir / "segment_%04d.ts"),
+                "-loglevel",
+                "error",
+                "-y",
+                str(output_dir / "playlist.m3u8"),
+            ]
+        )
+        return cmd
 
     @staticmethod
     def _build_audio_cmd(
         file_path: str,
         output_dir: Path,
         audio_index: int,
+        start_seconds: float = 0.0,
     ) -> list[str]:
-        """Build FFmpeg command for audio-only HLS track."""
-        return [
-            "ffmpeg",
-            "-i",
-            file_path,
-            "-map",
-            f"0:a:{audio_index}",
-            "-vn",
-            "-sn",
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-ar",
-            "48000",
-            "-hls_time",
-            str(_SEGMENT_DURATION),
-            "-hls_list_size",
-            "0",
-            "-hls_playlist_type",
-            "event",
-            "-hls_segment_filename",
-            str(output_dir / "segment_%04d.ts"),
-            "-loglevel",
-            "error",
-            "-y",
-            str(output_dir / "playlist.m3u8"),
-        ]
+        """Build FFmpeg command for audio-only HLS track.
+
+        When ``start_seconds > 0``, ``-ss`` is placed before ``-i`` so the
+        audio track stays aligned with the video track (both start at the
+        same source position).
+        """
+        cmd = ["ffmpeg"]
+        if start_seconds > 0:
+            cmd.extend(["-ss", str(start_seconds)])
+        cmd.extend(
+            [
+                "-i",
+                file_path,
+                "-map",
+                f"0:a:{audio_index}",
+                "-vn",
+                "-sn",
+                "-c:a",
+                "aac",
+                "-ac",
+                "2",
+                "-ar",
+                "48000",
+                "-avoid_negative_ts",
+                "make_zero",
+                "-hls_time",
+                str(_SEGMENT_DURATION),
+                "-hls_list_size",
+                "0",
+                "-hls_playlist_type",
+                "event",
+                "-hls_segment_filename",
+                str(output_dir / "segment_%04d.ts"),
+                "-loglevel",
+                "error",
+                "-y",
+                str(output_dir / "playlist.m3u8"),
+            ]
+        )
+        return cmd
 
     # -- Private: subtitle extraction ------------------------------------------
 
@@ -467,8 +520,15 @@ class HlsService:
         file_path: str,
         output_dir: Path,
         probe: MediaProbeResult,
+        start_seconds: float = 0.0,
     ) -> None:
-        """Extract text-based subtitles to WebVTT files."""
+        """Extract text-based subtitles to WebVTT files.
+
+        When ``start_seconds > 0``, ``-ss`` is applied so subtitle timestamps
+        are rebased to match the trimmed video output (both start at 0).
+        """
+        ss_args = ["-ss", str(start_seconds)] if start_seconds > 0 else []
+
         for track in probe.subtitle_tracks:
             if not track.is_text_based:
                 _logger.info(
@@ -486,6 +546,7 @@ class HlsService:
                 subprocess.run(
                     [
                         "ffmpeg",
+                        *ss_args,
                         "-i",
                         file_path,
                         "-map",
@@ -521,6 +582,7 @@ class HlsService:
                 subprocess.run(
                     [
                         "ffmpeg",
+                        *ss_args,
                         "-i",
                         track.file_path.value,
                         "-c:s",
