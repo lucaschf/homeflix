@@ -86,6 +86,20 @@ def _create_series(
     )
 
 
+def _id_of(series: Series) -> SeriesId:
+    """Return the series' ID, asserting it is set (narrows the type)."""
+    assert series.id is not None
+    return series.id
+
+
+async def _seed_series(repo: SQLAlchemySeriesRepository, count: int) -> list[Series]:
+    """Save ``count`` series with sequential titles."""
+    series_list = [_create_series(title=f"Series {i}") for i in range(count)]
+    for series in series_list:
+        await repo.save(series)
+    return series_list
+
+
 @pytest.mark.integration
 class TestSQLAlchemySeriesRepository:
     """Integration tests for series repository operations."""
@@ -486,3 +500,179 @@ class TestSQLAlchemySeriesRepository:
         result = await repo.save(updated_series)
 
         assert result.seasons[0].episodes[0].title.value == "Updated Episode Title"
+
+
+@pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryFindRandom:
+    """Tests for find_random."""
+
+    async def test_find_random_should_return_requested_limit(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await _seed_series(repo, count=5)
+
+        result = await repo.find_random(limit=3)
+
+        assert len(result) == 3
+
+    async def test_find_random_with_backdrop_should_filter(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(
+            _create_series(
+                title="With Backdrop",
+                backdrop_path=ImageUrl("https://image.tmdb.org/backdrop.jpg"),
+            ),
+        )
+        await repo.save(_create_series(title="No Backdrop"))
+
+        result = await repo.find_random(limit=10, with_backdrop=True)
+
+        assert len(result) == 1
+        assert result[0].title.value == "With Backdrop"
+
+    async def test_find_random_should_exclude_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        kept = _create_series(title="Kept")
+        deleted = _create_series(title="Deleted")
+        await repo.save(kept)
+        await repo.save(deleted)
+        await repo.delete(_id_of(deleted))
+
+        result = await repo.find_random(limit=10)
+
+        assert len(result) == 1
+        assert result[0].title.value == "Kept"
+
+
+@pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryFindByIds:
+    """Tests for find_by_ids."""
+
+    async def test_find_by_ids_should_return_empty_dict_for_empty_input(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+
+        result = await repo.find_by_ids([])
+
+        assert result == {}
+
+    async def test_find_by_ids_should_return_mapping_by_external_id(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        seeded = await _seed_series(repo, count=2)
+        ids = [_id_of(s) for s in seeded]
+
+        result = await repo.find_by_ids(ids)
+
+        assert len(result) == 2
+        for series_id in ids:
+            assert str(series_id) in result
+
+    async def test_find_by_ids_should_skip_missing(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _create_series(title="Exists")
+        await repo.save(series)
+
+        result = await repo.find_by_ids([_id_of(series), SeriesId.generate()])
+
+        assert len(result) == 1
+        assert str(series.id) in result
+
+    async def test_find_by_ids_should_exclude_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _create_series(title="Deleted")
+        await repo.save(series)
+        series_id = _id_of(series)
+        await repo.delete(series_id)
+
+        result = await repo.find_by_ids([series_id])
+
+        assert result == {}
+
+
+@pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryFindByTitle:
+    """Tests for find_by_title."""
+
+    async def test_find_by_title_should_return_series(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_create_series(title="Breaking Bad"))
+
+        result = await repo.find_by_title(Title("Breaking Bad"))
+
+        assert result is not None
+        assert result.title.value == "Breaking Bad"
+
+    async def test_find_by_title_should_be_case_insensitive(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_create_series(title="Breaking Bad"))
+
+        result = await repo.find_by_title(Title("breaking bad"))
+
+        assert result is not None
+
+    async def test_find_by_title_should_return_none_when_missing(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+
+        result = await repo.find_by_title(Title("Nonexistent"))
+
+        assert result is None
+
+
+@pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryFindByEpisodeId:
+    """Tests for find_by_episode_id."""
+
+    async def test_find_by_episode_id_should_return_series(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _create_series(
+            title="With Episodes",
+            season_count=1,
+            episodes_per_season=2,
+        )
+        await repo.save(series)
+        episode_id = series.seasons[0].episodes[0].id
+        assert episode_id is not None
+
+        result = await repo.find_by_episode_id(episode_id)
+
+        assert result is not None
+        assert result.id == series.id
+
+    async def test_find_by_episode_id_should_return_none_when_missing(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+
+        result = await repo.find_by_episode_id(EpisodeId.generate())
+
+        assert result is None
+
+
+@pytest.mark.integration
+class TestSQLAlchemySeriesRepositorySaveRestore:
+    """Tests for save restoring soft-deleted records."""
+
+    async def test_save_should_restore_soft_deleted_series(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _create_series(
+            title="Restored",
+            season_count=1,
+            episodes_per_season=1,
+        )
+        await repo.save(series)
+        series_id = _id_of(series)
+        await repo.delete(series_id)
+
+        # Re-save to restore
+        restored = await repo.save(series)
+
+        assert restored.id == series.id
+        found = await repo.find_by_id(series_id)
+        assert found is not None
+        assert found.title.value == "Restored"
