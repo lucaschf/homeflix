@@ -1,0 +1,121 @@
+"""Library CRUD REST API routes."""
+
+from dataclasses import asdict
+from typing import Any
+
+from dependency_injector.wiring import Provide, inject
+from fastapi import APIRouter, Depends
+
+from src.config.containers import ApplicationContainer
+from src.modules.library.application.dtos.library_dtos import (
+    CreateLibraryInput,
+    DeleteLibraryInput,
+    GetLibraryByIdInput,
+    UpdateLibraryInput,
+)
+from src.modules.library.application.use_cases.create_library import CreateLibraryUseCase
+from src.modules.library.application.use_cases.delete_library import DeleteLibraryUseCase
+from src.modules.library.application.use_cases.get_library_by_id import GetLibraryByIdUseCase
+from src.modules.library.application.use_cases.list_libraries import ListLibrariesUseCase
+from src.modules.library.application.use_cases.update_library import UpdateLibraryUseCase
+from src.modules.library.presentation.schemas.library_schemas import (
+    CreateLibraryRequest,
+    UpdateLibraryRequest,
+)
+
+router = APIRouter(prefix="/api/v1/libraries", tags=["Libraries"])
+
+
+@router.post("")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def create_library(
+    body: CreateLibraryRequest,
+    use_case: CreateLibraryUseCase = Depends(
+        Provide[ApplicationContainer.library.create_library],
+    ),
+) -> dict[str, Any]:
+    """Create a new media library."""
+    result = await use_case.execute(
+        CreateLibraryInput(
+            name=body.name,
+            library_type=body.library_type,
+            paths=body.paths,
+            language=body.language,
+            metadata_providers=[p.model_dump() for p in body.metadata_providers],
+            scan_schedule=body.scan_schedule,
+            settings=body.settings.model_dump() if body.settings else None,
+        )
+    )
+    return {"data": asdict(result)}
+
+
+@router.get("")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def list_libraries(
+    use_case: ListLibrariesUseCase = Depends(
+        Provide[ApplicationContainer.library.list_libraries],
+    ),
+) -> dict[str, Any]:
+    """List all non-deleted libraries."""
+    result = await use_case.execute()
+    return {
+        "type": "list",
+        "data": [asdict(lib) for lib in result],
+    }
+
+
+@router.get("/{library_id}")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def get_library(
+    library_id: str,
+    use_case: GetLibraryByIdUseCase = Depends(
+        Provide[ApplicationContainer.library.get_library_by_id],
+    ),
+) -> dict[str, Any]:
+    """Get a library by its external id."""
+    result = await use_case.execute(GetLibraryByIdInput(library_id=library_id))
+    return {"data": asdict(result)}
+
+
+@router.put("/{library_id}")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def update_library(
+    library_id: str,
+    body: UpdateLibraryRequest,
+    use_case: UpdateLibraryUseCase = Depends(
+        Provide[ApplicationContainer.library.update_library],
+    ),
+) -> dict[str, Any]:
+    """Partially update a library."""
+    result = await use_case.execute(
+        UpdateLibraryInput(
+            library_id=library_id,
+            name=body.name,
+            library_type=body.library_type,
+            paths=body.paths,
+            language=body.language,
+            metadata_providers=(
+                [p.model_dump() for p in body.metadata_providers]
+                if body.metadata_providers is not None
+                else None
+            ),
+            scan_schedule=body.scan_schedule,
+            settings=body.settings.model_dump() if body.settings else None,
+        )
+    )
+    return {"data": asdict(result)}
+
+
+@router.delete("/{library_id}", status_code=204)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def delete_library(
+    library_id: str,
+    use_case: DeleteLibraryUseCase = Depends(
+        Provide[ApplicationContainer.library.delete_library],
+    ),
+) -> None:
+    """Soft-delete a library."""
+    await use_case.execute(DeleteLibraryInput(library_id=library_id))
+
+
+__all__ = ["router"]

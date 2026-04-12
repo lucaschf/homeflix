@@ -63,7 +63,10 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         hls_cache_max_size_mb=config.provided.hls_cache_max_size_mb,
     )
 
-    library = providers.Container(LibraryContainer)
+    library = providers.Container(
+        LibraryContainer,
+        session=infrastructure.session,
+    )
 
     watch_progress = providers.Container(
         WatchProgressContainer,
