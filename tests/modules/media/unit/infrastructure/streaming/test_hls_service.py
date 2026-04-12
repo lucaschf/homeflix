@@ -835,3 +835,90 @@ class TestHlsServiceExtractOneSubtitle:
 
         assert event.is_set()
         assert "abc" not in service._subtitle_events
+
+
+@pytest.mark.unit
+class TestEvictLru:
+    """LRU disk eviction behavior."""
+
+    def test_should_delete_oldest_bucket_when_over_limit(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), max_cache_size_mb=0)
+
+        # Create two buckets: "old" (1 MB, accessed first) and "new" (1 MB, accessed later)
+        old_dir = tmp_path / "old_hash"
+        old_dir.mkdir()
+        (old_dir / "segment.ts").write_bytes(b"\x00" * 1_000_000)
+
+        new_dir = tmp_path / "new_hash"
+        new_dir.mkdir()
+        (new_dir / "segment.ts").write_bytes(b"\x00" * 1_000_000)
+
+        # Simulate access order: old first, new later
+        service._last_access["old_hash"] = 100.0
+        service._last_access["new_hash"] = 200.0
+        # max_cache_size_mb=0 means everything is over limit
+        service._max_cache_bytes = 1_500_000  # 1.5 MB — only room for one
+
+        evicted = service.evict_lru()
+
+        assert "old_hash" in evicted
+        assert not old_dir.exists()
+        assert new_dir.exists()
+
+    def test_should_not_evict_buckets_with_active_processes(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), max_cache_size_mb=0)
+
+        active_dir = tmp_path / "active"
+        active_dir.mkdir()
+        (active_dir / "segment.ts").write_bytes(b"\x00" * 1_000_000)
+
+        idle_dir = tmp_path / "idle"
+        idle_dir.mkdir()
+        (idle_dir / "segment.ts").write_bytes(b"\x00" * 1_000_000)
+
+        service._last_access["active"] = 100.0
+        service._last_access["idle"] = 200.0
+        # Mark "active" as having running ffmpeg — should be skipped
+        service._processes["active"] = [MagicMock()]
+        service._max_cache_bytes = 1_500_000
+
+        evicted = service.evict_lru()
+
+        # "active" is oldest but has processes — skipped
+        # "idle" is newer but evicted because active can't be
+        assert "active" not in evicted
+        assert active_dir.exists()
+
+    def test_should_not_evict_when_under_limit(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), max_cache_size_mb=100)
+
+        bucket = tmp_path / "small"
+        bucket.mkdir()
+        (bucket / "segment.ts").write_bytes(b"\x00" * 1000)
+
+        evicted = service.evict_lru()
+
+        assert evicted == []
+        assert bucket.exists()
+
+    def test_should_use_mtime_for_untracked_buckets(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path), max_cache_size_mb=0)
+
+        # Create a bucket NOT in _last_access — should use mtime
+        bucket = tmp_path / "untracked"
+        bucket.mkdir()
+        (bucket / "segment.ts").write_bytes(b"\x00" * 1_000_000)
+        service._max_cache_bytes = 1  # Everything over limit
+
+        evicted = service.evict_lru()
+
+        assert "untracked" in evicted
+        assert not bucket.exists()
+
+    def test_should_return_empty_when_max_size_is_zero_or_negative(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        service._max_cache_bytes = -1
+
+        evicted = service.evict_lru()
+
+        assert evicted == []

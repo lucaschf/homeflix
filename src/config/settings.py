@@ -82,6 +82,12 @@ class Settings(BaseSettings):  # type: ignore[misc]
         default="./hls_cache",
         description="Directory to store cached HLS segments",
     )
+    hls_cache_max_size_mb: int = Field(
+        default=5120,
+        description="Maximum HLS cache size in megabytes. When exceeded, "
+        "the least-recently-accessed buckets are deleted until the "
+        "cache fits. Default 5 GB.",
+    )
 
     @field_validator("media_directories", mode="before")
     @classmethod
