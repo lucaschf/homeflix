@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -10,9 +10,7 @@ from src.building_blocks.application.pagination import (
     PaginatedResult,
     Pagination,
     decode_cursor,
-    decode_title_cursor,
     encode_cursor,
-    encode_title_cursor,
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
@@ -21,8 +19,8 @@ from src.modules.media.domain.value_objects import FilePath, Genre, MovieId
 from src.modules.media.infrastructure.persistence.mappers import MovieMapper
 from src.modules.media.infrastructure.persistence.models import MediaFileModel, MovieModel
 from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
-    localized_genres_for,
-    split_genres,
+    fetch_genre_paginated_page,
+    fetch_genre_rows,
 )
 
 
@@ -207,26 +205,8 @@ class SQLAlchemyMovieRepository(MovieRepository):
         )
 
     async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
-        """Project the genre columns of every non-deleted movie row.
-
-        Reads only ``genres`` and ``localized`` so the catalog genres
-        aggregation doesn't pay for joins it doesn't need. The
-        per-row ``localized`` JSON is parsed inline and the requested
-        language's ``genres`` array (if any) is paired with the
-        canonical list positionally.
-        """
-        stmt = select(MovieModel.genres, MovieModel.localized).where(
-            MovieModel.deleted_at.is_(None),
-            MovieModel.genres.is_not(None),
-        )
-        result = await self._session.execute(stmt)
-        return [
-            GenreRow(
-                canonical_genres=split_genres(genres),
-                localized_genres=localized_genres_for(localized, lang),
-            )
-            for genres, localized in result.all()
-        ]
+        """Project the genre columns of every non-deleted movie row."""
+        return await fetch_genre_rows(self._session, MovieModel, lang)
 
     async def list_paginated_by_genre(
         self,
@@ -236,68 +216,20 @@ class SQLAlchemyMovieRepository(MovieRepository):
     ) -> PaginatedResult[Movie]:
         """List movies for a single genre, paginated and sorted by title.
 
-        The genre filter wraps the comma-separated ``genres`` column
-        with delimiters so a substring search can't false-positive
-        ("Action" must not match "Reaction" or "Action Adventure").
-        Sort key is ``(LOWER(title), id)`` and the cursor is the
-        composite ``encode_title_cursor`` value of the last row of
-        the previous page.
+        Delegates the SQL boilerplate (delimited LIKE filter,
+        ``LOWER(title)`` cursor, fetch N+1 trick, per-item cursor
+        population) to the shared ``fetch_genre_paginated_page``
+        helper so this method and its series counterpart can't drift
+        apart.
         """
-        decoded = decode_title_cursor(cursor)
-
-        # Wrap the column value AND the search pattern with commas so
-        # the LIKE only matches whole-word genres. `,Action,` is the
-        # search pattern and `,Action,Comedy,` is what an Action +
-        # Comedy movie's column expands to — exact substring match.
-        delimited_genres = func.concat(",", func.coalesce(MovieModel.genres, ""), ",")
-        genre_pattern = f"%,{genre.value},%"
-
-        title_lower = func.lower(MovieModel.title)
-
-        stmt = (
-            select(MovieModel)
-            .where(
-                MovieModel.deleted_at.is_(None),
-                delimited_genres.like(genre_pattern),
-            )
-            .options(selectinload(MovieModel.file_variants))
-        )
-
-        if decoded is not None:
-            # Composite ascending: anything strictly after the cursor
-            # row in the (title, id) merge order. The OR + tie-breaker
-            # is the same shape as a stable cursor for any composite
-            # sort — see ``CursorValue`` docstring for the rationale.
-            stmt = stmt.where(
-                or_(
-                    title_lower > decoded.title,
-                    and_(title_lower == decoded.title, MovieModel.id > decoded.id),
-                )
-            )
-
-        stmt = stmt.order_by(title_lower.asc(), MovieModel.id.asc()).limit(limit + 1)
-
-        result = await self._session.execute(stmt)
-        models = list(result.scalars().all())
-
-        has_more = len(models) > limit
-        if has_more:
-            models = models[:limit]
-
-        # Per-item cursor list — the catalog by-genre use case may
-        # consume only a prefix of this page after merging with the
-        # series stream, so each item carries its own resume token.
-        item_cursors = [encode_title_cursor(m.title, m.id) for m in models]
-
-        next_cursor: str | None = None
-        if has_more and models:
-            next_cursor = item_cursors[-1]
-
-        return PaginatedResult(
-            items=[MovieMapper.to_entity(m) for m in models],
-            pagination=Pagination(next_cursor=next_cursor, has_more=has_more),
-            total_count=None,
-            item_cursors=item_cursors,
+        return await fetch_genre_paginated_page(
+            session=self._session,
+            model=MovieModel,
+            mapper_to_entity=MovieMapper.to_entity,
+            options=[selectinload(MovieModel.file_variants)],
+            genre=genre,
+            cursor=cursor,
+            limit=limit,
         )
 
     async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Movie]:

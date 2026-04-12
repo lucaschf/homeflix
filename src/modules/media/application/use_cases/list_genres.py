@@ -65,7 +65,14 @@ class ListGenresUseCase:
         counts: dict[str, int] = {}
         localized_label: dict[str, str] = {}
 
-        for row in (*movie_rows, *series_rows):
+        # Two explicit loops instead of `for row in (*movie_rows, *series_rows):`
+        # — the spread builds a brand-new tuple containing every row
+        # from both repositories, temporarily doubling memory for
+        # large catalogs. Iterating each sequence in turn does the
+        # exact same fold without the copy.
+        for row in movie_rows:
+            self._fold_row(row, counts, localized_label)
+        for row in series_rows:
             self._fold_row(row, counts, localized_label)
 
         genres = [

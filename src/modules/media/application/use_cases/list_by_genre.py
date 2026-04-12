@@ -1,5 +1,9 @@
 """ListByGenreUseCase - paginated mixed (movies + series) listing per genre."""
 
+import asyncio
+from dataclasses import dataclass
+from typing import Literal
+
 from src.building_blocks.application.pagination import (
     PaginatedResult,
     decode_dual_cursor,
@@ -13,6 +17,21 @@ from src.modules.media.application.dtos.catalog_dtos import (
 from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import Genre
+
+
+@dataclass(frozen=True)
+class _MergedItem:
+    """One row of the merged movies + series stream.
+
+    Carries the source-page index alongside the entity so the use
+    case can pull the corresponding cursor out of the right
+    repository's ``item_cursors`` after the merge sort. Internal to
+    this module — the public API still returns ``CatalogItemOutput``.
+    """
+
+    kind: Literal["movie", "series"]
+    source_index: int
+    entity: Movie | Series
 
 
 class ListByGenreUseCase:
@@ -67,29 +86,52 @@ class ListByGenreUseCase:
         decoded = decode_dual_cursor(input_dto.cursor)
         genre = Genre(input_dto.genre)
 
-        movies_page = await self._movie_repository.list_paginated_by_genre(
-            genre=genre,
-            cursor=decoded.movies,
-            limit=input_dto.limit,
-        )
-        series_page = await self._series_repository.list_paginated_by_genre(
-            genre=genre,
-            cursor=decoded.series,
-            limit=input_dto.limit,
+        # Both repository calls are independent I/O — issue them
+        # concurrently via `asyncio.gather` so the by-genre endpoint
+        # only waits for the slower of the two queries instead of
+        # serializing them. The DI container hands each repository
+        # its own AsyncSession (Factory provider), so there's no
+        # session contention to worry about.
+        movies_page, series_page = await asyncio.gather(
+            self._movie_repository.list_paginated_by_genre(
+                genre=genre,
+                cursor=decoded.movies,
+                limit=input_dto.limit,
+            ),
+            self._series_repository.list_paginated_by_genre(
+                genre=genre,
+                cursor=decoded.series,
+                limit=input_dto.limit,
+            ),
         )
 
         # Tag each entity with its source stream and its source-page
         # index so we can recover the per-item cursor after the merge.
-        tagged: list[tuple[str, int, Movie | Series]] = [
-            ("movie", index, item) for index, item in enumerate(movies_page.items)
-        ] + [("series", index, item) for index, item in enumerate(series_page.items)]
+        tagged: list[_MergedItem] = [
+            _MergedItem(kind="movie", source_index=index, entity=item)
+            for index, item in enumerate(movies_page.items)
+        ] + [
+            _MergedItem(kind="series", source_index=index, entity=item)
+            for index, item in enumerate(series_page.items)
+        ]
         # Sort by (lowercase title, source index) — the source index
         # tie-breaker matches the SQL `(LOWER(title), id) ASC` order
         # within each stream and gives a stable cross-stream order
         # when two rows share a title.
-        tagged.sort(key=lambda triple: (triple[2].title.value.lower(), triple[1]))
+        tagged.sort(key=lambda mi: (mi.entity.title.value.lower(), mi.source_index))
 
         page_items = tagged[: input_dto.limit]
+
+        # Track the highest consumed source-page index per stream
+        # while we walk the page once. The next-cursor computation
+        # below uses these directly instead of re-scanning the page.
+        last_movie_index: int | None = None
+        last_series_index: int | None = None
+        for item in page_items:
+            if item.kind == "movie":
+                last_movie_index = item.source_index
+            else:
+                last_series_index = item.source_index
 
         # has_more is true if either stream still has more rows OR if
         # the merged buffer was larger than the page (we trimmed it).
@@ -100,16 +142,17 @@ class ListByGenreUseCase:
         )
 
         next_cursor = self._compute_next_cursor(
-            page_items=page_items,
             movies_page=movies_page,
             series_page=series_page,
             previous_movies_cursor=decoded.movies,
             previous_series_cursor=decoded.series,
+            last_movie_index=last_movie_index,
+            last_series_index=last_series_index,
             has_more=has_more,
         )
 
         return ListByGenreOutput(
-            items=[self._to_output(kind, item, input_dto.lang) for kind, _, item in page_items],
+            items=[self._to_output(mi.kind, mi.entity, input_dto.lang) for mi in page_items],
             next_cursor=next_cursor,
             has_more=has_more,
         )
@@ -117,37 +160,26 @@ class ListByGenreUseCase:
     @staticmethod
     def _compute_next_cursor(
         *,
-        page_items: list[tuple[str, int, Movie | Series]],
         movies_page: PaginatedResult[Movie],
         series_page: PaginatedResult[Series],
         previous_movies_cursor: str | None,
         previous_series_cursor: str | None,
+        last_movie_index: int | None,
+        last_series_index: int | None,
         has_more: bool,
     ) -> str | None:
-        """Build the dual cursor for the next page.
+        """Build the dual cursor for the next page from the pre-computed last indices.
 
-        For each stream we look at the highest source-page index of
-        any consumed row and pull the corresponding cursor out of the
-        repository's ``item_cursors`` list. That cursor is the
-        precise resume point — the next call to that repo's
-        ``list_paginated_by_genre`` will return rows strictly after
-        the consumed item.
-
-        If a stream contributed nothing to the page (no items
-        consumed from it), its cursor is left unchanged so the next
-        call re-considers the same starting position.
+        For each stream the caller has already tracked the highest
+        consumed source-page index (or ``None`` if nothing was
+        consumed from that stream). We pull the matching cursor out
+        of the repository's ``item_cursors`` list. If a stream
+        contributed nothing to the page, its cursor is left unchanged
+        so the next call re-considers the same starting position —
+        guaranteeing no item is skipped or duplicated across pages.
         """
         if not has_more:
             return None
-
-        last_movie_index = max(
-            (index for kind, index, _ in page_items if kind == "movie"),
-            default=None,
-        )
-        last_series_index = max(
-            (index for kind, index, _ in page_items if kind == "series"),
-            default=None,
-        )
 
         next_movies_cursor = (
             movies_page.item_cursors[last_movie_index]
