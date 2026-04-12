@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -531,6 +531,72 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         # Soft delete removed episodes
         for episode_model in existing_episodes.values():
             episode_model.soft_delete()
+
+    async def search(
+        self,
+        query: str,
+        *,
+        genre: str | None = None,
+        year_min: int | None = None,
+        year_max: int | None = None,
+        limit: int = 20,
+    ) -> list[tuple[Series, float]]:
+        """Full-text search using FTS5.
+
+        Same pattern as ``SQLAlchemyMovieRepository.search`` — queries
+        ``series_fts``, joins back to ``series``, applies filters.
+        """
+        from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
+            _prepare_fts_query,
+        )
+
+        fts_query = _prepare_fts_query(query)
+        if not fts_query:
+            return []
+
+        sql = """
+            SELECT series_fts.rowid, bm25(series_fts) AS rank
+            FROM series_fts
+            WHERE series_fts MATCH :query
+            ORDER BY rank
+            LIMIT :limit
+        """
+        fts_result = await self._session.execute(
+            text(sql),
+            {"query": fts_query, "limit": limit * 2},
+        )
+        fts_rows = fts_result.fetchall()
+        if not fts_rows:
+            return []
+
+        rowid_to_rank = {row[0]: row[1] for row in fts_rows}
+
+        stmt = (
+            select(SeriesModel)
+            .where(
+                SeriesModel.id.in_(rowid_to_rank.keys()),
+                SeriesModel.deleted_at.is_(None),
+            )
+            .options(selectinload(SeriesModel.seasons).selectinload(SeasonModel.episodes))
+        )
+        if genre:
+            delimited = "," + SeriesModel.genres + ","
+            stmt = stmt.where(delimited.contains(f",{genre},"))
+        if year_min is not None:
+            stmt = stmt.where(SeriesModel.start_year >= year_min)
+        if year_max is not None:
+            stmt = stmt.where(SeriesModel.start_year <= year_max)
+
+        result = await self._session.execute(stmt)
+        models = result.scalars().unique().all()
+
+        hits = [
+            (SeriesMapper.to_entity(m), rowid_to_rank[m.id])
+            for m in models
+            if m.id in rowid_to_rank
+        ]
+        hits.sort(key=lambda h: h[1])
+        return hits[:limit]
 
 
 __all__ = ["SQLAlchemySeriesRepository"]

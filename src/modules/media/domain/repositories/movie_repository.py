@@ -177,6 +177,36 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def search(
+        self,
+        query: str,
+        *,
+        genre: str | None = None,
+        year_min: int | None = None,
+        year_max: int | None = None,
+        limit: int = 20,
+    ) -> list[tuple[Movie, float]]:
+        """Full-text search over title, synopsis, cast, and genres.
+
+        Returns a list of ``(movie, rank)`` tuples ordered by relevance
+        (lower rank = better match, matching FTS5 ``bm25()`` semantics).
+        The ``rank`` value is infrastructure-specific; the use case only
+        uses it for cross-type merge sorting.
+
+        Args:
+            query: The user's search string. Supports prefix matching
+                (e.g. ``"incep"`` matches ``"Inception"``).
+            genre: Optional canonical genre id filter.
+            year_min: Optional inclusive lower bound on release year.
+            year_max: Optional inclusive upper bound on release year.
+            limit: Maximum items to return.
+
+        Returns:
+            List of (Movie, rank) tuples, ordered by relevance.
+        """
+        ...
+
+    @abstractmethod
     async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Movie]:
         """Return random movies, optionally filtering to those with backdrop.
 
