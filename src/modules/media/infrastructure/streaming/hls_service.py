@@ -125,10 +125,12 @@ class HlsService:
         probe_service: MediaProbeService | None = None,
         idle_timeout: float = _DEFAULT_IDLE_TIMEOUT,
         enable_eviction: bool = False,
+        max_cache_size_mb: int = 5120,
     ) -> None:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._probe = probe_service or MediaProbeService()
+        self._max_cache_bytes = max_cache_size_mb * 1024 * 1024
         self._processes: dict[str, list[subprocess.Popen[bytes]]] = {}
         # path_hash → monotonic timestamp of the most recent activity
         # (playlist request OR segment fetch). The eviction loop reads
@@ -154,11 +156,12 @@ class HlsService:
         thread.start()
 
     def _eviction_loop(self) -> None:
-        """Background loop: wake up periodically and evict idle ffmpegs."""
+        """Background loop: wake up periodically and evict idle ffmpegs + LRU cache."""
         while True:
             time.sleep(_EVICTION_INTERVAL)
             try:
                 self.evict_idle()
+                self.evict_lru()
             except Exception:
                 _logger.exception("HLS eviction loop error")
 
@@ -186,6 +189,63 @@ class HlsService:
             self._kill_processes(path_hash)
             with self._lock:
                 self._last_access.pop(path_hash, None)
+            evicted.append(path_hash)
+        return evicted
+
+    def evict_lru(self) -> list[str]:
+        """Delete the least-recently-used cache buckets until total size is within the limit.
+
+        Scans all subdirectories under ``cache_dir``, sums their sizes,
+        and deletes the ones with the oldest ``_last_access`` timestamp
+        (or oldest filesystem mtime if the hash isn't tracked in memory)
+        until the total drops below ``max_cache_size_mb``.
+
+        Active buckets (those with running ffmpeg processes) are skipped
+        to avoid deleting segments a player is currently reading.
+
+        Returns the list of evicted path_hashes (useful for tests).
+        """
+        if self._max_cache_bytes <= 0:
+            return []
+
+        # Scan disk: collect (path_hash, size_bytes, last_access_time)
+        buckets: list[tuple[str, int, float]] = []
+        total_size = 0
+        for entry in self._cache_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            path_hash = entry.name
+            size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+            total_size += size
+            # Prefer in-memory access time; fall back to directory mtime
+            with self._lock:
+                access_time = self._last_access.get(path_hash, entry.stat().st_mtime)
+            buckets.append((path_hash, size, access_time))
+
+        if total_size <= self._max_cache_bytes:
+            return []
+
+        # Sort by access time ascending — oldest first
+        buckets.sort(key=lambda b: b[2])
+
+        evicted: list[str] = []
+        for path_hash, size, _ in buckets:
+            if total_size <= self._max_cache_bytes:
+                break
+            # Don't evict buckets with active ffmpeg processes
+            with self._lock:
+                if path_hash in self._processes:
+                    continue
+            bucket_path = self._cache_dir / path_hash
+            _logger.info(
+                "LRU evicting cache bucket %s (%.1f MB)",
+                path_hash,
+                size / (1024 * 1024),
+            )
+            shutil.rmtree(bucket_path, ignore_errors=True)
+            with self._lock:
+                self._last_access.pop(path_hash, None)
+            total_size -= size
             evicted.append(path_hash)
         return evicted
 

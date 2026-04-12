@@ -65,8 +65,9 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     session = providers.Dependency()
     event_bus = providers.Dependency()
 
-    # Must be wired from parent container (Settings.hls_cache_directory)
+    # Must be wired from parent container (Settings.hls_cache_directory / hls_cache_max_size_mb)
     hls_cache_directory = providers.Dependency(default="./hls_cache")
+    hls_cache_max_size_mb = providers.Dependency(default=5120)
 
     # =========================================================================
     # Repositories
@@ -188,6 +189,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         cache_dir=hls_cache_directory,
         probe_service=media_probe_service,
         enable_eviction=True,
+        max_cache_size_mb=hls_cache_max_size_mb,
     )
 
     # =========================================================================

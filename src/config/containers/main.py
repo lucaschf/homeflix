@@ -60,6 +60,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         event_bus=infrastructure.event_bus,
         tmdb_api_key=config.provided.tmdb_api_key,
         hls_cache_directory=config.provided.hls_cache_directory,
+        hls_cache_max_size_mb=config.provided.hls_cache_max_size_mb,
     )
 
     library = providers.Container(LibraryContainer)
