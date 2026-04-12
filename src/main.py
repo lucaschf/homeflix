@@ -22,6 +22,7 @@ from src.modules.media.presentation.routes import (
     featured_router,
     movie_router,
     scan_router,
+    search_router,
     series_router,
     stream_router,
 )
@@ -62,6 +63,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container.wire(
         modules=[
             "src.modules.media.presentation.routes.catalog_routes",
+            "src.modules.media.presentation.routes.search_routes",
             "src.modules.media.presentation.routes.enrichment_routes",
             "src.modules.media.presentation.routes.featured_routes",
             "src.modules.media.presentation.routes.movie_routes",
@@ -147,6 +149,7 @@ def create_app() -> FastAPI:
     # Register routes
     register_health_routes(app)
     app.include_router(catalog_router)
+    app.include_router(search_router)
     app.include_router(enrichment_router)
     app.include_router(featured_router)
     app.include_router(movie_router)

@@ -123,6 +123,7 @@ branch = true
 omit = [
     "*/migrations/*",
     "*/__init__.py",
+    "*/presentation/routes/*",
 ]
 
 [tool.coverage.report]

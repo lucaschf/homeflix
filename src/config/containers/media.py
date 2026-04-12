@@ -29,6 +29,7 @@ from src.modules.media.application.use_cases.remove_file_variant import RemoveFi
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
 )
+from src.modules.media.application.use_cases.search_catalog import SearchCatalogUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
 from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
@@ -134,6 +135,12 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     list_by_genre = providers.Factory(
         ListByGenreUseCase,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
+    )
+
+    search_catalog = providers.Factory(
+        SearchCatalogUseCase,
         movie_repository=movie_repository,
         series_repository=series_repository,
     )

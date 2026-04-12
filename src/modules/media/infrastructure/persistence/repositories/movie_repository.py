@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -305,6 +305,97 @@ class SQLAlchemyMovieRepository(MovieRepository):
         model = result.scalar_one_or_none()
 
         return None if model is None else MovieMapper.to_entity(model)
+
+    async def search(
+        self,
+        query: str,
+        *,
+        genre: str | None = None,
+        year_min: int | None = None,
+        year_max: int | None = None,
+        limit: int = 20,
+    ) -> list[tuple[Movie, float]]:
+        """Full-text search using FTS5.
+
+        Queries the ``movies_fts`` virtual table for rows matching
+        ``query``, joins back to the ``movies`` table to load the
+        full ORM model, and applies optional genre/year filters as
+        ``WHERE`` clauses on the main table.
+
+        FTS5 query syntax: ``*`` suffix triggers prefix matching
+        (e.g. ``incep*`` → Inception). The repository appends ``*``
+        automatically when the query doesn't already contain it so
+        type-ahead works out of the box.
+        """
+        fts_query = _prepare_fts_query(query)
+        if not fts_query:
+            return []
+
+        # Step 1: FTS5 MATCH to get matching rowids + rank
+        sql = """
+            SELECT movies_fts.rowid, bm25(movies_fts) AS rank
+            FROM movies_fts
+            WHERE movies_fts MATCH :query
+            ORDER BY rank
+            LIMIT :limit
+        """
+        fts_result = await self._session.execute(
+            text(sql),
+            {"query": fts_query, "limit": limit * 2},
+        )
+        fts_rows = fts_result.fetchall()
+        if not fts_rows:
+            return []
+
+        rowid_to_rank = {row[0]: row[1] for row in fts_rows}
+
+        # Step 2: Load full ORM models for the matched rowids
+        stmt = (
+            select(MovieModel)
+            .where(
+                MovieModel.id.in_(rowid_to_rank.keys()),
+                MovieModel.deleted_at.is_(None),
+            )
+            .options(selectinload(MovieModel.file_variants))
+        )
+        if genre:
+            delimited = "," + MovieModel.genres + ","
+            stmt = stmt.where(delimited.contains(f",{genre},"))
+        if year_min is not None:
+            stmt = stmt.where(MovieModel.year >= year_min)
+        if year_max is not None:
+            stmt = stmt.where(MovieModel.year <= year_max)
+
+        result = await self._session.execute(stmt)
+        models = result.scalars().all()
+
+        # Step 3: Map to entities and pair with rank, sorted by rank
+        hits = [
+            (MovieMapper.to_entity(m), rowid_to_rank[m.id]) for m in models if m.id in rowid_to_rank
+        ]
+        hits.sort(key=lambda h: h[1])
+        return hits[:limit]
+
+
+def _prepare_fts_query(query: str) -> str:
+    """Sanitize and prepare the raw user query for FTS5 MATCH.
+
+    Splits the input into tokens, strips characters that FTS5 would
+    interpret as operators (``-``, ``+``, ``"``), and appends ``*``
+    to the last token for prefix matching (type-ahead). Returns an
+    empty string if the query has no usable tokens, signalling the
+    caller to short-circuit with an empty result.
+    """
+    tokens = []
+    for word in query.strip().split():
+        cleaned = word.strip("\"'-+")
+        if cleaned:
+            tokens.append(cleaned)
+    if not tokens:
+        return ""
+    # Append * to the last token for prefix matching
+    tokens[-1] = tokens[-1] + "*"
+    return " ".join(tokens)
 
 
 __all__ = ["SQLAlchemyMovieRepository"]

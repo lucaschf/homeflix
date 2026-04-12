@@ -127,6 +127,23 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
+    async def search(
+        self,
+        query: str,
+        *,
+        genre: str | None = None,
+        year_min: int | None = None,
+        year_max: int | None = None,
+        limit: int = 20,
+    ) -> list[tuple[Series, float]]:
+        """Full-text search over title, synopsis, and genres.
+
+        Same contract as ``MovieRepository.search`` — returns
+        ``(series, rank)`` tuples ordered by relevance.
+        """
+        ...
+
+    @abstractmethod
     async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Series]:
         """Return random series, optionally filtering to those with backdrop.
 

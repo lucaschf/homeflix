@@ -5,6 +5,7 @@ from src.modules.media.presentation.routes.enrichment_routes import router as en
 from src.modules.media.presentation.routes.featured_routes import router as featured_router
 from src.modules.media.presentation.routes.movie_routes import router as movie_router
 from src.modules.media.presentation.routes.scan_routes import router as scan_router
+from src.modules.media.presentation.routes.search_routes import router as search_router
 from src.modules.media.presentation.routes.series_routes import router as series_router
 from src.modules.media.presentation.routes.stream_routes import router as stream_router
 
@@ -14,6 +15,7 @@ __all__ = [
     "featured_router",
     "movie_router",
     "scan_router",
+    "search_router",
     "series_router",
     "stream_router",
 ]
