@@ -209,6 +209,74 @@ class TestListByGenreUseCase:
         assert result.next_cursor is None
 
     @pytest.mark.asyncio
+    async def test_should_skip_series_repo_when_filtered_to_movies(self) -> None:
+        # media_type="movie" restricts the merge to the movie stream
+        # — series repo stays silent so the output is a pure movies
+        # listing for the Movies tab.
+        movie_repo = AsyncMock(spec=MovieRepository)
+        series_repo = AsyncMock(spec=SeriesRepository)
+        movie_repo.list_paginated_by_genre.return_value = _movies_page(
+            [_movie("Avatar"), _movie("Cyrano")]
+        )
+        use_case = ListByGenreUseCase(movie_repo, series_repo)
+
+        result = await use_case.execute(ListByGenreInput(genre="Action", media_type="movie"))
+
+        movie_repo.list_paginated_by_genre.assert_awaited_once()
+        series_repo.list_paginated_by_genre.assert_not_awaited()
+        assert [item.type for item in result.items] == ["movie", "movie"]
+        assert [item.title for item in result.items] == ["Avatar", "Cyrano"]
+
+    @pytest.mark.asyncio
+    async def test_should_skip_movie_repo_when_filtered_to_series(self) -> None:
+        movie_repo = AsyncMock(spec=MovieRepository)
+        series_repo = AsyncMock(spec=SeriesRepository)
+        series_repo.list_paginated_by_genre.return_value = _series_page(
+            [_series("Breaking Bad"), _series("Dark")]
+        )
+        use_case = ListByGenreUseCase(movie_repo, series_repo)
+
+        result = await use_case.execute(ListByGenreInput(genre="Action", media_type="series"))
+
+        series_repo.list_paginated_by_genre.assert_awaited_once()
+        movie_repo.list_paginated_by_genre.assert_not_awaited()
+        assert [item.type for item in result.items] == ["series", "series"]
+        assert [item.title for item in result.items] == ["Breaking Bad", "Dark"]
+
+    @pytest.mark.asyncio
+    async def test_should_advance_only_filtered_stream_cursor_when_filtered(
+        self,
+    ) -> None:
+        # Under a media-type filter only the surviving stream's
+        # cursor should advance — the skipped stream's slot in the
+        # dual cursor must round-trip unchanged so a later unfiltered
+        # request doesn't have to start from scratch.
+        movie_repo = AsyncMock(spec=MovieRepository)
+        series_repo = AsyncMock(spec=SeriesRepository)
+        movie_repo.list_paginated_by_genre.return_value = _movies_page(
+            [_movie("Apple"), _movie("Banana")],
+            has_more=True,
+        )
+        use_case = ListByGenreUseCase(movie_repo, series_repo)
+
+        from src.building_blocks.application.pagination import encode_dual_cursor
+
+        previous_cursor = encode_dual_cursor(None, "untouched-series-cursor")
+        result = await use_case.execute(
+            ListByGenreInput(
+                genre="Action",
+                cursor=previous_cursor,
+                limit=2,
+                media_type="movie",
+            )
+        )
+
+        assert result.has_more is True
+        decoded = decode_dual_cursor(result.next_cursor)
+        assert decoded.movies == "m-cursor-1"
+        assert decoded.series == "untouched-series-cursor"
+
+    @pytest.mark.asyncio
     async def test_catalog_item_output_carries_required_fields(self) -> None:
         movie_repo = AsyncMock(spec=MovieRepository)
         series_repo = AsyncMock(spec=SeriesRepository)

@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE
+
+# Canonical media-type filter shared by the catalog inputs. ``None``
+# means "no filter — aggregate both movies and series". Kept as a
+# module-level alias so the use cases, the routes, and the tests all
+# agree on the exact literal values without copy-pasting the shape.
+MediaTypeFilter = Literal["movie", "series"]
 
 
 @dataclass(frozen=True)
@@ -35,9 +42,14 @@ class ListGenresInput:
     Attributes:
         lang: Language code used to resolve the localized display
             name for each canonical genre.
+        media_type: Optional filter — when set to ``"movie"`` or
+            ``"series"`` the use case only aggregates genres from
+            the matching repository, so the resulting counts reflect
+            that media type alone. ``None`` (default) aggregates both.
     """
 
     lang: str = "en"
+    media_type: MediaTypeFilter | None = None
 
 
 @dataclass(frozen=True)
@@ -94,12 +106,16 @@ class ListByGenreInput:
             ``None`` for the first page.
         limit: Page size. Routes clamp to ``[1, MAX_PAGE_SIZE]``.
         lang: Language for localized titles / synopses / genres.
+        media_type: Optional filter — when set the use case only
+            pulls from the matching stream (movie or series). ``None``
+            (default) merges both streams as usual.
     """
 
     genre: str
     cursor: str | None = None
     limit: int = DEFAULT_PAGE_SIZE
     lang: str = "en"
+    media_type: MediaTypeFilter | None = None
 
 
 @dataclass(frozen=True)
@@ -126,4 +142,5 @@ __all__ = [
     "ListByGenreOutput",
     "ListGenresInput",
     "ListGenresOutput",
+    "MediaTypeFilter",
 ]
