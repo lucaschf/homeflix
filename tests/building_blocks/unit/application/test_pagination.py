@@ -8,10 +8,16 @@ from src.building_blocks.application.pagination import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
     CursorValue,
+    DualCursorValue,
     PaginatedResult,
     Pagination,
+    TitleCursorValue,
     decode_cursor,
+    decode_dual_cursor,
+    decode_title_cursor,
     encode_cursor,
+    encode_dual_cursor,
+    encode_title_cursor,
 )
 
 
@@ -142,3 +148,108 @@ class TestPageSizeConstants:
         # and we should reconsider. This guards against an accidental
         # configuration change.
         assert MAX_PAGE_SIZE <= 500
+
+
+@pytest.mark.unit
+class TestTitleCursor:
+    """Tests for the (title, id) composite cursor used by title-sorted listings."""
+
+    def test_should_roundtrip_a_typical_cursor(self) -> None:
+        encoded = encode_title_cursor("Inception", 42)
+
+        decoded = decode_title_cursor(encoded)
+
+        # Title comes back lowercased to match the SQL `LOWER(title)` sort key.
+        assert decoded == TitleCursorValue(title="inception", id=42)
+
+    def test_should_lowercase_the_title_on_encode(self) -> None:
+        encoded_upper = encode_title_cursor("INCEPTION", 1)
+        encoded_mixed = encode_title_cursor("Inception", 1)
+        encoded_lower = encode_title_cursor("inception", 1)
+
+        # All three encodings must produce the same cursor — the
+        # comparison key in SQL is `LOWER(title)`, and a cursor that
+        # encoded the original case would skip rows whose actual case
+        # didn't match the cursor's case.
+        assert encoded_upper == encoded_mixed == encoded_lower
+
+    def test_should_handle_titles_with_unicode_and_punctuation(self) -> None:
+        encoded = encode_title_cursor("Cidade de Deus: O Filme", 7)
+
+        decoded = decode_title_cursor(encoded)
+
+        assert decoded == TitleCursorValue(title="cidade de deus: o filme", id=7)
+
+    def test_should_handle_titles_with_pipe_character(self) -> None:
+        # The original id-only cursor used `|` as a separator. The title
+        # cursor uses ASCII 0x1F instead so a literal `|` in a title can't
+        # collide with the delimiter — this test guards that.
+        encoded = encode_title_cursor("Fast | Furious", 99)
+
+        decoded = decode_title_cursor(encoded)
+
+        assert decoded == TitleCursorValue(title="fast | furious", id=99)
+
+    def test_should_return_none_for_empty_or_invalid_cursor(self) -> None:
+        assert decode_title_cursor(None) is None
+        assert decode_title_cursor("") is None
+        assert decode_title_cursor("not-valid-base64!!!") is None
+
+    def test_should_return_none_when_payload_lacks_separator(self) -> None:
+        bogus = base64.urlsafe_b64encode(b"missing-separator").decode("ascii")
+        assert decode_title_cursor(bogus) is None
+
+    def test_should_return_none_when_id_part_is_not_an_integer(self) -> None:
+        bogus = base64.urlsafe_b64encode(b"title\x1fnot_an_int").decode("ascii")
+        assert decode_title_cursor(bogus) is None
+
+
+@pytest.mark.unit
+class TestDualCursor:
+    """Tests for the dual-stream cursor used by the catalog by-genre endpoint."""
+
+    def test_should_roundtrip_two_present_cursors(self) -> None:
+        encoded = encode_dual_cursor("movies-token", "series-token")
+
+        decoded = decode_dual_cursor(encoded)
+
+        assert decoded == DualCursorValue(movies="movies-token", series="series-token")
+
+    def test_should_roundtrip_one_exhausted_stream(self) -> None:
+        encoded = encode_dual_cursor("movies-token", None)
+
+        decoded = decode_dual_cursor(encoded)
+
+        assert decoded == DualCursorValue(movies="movies-token", series=None)
+
+    def test_should_roundtrip_both_exhausted(self) -> None:
+        encoded = encode_dual_cursor(None, None)
+
+        decoded = decode_dual_cursor(encoded)
+
+        assert decoded == DualCursorValue(movies=None, series=None)
+
+    def test_should_decode_empty_cursor_as_both_none(self) -> None:
+        # `decode_dual_cursor` returns a non-optional `DualCursorValue`,
+        # so callers don't have to branch on `cursor is None` — both
+        # fields just come through as `None` in that case.
+        assert decode_dual_cursor(None) == DualCursorValue(movies=None, series=None)
+        assert decode_dual_cursor("") == DualCursorValue(movies=None, series=None)
+
+    def test_should_decode_garbage_as_both_none(self) -> None:
+        # Same silent fallback as the other decoders — a tampered or
+        # truncated cursor should not raise mid-scroll.
+        assert decode_dual_cursor("not-valid!!!") == DualCursorValue(movies=None, series=None)
+
+    def test_inner_cursors_can_themselves_be_base64(self) -> None:
+        # The catalog endpoint nests the per-stream cursors (which
+        # are themselves opaque base64) inside the dual wrapper. Make
+        # sure the separator doesn't collide with base64 characters.
+        inner_movies = encode_title_cursor("Inception", 42)
+        inner_series = encode_title_cursor("Breaking Bad", 7)
+
+        encoded = encode_dual_cursor(inner_movies, inner_series)
+        decoded = decode_dual_cursor(encoded)
+
+        assert decoded.movies == inner_movies
+        assert decoded.series == inner_series

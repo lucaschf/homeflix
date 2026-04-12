@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,11 +11,21 @@ from src.building_blocks.application.pagination import (
     PaginatedResult,
     Pagination,
     decode_cursor,
+    decode_title_cursor,
     encode_cursor,
+    encode_title_cursor,
 )
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
-from src.modules.media.domain.value_objects import EpisodeId, FilePath, SeasonId, SeriesId, Title
+from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.modules.media.domain.value_objects import (
+    EpisodeId,
+    FilePath,
+    Genre,
+    SeasonId,
+    SeriesId,
+    Title,
+)
 from src.modules.media.infrastructure.persistence.mappers import (
     EpisodeMapper,
     SeasonMapper,
@@ -26,6 +36,10 @@ from src.modules.media.infrastructure.persistence.models import (
     MediaFileModel,
     SeasonModel,
     SeriesModel,
+)
+from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
+    localized_genres_for,
+    split_genres,
 )
 
 
@@ -223,6 +237,88 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             items=[SeriesMapper.to_entity(m) for m in models],
             pagination=Pagination(next_cursor=next_cursor, has_more=has_more),
             total_count=total_count,
+        )
+
+    async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
+        """Project the genre columns of every non-deleted series row.
+
+        Mirrors ``SQLAlchemyMovieRepository.list_genre_rows`` exactly,
+        but reads from the ``series`` table.
+        """
+        stmt = select(SeriesModel.genres, SeriesModel.localized).where(
+            SeriesModel.deleted_at.is_(None),
+            SeriesModel.genres.is_not(None),
+        )
+        result = await self._session.execute(stmt)
+        return [
+            GenreRow(
+                canonical_genres=split_genres(genres),
+                localized_genres=localized_genres_for(localized, lang),
+            )
+            for genres, localized in result.all()
+        ]
+
+    async def list_paginated_by_genre(
+        self,
+        genre: Genre,
+        cursor: str | None,
+        limit: int,
+    ) -> PaginatedResult[Series]:
+        """List series for a single genre, paginated and sorted by title.
+
+        Mirrors ``MovieRepository.list_paginated_by_genre`` exactly —
+        same delimited LIKE filter, same ``(LOWER(title), id)`` cursor
+        format, same N+1 fetch trick. Loads the full season / episode
+        hierarchy via the existing options because consumers may want
+        to render episode counts on the carousel card.
+        """
+        decoded = decode_title_cursor(cursor)
+
+        delimited_genres = func.concat(",", func.coalesce(SeriesModel.genres, ""), ",")
+        genre_pattern = f"%,{genre.value},%"
+
+        title_lower = func.lower(SeriesModel.title)
+
+        stmt = (
+            select(SeriesModel)
+            .where(
+                SeriesModel.deleted_at.is_(None),
+                delimited_genres.like(genre_pattern),
+            )
+            .options(*self._series_load_options())
+        )
+
+        if decoded is not None:
+            stmt = stmt.where(
+                or_(
+                    title_lower > decoded.title,
+                    and_(title_lower == decoded.title, SeriesModel.id > decoded.id),
+                )
+            )
+
+        stmt = stmt.order_by(title_lower.asc(), SeriesModel.id.asc()).limit(limit + 1)
+
+        result = await self._session.execute(stmt)
+        models = list(result.scalars().all())
+
+        has_more = len(models) > limit
+        if has_more:
+            models = models[:limit]
+
+        # See `MovieRepository.list_paginated_by_genre` for why each
+        # item gets its own resume cursor — the catalog by-genre use
+        # case may only consume a prefix of this page.
+        item_cursors = [encode_title_cursor(m.title, m.id) for m in models]
+
+        next_cursor: str | None = None
+        if has_more and models:
+            next_cursor = item_cursors[-1]
+
+        return PaginatedResult(
+            items=[SeriesMapper.to_entity(m) for m in models],
+            pagination=Pagination(next_cursor=next_cursor, has_more=has_more),
+            total_count=None,
+            item_cursors=item_cursors,
         )
 
     async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Series]:

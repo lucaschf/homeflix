@@ -55,6 +55,38 @@ class CursorValue:
 
 
 @dataclass(frozen=True)
+class TitleCursorValue:
+    """Decoded cursor for listings sorted by ``(LOWER(title), id)``.
+
+    Used by the catalog "by genre" endpoint where rows are surfaced
+    alphabetically rather than by insertion order. The composite key
+    is necessary because two rows can share the same title and the
+    sort would otherwise be unstable across pages — the ``id``
+    tie-breaker guarantees a deterministic order.
+    """
+
+    title: str
+    id: int
+
+
+@dataclass(frozen=True)
+class DualCursorValue:
+    """Decoded cursor that bundles two independent stream cursors.
+
+    The catalog by-genre endpoint queries movies and series in
+    parallel and merges the two streams alphabetically by title; each
+    stream advances at its own pace, so the page's "next cursor" must
+    carry both stream positions. ``movies`` and ``series`` are the
+    raw, still-opaque per-stream cursor strings — neither is decoded
+    by this building block; the use case forwards them back to the
+    repositories untouched.
+    """
+
+    movies: str | None
+    series: str | None
+
+
+@dataclass(frozen=True)
 class Pagination:
     """Pagination metadata returned alongside a page of items.
 
@@ -79,11 +111,21 @@ class PaginatedResult(Generic[T]):
         total_count: Total rows matching the query, or ``None`` when
             the caller did not request it. Computing the total requires
             an extra ``COUNT(*)`` query, so it's opt-in.
+        item_cursors: Parallel to ``items`` — cursor that resumes
+            strictly after that item. Populated only by repository
+            methods whose consumers need to advance through a partial
+            prefix of the page (e.g. the catalog "by genre" listing,
+            which fetches movies and series in parallel and may use
+            only some items from each before the merged page is full).
+            For straight-through consumers that always exhaust the
+            whole page, ``pagination.next_cursor`` is enough and this
+            field stays ``None``.
     """
 
     items: list[T]
     pagination: Pagination
     total_count: int | None = None
+    item_cursors: list[str] | None = None
 
 
 def encode_cursor(internal_id: int) -> str:
@@ -102,6 +144,91 @@ def encode_cursor(internal_id: int) -> str:
         URL-safe base64 string suitable for use as a query parameter.
     """
     return base64.urlsafe_b64encode(str(internal_id).encode("ascii")).decode("ascii")
+
+
+# Separator used inside the title cursor's encoded payload. The
+# raw form is `<title_lower>\x1f<id>` so a literal `|` (or any other
+# printable separator) inside a title can't collide with the
+# delimiter. ASCII 0x1F is the "unit separator" control character —
+# it's not part of any practical title.
+_TITLE_CURSOR_SEP = "\x1f"
+
+
+def encode_title_cursor(title: str, internal_id: int) -> str:
+    """Encode a ``(title, id)`` pair as an opaque title-sorted cursor.
+
+    The title is lowercased before encoding so the cursor matches the
+    repository's ``LOWER(title)`` sort key — pagination must use the
+    exact same comparison the SQL ``ORDER BY`` uses or rows can be
+    skipped or repeated across pages.
+
+    Args:
+        title: The title of the last row of the previous page. Will
+            be lowercased internally.
+        internal_id: The internal autoincrement id of the same row.
+            Used as the tie-breaker when two rows share a title.
+
+    Returns:
+        URL-safe base64 string suitable for use as a query parameter.
+    """
+    raw = f"{title.lower()}{_TITLE_CURSOR_SEP}{internal_id}"
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+
+
+def decode_title_cursor(cursor: str | None) -> TitleCursorValue | None:
+    """Decode a title-sorted opaque cursor back into ``(title, id)``.
+
+    Returns ``None`` for absent or malformed cursors so the caller
+    silently falls back to the first page (same contract as
+    ``decode_cursor``).
+    """
+    if not cursor:
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
+        title, id_str = raw.split(_TITLE_CURSOR_SEP, 1)
+        return TitleCursorValue(title=title, id=int(id_str))
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return None
+
+
+# Separator for the dual-cursor wire format. Same rationale as
+# `_TITLE_CURSOR_SEP` — using a control character keeps the parser
+# robust against any payload bytes the inner stream cursors might
+# contain.
+_DUAL_CURSOR_SEP = "\x1e"  # ASCII record separator
+
+
+def encode_dual_cursor(movies: str | None, series: str | None) -> str:
+    """Bundle two independent stream cursors into one opaque token.
+
+    Either side can be ``None``, meaning "that stream is exhausted /
+    has not been started". The encoder writes empty strings for those
+    so the parser can round-trip them deterministically.
+    """
+    raw = f"{movies or ''}{_DUAL_CURSOR_SEP}{series or ''}"
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+
+
+def decode_dual_cursor(cursor: str | None) -> DualCursorValue:
+    """Decode a dual cursor; an absent or malformed token decodes to (None, None).
+
+    The return type is intentionally non-optional — callers always
+    get a ``DualCursorValue`` and can check ``.movies`` / ``.series``
+    individually. This keeps the use-case happy path linear (no
+    extra ``if cursor is not None`` branch).
+    """
+    if not cursor:
+        return DualCursorValue(movies=None, series=None)
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
+        movies, series = raw.split(_DUAL_CURSOR_SEP, 1)
+        return DualCursorValue(
+            movies=movies or None,
+            series=series or None,
+        )
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return DualCursorValue(movies=None, series=None)
 
 
 def decode_cursor(cursor: str | None) -> CursorValue | None:
@@ -138,8 +265,14 @@ __all__ = [
     "DEFAULT_PAGE_SIZE",
     "MAX_PAGE_SIZE",
     "CursorValue",
+    "DualCursorValue",
     "Pagination",
     "PaginatedResult",
+    "TitleCursorValue",
     "decode_cursor",
+    "decode_dual_cursor",
+    "decode_title_cursor",
     "encode_cursor",
+    "encode_dual_cursor",
+    "encode_title_cursor",
 ]

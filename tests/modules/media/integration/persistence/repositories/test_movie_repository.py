@@ -490,3 +490,189 @@ class TestSQLAlchemyMovieRepositoryListPaginated:
         page = await repo.list_paginated(cursor=None, limit=10, include_total=True)
 
         assert page.total_count == 3
+
+
+@pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryListGenreRows:
+    """Integration tests for the lightweight genre projection."""
+
+    async def test_should_return_one_row_per_movie(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="A", file_path="/m/a.mkv").with_genre(Genre("Action")))
+        await repo.save(_create_movie(title="B", file_path="/m/b.mkv").with_genre(Genre("Comedy")))
+
+        rows = await repo.list_genre_rows(lang="en")
+
+        assert len(rows) == 2
+
+    async def test_should_split_comma_separated_genres(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = (
+            _create_movie(title="A", file_path="/m/a.mkv")
+            .with_genre(Genre("Action"))
+            .with_genre(Genre("Comedy"))
+            .with_genre(Genre("Drama"))
+        )
+        await repo.save(movie)
+
+        rows = await repo.list_genre_rows(lang="en")
+
+        assert rows[0].canonical_genres == ["Action", "Comedy", "Drama"]
+
+    async def test_should_skip_rows_with_no_genres(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        # One movie with a genre, one without
+        await repo.save(_create_movie(title="A", file_path="/m/a.mkv").with_genre(Genre("Action")))
+        await repo.save(_create_movie(title="B", file_path="/m/b.mkv"))
+
+        rows = await repo.list_genre_rows(lang="en")
+
+        # Only the movie with a genre is returned — repo filters
+        # `genres IS NOT NULL` so the empty one is excluded.
+        assert len(rows) == 1
+
+    async def test_should_exclude_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        m1 = _create_movie(title="A", file_path="/m/a.mkv").with_genre(Genre("Action"))
+        m2 = _create_movie(title="B", file_path="/m/b.mkv").with_genre(Genre("Comedy"))
+        await repo.save(m1)
+        await repo.save(m2)
+        await repo.delete(_id_of(m1))
+
+        rows = await repo.list_genre_rows(lang="en")
+
+        assert len(rows) == 1
+        assert rows[0].canonical_genres == ["Comedy"]
+
+
+@pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryListPaginatedByGenre:
+    """Integration tests for the title-sorted, genre-filtered listing."""
+
+    async def test_should_filter_to_movies_with_the_given_genre(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(
+            _create_movie(title="Avatar", file_path="/m/a.mkv").with_genre(Genre("Action"))
+        )
+        await repo.save(
+            _create_movie(title="Comedy Show", file_path="/m/c.mkv").with_genre(Genre("Comedy"))
+        )
+
+        page = await repo.list_paginated_by_genre(genre=Genre("Action"), cursor=None, limit=10)
+
+        assert len(page.items) == 1
+        assert page.items[0].title.value == "Avatar"
+
+    async def test_should_not_match_substrings_or_partial_words(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        # `Reaction` must NOT match `Action`, and neither should
+        # `Action Adventure`.
+        await repo.save(
+            _create_movie(title="Real", file_path="/m/real.mkv").with_genre(Genre("Reaction"))
+        )
+        await repo.save(
+            _create_movie(title="Adv", file_path="/m/adv.mkv").with_genre(Genre("Action Adventure"))
+        )
+        await repo.save(
+            _create_movie(title="True", file_path="/m/true.mkv").with_genre(Genre("Action"))
+        )
+
+        page = await repo.list_paginated_by_genre(genre=Genre("Action"), cursor=None, limit=10)
+
+        assert len(page.items) == 1
+        assert page.items[0].title.value == "True"
+
+    async def test_should_sort_alphabetically_case_insensitive(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        for title in ["zebra", "Apple", "mango", "Banana"]:
+            await repo.save(
+                _create_movie(title=title, file_path=f"/m/{title.lower()}.mkv").with_genre(
+                    Genre("Action")
+                )
+            )
+
+        page = await repo.list_paginated_by_genre(genre=Genre("Action"), cursor=None, limit=10)
+
+        titles = [m.title.value for m in page.items]
+        assert titles == ["Apple", "Banana", "mango", "zebra"]
+
+    async def test_should_walk_pages_via_cursor(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        for title in ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"]:
+            await repo.save(
+                _create_movie(title=title, file_path=f"/m/{title}.mkv").with_genre(Genre("Action"))
+            )
+
+        page1 = await repo.list_paginated_by_genre(genre=Genre("Action"), cursor=None, limit=2)
+        page2 = await repo.list_paginated_by_genre(
+            genre=Genre("Action"),
+            cursor=page1.pagination.next_cursor,
+            limit=2,
+        )
+        page3 = await repo.list_paginated_by_genre(
+            genre=Genre("Action"),
+            cursor=page2.pagination.next_cursor,
+            limit=2,
+        )
+
+        all_titles = (
+            [m.title.value for m in page1.items]
+            + [m.title.value for m in page2.items]
+            + [m.title.value for m in page3.items]
+        )
+        # All five titles in alphabetical order, no overlap
+        assert all_titles == ["Alpha", "Beta", "Delta", "Epsilon", "Gamma"]
+        assert page3.pagination.has_more is False
+
+    async def test_should_populate_per_item_cursors(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        for title in ["Alpha", "Beta", "Gamma"]:
+            await repo.save(
+                _create_movie(title=title, file_path=f"/m/{title}.mkv").with_genre(Genre("Action"))
+            )
+
+        page = await repo.list_paginated_by_genre(genre=Genre("Action"), cursor=None, limit=10)
+
+        # Per-item cursors are needed by the catalog by-genre use
+        # case to advance partial-prefix consumption.
+        assert page.item_cursors is not None
+        assert len(page.item_cursors) == len(page.items) == 3
+
+    async def test_should_resume_correctly_when_titles_share_prefix(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        # Three movies with the same title — the cursor's id
+        # tie-breaker must keep them all visible across pages.
+        for path in ["/m/a1.mkv", "/m/a2.mkv", "/m/a3.mkv"]:
+            await repo.save(_create_movie(title="Same", file_path=path).with_genre(Genre("Action")))
+
+        page1 = await repo.list_paginated_by_genre(genre=Genre("Action"), cursor=None, limit=2)
+        page2 = await repo.list_paginated_by_genre(
+            genre=Genre("Action"),
+            cursor=page1.pagination.next_cursor,
+            limit=2,
+        )
+
+        assert len(page1.items) == 2
+        assert len(page2.items) == 1
+        assert page2.pagination.has_more is False
+
+    async def test_should_exclude_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        m1 = _create_movie(title="A", file_path="/m/a.mkv").with_genre(Genre("Action"))
+        m2 = _create_movie(title="B", file_path="/m/b.mkv").with_genre(Genre("Action"))
+        await repo.save(m1)
+        await repo.save(m2)
+        await repo.delete(_id_of(m1))
+
+        page = await repo.list_paginated_by_genre(genre=Genre("Action"), cursor=None, limit=10)
+
+        assert len(page.items) == 1
+        assert page.items[0].title.value == "B"
