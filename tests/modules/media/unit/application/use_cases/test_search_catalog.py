@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.modules.media.application.dtos.search_dtos import SearchInput, SearchOutput
+from src.modules.media.application.dtos.search_dtos import (
+    SearchInput,
+    SearchItemOutput,
+    SearchOutput,
+)
 from src.modules.media.application.use_cases.search_catalog import SearchCatalogUseCase
 from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
@@ -129,6 +133,23 @@ class TestSearchCatalogUseCase:
         assert call_kwargs.kwargs["year_min"] == 2000
         assert call_kwargs.kwargs["year_max"] == 2020
         assert call_kwargs.kwargs["limit"] == 10
+
+    @pytest.mark.asyncio
+    async def test_search_item_output_carries_required_fields(self) -> None:
+        movie_repo = AsyncMock(spec=MovieRepository)
+        series_repo = AsyncMock(spec=SeriesRepository)
+        movie_repo.search.return_value = [(_movie("Test Movie"), -5.0)]
+        series_repo.search.return_value = [(_series("Test Series"), -3.0)]
+        use_case = SearchCatalogUseCase(movie_repo, series_repo)
+
+        result = await use_case.execute(SearchInput(query="test"))
+
+        for item in result.items:
+            assert isinstance(item, SearchItemOutput)
+            assert item.id
+            assert item.title
+            assert item.year == 2020
+            assert isinstance(item.genres, list)
 
     @pytest.mark.asyncio
     async def test_should_tag_items_with_correct_type(self) -> None:
