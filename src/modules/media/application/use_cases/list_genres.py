@@ -53,14 +53,29 @@ class ListGenresUseCase:
         """Execute the use case.
 
         Args:
-            input_dto: Carries the requested ``lang``.
+            input_dto: Carries the requested ``lang`` and optional
+                ``media_type`` filter.
 
         Returns:
             ``ListGenresOutput`` with one ``GenreOutput`` per unique
-            canonical genre present in the library.
+            canonical genre present in the library (restricted to the
+            selected media type when ``media_type`` is set).
         """
-        movie_rows = await self._movie_repository.list_genre_rows(input_dto.lang)
-        series_rows = await self._series_repository.list_genre_rows(input_dto.lang)
+        # Skip the repo call for the excluded media type when a
+        # filter is active. The Movies and Series tabs on the frontend
+        # use this to get counts scoped to just their half of the
+        # catalog, so e.g. a genre that only tags series shouldn't
+        # appear on the Movies tab.
+        movie_rows = (
+            await self._movie_repository.list_genre_rows(input_dto.lang)
+            if input_dto.media_type != "series"
+            else []
+        )
+        series_rows = (
+            await self._series_repository.list_genre_rows(input_dto.lang)
+            if input_dto.media_type != "movie"
+            else []
+        )
 
         counts: dict[str, int] = {}
         localized_label: dict[str, str] = {}

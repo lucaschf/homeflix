@@ -133,3 +133,37 @@ class TestListGenresUseCase:
 
         movie_repo.list_genre_rows.assert_awaited_once_with("pt-BR")
         series_repo.list_genre_rows.assert_awaited_once_with("pt-BR")
+
+    @pytest.mark.asyncio
+    async def test_should_skip_series_repo_when_filtered_to_movies(self) -> None:
+        # media_type="movie" restricts the aggregation to the movie
+        # repo — the series repo must not be called at all so the
+        # counts reflect movies only (and the Movies tab on the
+        # frontend doesn't surface series-only genres).
+        movie_repo = AsyncMock(spec=MovieRepository)
+        series_repo = AsyncMock(spec=SeriesRepository)
+        movie_repo.list_genre_rows.return_value = [_row(["Action"]), _row(["Comedy"])]
+        series_repo.list_genre_rows.return_value = [_row(["Drama"])]
+        use_case = ListGenresUseCase(movie_repo, series_repo)
+
+        result = await use_case.execute(ListGenresInput(media_type="movie"))
+
+        movie_repo.list_genre_rows.assert_awaited_once()
+        series_repo.list_genre_rows.assert_not_awaited()
+        assert {g.id for g in result.genres} == {"Action", "Comedy"}
+
+    @pytest.mark.asyncio
+    async def test_should_skip_movie_repo_when_filtered_to_series(self) -> None:
+        # Mirror of the previous test — Series tab should only hit
+        # the series repo.
+        movie_repo = AsyncMock(spec=MovieRepository)
+        series_repo = AsyncMock(spec=SeriesRepository)
+        movie_repo.list_genre_rows.return_value = [_row(["Action"])]
+        series_repo.list_genre_rows.return_value = [_row(["Drama"]), _row(["Thriller"])]
+        use_case = ListGenresUseCase(movie_repo, series_repo)
+
+        result = await use_case.execute(ListGenresInput(media_type="series"))
+
+        series_repo.list_genre_rows.assert_awaited_once()
+        movie_repo.list_genre_rows.assert_not_awaited()
+        assert {g.id for g in result.genres} == {"Drama", "Thriller"}

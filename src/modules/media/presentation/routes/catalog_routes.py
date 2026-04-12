@@ -1,27 +1,40 @@
 """Catalog (cross-cutting movies + series) REST API routes."""
 
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Literal
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.catalog_dtos import (
     ListByGenreInput,
     ListGenresInput,
+    MediaTypeFilter,
 )
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["Catalog"])
 
+# Shared OpenAPI/validation config for the `?type=` query param. Kept
+# as a module-level constant so both routes stay identical and changes
+# to the description show up in a single place.
+_MEDIA_TYPE_QUERY: MediaTypeFilter | None = Query(
+    default=None,
+    description=(
+        "Optional filter — restrict the result to a single media type. "
+        "Accepts 'movie' or 'series'; omit to aggregate both."
+    ),
+)
+
 
 @router.get("/genres")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def list_genres(
     lang: str = "en",
+    type: Literal["movie", "series"] | None = _MEDIA_TYPE_QUERY,
     use_case: ListGenresUseCase = Depends(
         Provide[ApplicationContainer.media.list_genres],
     ),
@@ -36,8 +49,15 @@ async def list_genres(
 
     Sorted by count descending, then alphabetically by display name —
     most-populated carousels surface first on the Home page.
+
+    Query params:
+        lang: Language code for localized genre names.
+        type: Optional ``"movie"`` or ``"series"`` filter. When set,
+            counts only reflect the matching media type so the Movies
+            and Series tabs can skip genres that exist only on the
+            other side.
     """
-    result = await use_case.execute(ListGenresInput(lang=lang))
+    result = await use_case.execute(ListGenresInput(lang=lang, media_type=type))
     return {
         "type": "list",
         "data": [asdict(g) for g in result.genres],
@@ -51,6 +71,7 @@ async def list_by_genre(
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
     lang: str = "en",
+    type: Literal["movie", "series"] | None = _MEDIA_TYPE_QUERY,
     use_case: ListByGenreUseCase = Depends(
         Provide[ApplicationContainer.media.list_by_genre],
     ),
@@ -70,6 +91,10 @@ async def list_by_genre(
         limit: Page size, clamped to ``[1, MAX_PAGE_SIZE]``.
         lang: Language code for localized titles, synopses, and
             genre names returned in each item.
+        type: Optional ``"movie"`` or ``"series"`` filter. When set,
+            only the matching stream is queried so the Movies and
+            Series tabs can show a genre restricted to their side of
+            the catalog without mixing in the other.
     """
     clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
     result = await use_case.execute(
@@ -78,6 +103,7 @@ async def list_by_genre(
             cursor=cursor,
             limit=clamped_limit,
             lang=lang,
+            media_type=type,
         )
     )
     return {

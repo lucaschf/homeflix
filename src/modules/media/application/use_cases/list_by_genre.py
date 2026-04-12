@@ -2,10 +2,12 @@
 
 import asyncio
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeVar
 
 from src.building_blocks.application.pagination import (
+    DualCursorValue,
     PaginatedResult,
+    Pagination,
     decode_dual_cursor,
     encode_dual_cursor,
 )
@@ -17,6 +19,25 @@ from src.modules.media.application.dtos.catalog_dtos import (
 from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import Genre
+
+_T = TypeVar("_T")
+
+
+def _empty_page(_element_type: type[_T]) -> PaginatedResult[_T]:
+    """Build a no-op ``PaginatedResult`` for a stream that was skipped.
+
+    Used when the media-type filter excludes one side of the merge —
+    the missing stream is replaced by an empty page so the sort and
+    cursor-advancement logic below stays linear instead of sprouting
+    a second code path for the "only one stream" case. The
+    ``_element_type`` argument is present only so mypy can bind the
+    generic parameter at the call site — it's not used at runtime.
+    """
+    return PaginatedResult(
+        items=[],
+        pagination=Pagination(next_cursor=None, has_more=False),
+        item_cursors=[],
+    )
 
 
 @dataclass(frozen=True)
@@ -92,17 +113,16 @@ class ListByGenreUseCase:
         # serializing them. The DI container hands each repository
         # its own AsyncSession (Factory provider), so there's no
         # session contention to worry about.
-        movies_page, series_page = await asyncio.gather(
-            self._movie_repository.list_paginated_by_genre(
-                genre=genre,
-                cursor=decoded.movies,
-                limit=input_dto.limit,
-            ),
-            self._series_repository.list_paginated_by_genre(
-                genre=genre,
-                cursor=decoded.series,
-                limit=input_dto.limit,
-            ),
+        #
+        # When ``media_type`` restricts the stream to one side, the
+        # excluded repo is skipped entirely and a synthetic empty
+        # page stands in for it so the merge / cursor logic below
+        # stays unchanged.
+        movies_page, series_page = await self._fetch_pages(
+            genre=genre,
+            decoded=decoded,
+            limit=input_dto.limit,
+            media_type=input_dto.media_type,
         )
 
         # Tag each entity with its source stream and its source-page
@@ -155,6 +175,51 @@ class ListByGenreUseCase:
             items=[self._to_output(mi.kind, mi.entity, input_dto.lang) for mi in page_items],
             next_cursor=next_cursor,
             has_more=has_more,
+        )
+
+    async def _fetch_pages(
+        self,
+        *,
+        genre: Genre,
+        decoded: DualCursorValue,
+        limit: int,
+        media_type: Literal["movie", "series"] | None,
+    ) -> tuple[PaginatedResult[Movie], PaginatedResult[Series]]:
+        """Fetch the movie and series pages, honoring the media-type filter.
+
+        Both repos are awaited concurrently via ``asyncio.gather``
+        when no filter is active. When ``media_type`` excludes a
+        stream, only the surviving repo is called and an empty
+        ``PaginatedResult`` stands in for the other — preserving the
+        caller's ``(movies, series)`` tuple shape and the "previous
+        cursor stays put if nothing is consumed" semantics of the
+        merge sort.
+        """
+        if media_type == "movie":
+            movies_page = await self._movie_repository.list_paginated_by_genre(
+                genre=genre,
+                cursor=decoded.movies,
+                limit=limit,
+            )
+            return movies_page, _empty_page(Series)
+        if media_type == "series":
+            series_page = await self._series_repository.list_paginated_by_genre(
+                genre=genre,
+                cursor=decoded.series,
+                limit=limit,
+            )
+            return _empty_page(Movie), series_page
+        return await asyncio.gather(
+            self._movie_repository.list_paginated_by_genre(
+                genre=genre,
+                cursor=decoded.movies,
+                limit=limit,
+            ),
+            self._series_repository.list_paginated_by_genre(
+                genre=genre,
+                cursor=decoded.series,
+                limit=limit,
+            ),
         )
 
     @staticmethod
