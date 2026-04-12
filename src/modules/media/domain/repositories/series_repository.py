@@ -5,7 +5,8 @@ from collections.abc import Sequence
 
 from src.building_blocks.application.pagination import PaginatedResult
 from src.modules.media.domain.entities.series import Series
-from src.modules.media.domain.value_objects import EpisodeId, FilePath, SeriesId, Title
+from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.modules.media.domain.value_objects import EpisodeId, FilePath, Genre, SeriesId, Title
 
 
 class SeriesRepository(ABC):
@@ -94,6 +95,34 @@ class SeriesRepository(ABC):
             ``PaginatedResult`` containing the page items, the
             ``Pagination`` (next_cursor + has_more), and the optional
             total count.
+        """
+        ...
+
+    @abstractmethod
+    async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
+        """Project the genre columns of every non-deleted series row.
+
+        Same contract as ``MovieRepository.list_genre_rows`` — see
+        that method for the full description. Used by the catalog
+        genres aggregation use case to compute counts and resolve
+        localized labels without loading the full series hierarchy.
+        """
+        ...
+
+    @abstractmethod
+    async def list_paginated_by_genre(
+        self,
+        genre: Genre,
+        cursor: str | None,
+        limit: int,
+    ) -> PaginatedResult[Series]:
+        """List series belonging to a specific genre, paginated.
+
+        Sorted by ``(LOWER(title) ASC, id ASC)``. Same contract as
+        ``MovieRepository.list_paginated_by_genre`` — see that method
+        for the full description of the cursor format and the genre
+        filter (whole-word LIKE on the comma-separated ``genres``
+        column).
         """
         ...
 

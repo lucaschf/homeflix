@@ -788,3 +788,141 @@ class TestSQLAlchemySeriesRepositoryListPaginated:
         page = await repo.list_paginated(cursor=None, limit=10, include_total=True)
 
         assert page.total_count == 3
+
+
+@pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryListGenreRows:
+    """Integration tests for the lightweight genre projection."""
+
+    async def test_should_return_one_row_per_series(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_create_series(title="A", genres=[Genre("Drama")]))
+        await repo.save(_create_series(title="B", genres=[Genre("Comedy")]))
+
+        rows = await repo.list_genre_rows(lang="en")
+
+        assert len(rows) == 2
+
+    async def test_should_split_comma_separated_genres(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _create_series(
+            title="A",
+            genres=[Genre("Drama"), Genre("Crime"), Genre("Thriller")],
+        )
+        await repo.save(series)
+
+        rows = await repo.list_genre_rows(lang="en")
+
+        assert rows[0].canonical_genres == ["Drama", "Crime", "Thriller"]
+
+    async def test_should_skip_rows_with_no_genres(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_create_series(title="A", genres=[Genre("Drama")]))
+        await repo.save(_create_series(title="B"))
+
+        rows = await repo.list_genre_rows(lang="en")
+
+        assert len(rows) == 1
+
+    async def test_should_exclude_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        s1 = _create_series(title="A", genres=[Genre("Drama")])
+        s2 = _create_series(title="B", genres=[Genre("Comedy")])
+        await repo.save(s1)
+        await repo.save(s2)
+        await repo.delete(_id_of(s1))
+
+        rows = await repo.list_genre_rows(lang="en")
+
+        assert len(rows) == 1
+        assert rows[0].canonical_genres == ["Comedy"]
+
+
+@pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryListPaginatedByGenre:
+    """Integration tests for the title-sorted, genre-filtered listing."""
+
+    async def test_should_filter_to_series_with_the_given_genre(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_create_series(title="Breaking Bad", genres=[Genre("Drama")]))
+        await repo.save(_create_series(title="Friends", genres=[Genre("Comedy")]))
+
+        page = await repo.list_paginated_by_genre(genre=Genre("Drama"), cursor=None, limit=10)
+
+        assert len(page.items) == 1
+        assert page.items[0].title.value == "Breaking Bad"
+
+    async def test_should_not_match_substrings_or_partial_words(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_create_series(title="A", genres=[Genre("Dramedy")]))
+        await repo.save(_create_series(title="B", genres=[Genre("Drama Comedy")]))
+        await repo.save(_create_series(title="C", genres=[Genre("Drama")]))
+
+        page = await repo.list_paginated_by_genre(genre=Genre("Drama"), cursor=None, limit=10)
+
+        assert len(page.items) == 1
+        assert page.items[0].title.value == "C"
+
+    async def test_should_sort_alphabetically_case_insensitive(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        for title in ["zebra", "Apple", "mango", "Banana"]:
+            await repo.save(_create_series(title=title, genres=[Genre("Drama")]))
+
+        page = await repo.list_paginated_by_genre(genre=Genre("Drama"), cursor=None, limit=10)
+
+        titles = [s.title.value for s in page.items]
+        assert titles == ["Apple", "Banana", "mango", "zebra"]
+
+    async def test_should_walk_pages_via_cursor(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        for title in ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"]:
+            await repo.save(_create_series(title=title, genres=[Genre("Drama")]))
+
+        page1 = await repo.list_paginated_by_genre(genre=Genre("Drama"), cursor=None, limit=2)
+        page2 = await repo.list_paginated_by_genre(
+            genre=Genre("Drama"),
+            cursor=page1.pagination.next_cursor,
+            limit=2,
+        )
+        page3 = await repo.list_paginated_by_genre(
+            genre=Genre("Drama"),
+            cursor=page2.pagination.next_cursor,
+            limit=2,
+        )
+
+        all_titles = (
+            [s.title.value for s in page1.items]
+            + [s.title.value for s in page2.items]
+            + [s.title.value for s in page3.items]
+        )
+        assert all_titles == ["Alpha", "Beta", "Delta", "Epsilon", "Gamma"]
+        assert page3.pagination.has_more is False
+
+    async def test_should_populate_per_item_cursors(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        for title in ["Alpha", "Beta", "Gamma"]:
+            await repo.save(_create_series(title=title, genres=[Genre("Drama")]))
+
+        page = await repo.list_paginated_by_genre(genre=Genre("Drama"), cursor=None, limit=10)
+
+        assert page.item_cursors is not None
+        assert len(page.item_cursors) == len(page.items) == 3
+
+    async def test_should_exclude_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        s1 = _create_series(title="A", genres=[Genre("Drama")])
+        s2 = _create_series(title="B", genres=[Genre("Drama")])
+        await repo.save(s1)
+        await repo.save(s2)
+        await repo.delete(_id_of(s1))
+
+        page = await repo.list_paginated_by_genre(genre=Genre("Drama"), cursor=None, limit=10)
+
+        assert len(page.items) == 1
+        assert page.items[0].title.value == "B"

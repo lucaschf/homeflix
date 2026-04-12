@@ -21,6 +21,8 @@ from src.modules.media.application.use_cases.get_featured_media import GetFeatur
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
+from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
+from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
@@ -117,6 +119,22 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     list_series = providers.Factory(
         ListSeriesUseCase,
+        series_repository=series_repository,
+    )
+
+    # =========================================================================
+    # Use Cases — Catalog (cross-cutting movies + series)
+    # =========================================================================
+
+    list_genres = providers.Factory(
+        ListGenresUseCase,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
+    )
+
+    list_by_genre = providers.Factory(
+        ListByGenreUseCase,
+        movie_repository=movie_repository,
         series_repository=series_repository,
     )
 

@@ -15,7 +15,15 @@ from src.building_blocks.application.pagination import (
 )
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
-from src.modules.media.domain.value_objects import EpisodeId, FilePath, SeasonId, SeriesId, Title
+from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.modules.media.domain.value_objects import (
+    EpisodeId,
+    FilePath,
+    Genre,
+    SeasonId,
+    SeriesId,
+    Title,
+)
 from src.modules.media.infrastructure.persistence.mappers import (
     EpisodeMapper,
     SeasonMapper,
@@ -26,6 +34,10 @@ from src.modules.media.infrastructure.persistence.models import (
     MediaFileModel,
     SeasonModel,
     SeriesModel,
+)
+from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
+    fetch_genre_paginated_page,
+    fetch_genre_rows,
 )
 
 
@@ -223,6 +235,35 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             items=[SeriesMapper.to_entity(m) for m in models],
             pagination=Pagination(next_cursor=next_cursor, has_more=has_more),
             total_count=total_count,
+        )
+
+    async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
+        """Project the genre columns of every non-deleted series row."""
+        return await fetch_genre_rows(self._session, SeriesModel, lang)
+
+    async def list_paginated_by_genre(
+        self,
+        genre: Genre,
+        cursor: str | None,
+        limit: int,
+    ) -> PaginatedResult[Series]:
+        """List series for a single genre, paginated and sorted by title.
+
+        Delegates the SQL boilerplate to the shared
+        ``fetch_genre_paginated_page`` helper so this method and its
+        movie counterpart stay in lockstep. The full season / episode
+        hierarchy is loaded via the existing ``_series_load_options``
+        because consumers may want to render episode counts on the
+        carousel card.
+        """
+        return await fetch_genre_paginated_page(
+            session=self._session,
+            model=SeriesModel,
+            mapper_to_entity=SeriesMapper.to_entity,
+            options=list(self._series_load_options()),
+            genre=genre,
+            cursor=cursor,
+            limit=limit,
         )
 
     async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Series]:

@@ -14,9 +14,14 @@ from src.building_blocks.application.pagination import (
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
-from src.modules.media.domain.value_objects import FilePath, MovieId
+from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.modules.media.domain.value_objects import FilePath, Genre, MovieId
 from src.modules.media.infrastructure.persistence.mappers import MovieMapper
 from src.modules.media.infrastructure.persistence.models import MediaFileModel, MovieModel
+from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
+    fetch_genre_paginated_page,
+    fetch_genre_rows,
+)
 
 
 class SQLAlchemyMovieRepository(MovieRepository):
@@ -197,6 +202,34 @@ class SQLAlchemyMovieRepository(MovieRepository):
             items=[MovieMapper.to_entity(m) for m in models],
             pagination=Pagination(next_cursor=next_cursor, has_more=has_more),
             total_count=total_count,
+        )
+
+    async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
+        """Project the genre columns of every non-deleted movie row."""
+        return await fetch_genre_rows(self._session, MovieModel, lang)
+
+    async def list_paginated_by_genre(
+        self,
+        genre: Genre,
+        cursor: str | None,
+        limit: int,
+    ) -> PaginatedResult[Movie]:
+        """List movies for a single genre, paginated and sorted by title.
+
+        Delegates the SQL boilerplate (delimited LIKE filter,
+        ``LOWER(title)`` cursor, fetch N+1 trick, per-item cursor
+        population) to the shared ``fetch_genre_paginated_page``
+        helper so this method and its series counterpart can't drift
+        apart.
+        """
+        return await fetch_genre_paginated_page(
+            session=self._session,
+            model=MovieModel,
+            mapper_to_entity=MovieMapper.to_entity,
+            options=[selectinload(MovieModel.file_variants)],
+            genre=genre,
+            cursor=cursor,
+            limit=limit,
         )
 
     async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Movie]:

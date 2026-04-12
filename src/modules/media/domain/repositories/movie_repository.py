@@ -2,10 +2,27 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from src.building_blocks.application.pagination import PaginatedResult
 from src.modules.media.domain.entities.movie import Movie
-from src.modules.media.domain.value_objects import FilePath, MovieId
+from src.modules.media.domain.value_objects import FilePath, Genre, MovieId
+
+
+@dataclass(frozen=True)
+class GenreRow:
+    """Lightweight projection of one media row's genre columns.
+
+    Used by ``list_genre_rows`` so genre aggregation across the full
+    catalog doesn't have to load entities + their relationships. The
+    parallel ``canonical_genres`` and ``localized_genres`` lists carry
+    the same positional mapping the entity exposes via
+    ``Entity.get_genres(lang)`` — index ``i`` of the localized list is
+    the translation of index ``i`` of the canonical list.
+    """
+
+    canonical_genres: list[str]
+    localized_genres: list[str]
 
 
 class MovieRepository(ABC):
@@ -101,6 +118,65 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
+        """Project the genre columns of every non-deleted row.
+
+        This is the cheap input to cross-aggregate listings (e.g.
+        ``ListGenresUseCase``) — only the ``genres`` and ``localized``
+        columns are read so we don't pay the cost of loading file
+        variants or any other relationships.
+
+        Args:
+            lang: Language code used to extract the localized genre
+                names from the per-row ``localized`` JSON. Falls back
+                to canonical English when no translation is present.
+
+        Returns:
+            One ``GenreRow`` per non-deleted movie. Order is not
+            guaranteed.
+        """
+        ...
+
+    @abstractmethod
+    async def list_paginated_by_genre(
+        self,
+        genre: Genre,
+        cursor: str | None,
+        limit: int,
+    ) -> PaginatedResult[Movie]:
+        """List movies belonging to a specific genre, paginated.
+
+        Sorted by ``(LOWER(title) ASC, id ASC)`` so the catalog
+        carousel renders alphabetically. The cursor is a
+        ``(title, id)`` composite (see ``encode_title_cursor`` in the
+        pagination building block) — the ``id`` tie-breaker keeps
+        pagination stable when two rows share a title.
+
+        The genre filter matches the canonical English genre name
+        stored in ``MovieModel.genres`` (a comma-separated string).
+        Localized display names live in the ``localized`` JSON column
+        and are NOT used for filtering — the catalog "by genre"
+        endpoint takes the canonical id and looks up the localized
+        label client-side via ``ListGenresUseCase``.
+
+        Args:
+            genre: The canonical (English) genre to filter by.
+            cursor: Opaque title cursor from the previous page, or
+                ``None`` for the first page. Invalid cursors silently
+                fall back to the first page.
+            limit: Page size. The repository fetches ``limit + 1``
+                rows and trims the sentinel to detect ``has_more``.
+
+        Returns:
+            ``PaginatedResult`` with the page items and pagination
+            metadata. ``total_count`` is always ``None`` here — the
+            catalog endpoint doesn't surface a per-genre count from
+            this method (counts come from ``ListGenresUseCase``
+            which aggregates across both movies and series).
+        """
+        ...
+
+    @abstractmethod
     async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Movie]:
         """Return random movies, optionally filtering to those with backdrop.
 
@@ -138,4 +214,4 @@ class MovieRepository(ABC):
         ...
 
 
-__all__ = ["MovieRepository"]
+__all__ = ["GenreRow", "MovieRepository"]

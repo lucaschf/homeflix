@@ -17,6 +17,7 @@ from src.config.logging import get_logger, setup_logging
 from src.config.settings import get_settings
 from src.modules.collections.presentation.routes import custom_list_router, watchlist_router
 from src.modules.media.presentation.routes import (
+    catalog_router,
     enrichment_router,
     featured_router,
     movie_router,
@@ -60,6 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container = create_container()
     container.wire(
         modules=[
+            "src.modules.media.presentation.routes.catalog_routes",
             "src.modules.media.presentation.routes.enrichment_routes",
             "src.modules.media.presentation.routes.featured_routes",
             "src.modules.media.presentation.routes.movie_routes",
@@ -144,6 +146,7 @@ def create_app() -> FastAPI:
 
     # Register routes
     register_health_routes(app)
+    app.include_router(catalog_router)
     app.include_router(enrichment_router)
     app.include_router(featured_router)
     app.include_router(movie_router)
