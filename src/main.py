@@ -29,6 +29,9 @@ from src.modules.media.presentation.routes import (
     series_router,
     stream_router,
 )
+from src.modules.preferences.presentation.routes.preferences_routes import (
+    router as preferences_router,
+)
 from src.modules.watch_progress.presentation.routes import progress_router
 
 
@@ -77,6 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "src.modules.collections.presentation.routes.watchlist_routes",
             "src.modules.collections.presentation.routes.custom_list_routes",
             "src.modules.library.presentation.routes.library_routes",
+            "src.modules.preferences.presentation.routes.preferences_routes",
         ],
     )
     app.state.container = container
@@ -164,6 +168,7 @@ def create_app() -> FastAPI:
     app.include_router(watchlist_router)
     app.include_router(custom_list_router)
     app.include_router(library_router)
+    app.include_router(preferences_router)
 
     return app
 
