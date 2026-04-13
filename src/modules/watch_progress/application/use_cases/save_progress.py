@@ -3,6 +3,7 @@
 from src.modules.watch_progress.application.dtos import ProgressOutput, SaveProgressInput
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.repositories import WatchProgressRepository
+from src.modules.watch_progress.domain.value_objects import WatchableMediaType
 
 
 class SaveProgressUseCase:
@@ -50,7 +51,7 @@ class SaveProgressUseCase:
         else:
             progress = WatchProgress.create(
                 media_id=input_dto.media_id,
-                media_type=input_dto.media_type,
+                media_type=WatchableMediaType(input_dto.media_type),
                 position_seconds=input_dto.position_seconds,
                 duration_seconds=input_dto.duration_seconds,
                 audio_track=input_dto.audio_track,

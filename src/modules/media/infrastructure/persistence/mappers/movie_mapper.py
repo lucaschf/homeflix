@@ -4,6 +4,7 @@ import json
 
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
+    ContentRating,
     Duration,
     FilePath,
     Genre,
@@ -68,7 +69,7 @@ class MovieMapper:
             if entity.directors
             else None,
             writers=json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None,
-            content_rating=entity.content_rating,
+            content_rating=entity.content_rating.value if entity.content_rating else None,
             trailer_url=entity.trailer_url,
             localized=json.dumps(entity.localized, ensure_ascii=False)
             if entity.localized
@@ -130,7 +131,7 @@ class MovieMapper:
             cast=json.loads(model.cast) if model.cast else [],
             directors=json.loads(model.directors) if model.directors else [],
             writers=json.loads(model.writers) if model.writers else [],
-            content_rating=model.content_rating,
+            content_rating=ContentRating(model.content_rating) if model.content_rating else None,
             trailer_url=model.trailer_url,
             localized=json.loads(model.localized) if model.localized else {},
             files=files,
@@ -168,7 +169,7 @@ class MovieMapper:
             json.dumps(entity.directors, ensure_ascii=False) if entity.directors else None
         )
         model.writers = json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None
-        model.content_rating = entity.content_rating
+        model.content_rating = entity.content_rating.value if entity.content_rating else None
         model.trailer_url = entity.trailer_url
         model.localized = (
             json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None

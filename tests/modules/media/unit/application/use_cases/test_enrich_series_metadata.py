@@ -22,6 +22,7 @@ from src.modules.media.application.use_cases.enrich_series_metadata import (
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import (
+    ContentRating,
     Duration,
     FilePath,
     MediaFile,
@@ -494,7 +495,7 @@ class TestApplySeriesFields:
         assert saved.synopsis == "Crime drama."
         assert saved.poster_path is not None
         assert saved.backdrop_path is not None
-        assert saved.content_rating == "TV-MA"
+        assert saved.content_rating == ContentRating("TV-MA")
         assert saved.trailer_url == "https://youtube.com/abc"
 
     @pytest.mark.asyncio

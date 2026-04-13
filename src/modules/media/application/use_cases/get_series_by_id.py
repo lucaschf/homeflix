@@ -67,7 +67,9 @@ class GetSeriesByIdUseCase:
 
         series_id_str = str(series.id)
         composite_ids = [
-            EpisodeCompositeId.build(series_id_str, s.season_number, ep.episode_number).media_id
+            EpisodeCompositeId.build(
+                series_id_str, s.season_number.value, ep.episode_number.value
+            ).media_id
             for s in series.seasons
             for ep in s.episodes
         ]
@@ -103,7 +105,7 @@ class GetSeriesByIdUseCase:
             poster_path=series.poster_path.value if series.poster_path else None,
             backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
             genres=series.get_genres(lang),
-            content_rating=series.content_rating,
+            content_rating=series.content_rating.value if series.content_rating else None,
             trailer_url=series.trailer_url,
             tmdb_id=series.tmdb_id.value if series.tmdb_id else None,
             imdb_id=series.imdb_id.value if series.imdb_id else None,
@@ -132,7 +134,7 @@ class GetSeriesByIdUseCase:
         """
         return SeasonOutput(
             id=str(season.id) if season.id else None,
-            season_number=season.season_number,
+            season_number=season.season_number.value,
             title=season.title.value if season.title else None,
             synopsis=season.synopsis,
             poster_path=season.poster_path.value if season.poster_path else None,
@@ -142,7 +144,7 @@ class GetSeriesByIdUseCase:
                 GetSeriesByIdUseCase._to_episode_output(
                     e,
                     series_id,
-                    season.season_number,
+                    season.season_number.value,
                     progress_map,
                 )
                 for e in season.episodes
@@ -171,12 +173,12 @@ class GetSeriesByIdUseCase:
         composite_key = EpisodeCompositeId.build(
             series_id,
             season_number,
-            episode.episode_number,
+            episode.episode_number.value,
         ).media_id
         progress = progress_map.get(composite_key)
         return EpisodeOutput(
             id=str(episode.id) if episode.id else None,
-            episode_number=episode.episode_number,
+            episode_number=episode.episode_number.value,
             title=episode.title.value,
             synopsis=episode.synopsis,
             duration_seconds=episode.duration.value,

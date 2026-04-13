@@ -15,6 +15,7 @@ from src.modules.media.domain.value_objects import (
     FilePath,
     MediaFile,
     Resolution,
+    SeasonNumber,
     SeriesId,
     Title,
 )
@@ -60,7 +61,7 @@ class TestSeasonCreation:
 
         assert season.id is None
         assert season.series_id == series_id
-        assert season.season_number == 1
+        assert season.season_number == SeasonNumber(1)
         assert season.episodes == []
 
     def test_should_create_with_explicit_id(self):
@@ -98,7 +99,7 @@ class TestSeasonCreation:
             season_number=0,
         )
 
-        assert season.season_number == 0
+        assert season.season_number == SeasonNumber(0)
 
     def test_should_raise_error_for_negative_season_number(self):
         from src.modules.media.domain.entities import Season
@@ -293,7 +294,7 @@ class TestSeasonImmutability:
         )
 
         with pytest.raises(DomainValidationException):
-            season.season_number = 2  # type: ignore[misc]
+            season.season_number = 2  # type: ignore[assignment,misc]
 
     def test_with_episode_should_return_new_instance(self):
         from src.modules.media.domain.entities import Season

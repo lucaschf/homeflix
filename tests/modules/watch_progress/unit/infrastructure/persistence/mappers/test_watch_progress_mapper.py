@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.value_objects import ProgressId
+from src.modules.watch_progress.domain.value_objects import ProgressId, WatchableMediaType
 from src.modules.watch_progress.infrastructure.persistence.mappers import (
     WatchProgressMapper,
 )
@@ -16,7 +16,7 @@ from src.modules.watch_progress.infrastructure.persistence.models import (
 
 def _make_progress(
     media_id: str = "mov_abc123def456",
-    media_type: str = "movie",
+    media_type: WatchableMediaType = WatchableMediaType.MOVIE,
     position: int = 1800,
     duration: int = 7200,
     progress_id: ProgressId | None = None,
@@ -38,7 +38,7 @@ class TestWatchProgressMapperToModel:
         progress = WatchProgress(
             id=None,
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=100,
             duration_seconds=7200,
         )
@@ -63,7 +63,7 @@ class TestWatchProgressMapperToModel:
         progress = WatchProgress(
             id=ProgressId.generate(),
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=100,
             duration_seconds=7200,
             audio_track=1,
@@ -80,7 +80,7 @@ class TestWatchProgressMapperToModel:
         progress = WatchProgress(
             id=ProgressId.generate(),
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=7200,
             duration_seconds=7200,
             status="completed",
@@ -164,7 +164,7 @@ class TestWatchProgressMapperUpdateModel:
         updated = WatchProgress(
             id=progress_id,
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=6500,
             duration_seconds=7200,
             status="completed",
@@ -198,7 +198,7 @@ class TestWatchProgressMapperUpdateModel:
         updated = WatchProgress(
             id=progress_id,
             media_id="mov_different000",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=200,
             duration_seconds=7200,
         )

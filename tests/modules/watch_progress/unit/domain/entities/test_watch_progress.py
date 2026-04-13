@@ -2,6 +2,7 @@
 
 
 from src.modules.watch_progress.domain.entities import WatchProgress
+from src.modules.watch_progress.domain.value_objects import WatchableMediaType
 
 
 class TestWatchProgress:
@@ -10,7 +11,7 @@ class TestWatchProgress:
     def test_create_sets_in_progress_status(self):
         progress = WatchProgress.create(
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=1800,
             duration_seconds=7200,
         )
@@ -21,7 +22,7 @@ class TestWatchProgress:
     def test_create_auto_completes_at_90_percent(self):
         progress = WatchProgress.create(
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=6500,
             duration_seconds=7200,
         )
@@ -31,7 +32,7 @@ class TestWatchProgress:
     def test_percentage_calculation(self):
         progress = WatchProgress.create(
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=3600,
             duration_seconds=7200,
         )
@@ -40,7 +41,7 @@ class TestWatchProgress:
     def test_percentage_zero_position(self):
         progress = WatchProgress.create(
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=0,
             duration_seconds=7200,
         )
@@ -49,7 +50,7 @@ class TestWatchProgress:
     def test_percentage_capped_at_100(self):
         progress = WatchProgress.create(
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=8000,
             duration_seconds=7200,
         )
@@ -58,7 +59,7 @@ class TestWatchProgress:
     def test_update_position_preserves_identity(self):
         progress = WatchProgress.create(
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=100,
             duration_seconds=7200,
         )
@@ -70,7 +71,7 @@ class TestWatchProgress:
     def test_update_position_auto_completes(self):
         progress = WatchProgress.create(
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=100,
             duration_seconds=7200,
         )
@@ -83,7 +84,7 @@ class TestWatchProgress:
     def test_update_position_saves_audio_track(self):
         progress = WatchProgress.create(
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=100,
             duration_seconds=7200,
         )
@@ -93,7 +94,7 @@ class TestWatchProgress:
     def test_update_position_saves_subtitle_track(self):
         progress = WatchProgress.create(
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=100,
             duration_seconds=7200,
         )
@@ -103,7 +104,7 @@ class TestWatchProgress:
     def test_is_completed_property(self):
         progress = WatchProgress.create(
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=100,
             duration_seconds=7200,
         )
@@ -115,7 +116,7 @@ class TestWatchProgress:
     def test_create_with_episode(self):
         progress = WatchProgress.create(
             media_id="epi_abc123def456",
-            media_type="episode",
+            media_type=WatchableMediaType.EPISODE,
             position_seconds=300,
             duration_seconds=2700,
         )

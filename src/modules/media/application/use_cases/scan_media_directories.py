@@ -10,8 +10,10 @@ from src.modules.media.domain.entities import Episode, Movie, Season, Series
 from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import (
     Duration,
+    EpisodeNumber,
     MediaFile,
     Resolution,
+    SeasonNumber,
     Title,
 )
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
@@ -227,7 +229,7 @@ def _process_episode_group(
     season = series.get_season(season_num)
     if not season:
         assert series.id is not None
-        season = Season(series_id=series.id, season_number=season_num)
+        season = Season(series_id=series.id, season_number=SeasonNumber(season_num))
         series = series.with_season(season)
 
     episode = season.get_episode(episode_num)
@@ -256,8 +258,8 @@ def _create_episode(
     ep_title = first.episode_title or f"Episode {episode_num}"
     episode = Episode(
         series_id=series.id,
-        season_number=season_num,
-        episode_number=episode_num,
+        season_number=SeasonNumber(season_num),
+        episode_number=EpisodeNumber(episode_num),
         title=Title(ep_title),
         duration=Duration(0),
         files=[_build_media_file(first, is_primary=True)],

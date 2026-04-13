@@ -8,6 +8,7 @@ from src.modules.watch_progress.application.dtos import GetProgressInput, Progre
 from src.modules.watch_progress.application.use_cases import GetProgressUseCase
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.repositories import WatchProgressRepository
+from src.modules.watch_progress.domain.value_objects import WatchableMediaType
 
 
 class TestGetProgressUseCase:
@@ -17,7 +18,7 @@ class TestGetProgressUseCase:
     async def test_returns_progress_when_found(self):
         existing = WatchProgress.create(
             media_id="mov_abc123def456",
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=1800,
             duration_seconds=7200,
         )

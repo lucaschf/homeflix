@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
+from src.modules.media.domain.value_objects import ContentRating
 from src.modules.media.infrastructure.metadata.tmdb_client import (
     TmdbClient,
     _safe_int,
@@ -193,7 +194,7 @@ class TestParseContentRating:
                 },
             ],
         }
-        assert TmdbClient._parse_content_rating(data) == "14"
+        assert TmdbClient._parse_content_rating(data) == ContentRating("14")
 
     def test_should_fallback_to_us(self) -> None:
         data: dict[str, Any] = {
@@ -204,7 +205,7 @@ class TestParseContentRating:
                 },
             ],
         }
-        assert TmdbClient._parse_content_rating(data) == "PG-13"
+        assert TmdbClient._parse_content_rating(data) == ContentRating("PG-13")
 
     def test_should_return_none_when_empty(self) -> None:
         assert TmdbClient._parse_content_rating({"results": []}) is None
@@ -228,7 +229,7 @@ class TestParseContentRating:
                 },
             ],
         }
-        assert TmdbClient._parse_content_rating(data) == "R"
+        assert TmdbClient._parse_content_rating(data) == ContentRating("R")
 
 
 @pytest.mark.unit
@@ -242,11 +243,11 @@ class TestParseSeriesContentRating:
                 {"iso_3166_1": "BR", "rating": "18"},
             ],
         }
-        assert TmdbClient._parse_series_content_rating(data) == "18"
+        assert TmdbClient._parse_series_content_rating(data) == ContentRating("18")
 
     def test_should_fallback_to_us(self) -> None:
         data: dict[str, Any] = {"results": [{"iso_3166_1": "US", "rating": "TV-14"}]}
-        assert TmdbClient._parse_series_content_rating(data) == "TV-14"
+        assert TmdbClient._parse_series_content_rating(data) == ContentRating("TV-14")
 
     def test_should_return_none_when_empty(self) -> None:
         assert TmdbClient._parse_series_content_rating({}) is None

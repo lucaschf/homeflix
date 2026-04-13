@@ -1,7 +1,11 @@
 """Mapper between WatchProgress entity and WatchProgressModel."""
 
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.value_objects import ProgressId
+from src.modules.watch_progress.domain.value_objects import (
+    ProgressId,
+    WatchableMediaType,
+    WatchStatus,
+)
 from src.modules.watch_progress.infrastructure.persistence.models import (
     WatchProgressModel,
 )
@@ -55,10 +59,10 @@ class WatchProgressMapper:
         return WatchProgress(
             id=ProgressId(model.external_id),
             media_id=model.media_id,
-            media_type=model.media_type,
+            media_type=WatchableMediaType(model.media_type),
             position_seconds=model.position_seconds,
             duration_seconds=model.duration_seconds,
-            status=model.status,
+            status=WatchStatus(model.status),
             audio_track=model.audio_track,
             subtitle_track=model.subtitle_track,
             last_watched_at=model.last_watched_at,

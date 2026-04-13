@@ -10,6 +10,7 @@ from src.modules.media.application.ports import (
     MetadataProvider,
     SeasonMetadata,
 )
+from src.modules.media.domain.value_objects import ContentRating
 
 _MAX_CAST = 15
 
@@ -173,7 +174,7 @@ class TmdbClient(MetadataProvider):
             cast=cast,
             directors=directors,
             writers=writers,
-            content_rating=content_rating,
+            content_rating=content_rating.value if content_rating else None,
             trailer_url=trailer_url,
         )
 
@@ -219,7 +220,7 @@ class TmdbClient(MetadataProvider):
             genres=[g["name"] for g in data.get("genres", [])],
             tmdb_id=data["id"],
             imdb_id=data.get("external_ids", {}).get("imdb_id"),
-            content_rating=content_rating,
+            content_rating=content_rating.value if content_rating else None,
             trailer_url=self._parse_trailer(data.get("videos", {})),
             seasons=seasons,
         )
@@ -291,7 +292,7 @@ class TmdbClient(MetadataProvider):
         return directors, writers
 
     @staticmethod
-    def _parse_content_rating(release_dates: dict[str, object]) -> str | None:
+    def _parse_content_rating(release_dates: dict[str, object]) -> ContentRating | None:
         """Extract content rating from TMDB release_dates, preferring BR then US."""
         results = release_dates.get("results", [])
         if not isinstance(results, list):
@@ -308,7 +309,8 @@ class TmdbClient(MetadataProvider):
                 if cert and iso not in ratings_by_country:
                     ratings_by_country[iso] = cert
 
-        return ratings_by_country.get("BR") or ratings_by_country.get("US") or None
+        selected = ratings_by_country.get("BR") or ratings_by_country.get("US")
+        return ContentRating(selected) if selected else None
 
     @staticmethod
     def _parse_trailer(videos: dict[str, object]) -> str | None:
@@ -349,7 +351,7 @@ class TmdbClient(MetadataProvider):
         return f"https://www.youtube.com/watch?v={best['key']}"
 
     @staticmethod
-    def _parse_series_content_rating(content_ratings: dict[str, object]) -> str | None:
+    def _parse_series_content_rating(content_ratings: dict[str, object]) -> ContentRating | None:
         """Extract content rating from TMDB series content_ratings, preferring BR then US."""
         results = content_ratings.get("results", [])
         if not isinstance(results, list):
@@ -364,7 +366,8 @@ class TmdbClient(MetadataProvider):
             if rating and iso not in ratings_by_country:
                 ratings_by_country[iso] = rating
 
-        return ratings_by_country.get("BR") or ratings_by_country.get("US") or None
+        selected = ratings_by_country.get("BR") or ratings_by_country.get("US")
+        return ContentRating(selected) if selected else None
 
     def _to_credit_person(self, data: dict[str, object], role_key: str) -> CreditPerson:
         """Convert a TMDB cast/crew dict to a CreditPerson."""
