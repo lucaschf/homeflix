@@ -1,0 +1,151 @@
+"""Mapper between Library domain entity and LibraryModel ORM model."""
+
+import json
+from typing import Any
+
+from src.modules.library.domain.entities.library import Library
+from src.modules.library.domain.value_objects.library_id import LibraryId
+from src.modules.library.domain.value_objects.library_name import LibraryName
+from src.modules.library.domain.value_objects.library_settings import LibrarySettings
+from src.modules.library.domain.value_objects.library_type import LibraryType
+from src.modules.library.domain.value_objects.metadata_provider import (
+    MetadataProvider,
+    MetadataProviderConfig,
+)
+from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
+from src.modules.library.infrastructure.persistence.models.library_model import LibraryModel
+from src.shared_kernel.value_objects.file_path import FilePath
+from src.shared_kernel.value_objects.language_code import LanguageCode
+
+
+class LibraryMapper:
+    """Bidirectional mapper between Library entity and LibraryModel.
+
+    Complex nested value objects (paths, settings, metadata providers)
+    are serialized to JSON for the Text columns and reconstructed on
+    the way back.  All other fields map 1:1 through their VO's
+    ``.value`` property.
+    """
+
+    @staticmethod
+    def to_model(entity: Library) -> LibraryModel:
+        """Convert Library entity to LibraryModel for persistence.
+
+        Args:
+            entity: The domain Library entity (must have an id).
+
+        Returns:
+            SQLAlchemy LibraryModel ready for ``session.add()``.
+        """
+        if entity.id is None:
+            raise ValueError("Cannot map entity without ID to model")
+
+        return LibraryModel(
+            external_id=str(entity.id),
+            name=entity.name.value,
+            library_type=entity.library_type.value,
+            paths=json.dumps([p.value for p in entity.paths], ensure_ascii=False),
+            language=entity.language.value,
+            metadata_providers=json.dumps(
+                [
+                    {
+                        "provider": p.provider.value,
+                        "priority": p.priority,
+                        "enabled": p.enabled,
+                    }
+                    for p in entity.metadata_providers
+                ],
+                ensure_ascii=False,
+            ),
+            scan_schedule=entity.scan_schedule,
+            settings=json.dumps(
+                {
+                    "preferred_audio_language": entity.settings.preferred_audio_language.value,
+                    "preferred_subtitle_language": (
+                        entity.settings.preferred_subtitle_language.value
+                        if entity.settings.preferred_subtitle_language
+                        else None
+                    ),
+                    "subtitle_mode": entity.settings.subtitle_mode.value,
+                    "generate_thumbnails": entity.settings.generate_thumbnails,
+                    "detect_intros": entity.settings.detect_intros,
+                    "auto_refresh_metadata": entity.settings.auto_refresh_metadata,
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+    @staticmethod
+    def to_entity(model: LibraryModel) -> Library:
+        """Convert LibraryModel to Library domain entity.
+
+        Args:
+            model: The SQLAlchemy LibraryModel.
+
+        Returns:
+            Domain Library entity with reconstructed value objects.
+        """
+        paths_raw: list[str] = json.loads(model.paths)
+        providers_raw: list[dict[str, Any]] = json.loads(model.metadata_providers)
+        settings_raw: dict[str, Any] = json.loads(model.settings)
+
+        return Library(
+            id=LibraryId(model.external_id),
+            name=LibraryName(model.name),
+            library_type=LibraryType(model.library_type),
+            paths=[FilePath(p) for p in paths_raw],
+            language=LanguageCode(model.language),
+            metadata_providers=[
+                MetadataProviderConfig(
+                    provider=MetadataProvider(p["provider"]),
+                    priority=p["priority"],
+                    enabled=p.get("enabled", True),
+                )
+                for p in providers_raw
+            ],
+            scan_schedule=model.scan_schedule,
+            settings=LibrarySettings(
+                preferred_audio_language=LanguageCode(
+                    settings_raw.get("preferred_audio_language", "en"),
+                ),
+                preferred_subtitle_language=(
+                    LanguageCode(settings_raw["preferred_subtitle_language"])
+                    if settings_raw.get("preferred_subtitle_language")
+                    else None
+                ),
+                subtitle_mode=SubtitleMode(
+                    settings_raw.get("subtitle_mode", SubtitleMode.FOREIGN_AUDIO_ONLY.value),
+                ),
+                generate_thumbnails=settings_raw.get("generate_thumbnails", True),
+                detect_intros=settings_raw.get("detect_intros", False),
+                auto_refresh_metadata=settings_raw.get("auto_refresh_metadata", False),
+            ),
+        )
+
+    @staticmethod
+    def update_model(model: LibraryModel, entity: Library) -> LibraryModel:
+        """Apply entity field values onto an existing model.
+
+        Used by ``save()`` when the library already exists in the DB
+        (update path). Only domain-owned fields are touched — the
+        base columns (id, created_at, etc.) stay unchanged.
+
+        Args:
+            model: The existing SQLAlchemy model to update in-place.
+            entity: The domain entity carrying the new state.
+
+        Returns:
+            The same ``model`` reference, mutated.
+        """
+        fresh = LibraryMapper.to_model(entity)
+        model.name = fresh.name
+        model.library_type = fresh.library_type
+        model.paths = fresh.paths
+        model.language = fresh.language
+        model.metadata_providers = fresh.metadata_providers
+        model.scan_schedule = fresh.scan_schedule
+        model.settings = fresh.settings
+        return model
+
+
+__all__ = ["LibraryMapper"]

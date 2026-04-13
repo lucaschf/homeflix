@@ -16,6 +16,9 @@ from src.config.containers import ApplicationContainer
 from src.config.logging import get_logger, setup_logging
 from src.config.settings import get_settings
 from src.modules.collections.presentation.routes import custom_list_router, watchlist_router
+from src.modules.library.presentation.routes.library_routes import (
+    router as library_router,
+)
 from src.modules.media.presentation.routes import (
     catalog_router,
     enrichment_router,
@@ -73,6 +76,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "src.modules.watch_progress.presentation.routes.progress_routes",
             "src.modules.collections.presentation.routes.watchlist_routes",
             "src.modules.collections.presentation.routes.custom_list_routes",
+            "src.modules.library.presentation.routes.library_routes",
         ],
     )
     app.state.container = container
@@ -159,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(progress_router)
     app.include_router(watchlist_router)
     app.include_router(custom_list_router)
+    app.include_router(library_router)
 
     return app
 
