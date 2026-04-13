@@ -5,7 +5,13 @@ from datetime import date
 import pytest
 
 from src.building_blocks.domain.errors import DomainValidationException
-from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
+from src.modules.media.domain.value_objects import (
+    EpisodeNumber,
+    FilePath,
+    MediaFile,
+    Resolution,
+    SeasonNumber,
+)
 
 
 def _make_file(**overrides: object) -> MediaFile:
@@ -41,7 +47,7 @@ class TestEpisodeCreation:
         )
 
         assert episode.id is None
-        assert episode.episode_number == 1
+        assert episode.episode_number == EpisodeNumber(1)
         assert episode.title.value == "Pilot"
 
     def test_should_create_with_explicit_id(self):
@@ -115,7 +121,7 @@ class TestEpisodeCreation:
             ],
         )
 
-        assert episode.season_number == 0
+        assert episode.season_number == SeasonNumber(0)
 
     def test_should_raise_error_for_negative_episode_number(self):
         from src.modules.media.domain.entities import Episode
@@ -412,4 +418,4 @@ class TestEpisodeTimestamps:
         )
 
         with pytest.raises(DomainValidationException):
-            episode.season_number = 2  # type: ignore[misc]
+            episode.season_number = 2  # type: ignore[assignment,misc]

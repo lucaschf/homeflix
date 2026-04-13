@@ -10,6 +10,7 @@ from src.building_blocks.domain import AggregateRoot
 from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixin
 from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.value_objects import (
+    ContentRating,
     Duration,
     FilePath,
     Genre,
@@ -67,7 +68,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     writers: list[str] = Field(default_factory=list)
 
     # Classification
-    content_rating: str | None = None
+    content_rating: ContentRating | None = None
 
     # Trailer
     trailer_url: str | None = None

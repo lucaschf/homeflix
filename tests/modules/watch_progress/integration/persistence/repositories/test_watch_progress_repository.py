@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.watch_progress.domain.entities import WatchProgress
+from src.modules.watch_progress.domain.value_objects import WatchableMediaType
 from src.modules.watch_progress.infrastructure.persistence.repositories import (
     SQLAlchemyWatchProgressRepository,
 )
@@ -15,7 +16,7 @@ MISSING_MEDIA_ID = "mov_missing00000"
 
 def _create_progress(
     media_id: str = SAMPLE_MOVIE_ID,
-    media_type: str = "movie",
+    media_type: WatchableMediaType = WatchableMediaType.MOVIE,
     position: int = 1800,
     duration: int = 7200,
 ) -> WatchProgress:
@@ -57,7 +58,7 @@ class TestSQLAlchemyWatchProgressRepositorySave:
         repo = SQLAlchemyWatchProgressRepository(db_session)
         progress = WatchProgress.create(
             media_id=SAMPLE_MOVIE_ID,
-            media_type="movie",
+            media_type=WatchableMediaType.MOVIE,
             position_seconds=6500,
             duration_seconds=7200,
         )
@@ -94,7 +95,7 @@ class TestSQLAlchemyWatchProgressRepositoryFind:
         repo = SQLAlchemyWatchProgressRepository(db_session)
         await repo.save(_create_progress(media_id=SAMPLE_MOVIE_ID))
         await repo.save(
-            _create_progress(media_id=SAMPLE_EPISODE_ID, media_type="episode"),
+            _create_progress(media_id=SAMPLE_EPISODE_ID, media_type=WatchableMediaType.EPISODE),
         )
 
         result = await repo.find_by_media_ids([SAMPLE_MOVIE_ID, SAMPLE_EPISODE_ID])
@@ -133,7 +134,7 @@ class TestSQLAlchemyWatchProgressRepositoryList:
         await repo.save(
             WatchProgress.create(
                 media_id="mov_bbbbbbbbbbbb",
-                media_type="movie",
+                media_type=WatchableMediaType.MOVIE,
                 position_seconds=7200,
                 duration_seconds=7200,
             ),
@@ -178,7 +179,7 @@ class TestSQLAlchemyWatchProgressRepositoryList:
         await repo.save(
             WatchProgress.create(
                 media_id="mov_bbbbbbbbbbbb",
-                media_type="movie",
+                media_type=WatchableMediaType.MOVIE,
                 position_seconds=7200,
                 duration_seconds=7200,
             ),

@@ -11,6 +11,7 @@ from src.modules.media.application.ports import MediaMetadata, MetadataProvider
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
 from src.modules.media.domain.value_objects import (
+    ContentRating,
     Duration,
     Genre,
     ImageUrl,
@@ -199,7 +200,7 @@ def _apply_credits(
     if metadata.writers and not movie.writers:
         updates["writers"] = [p.name for p in metadata.writers]
     if metadata.content_rating and not movie.content_rating:
-        updates["content_rating"] = metadata.content_rating
+        updates["content_rating"] = ContentRating(metadata.content_rating)
     if metadata.trailer_url and not movie.trailer_url:
         updates["trailer_url"] = metadata.trailer_url
     if metadata.localized:

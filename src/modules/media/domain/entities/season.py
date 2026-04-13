@@ -9,7 +9,15 @@ from pydantic import Field, field_validator
 from src.building_blocks.domain import DomainEntity
 from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.rule_codes import MediaRuleCodes
-from src.modules.media.domain.value_objects import AirDate, ImageUrl, SeasonId, SeriesId, Title
+from src.modules.media.domain.value_objects import (
+    AirDate,
+    EpisodeNumber,
+    ImageUrl,
+    SeasonId,
+    SeasonNumber,
+    SeriesId,
+    Title,
+)
 
 if TYPE_CHECKING:
     from src.modules.media.domain.entities.episode import Episode
@@ -34,7 +42,7 @@ class Season(DomainEntity[SeasonId]):
 
     # Relationship
     series_id: SeriesId
-    season_number: int = Field(ge=0)  # 0 for specials
+    season_number: SeasonNumber
 
     # Content info
     title: Title | None = None
@@ -91,7 +99,7 @@ class Season(DomainEntity[SeasonId]):
             return self
         return self.with_updates(episodes=[*self.episodes, episode])
 
-    def get_episode(self, episode_number: int) -> Episode | None:
+    def get_episode(self, episode_number: EpisodeNumber | int) -> Episode | None:
         """Find an episode by its number.
 
         Args:
@@ -100,8 +108,13 @@ class Season(DomainEntity[SeasonId]):
         Returns:
             The Episode if found, None otherwise.
         """
+        needle = (
+            episode_number
+            if isinstance(episode_number, EpisodeNumber)
+            else EpisodeNumber(episode_number)
+        )
         return next(
-            (ep for ep in self.episodes if ep.episode_number == episode_number),
+            (ep for ep in self.episodes if ep.episode_number == needle),
             None,
         )
 

@@ -1,7 +1,9 @@
 """Media domain value objects."""
 
 from src.modules.media.domain.value_objects.air_date import AirDate
+from src.modules.media.domain.value_objects.content_rating import ContentRating
 from src.modules.media.domain.value_objects.duration import Duration
+from src.modules.media.domain.value_objects.episode_number import EpisodeNumber
 from src.modules.media.domain.value_objects.genre import Genre
 from src.modules.media.domain.value_objects.hdr_format import HdrFormat
 from src.modules.media.domain.value_objects.imdb_id import ImdbId
@@ -15,6 +17,7 @@ from src.modules.media.domain.value_objects.media_id import (
     parse_media_id,
 )
 from src.modules.media.domain.value_objects.resolution import Resolution
+from src.modules.media.domain.value_objects.season_number import SeasonNumber
 from src.modules.media.domain.value_objects.title import Title
 from src.modules.media.domain.value_objects.tmdb_id import TmdbId
 from src.modules.media.domain.value_objects.video_codec import VideoCodec
@@ -26,8 +29,10 @@ from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 __all__ = [
     "AirDate",
     "AudioTrack",
+    "ContentRating",
     "Duration",
     "EpisodeId",
+    "EpisodeNumber",
     "FilePath",
     "Genre",
     "ImageUrl",
@@ -38,6 +43,7 @@ __all__ = [
     "MovieId",
     "Resolution",
     "SeasonId",
+    "SeasonNumber",
     "SeriesId",
     "SubtitleTrack",
     "Title",

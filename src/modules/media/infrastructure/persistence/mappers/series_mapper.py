@@ -5,8 +5,10 @@ import json
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
     AirDate,
+    ContentRating,
     Duration,
     EpisodeId,
+    EpisodeNumber,
     FilePath,
     Genre,
     ImageUrl,
@@ -14,6 +16,7 @@ from src.modules.media.domain.value_objects import (
     MediaFile,
     Resolution,
     SeasonId,
+    SeasonNumber,
     SeriesId,
     Title,
     TmdbId,
@@ -58,8 +61,8 @@ class EpisodeMapper:
             external_id=str(entity.id),
             season_id=season_id,
             series_external_id=str(entity.series_id),
-            season_number=entity.season_number,
-            episode_number=entity.episode_number,
+            season_number=entity.season_number.value,
+            episode_number=entity.episode_number.value,
             title=entity.title.value,
             synopsis=entity.synopsis,
             duration=entity.duration.value,
@@ -106,8 +109,8 @@ class EpisodeMapper:
         return Episode(
             id=EpisodeId(model.external_id),
             series_id=SeriesId(model.series_external_id),
-            season_number=model.season_number,
-            episode_number=model.episode_number,
+            season_number=SeasonNumber(model.season_number),
+            episode_number=EpisodeNumber(model.episode_number),
             title=Title(model.title),
             synopsis=model.synopsis,
             duration=Duration(model.duration),
@@ -132,8 +135,8 @@ class EpisodeMapper:
             The updated EpisodeModel.
         """
         primary = entity.primary_file
-        model.season_number = entity.season_number
-        model.episode_number = entity.episode_number
+        model.season_number = entity.season_number.value
+        model.episode_number = entity.episode_number.value
         model.title = entity.title.value
         model.synopsis = entity.synopsis
         model.duration = entity.duration.value
@@ -172,7 +175,7 @@ class SeasonMapper:
             external_id=str(entity.id),
             series_id=series_db_id,
             series_external_id=str(entity.series_id),
-            season_number=entity.season_number,
+            season_number=entity.season_number.value,
             title=entity.title.value if entity.title else None,
             synopsis=entity.synopsis,
             poster_path=entity.poster_path.value if entity.poster_path else None,
@@ -199,7 +202,7 @@ class SeasonMapper:
         return Season(
             id=SeasonId(model.external_id),
             series_id=SeriesId(model.series_external_id),
-            season_number=model.season_number,
+            season_number=SeasonNumber(model.season_number),
             title=Title(model.title) if model.title else None,
             synopsis=model.synopsis,
             poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
@@ -220,7 +223,7 @@ class SeasonMapper:
         Returns:
             The updated SeasonModel.
         """
-        model.season_number = entity.season_number
+        model.season_number = entity.season_number.value
         model.title = entity.title.value if entity.title else None
         model.synopsis = entity.synopsis
         model.poster_path = entity.poster_path.value if entity.poster_path else None
@@ -258,7 +261,7 @@ class SeriesMapper:
             poster_path=entity.poster_path.value if entity.poster_path else None,
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
-            content_rating=entity.content_rating,
+            content_rating=entity.content_rating.value if entity.content_rating else None,
             trailer_url=entity.trailer_url,
             localized=json.dumps(entity.localized, ensure_ascii=False)
             if entity.localized
@@ -296,7 +299,7 @@ class SeriesMapper:
             poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
             backdrop_path=ImageUrl(model.backdrop_path) if model.backdrop_path else None,
             genres=genre_list,
-            content_rating=model.content_rating,
+            content_rating=ContentRating(model.content_rating) if model.content_rating else None,
             trailer_url=model.trailer_url,
             localized=json.loads(model.localized) if model.localized else {},
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
@@ -325,7 +328,7 @@ class SeriesMapper:
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
-        model.content_rating = entity.content_rating
+        model.content_rating = entity.content_rating.value if entity.content_rating else None
         model.trailer_url = entity.trailer_url
         model.localized = (
             json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None

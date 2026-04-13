@@ -11,9 +11,11 @@ from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
+    ContentRating,
     Genre,
     ImageUrl,
     ImdbId,
+    SeasonNumber,
     SeriesId,
     Title,
     TmdbId,
@@ -53,7 +55,7 @@ class Series(AggregateRoot[SeriesId]):
 
     # Categorization
     genres: list[Genre] = Field(default_factory=list)
-    content_rating: str | None = None
+    content_rating: ContentRating | None = None
     trailer_url: str | None = None
 
     # Localized metadata
@@ -151,7 +153,7 @@ class Series(AggregateRoot[SeriesId]):
             return self
         return self.with_updates(seasons=[*self.seasons, season])
 
-    def get_season(self, season_number: int) -> Season | None:
+    def get_season(self, season_number: SeasonNumber | int) -> Season | None:
         """Find a season by its number.
 
         Args:
@@ -160,8 +162,13 @@ class Series(AggregateRoot[SeriesId]):
         Returns:
             The Season if found, None otherwise.
         """
+        needle = (
+            season_number
+            if isinstance(season_number, SeasonNumber)
+            else SeasonNumber(season_number)
+        )
         return next(
-            (season for season in self.seasons if season.season_number == season_number),
+            (season for season in self.seasons if season.season_number == needle),
             None,
         )
 

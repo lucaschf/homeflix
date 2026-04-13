@@ -18,7 +18,7 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
-from src.modules.media.domain.value_objects import TmdbId
+from src.modules.media.domain.value_objects import ContentRating, TmdbId
 
 
 def _make_movie() -> Movie:
@@ -314,7 +314,7 @@ class TestApplyMetadataFields:
         assert saved.cast == ["Leonardo DiCaprio"]
         assert saved.directors == ["Christopher Nolan"]
         assert saved.writers == ["Christopher Nolan"]
-        assert saved.content_rating == "PG-13"
+        assert saved.content_rating == ContentRating("PG-13")
         assert saved.trailer_url == "https://youtube.com/abc"
 
     @pytest.mark.asyncio

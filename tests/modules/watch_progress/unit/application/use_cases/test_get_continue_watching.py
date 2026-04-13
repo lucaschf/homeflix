@@ -24,11 +24,12 @@ from src.modules.watch_progress.application.dtos import (
 from src.modules.watch_progress.application.use_cases import GetContinueWatchingUseCase
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.repositories import WatchProgressRepository
+from src.modules.watch_progress.domain.value_objects import WatchableMediaType
 
 
 def _make_progress(
     media_id: str,
-    media_type: str = "episode",
+    media_type: WatchableMediaType = WatchableMediaType.EPISODE,
     *,
     status: str = "in_progress",
     position: int = 1800,

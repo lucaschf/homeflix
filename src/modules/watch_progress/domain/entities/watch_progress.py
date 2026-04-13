@@ -8,7 +8,11 @@ from typing import Self
 from pydantic import Field
 
 from src.building_blocks.domain import AggregateRoot
-from src.modules.watch_progress.domain.value_objects import ProgressId
+from src.modules.watch_progress.domain.value_objects import (
+    ProgressId,
+    WatchableMediaType,
+    WatchStatus,
+)
 
 _COMPLETION_THRESHOLD = 0.9
 
@@ -34,12 +38,12 @@ class WatchProgress(AggregateRoot[ProgressId]):
 
     # What is being watched
     media_id: str
-    media_type: str  # "movie" or "episode"
+    media_type: WatchableMediaType
 
     # Position tracking
     position_seconds: int = Field(ge=0)
     duration_seconds: int = Field(gt=0)
-    status: str = Field(default="in_progress")  # "in_progress" or "completed"
+    status: WatchStatus = Field(default=WatchStatus.IN_PROGRESS)
 
     # Track preferences
     audio_track: int | None = None
@@ -59,7 +63,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
     @property
     def is_completed(self) -> bool:
         """Check if the media has been fully watched."""
-        return self.status == "completed"
+        return self.status == WatchStatus.COMPLETED
 
     def update_position(
         self,
@@ -99,7 +103,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
             updates["subtitle_track"] = subtitle_track
 
         if is_complete and not self.is_completed:
-            updates["status"] = "completed"
+            updates["status"] = WatchStatus.COMPLETED
             updates["completed_at"] = now
 
         return self.with_updates(**updates)
@@ -108,7 +112,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
     def create(
         cls,
         media_id: str,
-        media_type: str,
+        media_type: WatchableMediaType,
         position_seconds: int,
         duration_seconds: int,
         audio_track: int | None = None,
@@ -137,7 +141,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
             media_type=media_type,
             position_seconds=position_seconds,
             duration_seconds=duration_seconds,
-            status="completed" if is_complete else "in_progress",
+            status=WatchStatus.COMPLETED if is_complete else WatchStatus.IN_PROGRESS,
             audio_track=audio_track,
             subtitle_track=subtitle_track,
             last_watched_at=now,

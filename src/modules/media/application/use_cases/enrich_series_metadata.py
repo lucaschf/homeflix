@@ -20,6 +20,7 @@ from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import (
     AirDate,
+    ContentRating,
     Duration,
     Genre,
     ImageUrl,
@@ -192,7 +193,7 @@ def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
             "genres": ("genres", lambda v: [Genre(g) for g in v]),
             "poster_url": ("poster_path", ImageUrl),
             "backdrop_url": ("backdrop_path", ImageUrl),
-            "content_rating": ("content_rating", None),
+            "content_rating": ("content_rating", ContentRating),
             "trailer_url": ("trailer_url", None),
         },
     )
@@ -211,11 +212,11 @@ def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
 
 def _enrich_seasons(series: Series, season_metas: list[SeasonMetadata]) -> Series:
     """Enrich existing seasons with metadata."""
-    meta_by_num = {s.season_number: s for s in season_metas}
+    meta_by_num = {s.season_number: s for s in season_metas}  # int keys from API
 
     new_seasons = []
     for season in series.seasons:
-        meta = meta_by_num.get(season.season_number)
+        meta = meta_by_num.get(season.season_number.value)
         enriched = _apply_season_metadata(season, meta) if meta else season
         new_seasons.append(enriched)
 
@@ -240,8 +241,8 @@ def _apply_season_metadata(season: Season, meta: SeasonMetadata) -> Season:
 
     # Enrich episodes — track TMDB index separately to handle multi-segment files
     if meta.episodes:
-        ep_by_num = {e.episode_number: e for e in meta.episodes}
-        sorted_episodes = sorted(season.episodes, key=lambda e: e.episode_number)
+        ep_by_num = {e.episode_number: e for e in meta.episodes}  # int keys from API
+        sorted_episodes = sorted(season.episodes, key=lambda e: e.episode_number.value)
         tmdb_idx = 1  # TMDB episode numbering starts at 1
         new_episodes = []
         for ep in sorted_episodes:
@@ -294,7 +295,7 @@ def _apply_multi_episode_metadata(
         segment_count: Number of TMDB episodes in this file.
         tmdb_start: Starting TMDB episode number (if None, uses episode.episode_number).
     """
-    start = tmdb_start if tmdb_start is not None else episode.episode_number
+    start = tmdb_start if tmdb_start is not None else episode.episode_number.value
     metas = [ep_by_num.get(start + i) for i in range(segment_count)]
     present = [m for m in metas if m is not None]
 

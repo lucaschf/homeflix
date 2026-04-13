@@ -11,6 +11,7 @@ from src.modules.watch_progress.application.dtos import (
     ContinueWatchingOutput,
     GetContinueWatchingInput,
 )
+from src.modules.watch_progress.domain.value_objects import WatchableMediaType, WatchStatus
 from src.shared_kernel.episode_composite_id import EpisodeCompositeId
 
 if TYPE_CHECKING:
@@ -82,13 +83,13 @@ class GetContinueWatchingUseCase:
         seen_series: set[str] = set()
 
         for progress in progress_list:
-            if progress.media_type == "movie":
-                if progress.status != "in_progress":
+            if progress.media_type == WatchableMediaType.MOVIE:
+                if progress.status != WatchStatus.IN_PROGRESS:
                     continue
                 item = await self._enrich_movie(progress, input_dto.lang)
                 if item:
                     items.append(item)
-            elif progress.media_type == "episode":
+            elif progress.media_type == WatchableMediaType.EPISODE:
                 parsed = EpisodeCompositeId.parse(progress.media_id)
                 if not parsed or parsed.series_id in seen_series:
                     continue
@@ -145,19 +146,19 @@ class GetContinueWatchingUseCase:
         candidates: list[EpisodeCandidate] = []
         media_ids: list[str] = []
 
-        for s in sorted(series.seasons, key=lambda s: s.season_number):
-            for ep in sorted(s.episodes, key=lambda e: e.episode_number):
+        for s in sorted(series.seasons, key=lambda s: s.season_number.value):
+            for ep in sorted(s.episodes, key=lambda e: e.episode_number.value):
                 mid = EpisodeCompositeId.build(
                     series_id,
-                    s.season_number,
-                    ep.episode_number,
+                    s.season_number.value,
+                    ep.episode_number.value,
                 ).media_id
                 media_ids.append(mid)
                 candidates.append(
                     EpisodeCandidate(
                         series_id=series_id,
-                        season_number=s.season_number,
-                        episode_number=ep.episode_number,
+                        season_number=s.season_number.value,
+                        episode_number=ep.episode_number.value,
                         media_id=mid,
                         progress=None,
                     )
@@ -194,14 +195,14 @@ class GetContinueWatchingUseCase:
             if not latest_watched_at or ep.progress.last_watched_at > latest_watched_at:
                 latest_watched_at = ep.progress.last_watched_at
 
-            if ep.progress.status == "in_progress":
+            if ep.progress.status == WatchStatus.IN_PROGRESS:
                 coords = (ep.season_number, ep.episode_number)
                 if not best_in_progress or coords > (
                     best_in_progress.season_number,
                     best_in_progress.episode_number,
                 ):
                     best_in_progress = ep
-            elif ep.progress.status == "completed":
+            elif ep.progress.status == WatchStatus.COMPLETED:
                 last_completed_idx = max(last_completed_idx or -1, idx)
 
         if best_in_progress:
@@ -248,7 +249,7 @@ class GetContinueWatchingUseCase:
 
         return ContinueWatchingItem(
             media_id=candidate.media_id,
-            media_type="episode",
+            media_type=WatchableMediaType.EPISODE,
             title=episode.title.value,
             poster_path=series.poster_path.value if series.poster_path else None,
             backdrop_path=series.backdrop_path.value if series.backdrop_path else None,

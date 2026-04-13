@@ -14,6 +14,7 @@ from src.modules.media.domain.value_objects import (
     MediaFile,
     Resolution,
     SeasonId,
+    SeasonNumber,
     SeriesId,
     Title,
     TmdbId,
@@ -130,8 +131,8 @@ class TestSQLAlchemySeriesRepository:
         saved = await repo.save(series)
 
         assert saved.season_count == 2
-        assert saved.seasons[0].season_number == 1
-        assert saved.seasons[1].season_number == 2
+        assert saved.seasons[0].season_number == SeasonNumber(1)
+        assert saved.seasons[1].season_number == SeasonNumber(2)
 
     async def test_save_creates_series_with_episodes(
         self,
@@ -350,7 +351,7 @@ class TestSQLAlchemySeriesRepository:
         saved = await repo.save(updated_series)
 
         assert saved.season_count == 2
-        assert saved.seasons[1].season_number == 2
+        assert saved.seasons[1].season_number == SeasonNumber(2)
 
     async def test_update_removes_season(self, db_session: AsyncSession) -> None:
         """Test that updating a series can remove a season."""

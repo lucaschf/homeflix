@@ -10,8 +10,10 @@ from src.modules.media.domain.value_objects import (
     AirDate,
     Duration,
     EpisodeId,
+    EpisodeNumber,
     ImageUrl,
     MediaFile,
+    SeasonNumber,
     SeriesId,
     Title,
 )
@@ -44,8 +46,8 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
 
     # Relationship
     series_id: SeriesId
-    season_number: int = Field(ge=0)  # 0 for specials
-    episode_number: int = Field(ge=1)
+    season_number: SeasonNumber
+    episode_number: EpisodeNumber
 
     # Content info
     title: Title
