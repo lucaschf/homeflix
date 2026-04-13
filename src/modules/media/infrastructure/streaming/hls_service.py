@@ -806,19 +806,27 @@ class HlsService:
         or timeout) and gets a chance to respond — typically with a 404 if
         extraction never produced a file.
 
-        When ``start_seconds > 0``, ``-ss`` is applied so subtitle timestamps
-        are rebased to match the trimmed video output (both start at 0).
+        When ``start_seconds > 0``, ``-ss`` is placed **after** ``-i``
+        (accurate decoder-level seek) so subtitle timestamps are
+        frame-accurate with the video. Unlike video/audio, subtitle
+        extraction is a one-shot background operation with negligible
+        data to decode, so accurate seek has no measurable cost.
 
-        Note: ffmpeg is invoked with two separate inline literal-list calls
-        (embedded vs external) instead of building one ``cmd`` variable so
-        the static-analysis rule against passing a non-literal command to
-        ``subprocess.run`` stays happy. The arguments themselves still come
-        from validated repository paths.
+        The old code placed ``-ss`` before ``-i`` (fast demuxer seek)
+        which landed on the nearest keyframe — typically 1-5 seconds
+        off — causing subtitles to be out of sync with the video.
+
+        Note: ffmpeg is invoked with two separate inline literal-list
+        calls (embedded vs external) instead of building one ``cmd``
+        variable so the static-analysis rule against passing a
+        non-literal command to ``subprocess.run`` stays happy.
         """
         try:
             sub_dir = output_dir / f"sub_{track.index}"
             sub_dir.mkdir(exist_ok=True)
             vtt_path = sub_dir / "sub.vtt"
+            # Accurate seek: -ss AFTER -i so the decoder processes
+            # from the start and trims precisely at the target second.
             ss_args = ["-ss", str(start_seconds)] if start_seconds > 0 else []
 
             if track.is_external:
@@ -830,9 +838,9 @@ class HlsService:
                     subprocess.run(
                         [
                             "ffmpeg",
-                            *ss_args,
                             "-i",
                             input_arg,
+                            *ss_args,
                             "-c:s",
                             "webvtt",
                             "-loglevel",
@@ -853,9 +861,9 @@ class HlsService:
                     subprocess.run(
                         [
                             "ffmpeg",
-                            *ss_args,
                             "-i",
                             file_path,
+                            *ss_args,
                             "-map",
                             f"0:s:{track.index}",
                             "-c:s",
