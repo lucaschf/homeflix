@@ -839,8 +839,10 @@ class TestHlsServiceExtractOneSubtitle:
         assert "-ss" in cmd
         ss_index = cmd.index("-ss")
         assert cmd[ss_index + 1] == "42.0"
-        # -ss must come before -i for fast demuxer-level seek
-        assert cmd.index("-ss") < cmd.index("-i")
+        # -ss must come AFTER -i for accurate decoder-level seek
+        # (subtitles are text — accurate seek has negligible cost
+        # and keeps subs in sync with the two-pass video seek)
+        assert cmd.index("-ss") > cmd.index("-i")
 
     def test_kill_processes_should_release_subtitle_waiters(self, tmp_path: Path) -> None:
         import threading
