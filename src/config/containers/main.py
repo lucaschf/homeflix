@@ -12,6 +12,7 @@ from src.config.containers.collections import CollectionsContainer
 from src.config.containers.infrastructure import InfrastructureContainer
 from src.config.containers.library import LibraryContainer
 from src.config.containers.media import MediaContainer
+from src.config.containers.preferences import PreferencesContainer
 from src.config.containers.watch_progress import WatchProgressContainer
 from src.config.settings import Settings
 
@@ -65,6 +66,11 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
 
     library = providers.Container(
         LibraryContainer,
+        session=infrastructure.session,
+    )
+
+    preferences = providers.Container(
+        PreferencesContainer,
         session=infrastructure.session,
     )
 
