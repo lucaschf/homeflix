@@ -57,12 +57,59 @@ _BROWSER_SAFE_CODECS = {"h264"}
 _MIN_SEGMENTS_FRESH = 1
 _MIN_SEGMENTS_WITH_SEEK = 3
 
+# Seconds of decoded runway before the target position when using
+# the two-pass seek strategy (-ss before -i + -ss after -i). The
+# outer seek jumps cheaply to `start - runway`; the inner seek
+# decodes `runway` seconds so the audio codec is fully primed.
+# 5 seconds is enough for AAC initialization and safely within the
+# typical GOP size. Clamped to start_seconds at the call site so
+# we never seek to a negative position.
+_SEEK_RUNWAY = 5.0
+
 # Idle eviction defaults: kill ffmpeg after this many seconds with no
 # segment requests. Trade-off: short timeout frees CPU faster after the
 # user navigates away, but a paused user beyond this window will see the
 # next segment fail and the player rebuffer when they resume.
 _DEFAULT_IDLE_TIMEOUT = 30.0
 _EVICTION_INTERVAL = 10.0
+
+
+def _build_two_pass_seek_args(
+    start_seconds: float,
+    file_path: str,
+) -> list[str]:
+    """Return FFmpeg args for the two-pass seek strategy.
+
+    When ``start_seconds > 0``:
+      * outer ``-ss`` (before ``-i``): fast demuxer seek to a keyframe
+        a few seconds before the target.
+      * inner ``-ss`` (after ``-i``): accurate decoder seek over the
+        short runway so the AAC encoder has a full codec context.
+      * ``-avoid_negative_ts make_zero``: rebase PTS so both streams
+        start at exactly 0.
+
+    When ``start_seconds <= 0`` (fresh play from the beginning),
+    returns just ``["-i", file_path]`` with no seek flags.
+
+    Shared by both ``_build_video_cmd`` and ``_build_audio_cmd`` so
+    the seek behaviour stays consistent and changes only need to
+    happen in one place.
+    """
+    if start_seconds <= 0:
+        return ["-i", file_path]
+
+    runway = min(start_seconds, _SEEK_RUNWAY)
+    return [
+        "-ss",
+        str(start_seconds - runway),
+        "-i",
+        file_path,
+        "-ss",
+        str(runway),
+        "-avoid_negative_ts",
+        "make_zero",
+    ]
+
 
 _VIDEO_DIR = "video"
 
@@ -660,12 +707,9 @@ class HlsService:
         audio_map = f"0:a:{primary_idx}"
 
         cmd = ["ffmpeg"]
-        if start_seconds > 0:
-            cmd.extend(["-ss", str(start_seconds)])
+        cmd.extend(_build_two_pass_seek_args(start_seconds, file_path))
         cmd.extend(
             [
-                "-i",
-                file_path,
                 "-map",
                 "0:v:0",
                 "-map",
@@ -708,17 +752,14 @@ class HlsService:
     ) -> list[str]:
         """Build FFmpeg command for audio-only HLS track.
 
-        When ``start_seconds > 0``, ``-ss`` is placed before ``-i`` so the
-        audio track stays aligned with the video track (both start at the
-        same source position).
+        When ``start_seconds > 0``, uses the same two-pass seek
+        strategy as ``_build_video_cmd`` so the audio track starts
+        with a full codec context and stays aligned with the video.
         """
         cmd = ["ffmpeg"]
-        if start_seconds > 0:
-            cmd.extend(["-ss", str(start_seconds)])
+        cmd.extend(_build_two_pass_seek_args(start_seconds, file_path))
         cmd.extend(
             [
-                "-i",
-                file_path,
                 "-map",
                 f"0:a:{audio_index}",
                 "-vn",

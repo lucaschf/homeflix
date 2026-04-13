@@ -301,16 +301,33 @@ class TestHlsServiceBuildAudioCmd:
 
         assert "-ss" not in cmd
 
-    def test_should_include_ss_before_input_when_start_is_set(self, tmp_path: Path) -> None:
+    def test_should_use_two_pass_seek_when_start_is_set(self, tmp_path: Path) -> None:
         cmd = HlsService._build_audio_cmd(
             "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=1800.0
         )
 
-        assert "-ss" in cmd
-        ss_idx = cmd.index("-ss")
+        ss_positions = [i for i, v in enumerate(cmd) if v == "-ss"]
+        assert len(ss_positions) == 2, "Expected two -ss flags (fast + accurate)"
         i_idx = cmd.index("-i")
-        assert ss_idx < i_idx, "-ss must come before -i for fast seek"
-        assert cmd[ss_idx + 1] == "1800.0"
+        assert ss_positions[0] < i_idx, "First -ss must come before -i"
+        assert ss_positions[1] > i_idx, "Second -ss must come after -i"
+        assert cmd[ss_positions[0] + 1] == "1795.0"  # 1800 - 5 runway
+        assert cmd[ss_positions[1] + 1] == "5.0"  # runway
+        assert "-avoid_negative_ts" in cmd
+        assert cmd[cmd.index("-avoid_negative_ts") + 1] == "make_zero"
+
+    def test_should_clamp_runway_when_start_is_less_than_runway(self, tmp_path: Path) -> None:
+        cmd = HlsService._build_audio_cmd(
+            "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=2.0
+        )
+
+        ss_positions = [i for i, v in enumerate(cmd) if v == "-ss"]
+        assert len(ss_positions) == 2
+        # Outer seek is clamped to 0 so we never seek to a negative position
+        assert cmd[ss_positions[0] + 1] == "0.0"
+        # Inner seek equals the full start_seconds (runway == start)
+        assert cmd[ss_positions[1] + 1] == "2.0"
+        assert "-avoid_negative_ts" in cmd
 
 
 @pytest.mark.unit
@@ -356,7 +373,7 @@ class TestHlsServiceBuildVideoCmd:
 
         assert "-ss" not in cmd
 
-    def test_should_include_ss_before_input_when_start_is_set(self, tmp_path: Path) -> None:
+    def test_should_use_two_pass_seek_when_start_is_set(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path / "cache"))
         probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
 
@@ -365,11 +382,15 @@ class TestHlsServiceBuildVideoCmd:
                 "/movies/test.mkv", tmp_path, probe, start_seconds=5400.0
             )
 
-        assert "-ss" in cmd
-        ss_idx = cmd.index("-ss")
+        ss_positions = [i for i, v in enumerate(cmd) if v == "-ss"]
+        assert len(ss_positions) == 2, "Expected two -ss flags (fast + accurate)"
         i_idx = cmd.index("-i")
-        assert ss_idx < i_idx, "-ss must come before -i for fast seek"
-        assert cmd[ss_idx + 1] == "5400.0"
+        assert ss_positions[0] < i_idx, "First -ss must come before -i"
+        assert ss_positions[1] > i_idx, "Second -ss must come after -i"
+        assert cmd[ss_positions[0] + 1] == "5395.0"  # 5400 - 5 runway
+        assert cmd[ss_positions[1] + 1] == "5.0"  # runway
+        assert "-avoid_negative_ts" in cmd
+        assert cmd[cmd.index("-avoid_negative_ts") + 1] == "make_zero"
 
 
 @pytest.mark.unit
