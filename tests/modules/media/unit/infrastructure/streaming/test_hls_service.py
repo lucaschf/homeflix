@@ -306,7 +306,6 @@ class TestHlsServiceBuildAudioCmd:
             "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=1800.0
         )
 
-        # Outer -ss (fast, before -i): start - runway
         ss_positions = [i for i, v in enumerate(cmd) if v == "-ss"]
         assert len(ss_positions) == 2, "Expected two -ss flags (fast + accurate)"
         i_idx = cmd.index("-i")
@@ -314,6 +313,21 @@ class TestHlsServiceBuildAudioCmd:
         assert ss_positions[1] > i_idx, "Second -ss must come after -i"
         assert cmd[ss_positions[0] + 1] == "1795.0"  # 1800 - 5 runway
         assert cmd[ss_positions[1] + 1] == "5.0"  # runway
+        assert "-avoid_negative_ts" in cmd
+        assert cmd[cmd.index("-avoid_negative_ts") + 1] == "make_zero"
+
+    def test_should_clamp_runway_when_start_is_less_than_runway(self, tmp_path: Path) -> None:
+        cmd = HlsService._build_audio_cmd(
+            "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=2.0
+        )
+
+        ss_positions = [i for i, v in enumerate(cmd) if v == "-ss"]
+        assert len(ss_positions) == 2
+        # Outer seek is clamped to 0 so we never seek to a negative position
+        assert cmd[ss_positions[0] + 1] == "0.0"
+        # Inner seek equals the full start_seconds (runway == start)
+        assert cmd[ss_positions[1] + 1] == "2.0"
+        assert "-avoid_negative_ts" in cmd
 
 
 @pytest.mark.unit
@@ -375,6 +389,8 @@ class TestHlsServiceBuildVideoCmd:
         assert ss_positions[1] > i_idx, "Second -ss must come after -i"
         assert cmd[ss_positions[0] + 1] == "5395.0"  # 5400 - 5 runway
         assert cmd[ss_positions[1] + 1] == "5.0"  # runway
+        assert "-avoid_negative_ts" in cmd
+        assert cmd[cmd.index("-avoid_negative_ts") + 1] == "make_zero"
 
 
 @pytest.mark.unit

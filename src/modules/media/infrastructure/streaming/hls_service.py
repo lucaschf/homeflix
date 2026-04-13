@@ -73,6 +73,44 @@ _SEEK_RUNWAY = 5.0
 _DEFAULT_IDLE_TIMEOUT = 30.0
 _EVICTION_INTERVAL = 10.0
 
+
+def _build_two_pass_seek_args(
+    start_seconds: float,
+    file_path: str,
+) -> list[str]:
+    """Return FFmpeg args for the two-pass seek strategy.
+
+    When ``start_seconds > 0``:
+      * outer ``-ss`` (before ``-i``): fast demuxer seek to a keyframe
+        a few seconds before the target.
+      * inner ``-ss`` (after ``-i``): accurate decoder seek over the
+        short runway so the AAC encoder has a full codec context.
+      * ``-avoid_negative_ts make_zero``: rebase PTS so both streams
+        start at exactly 0.
+
+    When ``start_seconds <= 0`` (fresh play from the beginning),
+    returns just ``["-i", file_path]`` with no seek flags.
+
+    Shared by both ``_build_video_cmd`` and ``_build_audio_cmd`` so
+    the seek behaviour stays consistent and changes only need to
+    happen in one place.
+    """
+    if start_seconds <= 0:
+        return ["-i", file_path]
+
+    runway = min(start_seconds, _SEEK_RUNWAY)
+    return [
+        "-ss",
+        str(start_seconds - runway),
+        "-i",
+        file_path,
+        "-ss",
+        str(runway),
+        "-avoid_negative_ts",
+        "make_zero",
+    ]
+
+
 _VIDEO_DIR = "video"
 
 # -- Playlist rewriting utilities (used by routes) ----------------------------
@@ -669,26 +707,7 @@ class HlsService:
         audio_map = f"0:a:{primary_idx}"
 
         cmd = ["ffmpeg"]
-        # Two-pass seek: fast (demuxer) + accurate (decoder).
-        # The outer -ss jumps cheaply to a keyframe a few seconds
-        # before the target; the inner -ss (after -i) decodes that
-        # small runway so the AAC encoder has a full codec context
-        # and produces valid audio from frame 0. Without the
-        # runway the first ~2-3 seconds of a resumed playback are
-        # silent because the decoder discards partial packets.
-        if start_seconds > 0:
-            runway = min(start_seconds, _SEEK_RUNWAY)
-            cmd.extend(["-ss", str(start_seconds - runway)])
-        cmd.extend(["-i", file_path])
-        if start_seconds > 0:
-            cmd.extend(
-                [
-                    "-ss",
-                    str(runway),
-                    "-avoid_negative_ts",
-                    "make_zero",
-                ]
-            )
+        cmd.extend(_build_two_pass_seek_args(start_seconds, file_path))
         cmd.extend(
             [
                 "-map",
@@ -738,19 +757,7 @@ class HlsService:
         with a full codec context and stays aligned with the video.
         """
         cmd = ["ffmpeg"]
-        if start_seconds > 0:
-            runway = min(start_seconds, _SEEK_RUNWAY)
-            cmd.extend(["-ss", str(start_seconds - runway)])
-        cmd.extend(["-i", file_path])
-        if start_seconds > 0:
-            cmd.extend(
-                [
-                    "-ss",
-                    str(runway),
-                    "-avoid_negative_ts",
-                    "make_zero",
-                ]
-            )
+        cmd.extend(_build_two_pass_seek_args(start_seconds, file_path))
         cmd.extend(
             [
                 "-map",
