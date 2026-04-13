@@ -21,7 +21,7 @@ HomeFlix is a self-hosted media server that allows you to:
 | Layer | Technology |
 |-------|------------|
 | Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0, Pydantic v2 |
-| Frontend | React 18+, TypeScript, TanStack Query, Video.js |
+| Frontend | React 18+, TypeScript, TanStack Query, MUI, hls.js |
 | Database | SQLite (dev) / PostgreSQL (prod) |
 | External APIs | TMDB, OMDb |
 
@@ -49,8 +49,15 @@ src/
 │   │   ├── application/
 │   │   ├── infrastructure/
 │   │   └── presentation/
-│   └── library/          # Bounded Context: Library Configuration
-│       └── domain/
+│   ├── library/          # Bounded Context: Library Configuration
+│   │   ├── domain/
+│   │   ├── application/
+│   │   ├── infrastructure/
+│   │   └── presentation/
+│   └── preferences/      # Bounded Context: Playback Preferences
+│       ├── application/
+│       ├── infrastructure/
+│       └── presentation/
 ├── infrastructure/       # Shared infra (database, Base model)
 ├── config/               # Settings, DI containers
 └── main.py
@@ -171,45 +178,43 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 ## Documentation
 
 - [Requirements](docs/homeflix-requirements.md) - Full feature specifications
+- [Roadmap](docs/roadmap.md) - Feature prioritization and next steps
 - [ADRs](docs/adr/) - Architecture Decision Records
 - [API Standards](docs/standards/) - Response format, exceptions, i18n
 
 ## Project Status
 
-🚧 **Phase 1: Foundation** - In Progress
+**Phase 1: Foundation** — Complete
 
-### Completed
+- 52 REST API endpoints across 5 bounded contexts
+- 1 450+ tests
+- Responsive React frontend with HLS player
 
-- [x] Project structure with Screaming Architecture (ADR-008)
-- [x] Building blocks (DomainModel, Entity, AggregateRoot, ValueObject, error hierarchy)
-- [x] Domain events and in-process event bus
-- [x] Dependency injection with `dependency-injector` (ADR-004)
-- [x] Pre-commit hooks (ruff, mypy, conventional commits)
-- [x] CI pipeline
-- [x] Database migrations (Alembic)
-- [x] **Media Catalog** module
-  - [x] Entities: Movie, Series, Season, Episode with FileVariantMixin
-  - [x] MediaFile variants with multiple resolutions (ADR-006)
-  - [x] Filesystem scanning and media discovery
-  - [x] TMDB/OMDb metadata enrichment (auto-enrich via domain events)
-  - [x] REST API: CRUD, scan, enrichment, streaming, featured content
-  - [x] HLS streaming with multi-audio/subtitle support
-- [x] **Collections** module
-  - [x] Watchlist (toggle, check, list)
-  - [x] Custom lists (create, rename, delete, add/remove items)
-- [x] **Watch Progress** module
-  - [x] Save/get/clear progress
-  - [x] Continue watching
-- [x] **Library** module (domain layer only, ADR-005)
-  - [x] Library entity, settings, TrackSelector service
+### Modules
 
-### Next Steps
+| Module | Scope | Highlights |
+|--------|-------|------------|
+| **Media Catalog** | Movies, Series, Seasons, Episodes | File variants (ADR-006), HLS streaming, multi-audio/subtitle, FTS5 search, TMDB enrichment, filesystem scanner |
+| **Library** | Media source configuration | CRUD, metadata providers, scan settings, TrackSelector service (ADR-005) |
+| **Watch Progress** | Playback tracking | Save/resume, continue watching, auto-complete at 90% |
+| **Collections** | Watchlist & Custom Lists | Toggle watchlist, up to 10 custom lists with ordering |
+| **Preferences** | Playback settings | Audio/subtitle language, subtitle mode, quality, speed |
 
-- [ ] Frontend (React + TypeScript)
-- [ ] User authentication
-- [ ] Full-text search
+### Frontend ([homeflix-web](https://github.com/lucaschf/homeflix-web))
 
-See [homeflix-requirements.md](docs/homeflix-requirements.md) for the complete roadmap.
+- Hero carousel, genre browsing, full-text search with recent history
+- HLS player: multi-audio, multi-subtitle with smart modes, quality selector, playback speed, keyboard shortcuts, auto-advance
+- Continue watching, watchlist, custom lists, settings
+- i18n (pt-BR + en), responsive mobile-first design
+
+### What's Next
+
+See [docs/roadmap.md](docs/roadmap.md) for the full roadmap. Up next:
+
+- **Phase 2**: Docker, primitive obsession cleanup, scheduled scan, subtitle appearance fix
+- **Phase 3**: Trickplay thumbnails, hardware transcoding, skip intro detection
+- **Phase 4**: Multi-user authentication and permissions
+- **Phase 5**: Webhooks and observability
 
 ## License
 
