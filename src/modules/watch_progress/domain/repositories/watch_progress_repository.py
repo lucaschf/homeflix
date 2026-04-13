@@ -78,5 +78,20 @@ class WatchProgressRepository(ABC):
             True if deleted, False if not found.
         """
 
+    @abstractmethod
+    async def delete_by_series(self, series_id: str) -> int:
+        """Soft-delete all episode progress for a series.
+
+        Matches every row whose ``media_id`` starts with
+        ``epi_{series_id}_``, which is the composite-id format
+        produced by ``EpisodeCompositeId.build()``.
+
+        Args:
+            series_id: External series ID (``ser_xxx`` format).
+
+        Returns:
+            Number of rows soft-deleted.
+        """
+
 
 __all__ = ["WatchProgressRepository"]

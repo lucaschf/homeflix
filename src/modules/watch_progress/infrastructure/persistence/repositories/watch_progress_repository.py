@@ -115,5 +115,20 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
         await self._session.commit()
         return True
 
+    async def delete_by_series(self, series_id: str) -> int:
+        """Soft-delete all episode progress for a series."""
+        prefix = f"epi_{series_id}_"
+        stmt = select(WatchProgressModel).where(
+            WatchProgressModel.media_id.startswith(prefix),
+            WatchProgressModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        models = result.scalars().all()
+        for model in models:
+            model.soft_delete()
+        if models:
+            await self._session.commit()
+        return len(models)
+
 
 __all__ = ["SQLAlchemyWatchProgressRepository"]

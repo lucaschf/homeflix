@@ -8,6 +8,9 @@ from src.modules.watch_progress.application.use_cases import (
     GetProgressUseCase,
     SaveProgressUseCase,
 )
+from src.modules.watch_progress.application.use_cases.clear_series_progress import (
+    ClearSeriesProgressUseCase,
+)
 from src.modules.watch_progress.infrastructure.persistence.repositories import (
     SQLAlchemyWatchProgressRepository,
 )
@@ -56,5 +59,10 @@ class WatchProgressContainer(containers.DeclarativeContainer):  # type: ignore[m
 
     clear_progress = providers.Factory(
         ClearProgressUseCase,
+        progress_repository=progress_repository,
+    )
+
+    clear_series_progress = providers.Factory(
+        ClearSeriesProgressUseCase,
         progress_repository=progress_repository,
     )
