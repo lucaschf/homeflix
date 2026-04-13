@@ -23,6 +23,10 @@ from src.modules.watch_progress.application.use_cases import (
 from src.modules.watch_progress.application.use_cases.clear_progress import (
     ClearProgressInput,
 )
+from src.modules.watch_progress.application.use_cases.clear_series_progress import (
+    ClearSeriesProgressInput,
+    ClearSeriesProgressUseCase,
+)
 
 router = APIRouter(prefix="/api/v1/progress", tags=["Watch Progress"])
 
@@ -96,6 +100,24 @@ async def get_progress(
     if result is None:
         return {"type": "progress", "data": None}
     return {"type": "progress", "data": asdict(result)}
+
+
+@router.delete("/series/{series_id}", status_code=204)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def clear_series_progress(
+    series_id: str,
+    use_case: ClearSeriesProgressUseCase = Depends(
+        Provide[ApplicationContainer.watch_progress.clear_series_progress],
+    ),
+) -> Response:
+    """Clear all episode progress for a series.
+
+    Used by the "dismiss from Continue Watching" action so removing
+    a series clears ALL its episode progress at once — otherwise
+    deleting one episode's progress just surfaces the next.
+    """
+    await use_case.execute(ClearSeriesProgressInput(series_id=series_id))
+    return Response(status_code=204)
 
 
 @router.delete("/{media_id}", status_code=204)  # type: ignore[misc]
