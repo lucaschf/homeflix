@@ -1,0 +1,49 @@
+services:
+  backend:
+    build: .
+    container_name: homeflix-backend
+    ports:
+      - "8005:8005"
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      LOG_LEVEL: INFO
+      DATABASE_URL: sqlite+aiosqlite:////app/data/homeflix.db
+      MEDIA_DIRECTORIES: /media/movies,/media/series
+      THUMBNAILS_DIRECTORY: /app/thumbnails
+      HLS_CACHE_DIRECTORY: /app/hls_cache
+      HLS_CACHE_MAX_SIZE_MB: "20000"
+      TMDB_API_KEY: "${TMDB_API_KEY:-}"
+      TMDB_BASE_URL: "${TMDB_BASE_URL:-https://api.themoviedb.org/3}"
+      OMDB_API_KEY: "${OMDB_API_KEY:-}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-http://localhost:5173}"
+      DEFAULT_LOCALE: "${DEFAULT_LOCALE:-en}"
+      SUPPORTED_LOCALES: "${SUPPORTED_LOCALES:-en,pt-BR}"
+    volumes:
+      - ./data:/app/data
+      - ./hls_cache:/app/hls_cache
+      - ./thumbnails:/app/thumbnails
+      # Customize these to point at your actual media:
+      # - /path/to/movies:/media/movies:ro
+      # - /path/to/series:/media/series:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Opt-in PostgreSQL profile — enable with:
+  #   docker compose --profile postgres up
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: homeflix-postgres
+  #   profiles: [postgres]
+  #   environment:
+  #     POSTGRES_USER: homeflix
+  #     POSTGRES_PASSWORD: homeflix
+  #     POSTGRES_DB: homeflix
+  #   volumes:
+  #     - ./data/postgres:/var/lib/postgresql/data
+  #   restart: unless-stopped

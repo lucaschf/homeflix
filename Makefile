@@ -1,4 +1,4 @@
-.PHONY: help install dev test lint format migrate migration clean
+.PHONY: help install dev test lint format migrate migration clean docker-build docker-up docker-down docker-logs
 
 # Default target
 help:
@@ -26,6 +26,12 @@ help:
 	@echo "Database:"
 	@echo "  make migrate       Apply all migrations"
 	@echo "  make migration     Create new migration (use: make migration message='description')"
+	@echo ""
+	@echo "Docker:"
+	@echo "  make docker-build  Build the backend image"
+	@echo "  make docker-up     Start the stack in the background"
+	@echo "  make docker-down   Stop and remove the stack"
+	@echo "  make docker-logs   Tail backend logs"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean         Remove generated files"
@@ -92,6 +98,22 @@ migrate:
 
 migration:
 	poetry run alembic revision --autogenerate -m "$(message)"
+
+# =============================================================================
+# Docker
+# =============================================================================
+
+docker-build:
+	docker compose build
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
+
+docker-logs:
+	docker compose logs -f backend
 
 # =============================================================================
 # Cleanup

@@ -115,6 +115,29 @@ make migrate
 make dev
 ```
 
+### Docker
+
+For a one-command self-contained setup:
+
+```bash
+cp .env.example .env           # edit TMDB_API_KEY and media paths
+docker compose up --build
+```
+
+The backend serves at http://localhost:8005. Migrations run
+automatically on startup. Before shipping media, edit
+`docker-compose.yml` to bind-mount your directories onto
+`/media/movies` and `/media/series`:
+
+```yaml
+volumes:
+  - /your/movies:/media/movies:ro
+  - /your/series:/media/series:ro
+```
+
+Data, HLS cache, and thumbnails persist under `./data`, `./hls_cache`,
+and `./thumbnails` on the host.
+
 ### Configuration
 
 Copy the example environment file and configure:

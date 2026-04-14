@@ -128,6 +128,9 @@ temp/
 CLAUDE.md
 hls_cache/
 
+# Docker bind-mount directories
+/data/
+
 # Specs and evidence (local references only)
 specs/
 evidence/
