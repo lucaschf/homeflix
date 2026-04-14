@@ -30,6 +30,8 @@ def upgrade() -> None:
         sa.Column("poster_path", sa.String(length=1000), nullable=True),
         sa.Column("backdrop_path", sa.String(length=1000), nullable=True),
         sa.Column("genres", sa.String(length=500), nullable=True),
+        sa.Column("cast", sa.Text(), nullable=True),
+        sa.Column("directors", sa.Text(), nullable=True),
         sa.Column("file_path", sa.String(length=2000), nullable=True),
         sa.Column("file_size", sa.BigInteger(), nullable=True),
         sa.Column("resolution", sa.String(length=20), nullable=True),

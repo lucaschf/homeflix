@@ -58,6 +58,7 @@ class LibraryMapper:
                 ensure_ascii=False,
             ),
             scan_schedule=entity.scan_schedule,
+            last_scan_at=entity.last_scan_at,
             settings=json.dumps(
                 {
                     "preferred_audio_language": entity.settings.preferred_audio_language.value,
@@ -104,6 +105,7 @@ class LibraryMapper:
                 for p in providers_raw
             ],
             scan_schedule=model.scan_schedule,
+            last_scan_at=model.last_scan_at,
             settings=LibrarySettings(
                 preferred_audio_language=LanguageCode(
                     settings_raw.get("preferred_audio_language", "en"),
@@ -144,6 +146,7 @@ class LibraryMapper:
         model.language = fresh.language
         model.metadata_providers = fresh.metadata_providers
         model.scan_schedule = fresh.scan_schedule
+        model.last_scan_at = fresh.last_scan_at
         model.settings = fresh.settings
         return model
 
