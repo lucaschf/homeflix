@@ -16,14 +16,22 @@ from src.modules.library.domain.value_objects.metadata_provider import (
     MetadataProviderConfig,
 )
 from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
+from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 class CreateLibraryUseCase:
     """Create a new library and persist it."""
 
-    def __init__(self, library_repository: LibraryRepository) -> None:
+    def __init__(
+        self,
+        library_repository: LibraryRepository,
+        movie_repository: MovieRepository,
+        series_repository: SeriesRepository,
+    ) -> None:
         self._repo = library_repository
+        self._movie_repo = movie_repository
+        self._series_repo = series_repository
 
     async def execute(self, input_dto: CreateLibraryInput) -> LibraryOutput:
         """Create and persist a new Library.
@@ -57,7 +65,7 @@ class CreateLibraryUseCase:
             library = library.with_updates(scan_schedule=input_dto.scan_schedule)
 
         saved = await self._repo.save(library)
-        return library_to_output(saved)
+        return await library_to_output(saved, self._movie_repo, self._series_repo)
 
 
 def _build_settings(raw: dict[str, Any]) -> LibrarySettings:

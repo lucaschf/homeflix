@@ -927,3 +927,83 @@ class TestSQLAlchemySeriesRepositoryListPaginatedByGenre:
 
         assert len(page.items) == 1
         assert page.items[0].title.value == "B"
+
+
+def _series_with_episode_paths(
+    title: str,
+    paths: list[str],
+    start_year: int = 2020,
+) -> Series:
+    """Build a series whose single season has one episode per path."""
+    sid = SeriesId.generate()
+    episodes = [
+        _create_episode(sid, season_number=1, episode_number=i + 1, file_path=p)
+        for i, p in enumerate(paths)
+    ]
+    season = Season(
+        id=SeasonId.generate(),
+        series_id=sid,
+        season_number=1,
+        title=Title("Season 1"),
+        episodes=episodes,
+    )
+    return Series(
+        id=sid,
+        title=Title(title),
+        start_year=Year(start_year),
+        seasons=[season],
+    )
+
+
+@pytest.mark.integration
+class TestSeriesCountUnderPaths:
+    """Integration tests for ``SQLAlchemySeriesRepository.count_under_paths``."""
+
+    async def test_returns_zero_for_empty_paths(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_series_with_episode_paths("A", ["/media/tv/a/s01e01.mkv"]))
+
+        assert await repo.count_under_paths([]) == 0
+
+    async def test_counts_series_with_matching_episode(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_series_with_episode_paths("A", ["/media/tv/a/s01e01.mkv"]))
+        await repo.save(_series_with_episode_paths("B", ["/media/tv/b/s01e01.mkv"]))
+        await repo.save(_series_with_episode_paths("Other", ["/elsewhere/x/s01e01.mkv"]))
+
+        assert await repo.count_under_paths(["/media/tv"]) == 2
+
+    async def test_counts_distinct_series_not_episodes(self, db_session: AsyncSession) -> None:
+        """A series with N matching episodes still counts as one."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(
+            _series_with_episode_paths(
+                "Multi",
+                [
+                    "/media/tv/multi/s01e01.mkv",
+                    "/media/tv/multi/s01e02.mkv",
+                    "/media/tv/multi/s01e03.mkv",
+                ],
+            )
+        )
+
+        assert await repo.count_under_paths(["/media/tv"]) == 1
+
+    async def test_matches_windows_prefix(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_series_with_episode_paths("W", [r"D:\homeflix\tv\show\s01e01.mkv"]))
+        await repo.save(_series_with_episode_paths("Other", [r"E:\other\s01e01.mkv"]))
+
+        assert await repo.count_under_paths([r"D:\homeflix"]) == 1
+
+    async def test_excludes_soft_deleted_series(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        a = _series_with_episode_paths("A", ["/media/tv/a/s01e01.mkv"])
+        b = _series_with_episode_paths("B", ["/media/tv/b/s01e01.mkv"])
+        await repo.save(a)
+        await repo.save(b)
+        await repo.delete(_id_of(a))
+
+        # The delete cascades to episodes, so A's episode is also
+        # soft-deleted and shouldn't keep the series in the count.
+        assert await repo.count_under_paths(["/media/tv"]) == 1

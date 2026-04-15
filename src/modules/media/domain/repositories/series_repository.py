@@ -204,5 +204,24 @@ class SeriesRepository(ABC):
         """
         ...
 
+    @abstractmethod
+    async def count_under_paths(self, paths: Sequence[str]) -> int:
+        """Count distinct series with at least one episode under ``paths``.
+
+        The "series belongs to library X" relationship is implicit
+        through its episode file paths. A series that happens to
+        straddle two libraries counts once per library it touches.
+
+        Args:
+            paths: Absolute directory paths to include. Matching is a
+                string-prefix + separator check that handles both
+                backslash and forward-slash styles.
+
+        Returns:
+            Distinct count of series meeting the condition. ``0`` for
+            an empty list.
+        """
+        ...
+
 
 __all__ = ["SeriesRepository"]

@@ -243,5 +243,25 @@ class MovieRepository(ABC):
         """
         ...
 
+    @abstractmethod
+    async def count_under_paths(self, paths: Sequence[str]) -> int:
+        """Count non-deleted movies whose file_path sits under any of ``paths``.
+
+        Used to show per-library totals on the Libraries UI without an
+        explicit ``library_id`` column — the association is implicit
+        through the path prefix.
+
+        Args:
+            paths: Absolute directory paths to include. Matching is a
+                string-prefix + separator check; both backslash and
+                forward-slash variants are considered so the query
+                works regardless of the OS the row was written on.
+
+        Returns:
+            Count of distinct movies whose primary file_path is under
+            one of the supplied directories. ``0`` for an empty list.
+        """
+        ...
+
 
 __all__ = ["GenreRow", "MovieRepository"]

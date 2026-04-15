@@ -28,6 +28,11 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     # Wired from InfrastructureContainer via main container.
     session = providers.Dependency()
+    # Media repositories come from MediaContainer — library responses
+    # include per-library movie/series counts, so the library use
+    # cases need to query those tables too.
+    movie_repository = providers.Dependency()
+    series_repository = providers.Dependency()
 
     # =========================================================================
     # Repositories
@@ -45,21 +50,29 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     create_library = providers.Factory(
         CreateLibraryUseCase,
         library_repository=library_repository,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
     )
 
     list_libraries = providers.Factory(
         ListLibrariesUseCase,
         library_repository=library_repository,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
     )
 
     get_library_by_id = providers.Factory(
         GetLibraryByIdUseCase,
         library_repository=library_repository,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
     )
 
     update_library = providers.Factory(
         UpdateLibraryUseCase,
         library_repository=library_repository,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
     )
 
     delete_library = providers.Factory(

@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -305,6 +305,36 @@ class SQLAlchemyMovieRepository(MovieRepository):
         model = result.scalar_one_or_none()
 
         return None if model is None else MovieMapper.to_entity(model)
+
+    async def count_under_paths(self, paths: Sequence[str]) -> int:
+        r"""Count non-deleted movies whose ``file_path`` is under any of ``paths``.
+
+        Matches both ``\`` and ``/`` separators so the query is
+        cross-platform — a library row written on Linux still matches
+        a filter coming from a Windows client and vice versa.
+        """
+        if not paths:
+            return 0
+        prefix_filters = []
+        for path in paths:
+            # LIKE is safe here: library paths come from our own DB and
+            # the user is the only one who can write them via the
+            # Libraries API. We still add explicit separator patterns
+            # rather than "{path}%" to avoid matching sibling dirs
+            # (e.g. ``/media/movies`` matching ``/media/movies-extra``).
+            prefix_filters.append(MovieModel.file_path.like(f"{path}\\%"))
+            prefix_filters.append(MovieModel.file_path.like(f"{path}/%"))
+        stmt = (
+            select(func.count())
+            .select_from(MovieModel)
+            .where(
+                MovieModel.deleted_at.is_(None),
+                MovieModel.file_path.is_not(None),
+                or_(*prefix_filters),
+            )
+        )
+        result = await self._session.execute(stmt)
+        return int(result.scalar_one())
 
     async def search(
         self,

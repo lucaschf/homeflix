@@ -67,6 +67,8 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     library = providers.Container(
         LibraryContainer,
         session=infrastructure.session,
+        movie_repository=media.movie_repository,
+        series_repository=media.series_repository,
     )
 
     preferences = providers.Container(
