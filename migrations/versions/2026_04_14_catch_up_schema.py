@@ -151,22 +151,21 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the catch-up tables and columns."""
-    op.drop_table("watchlist_items")
-    op.drop_table("custom_list_items")
-    op.drop_table("custom_lists")
-    op.drop_table("watch_progresses")
+    """This migration is intentionally one-way.
 
-    # NOTE: Proper SQLite downgrade of DROP COLUMN requires
-    # batch_alter_table, which in turn would break the FTS5 external
-    # content link (see upgrade comment). If you need to downgrade,
-    # drop and recreate the FTS5 indexes around these calls. For v1
-    # this migration is one-way in practice.
-    op.drop_column("series", "localized")
-    op.drop_column("series", "trailer_url")
-    op.drop_column("series", "content_rating")
+    Reverting it on SQLite would require either ``op.drop_column``
+    (which fails on the SQLite versions that ship with most Python
+    distributions, since native ``ALTER TABLE ... DROP COLUMN`` only
+    landed in SQLite 3.35) or ``batch_alter_table`` (which would
+    silently break the FTS5 external-content link defined in the
+    earlier migration and corrupt subsequent UPDATEs).
 
-    op.drop_column("movies", "localized")
-    op.drop_column("movies", "trailer_url")
-    op.drop_column("movies", "content_rating")
-    op.drop_column("movies", "writers")
+    Rather than ship a downgrade that fails or corrupts the DB at the
+    worst possible moment, fail loudly here. To roll back, restore
+    the database from a backup taken before this revision was applied.
+    """
+    raise RuntimeError(
+        "Downgrade for revision 'e5f6a7b8c9d0' (catch-up schema) is "
+        "intentionally disabled. Restore from a pre-migration backup "
+        "instead — see the docstring for the reasoning."
+    )

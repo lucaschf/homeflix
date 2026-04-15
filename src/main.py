@@ -93,7 +93,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Start background scheduler (library scans).
     # The provider depends on the session_factory Resource, so it
-    # resolves asynchronously — must be awaited.
+    # resolves asynchronously — must be awaited. Always pin a slot on
+    # app.state so the shutdown handler can do a single truthy check.
+    app.state.scheduler = None
     if settings.scheduler_enabled:
         scheduler = await container.infrastructure.library_scan_scheduler()
         await scheduler.start()
@@ -105,7 +107,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Shutdown
     logger.info("Application shutting down")
-    if hasattr(app.state, "scheduler"):
+    if app.state.scheduler:
         await app.state.scheduler.stop()
     await container.infrastructure.shutdown_resources()
     logger.info("Application stopped")

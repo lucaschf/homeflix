@@ -24,8 +24,6 @@ from src.modules.media.application.dtos.scan_dtos import ScanMediaInput
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
 )
-from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
-from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
 from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
     SQLAlchemyMovieRepository,
 )
@@ -37,6 +35,10 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
     from src.building_blocks.application.event_bus import EventBus
+    from src.modules.media.application.ports import FileSystemScanner
+    from src.modules.media.infrastructure.file_system.variant_detector import (
+        VariantDetector,
+    )
 
 _logger = get_logger()
 
@@ -61,10 +63,14 @@ class LibraryScanScheduler:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         event_bus: EventBus,
+        file_scanner: FileSystemScanner,
+        variant_detector: VariantDetector,
         reconcile_interval_minutes: int,
     ) -> None:
         self._session_factory = session_factory
         self._event_bus = event_bus
+        self._file_scanner = file_scanner
+        self._variant_detector = variant_detector
         self._reconcile_interval_minutes = reconcile_interval_minutes
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -175,8 +181,8 @@ class LibraryScanScheduler:
 
             scan_input = ScanMediaInput(directories=list(library.paths))
             use_case = ScanMediaDirectoriesUseCase(
-                file_scanner=LocalFileSystemScanner(),
-                variant_detector=VariantDetector(),
+                file_scanner=self._file_scanner,
+                variant_detector=self._variant_detector,
                 movie_repository=SQLAlchemyMovieRepository(session),
                 series_repository=SQLAlchemySeriesRepository(session),
                 event_bus=self._event_bus,

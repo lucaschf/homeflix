@@ -76,6 +76,8 @@ def scheduler() -> LibraryScanScheduler:
     instance = LibraryScanScheduler(
         session_factory=MagicMock(),
         event_bus=MagicMock(),
+        file_scanner=MagicMock(),
+        variant_detector=MagicMock(),
         reconcile_interval_minutes=5,
     )
     instance._scheduler = _FakeScheduler()
