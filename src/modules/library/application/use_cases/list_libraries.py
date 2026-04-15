@@ -22,6 +22,15 @@ class ListLibrariesUseCase:
     async def execute(self) -> list[LibraryOutput]:
         """List all libraries.
 
+        The count queries fan out serially on purpose: every repo on
+        this request shares the same ``AsyncSession`` (see
+        ``session_manager.py``), and SQLAlchemy sessions forbid
+        concurrent ``execute`` calls on the same transaction — a
+        ``gather`` here raises ``InvalidRequestError`` the moment two
+        libraries exist. For tens of libraries the serial cost is
+        negligible; batching would require a dedicated short-lived
+        session per library and isn't worth the complexity today.
+
         Returns:
             List of ``LibraryOutput`` ordered by name.
         """

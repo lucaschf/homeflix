@@ -22,6 +22,9 @@ from src.modules.media.infrastructure.persistence.repositories._genre_helpers im
     fetch_genre_paginated_page,
     fetch_genre_rows,
 )
+from src.modules.media.infrastructure.persistence.repositories._path_prefix_helpers import (
+    build_path_prefix_filters,
+)
 
 
 class SQLAlchemyMovieRepository(MovieRepository):
@@ -311,19 +314,13 @@ class SQLAlchemyMovieRepository(MovieRepository):
 
         Matches both ``\`` and ``/`` separators so the query is
         cross-platform — a library row written on Linux still matches
-        a filter coming from a Windows client and vice versa.
+        a filter coming from a Windows client and vice versa. See
+        ``_path_prefix_helpers.build_path_prefix_filters`` for the
+        normalization rules shared with the series repo.
         """
-        if not paths:
+        prefix_filters = build_path_prefix_filters(MovieModel.file_path, paths)
+        if not prefix_filters:
             return 0
-        prefix_filters = []
-        for path in paths:
-            # LIKE is safe here: library paths come from our own DB and
-            # the user is the only one who can write them via the
-            # Libraries API. We still add explicit separator patterns
-            # rather than "{path}%" to avoid matching sibling dirs
-            # (e.g. ``/media/movies`` matching ``/media/movies-extra``).
-            prefix_filters.append(MovieModel.file_path.like(f"{path}\\%"))
-            prefix_filters.append(MovieModel.file_path.like(f"{path}/%"))
         stmt = (
             select(func.count())
             .select_from(MovieModel)

@@ -729,3 +729,17 @@ class TestCountUnderPaths:
         await repo.delete(_id_of(a))
 
         assert await repo.count_under_paths(["/media"]) == 1
+
+    async def test_normalizes_trailing_posix_separator(self, db_session: AsyncSession) -> None:
+        """A trailing ``/`` on the filter path must still match stored rows."""
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="A", file_path="/media/movies/a.mkv"))
+        await repo.save(_create_movie(title="Sibling", file_path="/media/movies-extra/b.mkv"))
+
+        assert await repo.count_under_paths(["/media/movies/"]) == 1
+
+    async def test_normalizes_trailing_windows_separator(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="W", file_path=r"D:\homeflix\movie1.mkv"))
+
+        assert await repo.count_under_paths([r"D:\homeflix" + "\\"]) == 1

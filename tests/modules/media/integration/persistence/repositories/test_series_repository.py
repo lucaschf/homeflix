@@ -1007,3 +1007,10 @@ class TestSeriesCountUnderPaths:
         # The delete cascades to episodes, so A's episode is also
         # soft-deleted and shouldn't keep the series in the count.
         assert await repo.count_under_paths(["/media/tv"]) == 1
+
+    async def test_normalizes_trailing_separator(self, db_session: AsyncSession) -> None:
+        """A trailing ``/`` on the filter path must still match episode rows."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_series_with_episode_paths("A", ["/media/tv/a/s01e01.mkv"]))
+
+        assert await repo.count_under_paths(["/media/tv/"]) == 1
