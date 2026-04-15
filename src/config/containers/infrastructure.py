@@ -13,6 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from src.building_blocks.infrastructure.in_process_event_bus import InProcessEventBus
 from src.config.persistence.session_manager import create_tracked_session
 from src.config.settings import Settings
+from src.infrastructure.scheduling import LibraryScanScheduler
+from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
+from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
 
 
 async def _init_engine(
@@ -72,3 +75,16 @@ class InfrastructureContainer(containers.DeclarativeContainer):  # type: ignore[
     )
 
     event_bus = providers.Singleton(InProcessEventBus)
+
+    # Stateless services reused across requests and background jobs.
+    file_scanner = providers.Singleton(LocalFileSystemScanner)
+    variant_detector = providers.Singleton(VariantDetector)
+
+    library_scan_scheduler = providers.Singleton(
+        LibraryScanScheduler,
+        session_factory=session_factory,
+        event_bus=event_bus,
+        file_scanner=file_scanner,
+        variant_detector=variant_detector,
+        reconcile_interval_minutes=config.provided.scheduler_reconcile_interval_minutes,
+    )

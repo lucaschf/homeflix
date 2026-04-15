@@ -1,6 +1,7 @@
 """Mapper between Library domain entity and LibraryModel ORM model."""
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from src.modules.library.domain.entities.library import Library
@@ -16,6 +17,21 @@ from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
 from src.modules.library.infrastructure.persistence.models.library_model import LibraryModel
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
+
+
+def _ensure_utc(value: datetime | None) -> datetime | None:
+    """Attach UTC tzinfo to naive datetimes loaded from the DB.
+
+    SQLite stores datetimes without timezone info even when the column
+    is declared ``DateTime(timezone=True)``. Without this normalisation
+    the entity would round-trip a naive datetime, and JSON serialisers
+    would emit an ISO string with no offset — which JS clients then
+    interpret as local time, shifting the displayed timestamp by the
+    user's UTC offset.
+    """
+    if value is None:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 class LibraryMapper:
@@ -58,6 +74,7 @@ class LibraryMapper:
                 ensure_ascii=False,
             ),
             scan_schedule=entity.scan_schedule,
+            last_scan_at=entity.last_scan_at,
             settings=json.dumps(
                 {
                     "preferred_audio_language": entity.settings.preferred_audio_language.value,
@@ -104,6 +121,7 @@ class LibraryMapper:
                 for p in providers_raw
             ],
             scan_schedule=model.scan_schedule,
+            last_scan_at=_ensure_utc(model.last_scan_at),
             settings=LibrarySettings(
                 preferred_audio_language=LanguageCode(
                     settings_raw.get("preferred_audio_language", "en"),
@@ -144,6 +162,7 @@ class LibraryMapper:
         model.language = fresh.language
         model.metadata_providers = fresh.metadata_providers
         model.scan_schedule = fresh.scan_schedule
+        model.last_scan_at = fresh.last_scan_at
         model.settings = fresh.settings
         return model
 

@@ -40,6 +40,7 @@ class LibraryOutput:
     language: str
     metadata_providers: list[MetadataProviderOutput]
     scan_schedule: str | None
+    last_scan_at: str | None
     settings: LibrarySettingsOutput
 
 

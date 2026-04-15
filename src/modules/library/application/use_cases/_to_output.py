@@ -25,6 +25,7 @@ def library_to_output(entity: Library) -> LibraryOutput:
             for p in entity.metadata_providers
         ],
         scan_schedule=entity.scan_schedule,
+        last_scan_at=entity.last_scan_at.isoformat() if entity.last_scan_at else None,
         settings=LibrarySettingsOutput(
             preferred_audio_language=entity.settings.preferred_audio_language.value,
             preferred_subtitle_language=(

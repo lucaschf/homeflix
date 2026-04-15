@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime  # noqa: TCH003 - Pydantic needs this at runtime for field validation
 from typing import TYPE_CHECKING, Any, Self
 
 from pydantic import Field, field_validator, model_validator
@@ -64,6 +65,7 @@ class Library(AggregateRoot[LibraryId]):
         default=None,
         pattern=r"^(\S+\s+){4}\S+$",
     )
+    last_scan_at: datetime | None = None
 
     # Settings
     settings: LibrarySettings = Field(default_factory=LibrarySettings.default)
@@ -178,6 +180,17 @@ class Library(AggregateRoot[LibraryId]):
             )
 
         return self.with_updates(paths=[p for p in self.paths if p != path])
+
+    def with_scan_completed(self, at: datetime) -> Self:
+        """Return a copy with ``last_scan_at`` set to the given timestamp.
+
+        Args:
+            at: The timestamp to record as the most recent successful scan.
+
+        Returns:
+            A new Library with the timestamp recorded.
+        """
+        return self.with_updates(last_scan_at=at)
 
     def get_enabled_providers(self) -> list[MetadataProviderConfig]:
         """Get enabled metadata providers sorted by priority.

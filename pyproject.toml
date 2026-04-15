@@ -50,6 +50,7 @@ dependency-injector = "^4.41.0"
 python-multipart = "^0.0.6"
 python-jose = { extras = ["cryptography"], version = "^3.3.0" }
 structlog = "^24.1.0"
+apscheduler = "^3.10.4"
 
 [tool.poetry.group.dev.dependencies]
 # Testing
@@ -92,6 +93,10 @@ plugins = ["pydantic.mypy", "sqlalchemy.ext.mypy.plugin"]
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+module = ["apscheduler.*"]
+ignore_missing_imports = true
 
 # =============================================================================
 # Pytest

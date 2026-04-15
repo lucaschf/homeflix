@@ -116,6 +116,21 @@ class Settings(BaseSettings):  # type: ignore[misc]
     )
 
     # =========================================================================
+    # Scheduler
+    # =========================================================================
+
+    scheduler_enabled: bool = Field(
+        default=True,
+        description="Enable the background scheduler (library scans, etc.).",
+    )
+    scheduler_reconcile_interval_minutes: int = Field(
+        default=5,
+        ge=1,
+        description="How often the scheduler re-reads libraries from the "
+        "database to sync cron jobs with configured schedules.",
+    )
+
+    # =========================================================================
     # Internationalization
     # =========================================================================
 

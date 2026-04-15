@@ -1,6 +1,8 @@
 """Library ORM model."""
 
-from sqlalchemy import String, Text
+from datetime import datetime
+
+from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.config.persistence.base import Base
@@ -34,6 +36,7 @@ class LibraryModel(Base):
     language: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
     metadata_providers: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     scan_schedule: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     settings: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
 
     def __repr__(self) -> str:
