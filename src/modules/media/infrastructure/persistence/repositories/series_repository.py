@@ -39,6 +39,9 @@ from src.modules.media.infrastructure.persistence.repositories._genre_helpers im
     fetch_genre_paginated_page,
     fetch_genre_rows,
 )
+from src.modules.media.infrastructure.persistence.repositories._path_prefix_helpers import (
+    build_path_prefix_filters,
+)
 
 
 class SQLAlchemySeriesRepository(SeriesRepository):
@@ -391,14 +394,13 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         """Count distinct series with at least one episode under ``paths``.
 
         One SELECT against ``episodes``, DISTINCT by ``series_id`` so a
-        series with ten matching episodes still counts as one.
+        series with ten matching episodes still counts as one. See
+        ``_path_prefix_helpers.build_path_prefix_filters`` for the
+        normalization rules shared with the movie repo.
         """
-        if not paths:
+        prefix_filters = build_path_prefix_filters(EpisodeModel.file_path, paths)
+        if not prefix_filters:
             return 0
-        prefix_filters = []
-        for path in paths:
-            prefix_filters.append(EpisodeModel.file_path.like(f"{path}\\%"))
-            prefix_filters.append(EpisodeModel.file_path.like(f"{path}/%"))
         # DISTINCT on series_external_id (not series_id — episodes
         # reference the series via the public external id, not the
         # internal autoincrement pk).
