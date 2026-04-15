@@ -10,13 +10,13 @@ work never shares a request-scoped one.
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from src.config.logging import get_logger
 from src.modules.library.infrastructure.persistence.repositories.sqlalchemy_library_repository import (
     SqlAlchemyLibraryRepository,
 )
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
     from src.building_blocks.application.event_bus import EventBus
 
-_logger = logging.getLogger(__name__)
+_logger = get_logger()
 
 _RECONCILE_JOB_ID = "homeflix:reconcile-libraries"
 _LIBRARY_JOB_PREFIX = "library-scan:"
@@ -82,8 +82,8 @@ class LibraryScanScheduler:
         )
         await self._reconcile()
         _logger.info(
-            "[scheduler] Started; reconciling every %s minute(s)",
-            self._reconcile_interval_minutes,
+            "[scheduler] Started",
+            reconcile_interval_minutes=self._reconcile_interval_minutes,
         )
 
     async def stop(self) -> None:
@@ -119,7 +119,7 @@ class LibraryScanScheduler:
         # Remove jobs no longer desired.
         for job_id in existing - desired.keys():
             self._scheduler.remove_job(job_id)
-            _logger.info("[scheduler] Removed job %s", job_id)
+            _logger.info("[scheduler] Removed job", job_id=job_id)
 
         # Add or replace desired jobs.
         for job_id, (library_id, cron) in desired.items():
@@ -127,10 +127,10 @@ class LibraryScanScheduler:
                 trigger = CronTrigger.from_crontab(cron, timezone="UTC")
             except ValueError as exc:
                 _logger.warning(
-                    "[scheduler] Skipping library %s: invalid cron %r (%s)",
-                    library_id,
-                    cron,
-                    exc,
+                    "[scheduler] Skipping library: invalid cron",
+                    library_id=library_id,
+                    cron=cron,
+                    error=str(exc),
                 )
                 if job_id in existing:
                     self._scheduler.remove_job(job_id)
@@ -145,7 +145,11 @@ class LibraryScanScheduler:
                 max_instances=1,
                 coalesce=True,
             )
-            _logger.info("[scheduler] Scheduled library %s with cron %r", library_id, cron)
+            _logger.info(
+                "[scheduler] Scheduled library",
+                library_id=library_id,
+                cron=cron,
+            )
 
     async def _run_scan(self, library_id: str) -> None:
         """Run a single library scan and record completion.
@@ -155,7 +159,7 @@ class LibraryScanScheduler:
         ``last_scan_at`` on success. Errors are logged — failure
         tracking beyond logs is out of scope for v1.
         """
-        _logger.info("[scheduler] Running scan for library %s", library_id)
+        _logger.info("[scheduler] Running scan", library_id=library_id)
 
         async with self._session_factory() as session:
             library_repo = SqlAlchemyLibraryRepository(session)
@@ -163,7 +167,10 @@ class LibraryScanScheduler:
 
             library = await library_repo.find_by_id(LibraryId(library_id))
             if library is None:
-                _logger.warning("[scheduler] Library %s vanished before scan; skipping", library_id)
+                _logger.warning(
+                    "[scheduler] Library vanished before scan; skipping",
+                    library_id=library_id,
+                )
                 return
 
             scan_input = ScanMediaInput(directories=list(library.paths))
@@ -177,8 +184,13 @@ class LibraryScanScheduler:
 
             try:
                 result = await use_case.execute(scan_input)
-            except Exception:
-                _logger.exception("[scheduler] Scan failed for library %s", library_id)
+            except Exception as exc:
+                _logger.error(
+                    "[scheduler] Scan failed",
+                    library_id=library_id,
+                    error=str(exc),
+                    exc_info=True,
+                )
                 await session.rollback()
                 return
 
@@ -187,13 +199,13 @@ class LibraryScanScheduler:
             await session.commit()
 
         _logger.info(
-            "[scheduler] Library %s scan done: " "movies=%d/%d episodes=%d/%d errors=%d",
-            library_id,
-            result.movies_created,
-            result.movies_updated,
-            result.episodes_created,
-            result.episodes_updated,
-            len(result.errors),
+            "[scheduler] Scan done",
+            library_id=library_id,
+            movies_created=result.movies_created,
+            movies_updated=result.movies_updated,
+            episodes_created=result.episodes_created,
+            episodes_updated=result.episodes_updated,
+            errors=len(result.errors),
         )
 
 
