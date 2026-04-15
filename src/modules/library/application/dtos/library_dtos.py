@@ -41,6 +41,8 @@ class LibraryOutput:
     metadata_providers: list[MetadataProviderOutput]
     scan_schedule: str | None
     last_scan_at: str | None
+    movie_count: int
+    series_count: int
     settings: LibrarySettingsOutput
 
 

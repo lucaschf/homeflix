@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import distinct, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -386,6 +386,29 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         # Load the full series
         return await self.find_by_id(SeriesId(episode_model.series_external_id))
+
+    async def count_under_paths(self, paths: Sequence[str]) -> int:
+        """Count distinct series with at least one episode under ``paths``.
+
+        One SELECT against ``episodes``, DISTINCT by ``series_id`` so a
+        series with ten matching episodes still counts as one.
+        """
+        if not paths:
+            return 0
+        prefix_filters = []
+        for path in paths:
+            prefix_filters.append(EpisodeModel.file_path.like(f"{path}\\%"))
+            prefix_filters.append(EpisodeModel.file_path.like(f"{path}/%"))
+        # DISTINCT on series_external_id (not series_id — episodes
+        # reference the series via the public external id, not the
+        # internal autoincrement pk).
+        stmt = select(func.count(distinct(EpisodeModel.series_external_id))).where(
+            EpisodeModel.deleted_at.is_(None),
+            EpisodeModel.file_path.is_not(None),
+            or_(*prefix_filters),
+        )
+        result = await self._session.execute(stmt)
+        return int(result.scalar_one())
 
     def _ensure_ids(self, series: Series) -> Series:
         """Ensure all entities have IDs, generating them if needed.

@@ -676,3 +676,56 @@ class TestSQLAlchemyMovieRepositoryListPaginatedByGenre:
 
         assert len(page.items) == 1
         assert page.items[0].title.value == "B"
+
+
+@pytest.mark.integration
+class TestCountUnderPaths:
+    """Integration tests for ``count_under_paths``."""
+
+    async def test_returns_zero_for_empty_paths(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(file_path="/media/movies/a.mkv"))
+
+        assert await repo.count_under_paths([]) == 0
+
+    async def test_matches_posix_prefix(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="A", file_path="/media/movies/a.mkv"))
+        await repo.save(_create_movie(title="B", file_path="/media/movies/nested/b.mkv"))
+        await repo.save(_create_movie(title="Other", file_path="/elsewhere/c.mkv"))
+
+        assert await repo.count_under_paths(["/media/movies"]) == 2
+
+    async def test_matches_windows_prefix(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="W1", file_path=r"D:\homeflix\movie1.mkv"))
+        await repo.save(_create_movie(title="W2", file_path=r"D:\homeflix\sub\movie2.mkv"))
+        await repo.save(_create_movie(title="Other", file_path=r"E:\other\x.mkv"))
+
+        assert await repo.count_under_paths([r"D:\homeflix"]) == 2
+
+    async def test_sums_across_multiple_libraries(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="A", file_path="/a/one.mkv"))
+        await repo.save(_create_movie(title="B", file_path="/b/two.mkv"))
+        await repo.save(_create_movie(title="C", file_path="/c/three.mkv"))
+
+        assert await repo.count_under_paths(["/a", "/b"]) == 2
+
+    async def test_does_not_match_sibling_directory(self, db_session: AsyncSession) -> None:
+        """``/media/movies`` must not swallow ``/media/movies-extra``."""
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="A", file_path="/media/movies/a.mkv"))
+        await repo.save(_create_movie(title="Sibling", file_path="/media/movies-extra/b.mkv"))
+
+        assert await repo.count_under_paths(["/media/movies"]) == 1
+
+    async def test_excludes_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        a = _create_movie(title="A", file_path="/media/a.mkv")
+        b = _create_movie(title="B", file_path="/media/b.mkv")
+        await repo.save(a)
+        await repo.save(b)
+        await repo.delete(_id_of(a))
+
+        assert await repo.count_under_paths(["/media"]) == 1

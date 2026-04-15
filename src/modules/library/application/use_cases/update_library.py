@@ -17,6 +17,7 @@ from src.modules.library.domain.value_objects.metadata_provider import (
     MetadataProvider,
     MetadataProviderConfig,
 )
+from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
 
@@ -24,8 +25,15 @@ from src.shared_kernel.value_objects.language_code import LanguageCode
 class UpdateLibraryUseCase:
     """Partially update an existing library."""
 
-    def __init__(self, library_repository: LibraryRepository) -> None:
+    def __init__(
+        self,
+        library_repository: LibraryRepository,
+        movie_repository: MovieRepository,
+        series_repository: SeriesRepository,
+    ) -> None:
         self._repo = library_repository
+        self._movie_repo = movie_repository
+        self._series_repo = series_repository
 
     async def execute(self, input_dto: UpdateLibraryInput) -> LibraryOutput:
         """Apply partial updates to a library.
@@ -75,7 +83,7 @@ class UpdateLibraryUseCase:
 
         updated = entity.with_updates(**updates)
         saved = await self._repo.save(updated)
-        return library_to_output(saved)
+        return await library_to_output(saved, self._movie_repo, self._series_repo)
 
 
 __all__ = ["UpdateLibraryUseCase"]

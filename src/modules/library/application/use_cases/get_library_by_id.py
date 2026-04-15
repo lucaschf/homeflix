@@ -8,13 +8,21 @@ from src.modules.library.application.dtos.library_dtos import (
 from src.modules.library.application.use_cases._to_output import library_to_output
 from src.modules.library.domain.repositories.library_repository import LibraryRepository
 from src.modules.library.domain.value_objects.library_id import LibraryId
+from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 
 
 class GetLibraryByIdUseCase:
     """Fetch a single library by its external id."""
 
-    def __init__(self, library_repository: LibraryRepository) -> None:
+    def __init__(
+        self,
+        library_repository: LibraryRepository,
+        movie_repository: MovieRepository,
+        series_repository: SeriesRepository,
+    ) -> None:
         self._repo = library_repository
+        self._movie_repo = movie_repository
+        self._series_repo = series_repository
 
     async def execute(self, input_dto: GetLibraryByIdInput) -> LibraryOutput:
         """Fetch a library or raise if not found.
@@ -36,7 +44,7 @@ class GetLibraryByIdUseCase:
                 "Library",
                 input_dto.library_id,
             )
-        return library_to_output(entity)
+        return await library_to_output(entity, self._movie_repo, self._series_repo)
 
 
 __all__ = ["GetLibraryByIdUseCase"]

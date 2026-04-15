@@ -7,6 +7,7 @@ import pytest
 from src.modules.library.application.dtos.library_dtos import CreateLibraryInput
 from src.modules.library.application.use_cases.create_library import CreateLibraryUseCase
 from src.modules.library.domain.repositories.library_repository import LibraryRepository
+from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 
 
 def _make_repo() -> AsyncMock:
@@ -16,6 +17,14 @@ def _make_repo() -> AsyncMock:
     return repo
 
 
+def _make_media_repos() -> tuple[AsyncMock, AsyncMock]:
+    movie_repo = AsyncMock(spec=MovieRepository)
+    movie_repo.count_under_paths.return_value = 0
+    series_repo = AsyncMock(spec=SeriesRepository)
+    series_repo.count_under_paths.return_value = 0
+    return movie_repo, series_repo
+
+
 @pytest.mark.unit
 class TestCreateLibraryUseCase:
     """Unit tests for library creation."""
@@ -23,7 +32,8 @@ class TestCreateLibraryUseCase:
     @pytest.mark.asyncio
     async def test_should_create_library_with_generated_id(self) -> None:
         repo = _make_repo()
-        use_case = CreateLibraryUseCase(repo)
+        movie_repo, series_repo = _make_media_repos()
+        use_case = CreateLibraryUseCase(repo, movie_repo, series_repo)
 
         result = await use_case.execute(
             CreateLibraryInput(
@@ -42,7 +52,8 @@ class TestCreateLibraryUseCase:
     @pytest.mark.asyncio
     async def test_should_pass_settings_through(self) -> None:
         repo = _make_repo()
-        use_case = CreateLibraryUseCase(repo)
+        movie_repo, series_repo = _make_media_repos()
+        use_case = CreateLibraryUseCase(repo, movie_repo, series_repo)
 
         result = await use_case.execute(
             CreateLibraryInput(
@@ -65,7 +76,8 @@ class TestCreateLibraryUseCase:
     @pytest.mark.asyncio
     async def test_should_pass_metadata_providers(self) -> None:
         repo = _make_repo()
-        use_case = CreateLibraryUseCase(repo)
+        movie_repo, series_repo = _make_media_repos()
+        use_case = CreateLibraryUseCase(repo, movie_repo, series_repo)
 
         result = await use_case.execute(
             CreateLibraryInput(
