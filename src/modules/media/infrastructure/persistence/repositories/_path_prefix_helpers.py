@@ -13,6 +13,10 @@ rules are identical:
 - Trailing separators on the input (``/media/movies/`` vs
   ``/media/movies``) are normalized away so accidentally passing a
   trailing slash doesn't silently return zero.
+- Root-only inputs (``/``, ``\\``) are a special case: after stripping
+  there's nothing left to anchor the ``LIKE`` on, so we keep the raw
+  separator and use ``{sep}%`` directly — the separator itself is
+  already the prefix we want.
 
 Keeping this in one place means a change to the matching semantics
 (e.g. case-insensitive comparison on Windows volumes) only has to
@@ -23,11 +27,6 @@ from collections.abc import Sequence
 
 from sqlalchemy import ColumnElement
 from sqlalchemy.orm import InstrumentedAttribute
-
-
-def _normalize(path: str) -> str:
-    """Strip trailing path separators so ``LIKE`` patterns stay well-formed."""
-    return path.rstrip("/\\")
 
 
 def build_path_prefix_filters(
@@ -43,8 +42,8 @@ def build_path_prefix_filters(
 
     Args:
         column: The ``file_path``-style column to filter.
-        paths: Library root paths to match under. Empty entries and
-            entries that reduce to empty after trimming are skipped.
+        paths: Library root paths to match under. Empty entries are
+            skipped; root-only entries (``"/"``) are kept as-is.
 
     Returns:
         A list of ``LIKE`` predicates, one per (path, separator) pair.
@@ -52,11 +51,17 @@ def build_path_prefix_filters(
     """
     filters: list[ColumnElement[bool]] = []
     for raw in paths:
-        path = _normalize(raw)
-        if not path:
+        if not raw:
             continue
-        filters.append(column.like(f"{path}/%"))
-        filters.append(column.like(f"{path}\\%"))
+        stripped = raw.rstrip("/\\")
+        if not stripped:
+            # Root-only path: the raw value already ends with the
+            # separator, so ``{raw}%`` is the correct anchor. Emitting
+            # ``/{sep}%`` here would produce ``//%`` and match nothing.
+            filters.append(column.like(f"{raw}%"))
+            continue
+        filters.append(column.like(f"{stripped}/%"))
+        filters.append(column.like(f"{stripped}\\%"))
     return filters
 
 

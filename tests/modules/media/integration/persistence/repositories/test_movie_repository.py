@@ -739,7 +739,22 @@ class TestCountUnderPaths:
         assert await repo.count_under_paths(["/media/movies/"]) == 1
 
     async def test_normalizes_trailing_windows_separator(self, db_session: AsyncSession) -> None:
+        """Mirror the POSIX sibling check for the Windows variant."""
         repo = SQLAlchemyMovieRepository(db_session)
         await repo.save(_create_movie(title="W", file_path=r"D:\homeflix\movie1.mkv"))
+        await repo.save(_create_movie(title="Sibling", file_path=r"D:\homeflix-extra\movie2.mkv"))
 
         assert await repo.count_under_paths([r"D:\homeflix" + "\\"]) == 1
+
+    async def test_matches_posix_root_path(self, db_session: AsyncSession) -> None:
+        """A library rooted at ``/`` must match every stored POSIX path.
+
+        Without special handling ``rstrip`` collapses ``/`` to the empty
+        string and the filter is dropped entirely, so this guards against
+        the regression.
+        """
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="A", file_path="/media/a.mkv"))
+        await repo.save(_create_movie(title="B", file_path="/other/b.mkv"))
+
+        assert await repo.count_under_paths(["/"]) == 2
