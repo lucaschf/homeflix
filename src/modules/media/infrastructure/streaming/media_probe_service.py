@@ -226,9 +226,8 @@ class MediaProbeService:
     def probe_resolution(self, file_path: str) -> str | None:
         """Detect the video resolution of a media file via ffprobe.
 
-        Reads only the first video stream's dimensions and maps the longer
-        edge to a named resolution ("360p", "480p", "720p", "1080p", "2K",
-        "4K"). Returns ``None`` when ffprobe is unavailable, the file does
+        Delegates to :meth:`probe` so there is a single ffprobe invocation
+        path.  Returns ``None`` when ffprobe is unavailable, the file does
         not exist, has no video stream, or its dimensions fall below 360p.
 
         Args:
@@ -237,17 +236,7 @@ class MediaProbeService:
         Returns:
             A named resolution string, or ``None`` if it cannot be determined.
         """
-        source = Path(file_path).resolve()
-        if not source.is_file():
-            _logger.warning("Cannot probe resolution for missing file: %s", file_path)
-            return None
-
-        dimensions = self._run_ffprobe_video_dimensions(str(source))
-        if dimensions is None:
-            return None
-
-        width, height = dimensions
-        return _resolution_from_dimensions(width, height)
+        return self.probe(file_path).resolution
 
     @staticmethod
     def _run_ffprobe_video_dimensions(file_path: str) -> tuple[int, int] | None:
@@ -322,11 +311,15 @@ class MediaProbeService:
 
     @staticmethod
     def _parse_resolution(streams: list[dict[str, Any]]) -> str | None:
-        """Extract the named resolution from the first video stream.
+        """Extract the named resolution from the first valid video stream.
 
         Reuses the streams already loaded by ``probe`` to avoid a second
-        ffprobe invocation. Returns ``None`` when no video stream is
-        present or its dimensions fall below 360p.
+        ffprobe invocation. Skips video streams with missing or invalid
+        dimensions (e.g. embedded cover art) so that a valid stream
+        later in the list can still be matched.
+
+        Returns ``None`` when no video stream has usable dimensions or
+        all fall below 360p.
         """
         for stream in streams:
             if stream.get("codec_type") != "video":
@@ -335,10 +328,12 @@ class MediaProbeService:
                 width = int(stream.get("width") or 0)
                 height = int(stream.get("height") or 0)
             except (TypeError, ValueError):
-                return None
+                continue
             if width <= 0 or height <= 0:
-                return None
-            return _resolution_from_dimensions(width, height)
+                continue
+            resolved = _resolution_from_dimensions(width, height)
+            if resolved is not None:
+                return resolved
         return None
 
     @staticmethod
@@ -354,7 +349,10 @@ class MediaProbeService:
         lang = lang.lower().strip()
 
         if len(lang) == 3 and lang != "und":
-            lang = _ISO639_2_TO_1.get(lang, lang[:2])
+            mapped = _ISO639_2_TO_1.get(lang)
+            if mapped is None:
+                return "un"
+            lang = mapped
 
         if re.match(r"^[a-z]{2}$", lang):
             return lang

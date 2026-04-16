@@ -385,9 +385,12 @@ class TestRescanResolutionUpgrade:
             file_size=4_000_000_000,
             resolution="1080p",
         )
-        # Populate tracks so the refresh path has nothing to backfill.
+        # Populate both track lists so the refresh path has nothing to backfill.
         populated_file = existing.files[0].model_copy(
-            update={"audio_tracks": [_audio_track("en")]}
+            update={
+                "audio_tracks": [_audio_track("en")],
+                "subtitle_tracks": [_subtitle_track("en")],
+            }
         )
         existing = existing.with_updates(files=[populated_file])
 
@@ -582,9 +585,11 @@ class TestTrackDetection:
             file_size=4_000_000_000,
             resolution="1080p",
         )
-        original_track = _audio_track("fr")
         populated_file = existing.files[0].model_copy(
-            update={"audio_tracks": [original_track]}
+            update={
+                "audio_tracks": [_audio_track("fr")],
+                "subtitle_tracks": [_subtitle_track("fr")],
+            }
         )
         existing = existing.with_updates(files=[populated_file])
 
@@ -637,4 +642,13 @@ class TestTrackDetection:
         assert result.movies_created == 1
         media_file = saved[0].files[0]
         assert len(media_file.subtitle_tracks) == 2
-        assert any(t.is_external for t in media_file.subtitle_tracks)
+
+        embedded = [t for t in media_file.subtitle_tracks if not t.is_external]
+        external = [t for t in media_file.subtitle_tracks if t.is_external]
+        assert len(embedded) == 1
+        assert embedded[0].language == LanguageCode("en")
+
+        assert len(external) == 1
+        assert external[0].language == LanguageCode("pt")
+        assert external[0].index == 1
+        assert external[0].file_path == FilePath("/movies/inception.pt.srt")

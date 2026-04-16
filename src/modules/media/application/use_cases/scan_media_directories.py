@@ -8,14 +8,17 @@ from src.building_blocks.domain.events import DomainEvent
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput, ScanMediaOutput
 from src.modules.media.application.ports import FileSystemScanner, MediaType, ScannedFile
 from src.modules.media.domain.entities import Episode, Movie, Season, Series
+from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import (
     Duration,
     EpisodeNumber,
     MediaFile,
+    MovieId,
     Resolution,
     SeasonNumber,
     Title,
+    Year,
 )
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
 from src.modules.media.infrastructure.streaming.media_probe_service import (
@@ -138,13 +141,15 @@ class ScanMediaDirectoriesUseCase:
     ) -> MediaFile | None:
         """Return a refreshed MediaFile when stored metadata can be enriched.
 
-        Upgrades ``Unknown`` resolutions and backfills empty track lists. Never
-        overwrites a known resolution or non-empty track lists. Returns
-        ``None`` when no change is needed.
+        Upgrades ``Unknown`` resolutions and backfills empty audio or
+        subtitle track lists independently. Never overwrites a known
+        resolution or non-empty track lists. Returns ``None`` when no
+        change is needed.
         """
         needs_resolution = current.resolution.name == "Unknown"
-        needs_tracks = not current.audio_tracks and not current.subtitle_tracks
-        if not needs_resolution and not needs_tracks:
+        needs_audio = not current.audio_tracks
+        needs_subtitles = not current.subtitle_tracks
+        if not needs_resolution and not needs_audio and not needs_subtitles:
             return None
 
         updates: dict[str, object] = {}
@@ -153,14 +158,14 @@ class ScanMediaDirectoriesUseCase:
             updates["resolution"] = Resolution(scanned.resolution)
             needs_resolution = False
 
-        if needs_resolution or needs_tracks:
+        if needs_resolution or needs_audio or needs_subtitles:
             probed = await self._probe(scanned.file_path.value)
             if probed is not None:
                 if needs_resolution and probed.resolution:
                     updates["resolution"] = Resolution(probed.resolution)
-                if not current.audio_tracks and probed.audio_tracks:
+                if needs_audio and probed.audio_tracks:
                     updates["audio_tracks"] = list(probed.audio_tracks)
-                if not current.subtitle_tracks and probed.all_subtitles:
+                if needs_subtitles and probed.all_subtitles:
                     updates["subtitle_tracks"] = list(probed.all_subtitles)
 
         if not updates:
@@ -257,17 +262,15 @@ class ScanMediaDirectoriesUseCase:
         """Create a new movie from a group of file variants."""
         first = by_path[paths[0]]
         primary_file = await self._build_new_media_file(first, is_primary=True)
-        movie = Movie.create(
-            title=first.title,
-            year=first.year or _current_year(),
-            duration=0,
-            file_path=primary_file.file_path.value,
-            file_size=primary_file.file_size,
-            resolution=primary_file.resolution.name,
+        movie_id = MovieId.generate()
+        movie = Movie(
+            id=movie_id,
+            title=Title(first.title),
+            year=Year(first.year or _current_year()),
+            duration=Duration(0),
+            files=[primary_file],
         )
-        # Movie.create builds its own primary MediaFile; replace it with the
-        # probed one so audio/subtitle tracks are carried over.
-        movie = movie.with_updates(files=[primary_file])
+        movie.add_event(MediaCreatedEvent(media_id=str(movie_id), media_type="movie"))
         for path in paths[1:]:
             movie = movie.with_file(
                 await self._build_new_media_file(by_path[path], is_primary=False)

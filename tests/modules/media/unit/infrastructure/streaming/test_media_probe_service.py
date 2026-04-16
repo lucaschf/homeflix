@@ -515,7 +515,9 @@ class TestProbeResolution:
         video.touch()
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = json.dumps({"streams": [{"width": 1920, "height": 1080}]})
+        mock_result.stdout = json.dumps(
+            {"streams": [{"codec_type": "video", "width": 1920, "height": 1080}]}
+        )
         mock_run.return_value = mock_result
         service = MediaProbeService()
 
