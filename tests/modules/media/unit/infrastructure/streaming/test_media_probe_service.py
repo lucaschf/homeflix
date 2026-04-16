@@ -10,8 +10,15 @@ import pytest
 from src.modules.media.infrastructure.streaming.media_probe_service import (
     MediaProbeResult,
     MediaProbeService,
+    _ffprobe_path,
     _resolution_from_dimensions,
 )
+
+
+@pytest.fixture(autouse=True)  # type: ignore[misc]
+def _clear_ffprobe_path_cache() -> None:
+    """Reset the cached ffprobe lookup so each test sees its own ``shutil.which`` patch."""
+    _ffprobe_path.cache_clear()
 
 
 def _ffprobe_stream(
@@ -529,3 +536,36 @@ class TestProbeResolution:
         service = MediaProbeService()
 
         assert service.probe_resolution(str(video)) is None
+
+
+@pytest.mark.unit
+class TestFfprobePathCache:
+    """Tests for the cached ffprobe lookup helper."""
+
+    @patch(
+        "src.modules.media.infrastructure.streaming.media_probe_service.shutil.which",
+        return_value=None,
+    )
+    def test_should_log_missing_warning_only_once(
+        self,
+        mock_which: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        with caplog.at_level("WARNING"):
+            for _ in range(5):
+                MediaProbeService._run_ffprobe("/path/to/movie.mkv")
+                MediaProbeService._run_ffprobe_video_dimensions("/path/to/movie.mkv")
+
+        warnings = [r for r in caplog.records if "ffprobe not found" in r.message]
+        assert len(warnings) == 1
+        assert mock_which.call_count == 1
+
+    @patch(
+        "src.modules.media.infrastructure.streaming.media_probe_service.shutil.which",
+        return_value="/usr/bin/ffprobe",
+    )
+    def test_should_cache_resolved_path(self, mock_which: MagicMock) -> None:
+        for _ in range(5):
+            assert _ffprobe_path() == "/usr/bin/ffprobe"
+
+        assert mock_which.call_count == 1
