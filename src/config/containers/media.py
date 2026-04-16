@@ -202,6 +202,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         variant_detector=variant_detector,
         movie_repository=movie_repository,
         series_repository=series_repository,
+        probe_service=media_probe_service,
         event_bus=event_bus,
     )
 

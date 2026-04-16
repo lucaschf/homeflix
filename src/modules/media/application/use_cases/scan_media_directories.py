@@ -1,5 +1,6 @@
 """Use case for scanning media directories and registering discovered files."""
 
+import asyncio
 from collections import defaultdict
 
 from src.building_blocks.application.event_bus import EventBus
@@ -17,19 +18,25 @@ from src.modules.media.domain.value_objects import (
     Title,
 )
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
+from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
 
 
 class ScanMediaDirectoriesUseCase:
     """Scan filesystem directories and register discovered media files.
 
     Walks the configured directories, detects movies and series episodes,
-    groups file variants, and persists new or updated entities.
+    groups file variants, and persists new or updated entities. When the
+    filename does not contain a resolution tag, falls back to ffprobe via
+    ``probe_service`` — but only for files that are new or stored as
+    ``Unknown``, so rescans of fully-resolved libraries skip ffprobe.
 
     Args:
         file_scanner: Port for filesystem scanning.
         variant_detector: Service for grouping file variants.
         movie_repository: Repository for movie persistence.
         series_repository: Repository for series persistence.
+        probe_service: Optional ffprobe service for resolution fallback.
+        event_bus: Optional event bus for domain events.
     """
 
     def __init__(
@@ -38,12 +45,14 @@ class ScanMediaDirectoriesUseCase:
         variant_detector: VariantDetector,
         movie_repository: MovieRepository,
         series_repository: SeriesRepository,
+        probe_service: MediaProbeService | None = None,
         event_bus: EventBus | None = None,
     ) -> None:
         self._file_scanner = file_scanner
         self._variant_detector = variant_detector
         self._movie_repository = movie_repository
         self._series_repository = series_repository
+        self._probe_service = probe_service
         self._event_bus = event_bus
 
     async def execute(self, input_dto: ScanMediaInput) -> ScanMediaOutput:
@@ -79,6 +88,61 @@ class ScanMediaDirectoriesUseCase:
             return
         for event in events:
             await self._event_bus.publish(event)
+
+    # =========================================================================
+    # Resolution probing (lazy)
+    # =========================================================================
+
+    async def _probe_resolution(self, file_path: str) -> str | None:
+        """Run ffprobe in a worker thread to detect resolution.
+
+        Returns None if probing is unavailable or yields no result.
+        """
+        if self._probe_service is None:
+            return None
+        return await asyncio.to_thread(self._probe_service.probe_resolution, file_path)
+
+    async def _resolve_new_resolution(self, scanned: ScannedFile) -> str:
+        """Resolution to use when registering a file for the first time."""
+        if scanned.resolution:
+            return scanned.resolution
+        return (await self._probe_resolution(scanned.file_path.value)) or "Unknown"
+
+    async def _maybe_upgrade_resolution(
+        self,
+        current: MediaFile,
+        scanned: ScannedFile,
+    ) -> str | None:
+        """Resolution to use when refreshing an existing file.
+
+        Returns the new resolution name when an upgrade should be applied,
+        or None when the existing value should be kept. Only upgrades when
+        the stored resolution is ``Unknown``; never overwrites a known one.
+        """
+        if current.resolution.name != "Unknown":
+            return None
+        if scanned.resolution:
+            return scanned.resolution
+        return await self._probe_resolution(scanned.file_path.value)
+
+    async def _build_new_media_file(
+        self,
+        scanned: ScannedFile,
+        *,
+        is_primary: bool,
+    ) -> MediaFile:
+        """Build a MediaFile for a path being registered for the first time."""
+        resolution = await self._resolve_new_resolution(scanned)
+        return MediaFile(
+            file_path=scanned.file_path,
+            file_size=scanned.file_size,
+            resolution=Resolution(resolution),
+            is_primary=is_primary,
+        )
+
+    # =========================================================================
+    # Movies
+    # =========================================================================
 
     async def _process_movies(
         self,
@@ -132,13 +196,30 @@ class ScanMediaDirectoriesUseCase:
         paths: list[str],
         by_path: dict[str, ScannedFile],
     ) -> tuple[int, int]:
-        """Add new file variants to an existing movie."""
-        added = False
+        """Add new file variants and refresh existing ones from a fresh scan."""
+        files = list(movie.files)
+        changed = False
+
         for path in paths:
-            if all(f.file_path.value != path for f in movie.files):
-                movie = movie.with_file(_build_media_file(by_path[path], is_primary=False))
-                added = True
-        if added:
+            scanned = by_path[path]
+            existing_idx = next(
+                (i for i, f in enumerate(files) if f.file_path.value == path),
+                None,
+            )
+            if existing_idx is None:
+                files.append(await self._build_new_media_file(scanned, is_primary=False))
+                changed = True
+                continue
+
+            new_res = await self._maybe_upgrade_resolution(files[existing_idx], scanned)
+            if new_res is not None:
+                files[existing_idx] = files[existing_idx].model_copy(
+                    update={"resolution": Resolution(new_res)}
+                )
+                changed = True
+
+        if changed:
+            movie = movie.with_updates(files=files)
             await self._movie_repository.save(movie)
             return 0, 1
         return 0, 0
@@ -150,20 +231,27 @@ class ScanMediaDirectoriesUseCase:
     ) -> tuple[int, int]:
         """Create a new movie from a group of file variants."""
         first = by_path[paths[0]]
+        resolution = await self._resolve_new_resolution(first)
         movie = Movie.create(
             title=first.title,
             year=first.year or _current_year(),
             duration=0,
             file_path=first.file_path.value,
             file_size=first.file_size,
-            resolution=first.resolution or "Unknown",
+            resolution=resolution,
         )
         for path in paths[1:]:
-            movie = movie.with_file(_build_media_file(by_path[path], is_primary=False))
+            movie = movie.with_file(
+                await self._build_new_media_file(by_path[path], is_primary=False)
+            )
         events = movie.pull_events()
         await self._movie_repository.save(movie)
         await self._dispatch_events(events)
         return 1, 0
+
+    # =========================================================================
+    # Episodes
+    # =========================================================================
 
     async def _process_episodes(
         self,
@@ -209,7 +297,9 @@ class ScanMediaDirectoriesUseCase:
                 ep_groups[(f.season_number, f.episode_number)].append(f)
 
         for (season_num, episode_num), ep_files in ep_groups.items():
-            series, c, u = _process_episode_group(series, season_num, episode_num, ep_files)
+            series, c, u = await self._process_episode_group(
+                series, season_num, episode_num, ep_files
+            )
             created += c
             updated += u
 
@@ -218,68 +308,85 @@ class ScanMediaDirectoriesUseCase:
         await self._dispatch_events(events)
         return created, updated
 
+    async def _process_episode_group(
+        self,
+        series: Series,
+        season_num: int,
+        episode_num: int,
+        ep_files: list[ScannedFile],
+    ) -> tuple[Series, int, int]:
+        """Process a group of files for a single episode."""
+        season = series.get_season(season_num)
+        if not season:
+            assert series.id is not None
+            season = Season(series_id=series.id, season_number=SeasonNumber(season_num))
+            series = series.with_season(season)
 
-def _process_episode_group(
-    series: Series,
-    season_num: int,
-    episode_num: int,
-    ep_files: list[ScannedFile],
-) -> tuple[Series, int, int]:
-    """Process a group of files for a single episode."""
-    season = series.get_season(season_num)
-    if not season:
+        episode = season.get_episode(episode_num)
+        if episode:
+            episode, was_updated = await self._refresh_episode(episode, ep_files)
+            created, updated = 0, int(was_updated)
+        else:
+            episode = await self._create_episode(series, season_num, episode_num, ep_files)
+            created, updated = 1, 0
+
+        season = _upsert_episode_in_season(season, episode)
+        series = _upsert_season_in_series(series, season)
+
+        return series, created, updated
+
+    async def _create_episode(
+        self,
+        series: Series,
+        season_num: int,
+        episode_num: int,
+        ep_files: list[ScannedFile],
+    ) -> Episode:
+        """Create a new Episode from scanned files."""
+        first = ep_files[0]
         assert series.id is not None
-        season = Season(series_id=series.id, season_number=SeasonNumber(season_num))
-        series = series.with_season(season)
+        ep_title = first.episode_title or f"Episode {episode_num}"
+        episode = Episode(
+            series_id=series.id,
+            season_number=SeasonNumber(season_num),
+            episode_number=EpisodeNumber(episode_num),
+            title=Title(ep_title),
+            duration=Duration(0),
+            files=[await self._build_new_media_file(first, is_primary=True)],
+        )
+        for f in ep_files[1:]:
+            episode = episode.with_file(await self._build_new_media_file(f, is_primary=False))
+        return episode
 
-    episode = season.get_episode(episode_num)
-    if episode:
-        episode, was_updated = _add_variants_to_episode(episode, ep_files)
-        created, updated = 0, int(was_updated)
-    else:
-        episode = _create_episode(series, season_num, episode_num, ep_files)
-        created, updated = 1, 0
+    async def _refresh_episode(
+        self,
+        episode: Episode,
+        ep_files: list[ScannedFile],
+    ) -> tuple[Episode, bool]:
+        """Add new file variants and refresh existing ones from a fresh scan."""
+        files = list(episode.files)
+        changed = False
 
-    season = _upsert_episode_in_season(season, episode)
-    series = _upsert_season_in_series(series, season)
+        for scanned in ep_files:
+            existing_idx = next(
+                (i for i, f in enumerate(files) if f.file_path.value == scanned.file_path.value),
+                None,
+            )
+            if existing_idx is None:
+                files.append(await self._build_new_media_file(scanned, is_primary=False))
+                changed = True
+                continue
 
-    return series, created, updated
+            new_res = await self._maybe_upgrade_resolution(files[existing_idx], scanned)
+            if new_res is not None:
+                files[existing_idx] = files[existing_idx].model_copy(
+                    update={"resolution": Resolution(new_res)}
+                )
+                changed = True
 
-
-def _create_episode(
-    series: Series,
-    season_num: int,
-    episode_num: int,
-    ep_files: list[ScannedFile],
-) -> Episode:
-    """Create a new Episode from scanned files."""
-    first = ep_files[0]
-    assert series.id is not None
-    ep_title = first.episode_title or f"Episode {episode_num}"
-    episode = Episode(
-        series_id=series.id,
-        season_number=SeasonNumber(season_num),
-        episode_number=EpisodeNumber(episode_num),
-        title=Title(ep_title),
-        duration=Duration(0),
-        files=[_build_media_file(first, is_primary=True)],
-    )
-    for f in ep_files[1:]:
-        episode = episode.with_file(_build_media_file(f, is_primary=False))
-    return episode
-
-
-def _add_variants_to_episode(
-    episode: Episode,
-    ep_files: list[ScannedFile],
-) -> tuple[Episode, bool]:
-    """Add new file variants to an existing episode."""
-    added = False
-    for f in ep_files:
-        if all(ef.file_path.value != f.file_path.value for ef in episode.files):
-            episode = episode.with_file(_build_media_file(f, is_primary=False))
-            added = True
-    return episode, added
+        if changed:
+            episode = episode.with_updates(files=files)
+        return episode, changed
 
 
 def _upsert_episode_in_season(season: Season, episode: Episode) -> Season:
@@ -304,16 +411,6 @@ def _upsert_season_in_series(series: Series, season: Season) -> Series:
     else:
         seasons.append(season)
     return series.with_updates(seasons=seasons)
-
-
-def _build_media_file(scanned: ScannedFile, *, is_primary: bool) -> MediaFile:
-    """Build a MediaFile value object from a ScannedFile."""
-    return MediaFile(
-        file_path=scanned.file_path,
-        file_size=scanned.file_size,
-        resolution=Resolution(scanned.resolution or "Unknown"),
-        is_primary=is_primary,
-    )
 
 
 def _current_year() -> int:

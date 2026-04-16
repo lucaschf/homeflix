@@ -10,6 +10,7 @@ import pytest
 from src.modules.media.infrastructure.streaming.media_probe_service import (
     MediaProbeResult,
     MediaProbeService,
+    _resolution_from_dimensions,
 )
 
 
@@ -423,3 +424,108 @@ class TestMediaProbeServiceProbe:
         assert result.audio_tracks == []
         assert result.subtitle_tracks == []
         assert result.external_subtitles == []
+
+
+@pytest.mark.unit
+class TestResolutionFromDimensions:
+    """Tests for the dimension-to-named-resolution mapping."""
+
+    @pytest.mark.parametrize(
+        ("width", "height", "expected"),
+        [
+            (3840, 2160, "4K"),
+            (4096, 2160, "4K"),
+            (2560, 1440, "2K"),
+            (1920, 1080, "1080p"),
+            (1920, 800, "1080p"),  # cinemascope still 1080p by long edge
+            (1280, 720, "720p"),
+            (854, 480, "480p"),
+            (640, 360, "360p"),
+        ],
+    )
+    def test_should_map_known_dimensions(self, width: int, height: int, expected: str) -> None:
+        assert _resolution_from_dimensions(width, height) == expected
+
+    def test_should_return_none_for_below_360p(self) -> None:
+        assert _resolution_from_dimensions(320, 240) is None
+
+    def test_should_return_none_for_zero_dimensions(self) -> None:
+        assert _resolution_from_dimensions(0, 0) is None
+
+
+@pytest.mark.unit
+class TestProbeResolution:
+    """Tests for MediaProbeService.probe_resolution."""
+
+    def test_should_return_none_for_missing_file(self, tmp_path: Path) -> None:
+        service = MediaProbeService()
+        missing = tmp_path / "missing.mkv"
+
+        assert service.probe_resolution(str(missing)) is None
+
+    @patch(
+        "src.modules.media.infrastructure.streaming.media_probe_service.shutil.which",
+        return_value=None,
+    )
+    def test_should_return_none_when_ffprobe_missing(
+        self, _which: MagicMock, tmp_path: Path
+    ) -> None:
+        video = tmp_path / "movie.mkv"
+        video.touch()
+        service = MediaProbeService()
+
+        assert service.probe_resolution(str(video)) is None
+
+    @patch("src.modules.media.infrastructure.streaming.media_probe_service.subprocess.run")
+    @patch(
+        "src.modules.media.infrastructure.streaming.media_probe_service.shutil.which",
+        return_value="/usr/bin/ffprobe",
+    )
+    def test_should_return_resolution_from_dimensions(
+        self, _which: MagicMock, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        video = tmp_path / "movie.mkv"
+        video.touch()
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"streams": [{"width": 1920, "height": 1080}]})
+        mock_run.return_value = mock_result
+        service = MediaProbeService()
+
+        assert service.probe_resolution(str(video)) == "1080p"
+
+    @patch("src.modules.media.infrastructure.streaming.media_probe_service.subprocess.run")
+    @patch(
+        "src.modules.media.infrastructure.streaming.media_probe_service.shutil.which",
+        return_value="/usr/bin/ffprobe",
+    )
+    def test_should_return_none_when_no_video_stream(
+        self, _which: MagicMock, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        video = tmp_path / "movie.mkv"
+        video.touch()
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"streams": []})
+        mock_run.return_value = mock_result
+        service = MediaProbeService()
+
+        assert service.probe_resolution(str(video)) is None
+
+    @patch("src.modules.media.infrastructure.streaming.media_probe_service.subprocess.run")
+    @patch(
+        "src.modules.media.infrastructure.streaming.media_probe_service.shutil.which",
+        return_value="/usr/bin/ffprobe",
+    )
+    def test_should_return_none_on_ffprobe_failure(
+        self, _which: MagicMock, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        video = tmp_path / "movie.mkv"
+        video.touch()
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "error"
+        mock_run.return_value = mock_result
+        service = MediaProbeService()
+
+        assert service.probe_resolution(str(video)) is None
