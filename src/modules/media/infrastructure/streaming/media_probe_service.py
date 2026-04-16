@@ -120,6 +120,7 @@ class MediaProbeResult:
     audio_tracks: list[AudioTrack] = field(default_factory=list)
     subtitle_tracks: list[SubtitleTrack] = field(default_factory=list)
     external_subtitles: list[SubtitleTrack] = field(default_factory=list)
+    resolution: str | None = None
 
     @property
     def all_subtitles(self) -> list[SubtitleTrack]:
@@ -163,6 +164,7 @@ class MediaProbeService:
         audio_tracks = self._parse_audio_tracks(streams)
         subtitle_tracks = self._parse_subtitle_tracks(streams)
         external_subs = self._scan_external_subtitles(source, len(subtitle_tracks))
+        resolution = self._parse_resolution(streams)
 
         _logger.info(
             "Probed %s: %d audio, %d embedded subs, %d external subs",
@@ -176,6 +178,7 @@ class MediaProbeService:
             audio_tracks=audio_tracks,
             subtitle_tracks=subtitle_tracks,
             external_subtitles=external_subs,
+            resolution=resolution,
         )
 
     def probe_resolution(self, file_path: str) -> str | None:
@@ -274,6 +277,27 @@ class MediaProbeService:
         except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
             _logger.error("ffprobe error for %s: %s", file_path, e)
             return []
+
+    @staticmethod
+    def _parse_resolution(streams: list[dict[str, Any]]) -> str | None:
+        """Extract the named resolution from the first video stream.
+
+        Reuses the streams already loaded by ``probe`` to avoid a second
+        ffprobe invocation. Returns ``None`` when no video stream is
+        present or its dimensions fall below 360p.
+        """
+        for stream in streams:
+            if stream.get("codec_type") != "video":
+                continue
+            try:
+                width = int(stream.get("width") or 0)
+                height = int(stream.get("height") or 0)
+            except (TypeError, ValueError):
+                return None
+            if width <= 0 or height <= 0:
+                return None
+            return _resolution_from_dimensions(width, height)
+        return None
 
     @staticmethod
     def _extract_language(stream: dict[str, Any]) -> str:

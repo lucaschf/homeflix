@@ -20,8 +20,32 @@ from src.modules.media.domain.value_objects import (
     Title,
 )
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
-from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
+from src.modules.media.infrastructure.streaming.media_probe_service import (
+    MediaProbeResult,
+    MediaProbeService,
+)
 from src.shared_kernel.value_objects.file_path import FilePath
+from src.shared_kernel.value_objects.language_code import LanguageCode
+from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
+
+
+def _audio_track(lang: str, *, index: int = 0) -> AudioTrack:
+    return AudioTrack(
+        index=index,
+        language=LanguageCode(lang),
+        codec="aac",
+        channels=2,
+        is_default=index == 0,
+    )
+
+
+def _subtitle_track(lang: str, *, index: int = 0) -> SubtitleTrack:
+    return SubtitleTrack(
+        index=index,
+        language=LanguageCode(lang),
+        format="srt",
+        is_external=False,
+    )
 
 
 def _movie_file(
@@ -307,14 +331,14 @@ class TestRescanResolutionUpgrade:
         self,
     ) -> None:
         probe = MagicMock(spec=MediaProbeService)
-        probe.probe_resolution.return_value = "1080p"
+        probe.probe.return_value = MediaProbeResult(resolution="1080p")
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
         use_case = _make_use_case(scanner_results=files, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
         assert result.movies_created == 1
-        probe.probe_resolution.assert_called_once_with("/movies/inception.mkv")
+        probe.probe.assert_called_once_with("/movies/inception.mkv")
 
     @pytest.mark.asyncio
     async def test_should_probe_when_existing_resolution_is_unknown(self) -> None:
@@ -334,7 +358,7 @@ class TestRescanResolutionUpgrade:
         movie_repo.save.side_effect = lambda m: saved.append(m) or m
 
         probe = MagicMock(spec=MediaProbeService)
-        probe.probe_resolution.return_value = "4K"
+        probe.probe.return_value = MediaProbeResult(resolution="4K")
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
         use_case = _make_use_case(
@@ -346,11 +370,13 @@ class TestRescanResolutionUpgrade:
         result = await use_case.execute(ScanMediaInput())
 
         assert result.movies_updated == 1
-        probe.probe_resolution.assert_called_once_with("/movies/inception.mkv")
+        probe.probe.assert_called_once_with("/movies/inception.mkv")
         assert saved[0].files[0].resolution == Resolution("4K")
 
     @pytest.mark.asyncio
-    async def test_should_not_probe_when_existing_resolution_is_known(self) -> None:
+    async def test_should_not_probe_on_rescan_when_resolution_known_and_tracks_populated(
+        self,
+    ) -> None:
         existing = Movie.create(
             title="Inception",
             year=2010,
@@ -359,6 +385,12 @@ class TestRescanResolutionUpgrade:
             file_size=4_000_000_000,
             resolution="1080p",
         )
+        # Populate tracks so the refresh path has nothing to backfill.
+        populated_file = existing.files[0].model_copy(
+            update={"audio_tracks": [_audio_track("en")]}
+        )
+        existing = existing.with_updates(files=[populated_file])
+
         movie_repo = AsyncMock(spec=MovieRepository)
         movie_repo.find_by_file_path.side_effect = lambda fp: (
             existing if fp.value == "/movies/inception.mkv" else None
@@ -367,7 +399,7 @@ class TestRescanResolutionUpgrade:
 
         probe = MagicMock(spec=MediaProbeService)
 
-        files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
+        files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
         use_case = _make_use_case(
             scanner_results=files,
             movie_repo=movie_repo,
@@ -377,18 +409,25 @@ class TestRescanResolutionUpgrade:
         result = await use_case.execute(ScanMediaInput())
 
         assert result.movies_updated == 0
-        probe.probe_resolution.assert_not_called()
+        probe.probe.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_should_not_probe_when_filename_already_has_resolution(self) -> None:
+    async def test_should_probe_new_file_even_when_filename_has_resolution(
+        self,
+    ) -> None:
+        """New files are always probed so audio/subtitle tracks are captured."""
         probe = MagicMock(spec=MediaProbeService)
+        probe.probe.return_value = MediaProbeResult(
+            audio_tracks=[_audio_track("en"), _audio_track("pt")],
+            resolution="1080p",
+        )
         files = [_movie_file("/movies/inception.1080p.mkv", "Inception", 2010, "1080p")]
         use_case = _make_use_case(scanner_results=files, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
         assert result.movies_created == 1
-        probe.probe_resolution.assert_not_called()
+        probe.probe.assert_called_once_with("/movies/inception.1080p.mkv")
 
     @pytest.mark.asyncio
     async def test_should_upgrade_episode_unknown_resolution(self) -> None:
@@ -437,3 +476,165 @@ class TestRescanResolutionUpgrade:
         assert result.episodes_updated == 1
         saved_episode = saved[0].seasons[0].episodes[0]
         assert saved_episode.files[0].resolution == Resolution("720p")
+
+
+@pytest.mark.unit
+class TestTrackDetection:
+    """Tests for audio/subtitle track detection during scan."""
+
+    @pytest.mark.asyncio
+    async def test_should_populate_tracks_on_new_movie(self) -> None:
+        probe = MagicMock(spec=MediaProbeService)
+        probe.probe.return_value = MediaProbeResult(
+            audio_tracks=[_audio_track("en"), _audio_track("pt", index=1)],
+            subtitle_tracks=[_subtitle_track("en"), _subtitle_track("pt", index=1)],
+            resolution="1080p",
+        )
+        saved: list[Movie] = []
+        movie_repo = AsyncMock(spec=MovieRepository)
+        movie_repo.find_by_file_path.return_value = None
+        movie_repo.save.side_effect = lambda m: saved.append(m) or m
+
+        files = [_movie_file("/movies/Inception.mkv", "Inception", 2010, "1080p")]
+        use_case = _make_use_case(
+            scanner_results=files, movie_repo=movie_repo, probe_service=probe
+        )
+
+        result = await use_case.execute(ScanMediaInput())
+
+        assert result.movies_created == 1
+        media_file = saved[0].files[0]
+        assert len(media_file.audio_tracks) == 2
+        assert media_file.audio_tracks[0].language == LanguageCode("en")
+        assert media_file.audio_tracks[1].language == LanguageCode("pt")
+        assert len(media_file.subtitle_tracks) == 2
+
+    @pytest.mark.asyncio
+    async def test_should_populate_tracks_on_new_episode(self) -> None:
+        probe = MagicMock(spec=MediaProbeService)
+        probe.probe.return_value = MediaProbeResult(
+            audio_tracks=[_audio_track("ja")],
+            subtitle_tracks=[_subtitle_track("en")],
+            resolution="1080p",
+        )
+        saved: list[Series] = []
+        series_repo = AsyncMock(spec=SeriesRepository)
+        series_repo.find_by_title.return_value = None
+        series_repo.save.side_effect = lambda s: saved.append(s) or s
+
+        files = [_episode_file("/series/Anime/S01/Anime.S01E01.mkv")]
+        use_case = _make_use_case(
+            scanner_results=files, series_repo=series_repo, probe_service=probe
+        )
+
+        result = await use_case.execute(ScanMediaInput())
+
+        assert result.episodes_created == 1
+        ep_file = saved[0].seasons[0].episodes[0].files[0]
+        assert len(ep_file.audio_tracks) == 1
+        assert ep_file.audio_tracks[0].language == LanguageCode("ja")
+        assert len(ep_file.subtitle_tracks) == 1
+        assert ep_file.subtitle_tracks[0].language == LanguageCode("en")
+
+    @pytest.mark.asyncio
+    async def test_should_backfill_empty_tracks_on_rescan(self) -> None:
+        existing = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        saved: list[Movie] = []
+        movie_repo = AsyncMock(spec=MovieRepository)
+        movie_repo.find_by_file_path.side_effect = lambda fp: (
+            existing if fp.value == "/movies/inception.mkv" else None
+        )
+        movie_repo.save.side_effect = lambda m: saved.append(m) or m
+
+        probe = MagicMock(spec=MediaProbeService)
+        probe.probe.return_value = MediaProbeResult(
+            audio_tracks=[_audio_track("en")],
+            subtitle_tracks=[_subtitle_track("pt")],
+        )
+
+        files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
+        use_case = _make_use_case(
+            scanner_results=files, movie_repo=movie_repo, probe_service=probe
+        )
+
+        result = await use_case.execute(ScanMediaInput())
+
+        assert result.movies_updated == 1
+        media_file = saved[0].files[0]
+        assert len(media_file.audio_tracks) == 1
+        assert media_file.audio_tracks[0].language == LanguageCode("en")
+        assert len(media_file.subtitle_tracks) == 1
+
+    @pytest.mark.asyncio
+    async def test_should_not_overwrite_existing_tracks_on_rescan(self) -> None:
+        existing = Movie.create(
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        original_track = _audio_track("fr")
+        populated_file = existing.files[0].model_copy(
+            update={"audio_tracks": [original_track]}
+        )
+        existing = existing.with_updates(files=[populated_file])
+
+        movie_repo = AsyncMock(spec=MovieRepository)
+        movie_repo.find_by_file_path.side_effect = lambda fp: (
+            existing if fp.value == "/movies/inception.mkv" else None
+        )
+        movie_repo.save.side_effect = lambda m: m
+
+        probe = MagicMock(spec=MediaProbeService)
+
+        files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
+        use_case = _make_use_case(
+            scanner_results=files, movie_repo=movie_repo, probe_service=probe
+        )
+
+        result = await use_case.execute(ScanMediaInput())
+
+        assert result.movies_updated == 0
+        probe.probe.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_should_include_external_subtitles_in_tracks(self) -> None:
+        ext_sub = SubtitleTrack(
+            index=1,
+            language=LanguageCode("pt"),
+            format="srt",
+            is_external=True,
+            file_path=FilePath("/movies/inception.pt.srt"),
+        )
+        probe = MagicMock(spec=MediaProbeService)
+        probe.probe.return_value = MediaProbeResult(
+            audio_tracks=[_audio_track("en")],
+            subtitle_tracks=[_subtitle_track("en")],
+            external_subtitles=[ext_sub],
+            resolution="1080p",
+        )
+        saved: list[Movie] = []
+        movie_repo = AsyncMock(spec=MovieRepository)
+        movie_repo.find_by_file_path.return_value = None
+        movie_repo.save.side_effect = lambda m: saved.append(m) or m
+
+        files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
+        use_case = _make_use_case(
+            scanner_results=files, movie_repo=movie_repo, probe_service=probe
+        )
+
+        result = await use_case.execute(ScanMediaInput())
+
+        assert result.movies_created == 1
+        media_file = saved[0].files[0]
+        assert len(media_file.subtitle_tracks) == 2
+        assert any(t.is_external for t in media_file.subtitle_tracks)
