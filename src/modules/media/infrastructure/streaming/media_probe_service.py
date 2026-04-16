@@ -112,6 +112,48 @@ _LANG_FULLNAME_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# ISO 639-2 (3-letter) → ISO 639-1 (2-letter) mapping for codes commonly
+# found in MKV/MP4 containers via ffprobe.
+_ISO639_2_TO_1: dict[str, str] = {
+    "eng": "en",
+    "por": "pt",
+    "spa": "es",
+    "fra": "fr",
+    "fre": "fr",
+    "deu": "de",
+    "ger": "de",
+    "ita": "it",
+    "jpn": "ja",
+    "kor": "ko",
+    "zho": "zh",
+    "chi": "zh",
+    "rus": "ru",
+    "ara": "ar",
+    "nld": "nl",
+    "dut": "nl",
+    "pol": "pl",
+    "swe": "sv",
+    "nor": "no",
+    "dan": "da",
+    "fin": "fi",
+    "tur": "tr",
+    "ell": "el",
+    "gre": "el",
+    "ces": "cs",
+    "cze": "cs",
+    "hun": "hu",
+    "ron": "ro",
+    "rum": "ro",
+    "ukr": "uk",
+    "tha": "th",
+    "vie": "vi",
+    "ind": "id",
+    "msa": "ms",
+    "may": "ms",
+    "heb": "he",
+    "hin": "hi",
+}
+
 
 @dataclass(frozen=True)
 class MediaProbeResult:
@@ -301,16 +343,19 @@ class MediaProbeService:
 
     @staticmethod
     def _extract_language(stream: dict[str, Any]) -> str:
-        """Extract ISO 639-1 language code from stream tags."""
+        """Extract ISO 639-1 language code from stream tags.
+
+        Handles ISO 639-2/B and 639-2/T three-letter codes (e.g. ``por``,
+        ``fre``, ``ger``) by mapping them to the standard two-letter code
+        via ``_ISO639_2_TO_1``.
+        """
         tags: dict[str, Any] = dict(stream.get("tags", {}))
         lang = str(tags.get("language", tags.get("LANGUAGE", "und")))
         lang = lang.lower().strip()
 
-        # Handle 3-letter codes by taking first 2
         if len(lang) == 3 and lang != "und":
-            lang = lang[:2]
+            lang = _ISO639_2_TO_1.get(lang, lang[:2])
 
-        # Validate: must be 2 lowercase letters
         if re.match(r"^[a-z]{2}$", lang):
             return lang
         return "un"

@@ -55,9 +55,29 @@ class TestExtractLanguage:
         stream = {"tags": {"language": "en"}}
         assert MediaProbeService._extract_language(stream) == "en"
 
-    def test_should_truncate_3_letter_code(self) -> None:
+    def test_should_map_3_letter_eng_to_en(self) -> None:
         stream = {"tags": {"language": "eng"}}
         assert MediaProbeService._extract_language(stream) == "en"
+
+    def test_should_map_3_letter_por_to_pt(self) -> None:
+        stream = {"tags": {"language": "por"}}
+        assert MediaProbeService._extract_language(stream) == "pt"
+
+    def test_should_map_3_letter_spa_to_es(self) -> None:
+        stream = {"tags": {"language": "spa"}}
+        assert MediaProbeService._extract_language(stream) == "es"
+
+    def test_should_map_3_letter_fre_to_fr(self) -> None:
+        stream = {"tags": {"language": "fre"}}
+        assert MediaProbeService._extract_language(stream) == "fr"
+
+    def test_should_map_3_letter_ger_to_de(self) -> None:
+        stream = {"tags": {"language": "ger"}}
+        assert MediaProbeService._extract_language(stream) == "de"
+
+    def test_should_map_3_letter_jpn_to_ja(self) -> None:
+        stream = {"tags": {"language": "jpn"}}
+        assert MediaProbeService._extract_language(stream) == "ja"
 
     def test_should_handle_uppercase(self) -> None:
         stream = {"tags": {"LANGUAGE": "EN"}}
