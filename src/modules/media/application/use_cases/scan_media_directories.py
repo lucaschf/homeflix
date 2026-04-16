@@ -122,9 +122,7 @@ class ScanMediaDirectoriesUseCase:
         languages — are persisted on first registration.
         """
         probed = await self._probe(scanned.file_path.value)
-        resolution = (
-            scanned.resolution or (probed.resolution if probed else None) or "Unknown"
-        )
+        resolution = scanned.resolution or (probed.resolution if probed else None) or "Unknown"
         return MediaFile(
             file_path=scanned.file_path,
             file_size=scanned.file_size,

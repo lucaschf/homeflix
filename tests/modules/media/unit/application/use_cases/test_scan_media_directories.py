@@ -499,9 +499,7 @@ class TestTrackDetection:
         movie_repo.save.side_effect = lambda m: saved.append(m) or m
 
         files = [_movie_file("/movies/Inception.mkv", "Inception", 2010, "1080p")]
-        use_case = _make_use_case(
-            scanner_results=files, movie_repo=movie_repo, probe_service=probe
-        )
+        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -563,9 +561,7 @@ class TestTrackDetection:
         )
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
-        use_case = _make_use_case(
-            scanner_results=files, movie_repo=movie_repo, probe_service=probe
-        )
+        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -602,9 +598,7 @@ class TestTrackDetection:
         probe = MagicMock(spec=MediaProbeService)
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
-        use_case = _make_use_case(
-            scanner_results=files, movie_repo=movie_repo, probe_service=probe
-        )
+        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -633,9 +627,7 @@ class TestTrackDetection:
         movie_repo.save.side_effect = lambda m: saved.append(m) or m
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
-        use_case = _make_use_case(
-            scanner_results=files, movie_repo=movie_repo, probe_service=probe
-        )
+        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
