@@ -207,12 +207,13 @@ class MediaProbeService:
     @staticmethod
     def _run_ffprobe_video_dimensions(file_path: str) -> tuple[int, int] | None:
         """Run ffprobe to extract width/height of the first video stream."""
-        if _ffprobe_path() is None:
+        ffprobe = _ffprobe_path()
+        if ffprobe is None:
             return None
         try:
             result = subprocess.run(
                 [
-                    "ffprobe",
+                    ffprobe,
                     "-v",
                     "error",
                     "-select_streams",
@@ -247,12 +248,13 @@ class MediaProbeService:
     @staticmethod
     def _run_ffprobe(file_path: str) -> list[dict[str, Any]]:
         """Run ffprobe and return stream data as JSON."""
-        if _ffprobe_path() is None:
+        ffprobe = _ffprobe_path()
+        if ffprobe is None:
             return []
         try:
             result = subprocess.run(
                 [
-                    "ffprobe",
+                    ffprobe,
                     "-v",
                     "error",
                     "-show_streams",
