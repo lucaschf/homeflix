@@ -443,9 +443,7 @@ class TestResolutionFromDimensions:
             (640, 360, "360p"),
         ],
     )
-    def test_should_map_known_dimensions(
-        self, width: int, height: int, expected: str
-    ) -> None:
+    def test_should_map_known_dimensions(self, width: int, height: int, expected: str) -> None:
         assert _resolution_from_dimensions(width, height) == expected
 
     def test_should_return_none_for_below_360p(self) -> None:
@@ -490,9 +488,7 @@ class TestProbeResolution:
         video.touch()
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = json.dumps(
-            {"streams": [{"width": 1920, "height": 1080}]}
-        )
+        mock_result.stdout = json.dumps({"streams": [{"width": 1920, "height": 1080}]})
         mock_run.return_value = mock_result
         service = MediaProbeService()
 

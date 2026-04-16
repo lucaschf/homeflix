@@ -369,11 +369,7 @@ class ScanMediaDirectoriesUseCase:
 
         for scanned in ep_files:
             existing_idx = next(
-                (
-                    i
-                    for i, f in enumerate(files)
-                    if f.file_path.value == scanned.file_path.value
-                ),
+                (i for i, f in enumerate(files) if f.file_path.value == scanned.file_path.value),
                 None,
             )
             if existing_idx is None:

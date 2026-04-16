@@ -214,9 +214,7 @@ class MediaProbeService:
                 timeout=_FFPROBE_TIMEOUT,
             )
             if result.returncode != 0:
-                _logger.error(
-                    "ffprobe failed for %s: %s", file_path, result.stderr
-                )
+                _logger.error("ffprobe failed for %s: %s", file_path, result.stderr)
                 return None
             data: dict[str, Any] = json.loads(result.stdout)
             streams = data.get("streams") or []
