@@ -4,6 +4,7 @@ Discovers audio tracks, subtitle tracks (embedded and external)
 from a media file, returning structured domain value objects.
 """
 
+import functools
 import json
 import logging
 import re
@@ -21,6 +22,20 @@ from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 _logger = logging.getLogger(__name__)
 
 _FFPROBE_TIMEOUT = 15  # seconds
+
+
+@functools.lru_cache(maxsize=1)
+def _ffprobe_path() -> str | None:
+    """Return the resolved path to ffprobe, or None if not on PATH.
+
+    Cached so that the PATH lookup runs once per process and the missing-binary
+    warning is logged at most once even across thousands of probe calls.
+    """
+    path = shutil.which("ffprobe")
+    if path is None:
+        _logger.warning("ffprobe not found — probing disabled")
+    return path
+
 
 # Long-edge thresholds for mapping ffprobe dimensions to named resolutions.
 # Tuple of (min_long_edge_pixels, resolution_name), evaluated top-down.
@@ -192,13 +207,13 @@ class MediaProbeService:
     @staticmethod
     def _run_ffprobe_video_dimensions(file_path: str) -> tuple[int, int] | None:
         """Run ffprobe to extract width/height of the first video stream."""
-        if not shutil.which("ffprobe"):
-            _logger.warning("ffprobe not found — cannot probe resolution for %s", file_path)
+        ffprobe = _ffprobe_path()
+        if ffprobe is None:
             return None
         try:
             result = subprocess.run(
                 [
-                    "ffprobe",
+                    ffprobe,
                     "-v",
                     "error",
                     "-select_streams",
@@ -233,13 +248,13 @@ class MediaProbeService:
     @staticmethod
     def _run_ffprobe(file_path: str) -> list[dict[str, Any]]:
         """Run ffprobe and return stream data as JSON."""
-        if not shutil.which("ffprobe"):
-            _logger.warning("ffprobe not found — cannot probe %s", file_path)
+        ffprobe = _ffprobe_path()
+        if ffprobe is None:
             return []
         try:
             result = subprocess.run(
                 [
-                    "ffprobe",
+                    ffprobe,
                     "-v",
                     "error",
                     "-show_streams",
