@@ -22,6 +22,19 @@ _logger = logging.getLogger(__name__)
 
 _FFPROBE_TIMEOUT = 15  # seconds
 
+# Long-edge thresholds for mapping ffprobe dimensions to named resolutions.
+# Tuple of (min_long_edge_pixels, resolution_name), evaluated top-down.
+# Using the longer dimension handles non-standard aspect ratios (e.g. 1920x800
+# cinemascope is still 1080p).
+_RESOLUTION_THRESHOLDS: list[tuple[int, str]] = [
+    (3000, "4K"),
+    (2300, "2K"),
+    (1700, "1080p"),
+    (1200, "720p"),
+    (800, "480p"),
+    (500, "360p"),
+]
+
 # ffprobe codec_name → SubtitleTrack format
 _SUBTITLE_CODEC_MAP: dict[str, str] = {
     "subrip": "srt",
@@ -149,6 +162,75 @@ class MediaProbeService:
             subtitle_tracks=subtitle_tracks,
             external_subtitles=external_subs,
         )
+
+    def probe_resolution(self, file_path: str) -> str | None:
+        """Detect the video resolution of a media file via ffprobe.
+
+        Reads only the first video stream's dimensions and maps the longer
+        edge to a named resolution ("360p", "480p", "720p", "1080p", "2K",
+        "4K"). Returns ``None`` when ffprobe is unavailable, the file does
+        not exist, has no video stream, or its dimensions fall below 360p.
+
+        Args:
+            file_path: Absolute path to the media file.
+
+        Returns:
+            A named resolution string, or ``None`` if it cannot be determined.
+        """
+        source = Path(file_path).resolve()
+        if not source.is_file():
+            _logger.warning("Cannot probe resolution for missing file: %s", file_path)
+            return None
+
+        dimensions = self._run_ffprobe_video_dimensions(str(source))
+        if dimensions is None:
+            return None
+
+        width, height = dimensions
+        return _resolution_from_dimensions(width, height)
+
+    @staticmethod
+    def _run_ffprobe_video_dimensions(file_path: str) -> tuple[int, int] | None:
+        """Run ffprobe to extract width/height of the first video stream."""
+        if not shutil.which("ffprobe"):
+            _logger.warning("ffprobe not found — cannot probe resolution for %s", file_path)
+            return None
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height",
+                    "-of",
+                    "json",
+                    file_path,
+                ],
+                **SUBPROCESS_TEXT_KWARGS,
+                check=False,
+                timeout=_FFPROBE_TIMEOUT,
+            )
+            if result.returncode != 0:
+                _logger.error(
+                    "ffprobe failed for %s: %s", file_path, result.stderr
+                )
+                return None
+            data: dict[str, Any] = json.loads(result.stdout)
+            streams = data.get("streams") or []
+            if not streams:
+                return None
+            stream = streams[0]
+            width = int(stream.get("width") or 0)
+            height = int(stream.get("height") or 0)
+            if width <= 0 or height <= 0:
+                return None
+            return width, height
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError, ValueError) as e:
+            _logger.error("ffprobe error for %s: %s", file_path, e)
+            return None
 
     @staticmethod
     def _run_ffprobe(file_path: str) -> list[dict[str, Any]]:
@@ -344,6 +426,18 @@ class MediaProbeService:
             return _LANG_NAME_MAP.get(name, "un")
 
         return "un"
+
+
+def _resolution_from_dimensions(width: int, height: int) -> str | None:
+    """Map raw video dimensions to a named resolution.
+
+    Uses the longer edge to be tolerant of non-standard aspect ratios.
+    """
+    long_edge = max(width, height)
+    for threshold, name in _RESOLUTION_THRESHOLDS:
+        if long_edge >= threshold:
+            return name
+    return None
 
 
 __all__ = ["MediaProbeResult", "MediaProbeService"]
