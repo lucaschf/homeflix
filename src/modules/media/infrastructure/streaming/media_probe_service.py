@@ -112,6 +112,48 @@ _LANG_FULLNAME_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# ISO 639-2 (3-letter) → ISO 639-1 (2-letter) mapping for codes commonly
+# found in MKV/MP4 containers via ffprobe.
+_ISO639_2_TO_1: dict[str, str] = {
+    "eng": "en",
+    "por": "pt",
+    "spa": "es",
+    "fra": "fr",
+    "fre": "fr",
+    "deu": "de",
+    "ger": "de",
+    "ita": "it",
+    "jpn": "ja",
+    "kor": "ko",
+    "zho": "zh",
+    "chi": "zh",
+    "rus": "ru",
+    "ara": "ar",
+    "nld": "nl",
+    "dut": "nl",
+    "pol": "pl",
+    "swe": "sv",
+    "nor": "no",
+    "dan": "da",
+    "fin": "fi",
+    "tur": "tr",
+    "ell": "el",
+    "gre": "el",
+    "ces": "cs",
+    "cze": "cs",
+    "hun": "hu",
+    "ron": "ro",
+    "rum": "ro",
+    "ukr": "uk",
+    "tha": "th",
+    "vie": "vi",
+    "ind": "id",
+    "msa": "ms",
+    "may": "ms",
+    "heb": "he",
+    "hin": "hi",
+}
+
 
 @dataclass(frozen=True)
 class MediaProbeResult:
@@ -120,6 +162,7 @@ class MediaProbeResult:
     audio_tracks: list[AudioTrack] = field(default_factory=list)
     subtitle_tracks: list[SubtitleTrack] = field(default_factory=list)
     external_subtitles: list[SubtitleTrack] = field(default_factory=list)
+    resolution: str | None = None
 
     @property
     def all_subtitles(self) -> list[SubtitleTrack]:
@@ -163,6 +206,7 @@ class MediaProbeService:
         audio_tracks = self._parse_audio_tracks(streams)
         subtitle_tracks = self._parse_subtitle_tracks(streams)
         external_subs = self._scan_external_subtitles(source, len(subtitle_tracks))
+        resolution = self._parse_resolution(streams)
 
         _logger.info(
             "Probed %s: %d audio, %d embedded subs, %d external subs",
@@ -176,14 +220,14 @@ class MediaProbeService:
             audio_tracks=audio_tracks,
             subtitle_tracks=subtitle_tracks,
             external_subtitles=external_subs,
+            resolution=resolution,
         )
 
     def probe_resolution(self, file_path: str) -> str | None:
         """Detect the video resolution of a media file via ffprobe.
 
-        Reads only the first video stream's dimensions and maps the longer
-        edge to a named resolution ("360p", "480p", "720p", "1080p", "2K",
-        "4K"). Returns ``None`` when ffprobe is unavailable, the file does
+        Delegates to :meth:`probe` so there is a single ffprobe invocation
+        path.  Returns ``None`` when ffprobe is unavailable, the file does
         not exist, has no video stream, or its dimensions fall below 360p.
 
         Args:
@@ -192,17 +236,7 @@ class MediaProbeService:
         Returns:
             A named resolution string, or ``None`` if it cannot be determined.
         """
-        source = Path(file_path).resolve()
-        if not source.is_file():
-            _logger.warning("Cannot probe resolution for missing file: %s", file_path)
-            return None
-
-        dimensions = self._run_ffprobe_video_dimensions(str(source))
-        if dimensions is None:
-            return None
-
-        width, height = dimensions
-        return _resolution_from_dimensions(width, height)
+        return self.probe(file_path).resolution
 
     @staticmethod
     def _run_ffprobe_video_dimensions(file_path: str) -> tuple[int, int] | None:
@@ -276,17 +310,50 @@ class MediaProbeService:
             return []
 
     @staticmethod
+    def _parse_resolution(streams: list[dict[str, Any]]) -> str | None:
+        """Extract the named resolution from the first valid video stream.
+
+        Reuses the streams already loaded by ``probe`` to avoid a second
+        ffprobe invocation. Skips video streams with missing or invalid
+        dimensions (e.g. embedded cover art) so that a valid stream
+        later in the list can still be matched.
+
+        Returns ``None`` when no video stream has usable dimensions or
+        all fall below 360p.
+        """
+        for stream in streams:
+            if stream.get("codec_type") != "video":
+                continue
+            try:
+                width = int(stream.get("width") or 0)
+                height = int(stream.get("height") or 0)
+            except (TypeError, ValueError):
+                continue
+            if width <= 0 or height <= 0:
+                continue
+            resolved = _resolution_from_dimensions(width, height)
+            if resolved is not None:
+                return resolved
+        return None
+
+    @staticmethod
     def _extract_language(stream: dict[str, Any]) -> str:
-        """Extract ISO 639-1 language code from stream tags."""
+        """Extract ISO 639-1 language code from stream tags.
+
+        Handles ISO 639-2/B and 639-2/T three-letter codes (e.g. ``por``,
+        ``fre``, ``ger``) by mapping them to the standard two-letter code
+        via ``_ISO639_2_TO_1``.
+        """
         tags: dict[str, Any] = dict(stream.get("tags", {}))
         lang = str(tags.get("language", tags.get("LANGUAGE", "und")))
         lang = lang.lower().strip()
 
-        # Handle 3-letter codes by taking first 2
         if len(lang) == 3 and lang != "und":
-            lang = lang[:2]
+            mapped = _ISO639_2_TO_1.get(lang)
+            if mapped is None:
+                return "un"
+            lang = mapped
 
-        # Validate: must be 2 lowercase letters
         if re.match(r"^[a-z]{2}$", lang):
             return lang
         return "un"

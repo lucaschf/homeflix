@@ -8,34 +8,41 @@ from src.building_blocks.domain.events import DomainEvent
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput, ScanMediaOutput
 from src.modules.media.application.ports import FileSystemScanner, MediaType, ScannedFile
 from src.modules.media.domain.entities import Episode, Movie, Season, Series
+from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import (
     Duration,
     EpisodeNumber,
     MediaFile,
+    MovieId,
     Resolution,
     SeasonNumber,
     Title,
+    Year,
 )
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
-from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
+from src.modules.media.infrastructure.streaming.media_probe_service import (
+    MediaProbeResult,
+    MediaProbeService,
+)
 
 
 class ScanMediaDirectoriesUseCase:
     """Scan filesystem directories and register discovered media files.
 
     Walks the configured directories, detects movies and series episodes,
-    groups file variants, and persists new or updated entities. When the
-    filename does not contain a resolution tag, falls back to ffprobe via
-    ``probe_service`` — but only for files that are new or stored as
-    ``Unknown``, so rescans of fully-resolved libraries skip ffprobe.
+    groups file variants, and persists new or updated entities. New files
+    are always probed via ``probe_service`` to detect audio and subtitle
+    tracks (including their languages). Existing files are re-probed only
+    when their stored resolution is ``Unknown`` or their track lists are
+    still empty, so rescans of fully-populated libraries skip ffprobe.
 
     Args:
         file_scanner: Port for filesystem scanning.
         variant_detector: Service for grouping file variants.
         movie_repository: Repository for movie persistence.
         series_repository: Repository for series persistence.
-        probe_service: Optional ffprobe service for resolution fallback.
+        probe_service: Optional ffprobe service for track and resolution detection.
         event_bus: Optional event bus for domain events.
     """
 
@@ -90,40 +97,18 @@ class ScanMediaDirectoriesUseCase:
             await self._event_bus.publish(event)
 
     # =========================================================================
-    # Resolution probing (lazy)
+    # ffprobe integration
     # =========================================================================
 
-    async def _probe_resolution(self, file_path: str) -> str | None:
-        """Run ffprobe in a worker thread to detect resolution.
+    async def _probe(self, file_path: str) -> MediaProbeResult | None:
+        """Run full ffprobe in a worker thread.
 
-        Returns None if probing is unavailable or yields no result.
+        Returns the complete probe result (tracks + resolution) or ``None``
+        when probing is unavailable.
         """
         if self._probe_service is None:
             return None
-        return await asyncio.to_thread(self._probe_service.probe_resolution, file_path)
-
-    async def _resolve_new_resolution(self, scanned: ScannedFile) -> str:
-        """Resolution to use when registering a file for the first time."""
-        if scanned.resolution:
-            return scanned.resolution
-        return (await self._probe_resolution(scanned.file_path.value)) or "Unknown"
-
-    async def _maybe_upgrade_resolution(
-        self,
-        current: MediaFile,
-        scanned: ScannedFile,
-    ) -> str | None:
-        """Resolution to use when refreshing an existing file.
-
-        Returns the new resolution name when an upgrade should be applied,
-        or None when the existing value should be kept. Only upgrades when
-        the stored resolution is ``Unknown``; never overwrites a known one.
-        """
-        if current.resolution.name != "Unknown":
-            return None
-        if scanned.resolution:
-            return scanned.resolution
-        return await self._probe_resolution(scanned.file_path.value)
+        return await asyncio.to_thread(self._probe_service.probe, file_path)
 
     async def _build_new_media_file(
         self,
@@ -131,14 +116,59 @@ class ScanMediaDirectoriesUseCase:
         *,
         is_primary: bool,
     ) -> MediaFile:
-        """Build a MediaFile for a path being registered for the first time."""
-        resolution = await self._resolve_new_resolution(scanned)
+        """Build a MediaFile for a path being registered for the first time.
+
+        Always probes the file so audio and subtitle tracks — including their
+        languages — are persisted on first registration.
+        """
+        probed = await self._probe(scanned.file_path.value)
+        resolution = scanned.resolution or (probed.resolution if probed else None) or "Unknown"
         return MediaFile(
             file_path=scanned.file_path,
             file_size=scanned.file_size,
             resolution=Resolution(resolution),
+            audio_tracks=list(probed.audio_tracks) if probed else [],
+            subtitle_tracks=list(probed.all_subtitles) if probed else [],
             is_primary=is_primary,
         )
+
+    async def _maybe_refresh_media_file(
+        self,
+        current: MediaFile,
+        scanned: ScannedFile,
+    ) -> MediaFile | None:
+        """Return a refreshed MediaFile when stored metadata can be enriched.
+
+        Upgrades ``Unknown`` resolutions and backfills empty audio or
+        subtitle track lists independently. Never overwrites a known
+        resolution or non-empty track lists. Returns ``None`` when no
+        change is needed.
+        """
+        needs_resolution = current.resolution.name == "Unknown"
+        needs_audio = not current.audio_tracks
+        needs_subtitles = not current.subtitle_tracks
+        if not needs_resolution and not needs_audio and not needs_subtitles:
+            return None
+
+        updates: dict[str, object] = {}
+
+        if needs_resolution and scanned.resolution:
+            updates["resolution"] = Resolution(scanned.resolution)
+            needs_resolution = False
+
+        if needs_resolution or needs_audio or needs_subtitles:
+            probed = await self._probe(scanned.file_path.value)
+            if probed is not None:
+                if needs_resolution and probed.resolution:
+                    updates["resolution"] = Resolution(probed.resolution)
+                if needs_audio and probed.audio_tracks:
+                    updates["audio_tracks"] = list(probed.audio_tracks)
+                if needs_subtitles and probed.all_subtitles:
+                    updates["subtitle_tracks"] = list(probed.all_subtitles)
+
+        if not updates:
+            return None
+        return current.model_copy(update=updates)
 
     # =========================================================================
     # Movies
@@ -211,11 +241,9 @@ class ScanMediaDirectoriesUseCase:
                 changed = True
                 continue
 
-            new_res = await self._maybe_upgrade_resolution(files[existing_idx], scanned)
-            if new_res is not None:
-                files[existing_idx] = files[existing_idx].model_copy(
-                    update={"resolution": Resolution(new_res)}
-                )
+            refreshed = await self._maybe_refresh_media_file(files[existing_idx], scanned)
+            if refreshed is not None:
+                files[existing_idx] = refreshed
                 changed = True
 
         if changed:
@@ -231,15 +259,16 @@ class ScanMediaDirectoriesUseCase:
     ) -> tuple[int, int]:
         """Create a new movie from a group of file variants."""
         first = by_path[paths[0]]
-        resolution = await self._resolve_new_resolution(first)
-        movie = Movie.create(
-            title=first.title,
-            year=first.year or _current_year(),
-            duration=0,
-            file_path=first.file_path.value,
-            file_size=first.file_size,
-            resolution=resolution,
+        primary_file = await self._build_new_media_file(first, is_primary=True)
+        movie_id = MovieId.generate()
+        movie = Movie(
+            id=movie_id,
+            title=Title(first.title),
+            year=Year(first.year or _current_year()),
+            duration=Duration(0),
+            files=[primary_file],
         )
+        movie.add_event(MediaCreatedEvent(media_id=str(movie_id), media_type="movie"))
         for path in paths[1:]:
             movie = movie.with_file(
                 await self._build_new_media_file(by_path[path], is_primary=False)
@@ -377,11 +406,9 @@ class ScanMediaDirectoriesUseCase:
                 changed = True
                 continue
 
-            new_res = await self._maybe_upgrade_resolution(files[existing_idx], scanned)
-            if new_res is not None:
-                files[existing_idx] = files[existing_idx].model_copy(
-                    update={"resolution": Resolution(new_res)}
-                )
+            refreshed = await self._maybe_refresh_media_file(files[existing_idx], scanned)
+            if refreshed is not None:
+                files[existing_idx] = refreshed
                 changed = True
 
         if changed:

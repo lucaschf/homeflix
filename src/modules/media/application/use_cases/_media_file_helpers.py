@@ -1,7 +1,36 @@
 """Shared helpers for media file variant use cases."""
 
-from src.modules.media.application.dtos.media_file_dtos import MediaFileOutput
+from src.modules.media.application.dtos.media_file_dtos import (
+    AudioTrackOutput,
+    MediaFileOutput,
+    SubtitleTrackOutput,
+)
 from src.modules.media.domain.value_objects import MediaFile
+from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
+
+
+def _to_audio_track_output(track: AudioTrack) -> AudioTrackOutput:
+    return AudioTrackOutput(
+        index=track.index,
+        language=track.language.value,
+        codec=track.codec,
+        channels=track.channels,
+        channel_layout=track.channel_layout,
+        title=track.title,
+        is_default=track.is_default,
+    )
+
+
+def _to_subtitle_track_output(track: SubtitleTrack) -> SubtitleTrackOutput:
+    return SubtitleTrackOutput(
+        index=track.index,
+        language=track.language.value,
+        format=track.format,
+        title=track.title,
+        is_default=track.is_default,
+        is_forced=track.is_forced,
+        is_external=track.is_external,
+    )
 
 
 def to_media_file_output(file: MediaFile) -> MediaFileOutput:
@@ -22,4 +51,6 @@ def to_media_file_output(file: MediaFile) -> MediaFileOutput:
         hdr_format=file.hdr_format.value if file.hdr_format else None,
         is_primary=file.is_primary,
         added_at=file.added_at.isoformat(),
+        audio_tracks=[_to_audio_track_output(t) for t in file.audio_tracks],
+        subtitle_tracks=[_to_subtitle_track_output(t) for t in file.subtitle_tracks],
     )
