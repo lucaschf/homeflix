@@ -6,6 +6,7 @@ from typing import Any
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 
+from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
 from src.modules.collections.application.dtos import (
     AddItemToCustomListInput,
@@ -45,7 +46,7 @@ async def create_custom_list(
 ) -> dict[str, Any]:
     """Create a new custom list."""
     result = await use_case.execute(CreateCustomListInput(name=body.name))
-    return {"type": "custom_list", "data": asdict(result)}
+    return api_single("custom_list", asdict(result))
 
 
 @router.get("")  # type: ignore[misc]
@@ -57,7 +58,7 @@ async def list_custom_lists(
 ) -> dict[str, Any]:
     """List all custom lists."""
     items = await use_case.execute()
-    return {"type": "list", "data": [asdict(item) for item in items]}
+    return api_list([asdict(item) for item in items])
 
 
 @router.patch("/{list_id}")  # type: ignore[misc]
@@ -71,7 +72,7 @@ async def rename_custom_list(
 ) -> dict[str, Any]:
     """Rename a custom list."""
     result = await use_case.execute(RenameCustomListInput(list_id=list_id, name=body.name))
-    return {"type": "custom_list", "data": asdict(result)}
+    return api_single("custom_list", asdict(result))
 
 
 @router.delete("/{list_id}", status_code=204)  # type: ignore[misc]
@@ -100,7 +101,7 @@ async def get_custom_list_items(
 ) -> dict[str, Any]:
     """List all items in a custom list with media metadata."""
     items = await use_case.execute(GetCustomListItemsInput(list_id=list_id, lang=lang))
-    return {"type": "list", "data": [asdict(item) for item in items]}
+    return api_list([asdict(item) for item in items])
 
 
 @router.post("/{list_id}/items", status_code=201)  # type: ignore[misc]
@@ -120,10 +121,10 @@ async def add_item_to_custom_list(
             media_type=body.media_type,
         ),
     )
-    return {
-        "type": "custom_list",
-        "data": {"list_id": list_id, "media_id": body.media_id, "added": True},
-    }
+    return api_single(
+        "custom_list",
+        {"list_id": list_id, "media_id": body.media_id, "added": True},
+    )
 
 
 @router.delete("/{list_id}/items/{media_id}", status_code=204)  # type: ignore[misc]

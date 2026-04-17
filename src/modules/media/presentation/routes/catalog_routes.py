@@ -7,6 +7,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
 
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from src.building_blocks.presentation import Pagination, api_list
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.catalog_dtos import (
     ListByGenreInput,
@@ -58,10 +59,7 @@ async def list_genres(
             other side.
     """
     result = await use_case.execute(ListGenresInput(lang=lang, media_type=type))
-    return {
-        "type": "list",
-        "data": [asdict(g) for g in result.genres],
-    }
+    return api_list([asdict(g) for g in result.genres])
 
 
 @router.get("/by-genre/{genre}")  # type: ignore[misc]
@@ -106,16 +104,10 @@ async def list_by_genre(
             media_type=type,
         )
     )
-    return {
-        "type": "list",
-        "data": [asdict(item) for item in result.items],
-        "metadata": {
-            "pagination": {
-                "next_cursor": result.next_cursor,
-                "has_more": result.has_more,
-            },
-        },
-    }
+    return api_list(
+        [asdict(item) for item in result.items],
+        pagination=Pagination(has_more=result.has_more, next_cursor=result.next_cursor),
+    )
 
 
 __all__ = ["router"]

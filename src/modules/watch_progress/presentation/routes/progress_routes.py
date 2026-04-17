@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
 from src.modules.watch_progress.application.dtos import (
     GetContinueWatchingInput,
@@ -59,10 +60,7 @@ async def continue_watching(
 ) -> dict[str, Any]:
     """List in-progress items for the Continue Watching section."""
     result = await use_case.execute(GetContinueWatchingInput(limit=limit, lang=lang))
-    return {
-        "type": "list",
-        "data": [asdict(item) for item in result.items],
-    }
+    return api_list([asdict(item) for item in result.items])
 
 
 @router.put("")  # type: ignore[misc]
@@ -84,7 +82,7 @@ async def save_progress(
             subtitle_track=body.subtitle_track,
         ),
     )
-    return {"type": "progress", "data": asdict(result)}
+    return api_single("progress", asdict(result))
 
 
 @router.get("/{media_id}")  # type: ignore[misc]
@@ -98,8 +96,8 @@ async def get_progress(
     """Get watch progress for a media item."""
     result = await use_case.execute(GetProgressInput(media_id=media_id))
     if result is None:
-        return {"type": "progress", "data": None}
-    return {"type": "progress", "data": asdict(result)}
+        return api_single("progress", None)
+    return api_single("progress", asdict(result))
 
 
 @router.delete("/series/{series_id}", status_code=204)  # type: ignore[misc]

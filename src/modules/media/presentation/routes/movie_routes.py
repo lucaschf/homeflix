@@ -6,6 +6,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from src.building_blocks.presentation import Pagination, api_list, api_single
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.media_file_dtos import (
     AddFileVariantInput,
@@ -72,19 +73,14 @@ async def list_movies(
             lang=lang,
         )
     )
-    metadata: dict[str, Any] = {
-        "pagination": {
-            "next_cursor": result.next_cursor,
-            "has_more": result.has_more,
-        },
-    }
-    if result.total_count is not None:
-        metadata["total_count"] = result.total_count
-    return {
-        "type": "list",
-        "data": [_dataclass_to_dict(m) for m in result.movies],
-        "metadata": metadata,
-    }
+    extras: dict[str, Any] | None = (
+        {"total_count": result.total_count} if result.total_count is not None else None
+    )
+    return api_list(
+        [_dataclass_to_dict(m) for m in result.movies],
+        pagination=Pagination(has_more=result.has_more, next_cursor=result.next_cursor),
+        metadata_extras=extras,
+    )
 
 
 @router.get("/{movie_id}")  # type: ignore[misc]
@@ -98,10 +94,7 @@ async def get_movie(
 ) -> dict[str, Any]:
     """Get a movie by ID."""
     result = await use_case.execute(GetMovieByIdInput(movie_id=movie_id, lang=lang))
-    return {
-        "type": "movie",
-        "data": _dataclass_to_dict(result),
-    }
+    return api_single("movie", _dataclass_to_dict(result))
 
 
 @router.delete("/{movie_id}", status_code=204)  # type: ignore[misc]
@@ -133,10 +126,7 @@ async def get_file_variants(
 ) -> dict[str, Any]:
     """List all file variants of a movie."""
     result = await use_case.execute(GetFileVariantsInput(media_id=movie_id))
-    return {
-        "type": "list",
-        "data": [_dataclass_to_dict(f) for f in result],
-    }
+    return api_list([_dataclass_to_dict(f) for f in result])
 
 
 @router.post("/{movie_id}/files", status_code=201)  # type: ignore[misc]
@@ -161,10 +151,7 @@ async def add_file_variant(
             is_primary=body.is_primary,
         ),
     )
-    return {
-        "type": "media_file",
-        "data": _dataclass_to_dict(result),
-    }
+    return api_single("media_file", _dataclass_to_dict(result))
 
 
 @router.delete("/{movie_id}/files", status_code=204)  # type: ignore[misc]
@@ -195,10 +182,7 @@ async def set_primary_file(
     result = await use_case.execute(
         SetPrimaryFileInput(media_id=movie_id, file_path=body.file_path),
     )
-    return {
-        "type": "list",
-        "data": [_dataclass_to_dict(f) for f in result],
-    }
+    return api_list([_dataclass_to_dict(f) for f in result])
 
 
 def _dataclass_to_dict(obj: Any) -> dict[str, Any]:
