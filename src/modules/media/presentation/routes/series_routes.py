@@ -6,6 +6,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from src.building_blocks.presentation import Pagination, api_list, api_single
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.media_file_dtos import (
     AddFileVariantInput,
@@ -58,19 +59,14 @@ async def list_series(
             lang=lang,
         )
     )
-    metadata: dict[str, Any] = {
-        "pagination": {
-            "next_cursor": result.next_cursor,
-            "has_more": result.has_more,
-        },
-    }
-    if result.total_count is not None:
-        metadata["total_count"] = result.total_count
-    return {
-        "type": "list",
-        "data": [_dataclass_to_dict(s) for s in result.series],
-        "metadata": metadata,
-    }
+    extras: dict[str, Any] | None = (
+        {"total_count": result.total_count} if result.total_count is not None else None
+    )
+    return api_list(
+        [_dataclass_to_dict(s) for s in result.series],
+        pagination=Pagination(has_more=result.has_more, next_cursor=result.next_cursor),
+        metadata_extras=extras,
+    )
 
 
 @router.get("/{series_id}")  # type: ignore[misc]
@@ -84,10 +80,7 @@ async def get_series(
 ) -> dict[str, Any]:
     """Get a series by ID (includes full season/episode hierarchy)."""
     result = await use_case.execute(GetSeriesByIdInput(series_id=series_id, lang=lang))
-    return {
-        "type": "series",
-        "data": _dataclass_to_dict(result),
-    }
+    return api_single("series", _dataclass_to_dict(result))
 
 
 # ── Episode file variant endpoints ──────────────────────────────────
@@ -103,10 +96,7 @@ async def get_episode_file_variants(
 ) -> dict[str, Any]:
     """List all file variants of an episode."""
     result = await use_case.execute(GetFileVariantsInput(media_id=episode_id))
-    return {
-        "type": "list",
-        "data": [_dataclass_to_dict(f) for f in result],
-    }
+    return api_list([_dataclass_to_dict(f) for f in result])
 
 
 @router.post("/episodes/{episode_id}/files", status_code=201)  # type: ignore[misc]
@@ -131,10 +121,7 @@ async def add_episode_file_variant(
             is_primary=body.is_primary,
         ),
     )
-    return {
-        "type": "media_file",
-        "data": _dataclass_to_dict(result),
-    }
+    return api_single("media_file", _dataclass_to_dict(result))
 
 
 @router.delete("/episodes/{episode_id}/files", status_code=204)  # type: ignore[misc]
@@ -165,10 +152,7 @@ async def set_episode_primary_file(
     result = await use_case.execute(
         SetPrimaryFileInput(media_id=episode_id, file_path=body.file_path),
     )
-    return {
-        "type": "list",
-        "data": [_dataclass_to_dict(f) for f in result],
-    }
+    return api_list([_dataclass_to_dict(f) for f in result])
 
 
 def _dataclass_to_dict(obj: Any) -> dict[str, Any]:

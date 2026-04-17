@@ -12,6 +12,8 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.building_blocks.presentation import RequestContextMiddleware
+from src.building_blocks.presentation.exception_handlers import register_exception_handlers
 from src.config.containers import ApplicationContainer
 from src.config.logging import get_logger, setup_logging
 from src.config.settings import get_settings
@@ -157,6 +159,10 @@ def create_app() -> FastAPI:
 
     app.add_middleware(SessionCleanupMiddleware)
 
+    # Request correlation + timing — must run before routes so the
+    # request_id is bound while handlers execute.
+    app.add_middleware(RequestContextMiddleware)
+
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -165,6 +171,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Translate typed exceptions into the standard v3 error envelope
+    register_exception_handlers(app)
 
     # Register routes
     register_health_routes(app)

@@ -12,14 +12,4 @@ class ScanMediaRequest(BaseModel):
     )
 
 
-class ScanMediaResponse(BaseModel):
-    """Response body for a completed media scan."""
-
-    movies_created: int
-    movies_updated: int
-    episodes_created: int
-    episodes_updated: int
-    errors: list[str] = Field(default_factory=list)
-
-
-__all__ = ["ScanMediaRequest", "ScanMediaResponse"]
+__all__ = ["ScanMediaRequest"]

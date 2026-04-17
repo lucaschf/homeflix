@@ -6,19 +6,20 @@ from typing import Any
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 
+from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
 from src.config.settings import get_settings
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
 )
-from src.modules.media.presentation.schemas import ScanMediaRequest, ScanMediaResponse
+from src.modules.media.presentation.schemas import ScanMediaRequest
 from src.shared_kernel.value_objects.file_path import FilePath
 
 router = APIRouter(prefix="/api/v1/scan", tags=["Scan"])
 
 
-@router.post("", response_model=ScanMediaResponse)  # type: ignore[misc]
+@router.post("")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def scan_media(
     body: ScanMediaRequest | None = None,
@@ -35,7 +36,7 @@ async def scan_media(
     directories = [FilePath(d) for d in raw_dirs]
     input_dto = ScanMediaInput(directories=directories)
     output = await use_case.execute(input_dto)
-    return asdict(output)
+    return api_single("scan", asdict(output))
 
 
 __all__ = ["router"]

@@ -12,22 +12,4 @@ class EnrichRequest(BaseModel):
     )
 
 
-class EnrichResponse(BaseModel):
-    """Response body for single media enrichment."""
-
-    media_id: str
-    enriched: bool
-    provider: str | None = None
-    error: str | None = None
-
-
-class BulkEnrichResponse(BaseModel):
-    """Response body for bulk metadata enrichment."""
-
-    movies_enriched: int
-    series_enriched: int
-    skipped: int
-    errors: list[str] = Field(default_factory=list)
-
-
-__all__ = ["BulkEnrichResponse", "EnrichRequest", "EnrichResponse"]
+__all__ = ["EnrichRequest"]

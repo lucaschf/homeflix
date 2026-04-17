@@ -6,6 +6,7 @@ from typing import Any
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 
+from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
 from src.modules.library.application.dtos.library_dtos import (
     CreateLibraryInput,
@@ -46,7 +47,7 @@ async def create_library(
             settings=body.settings.model_dump() if body.settings else None,
         )
     )
-    return {"data": asdict(result)}
+    return api_single("library", asdict(result))
 
 
 @router.get("")  # type: ignore[misc]
@@ -58,10 +59,7 @@ async def list_libraries(
 ) -> dict[str, Any]:
     """List all non-deleted libraries."""
     result = await use_case.execute()
-    return {
-        "type": "list",
-        "data": [asdict(lib) for lib in result],
-    }
+    return api_list([asdict(lib) for lib in result])
 
 
 @router.get("/{library_id}")  # type: ignore[misc]
@@ -74,7 +72,7 @@ async def get_library(
 ) -> dict[str, Any]:
     """Get a library by its external id."""
     result = await use_case.execute(GetLibraryByIdInput(library_id=library_id))
-    return {"data": asdict(result)}
+    return api_single("library", asdict(result))
 
 
 @router.put("/{library_id}")  # type: ignore[misc]
@@ -103,7 +101,7 @@ async def update_library(
             settings=body.settings.model_dump() if body.settings else None,
         )
     )
-    return {"data": asdict(result)}
+    return api_single("library", asdict(result))
 
 
 @router.delete("/{library_id}", status_code=204)  # type: ignore[misc]

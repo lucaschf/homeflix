@@ -7,6 +7,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
 
 from src.building_blocks.application.pagination import MAX_PAGE_SIZE
+from src.building_blocks.presentation import api_list
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.search_dtos import SearchInput
 from src.modules.media.application.use_cases.search_catalog import SearchCatalogUseCase
@@ -57,13 +58,10 @@ async def search(
             limit=limit,
         )
     )
-    return {
-        "type": "list",
-        "data": [asdict(item) for item in result.items],
-        "metadata": {
-            "total": result.total,
-        },
-    }
+    return api_list(
+        [asdict(item) for item in result.items],
+        metadata_extras={"total": result.total},
+    )
 
 
 __all__ = ["router"]

@@ -7,6 +7,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
 from src.modules.collections.application.dtos import (
     GetWatchlistInput,
@@ -50,7 +51,7 @@ async def toggle_watchlist(
             media_type=body.media_type,
         ),
     )
-    return {"type": "watchlist", "data": asdict(result)}
+    return api_single("watchlist", asdict(result))
 
 
 @router.get("")  # type: ignore[misc]
@@ -64,10 +65,7 @@ async def get_watchlist(
 ) -> dict[str, Any]:
     """List all items in the user's watchlist."""
     items = await use_case.execute(GetWatchlistInput(limit=limit, lang=lang))
-    return {
-        "type": "list",
-        "data": [asdict(item) for item in items],
-    }
+    return api_list([asdict(item) for item in items])
 
 
 @router.get("/check/{media_id}")  # type: ignore[misc]
@@ -80,7 +78,7 @@ async def check_watchlist(
 ) -> dict[str, Any]:
     """Check if a media item is in the watchlist."""
     in_list = await use_case.execute(media_id)
-    return {"type": "watchlist", "data": {"in_list": in_list}}
+    return api_single("watchlist", {"in_list": in_list})
 
 
 __all__ = ["router"]

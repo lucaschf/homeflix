@@ -6,6 +6,7 @@ from typing import Any
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
 
+from src.building_blocks.presentation import api_list
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.featured_dtos import GetFeaturedInput
 from src.modules.media.application.use_cases.get_featured_media import GetFeaturedMediaUseCase
@@ -25,10 +26,7 @@ async def get_featured(
 ) -> dict[str, Any]:
     """Get random featured media for the hero banner."""
     items = await use_case.execute(GetFeaturedInput(media_type=type, limit=limit, lang=lang))
-    return {
-        "type": "list",
-        "data": [asdict(item) for item in items],
-    }
+    return api_list([asdict(item) for item in items])
 
 
 __all__ = ["router"]
