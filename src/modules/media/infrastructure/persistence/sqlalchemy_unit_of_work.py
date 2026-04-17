@@ -61,10 +61,12 @@ class SqlAlchemyMediaUnitOfWork(MediaUnitOfWork):
             self._session = None
 
     async def commit(self) -> None:
+        """Commit the active transaction."""
         assert self._session is not None, "UnitOfWork not started; use `async with`."
         await self._session.commit()
 
     async def rollback(self) -> None:
+        """Roll back the active transaction."""
         assert self._session is not None, "UnitOfWork not started; use `async with`."
         await self._session.rollback()
 
@@ -80,6 +82,7 @@ class SqlAlchemyMediaUnitOfWorkFactory(MediaUnitOfWorkFactory):
         self._session_factory = session_factory
 
     def __call__(self) -> MediaUnitOfWork:
+        """Return a brand-new, not-yet-entered UoW."""
         return SqlAlchemyMediaUnitOfWork(self._session_factory)
 
 
