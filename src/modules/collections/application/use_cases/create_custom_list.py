@@ -5,8 +5,8 @@ from src.modules.collections.application.dtos import (
     CreateCustomListInput,
     CustomListOutput,
 )
+from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
 from src.modules.collections.domain.entities import MAX_LISTS, CustomList
-from src.modules.collections.domain.repositories import CustomListRepository
 
 
 class CreateCustomListUseCase:
@@ -15,17 +15,17 @@ class CreateCustomListUseCase:
     Enforces the maximum list limit and unique name constraint.
 
     Example:
-        >>> use_case = CreateCustomListUseCase(custom_list_repository)
+        >>> use_case = CreateCustomListUseCase(uow_factory)
         >>> result = await use_case.execute(CreateCustomListInput(name="Action Movies"))
     """
 
-    def __init__(self, custom_list_repository: CustomListRepository) -> None:
+    def __init__(self, uow_factory: CollectionsUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            custom_list_repository: Repository for custom list persistence.
+            uow_factory: Factory that opens a fresh collections Unit of Work.
         """
-        self._repo = custom_list_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: CreateCustomListInput) -> CustomListOutput:
         """Execute the use case.
@@ -39,24 +39,25 @@ class CreateCustomListUseCase:
         Raises:
             BusinessRuleViolationException: If list limit reached or name already exists.
         """
-        current_count = await self._repo.count()
-        if current_count >= MAX_LISTS:
-            raise BusinessRuleViolationException(
-                message=f"Cannot create more than {MAX_LISTS} custom lists",
-                message_code="CUSTOM_LIST_LIMIT_EXCEEDED",
-                rule_code="CUSTOM_LIST_LIMIT_EXCEEDED",
-            )
+        async with self._uow_factory() as uow:
+            current_count = await uow.custom_lists.count()
+            if current_count >= MAX_LISTS:
+                raise BusinessRuleViolationException(
+                    message=f"Cannot create more than {MAX_LISTS} custom lists",
+                    message_code="CUSTOM_LIST_LIMIT_EXCEEDED",
+                    rule_code="CUSTOM_LIST_LIMIT_EXCEEDED",
+                )
 
-        existing = await self._repo.find_by_name(input_dto.name.strip())
-        if existing:
-            raise BusinessRuleViolationException(
-                message=f"A list named '{input_dto.name.strip()}' already exists",
-                message_code="CUSTOM_LIST_NAME_DUPLICATE",
-                rule_code="CUSTOM_LIST_NAME_DUPLICATE",
-            )
+            existing = await uow.custom_lists.find_by_name(input_dto.name.strip())
+            if existing:
+                raise BusinessRuleViolationException(
+                    message=f"A list named '{input_dto.name.strip()}' already exists",
+                    message_code="CUSTOM_LIST_NAME_DUPLICATE",
+                    rule_code="CUSTOM_LIST_NAME_DUPLICATE",
+                )
 
-        custom_list = CustomList.create(name=input_dto.name)
-        saved = await self._repo.add(custom_list)
+            custom_list = CustomList.create(name=input_dto.name)
+            saved = await uow.custom_lists.add(custom_list)
         return CustomListOutput.from_entity(saved)
 
 

@@ -56,13 +56,13 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
         if existing:
             existing.restore()
             WatchlistItemMapper.update_model(existing, item)
-            await self._session.commit()
+            await self._session.flush()
             await self._session.refresh(existing)
             return WatchlistItemMapper.to_entity(existing)
 
         model = WatchlistItemMapper.to_model(item)
         self._session.add(model)
-        await self._session.commit()
+        await self._session.flush()
         await self._session.refresh(model)
         return WatchlistItemMapper.to_entity(model)
 
@@ -79,7 +79,7 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
             return False
 
         model.soft_delete()
-        await self._session.commit()
+        await self._session.flush()
         return True
 
     async def list_all(self, limit: int = 100) -> list[WatchlistItem]:

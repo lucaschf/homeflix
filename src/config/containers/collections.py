@@ -18,21 +18,26 @@ from src.modules.collections.infrastructure.persistence.repositories import (
     SQLAlchemyCustomListRepository,
     SQLAlchemyWatchlistRepository,
 )
+from src.modules.collections.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SqlAlchemyCollectionsUnitOfWorkFactory,
+)
 
 
 class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     """Container for Collections bounded context dependencies.
 
-    The ``session``, ``movie_repository``, and ``series_repository``
-    dependencies must be wired from the parent container.
+    The ``session``, ``session_factory``, ``movie_repository``, and
+    ``series_repository`` dependencies must be wired from the parent
+    container.
     """
 
     session = providers.Dependency()
+    session_factory = providers.Dependency()
     movie_repository = providers.Dependency()
     series_repository = providers.Dependency()
 
     # =========================================================================
-    # Repositories
+    # Repositories (read-only use cases) and Unit of Work (writes)
     # =========================================================================
 
     watchlist_repository = providers.Factory(
@@ -45,13 +50,18 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
         session=session,
     )
 
+    collections_unit_of_work_factory = providers.Singleton(
+        SqlAlchemyCollectionsUnitOfWorkFactory,
+        session_factory=session_factory,
+    )
+
     # =========================================================================
     # Watchlist Use Cases
     # =========================================================================
 
     toggle_watchlist = providers.Factory(
         ToggleWatchlistUseCase,
-        watchlist_repository=watchlist_repository,
+        uow_factory=collections_unit_of_work_factory,
     )
 
     get_watchlist = providers.Factory(
@@ -72,7 +82,7 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
 
     create_custom_list = providers.Factory(
         CreateCustomListUseCase,
-        custom_list_repository=custom_list_repository,
+        uow_factory=collections_unit_of_work_factory,
     )
 
     list_custom_lists = providers.Factory(
@@ -82,22 +92,22 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
 
     rename_custom_list = providers.Factory(
         RenameCustomListUseCase,
-        custom_list_repository=custom_list_repository,
+        uow_factory=collections_unit_of_work_factory,
     )
 
     delete_custom_list = providers.Factory(
         DeleteCustomListUseCase,
-        custom_list_repository=custom_list_repository,
+        uow_factory=collections_unit_of_work_factory,
     )
 
     add_item_to_custom_list = providers.Factory(
         AddItemToCustomListUseCase,
-        custom_list_repository=custom_list_repository,
+        uow_factory=collections_unit_of_work_factory,
     )
 
     remove_item_from_custom_list = providers.Factory(
         RemoveItemFromCustomListUseCase,
-        custom_list_repository=custom_list_repository,
+        uow_factory=collections_unit_of_work_factory,
     )
 
     get_custom_list_items = providers.Factory(
