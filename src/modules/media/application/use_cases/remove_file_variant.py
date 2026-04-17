@@ -5,8 +5,11 @@ from src.building_blocks.application.errors import (
     UseCaseValidationException,
 )
 from src.modules.media.application.dtos.media_file_dtos import RemoveFileVariantInput
+from src.modules.media.application.unit_of_work import (
+    MediaUnitOfWork,
+    MediaUnitOfWorkFactory,
+)
 from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixin
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import EpisodeId, MediaFile, MovieId
 from src.shared_kernel.value_objects.file_path import FilePath
 
@@ -18,26 +21,20 @@ class RemoveFileVariantUseCase:
     is promoted to primary.
 
     Example:
-        >>> use_case = RemoveFileVariantUseCase(movie_repo, series_repo)
+        >>> use_case = RemoveFileVariantUseCase(uow_factory)
         >>> await use_case.execute(RemoveFileVariantInput(
         ...     media_id="mov_abc123",
         ...     file_path="/movies/inception_720p.mkv",
         ... ))
     """
 
-    def __init__(
-        self,
-        movie_repository: MovieRepository,
-        series_repository: SeriesRepository,
-    ) -> None:
+    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            movie_repository: Repository for movie persistence.
-            series_repository: Repository for series persistence.
+            uow_factory: Factory that opens a fresh media Unit of Work.
         """
-        self._movie_repository = movie_repository
-        self._series_repository = series_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: RemoveFileVariantInput) -> None:
         """Execute the use case.
@@ -51,26 +48,35 @@ class RemoveFileVariantUseCase:
         """
         prefix = input_dto.media_id.split("_")[0] if "_" in input_dto.media_id else ""
 
-        if prefix == "mov":
-            await self._remove_from_movie(input_dto)
-        elif prefix == "epi":
-            await self._remove_from_episode(input_dto)
-        else:
-            raise ResourceNotFoundException.for_resource("Media", input_dto.media_id)
+        async with self._uow_factory() as uow:
+            if prefix == "mov":
+                await self._remove_from_movie(uow, input_dto)
+                return
+            if prefix == "epi":
+                await self._remove_from_episode(uow, input_dto)
+                return
 
-    async def _remove_from_movie(self, input_dto: RemoveFileVariantInput) -> None:
-        movie = await self._movie_repository.find_by_id(MovieId(input_dto.media_id))
+        raise ResourceNotFoundException.for_resource("Media", input_dto.media_id)
+
+    @staticmethod
+    async def _remove_from_movie(
+        uow: MediaUnitOfWork,
+        input_dto: RemoveFileVariantInput,
+    ) -> None:
+        movie = await uow.movies.find_by_id(MovieId(input_dto.media_id))
         if movie is None:
             raise ResourceNotFoundException.for_resource("Movie", input_dto.media_id)
 
         new_files = _remove_file_and_promote(movie, input_dto.file_path)
         movie = movie.with_updates(files=new_files)
-        await self._movie_repository.save(movie)
+        await uow.movies.save(movie)
 
-    async def _remove_from_episode(self, input_dto: RemoveFileVariantInput) -> None:
-        series = await self._series_repository.find_by_episode_id(
-            EpisodeId(input_dto.media_id),
-        )
+    @staticmethod
+    async def _remove_from_episode(
+        uow: MediaUnitOfWork,
+        input_dto: RemoveFileVariantInput,
+    ) -> None:
+        series = await uow.series.find_by_episode_id(EpisodeId(input_dto.media_id))
         if series is None:
             raise ResourceNotFoundException.for_resource("Episode", input_dto.media_id)
 
@@ -86,7 +92,7 @@ class RemoveFileVariantUseCase:
             updated_seasons.append(season.with_updates(episodes=updated_episodes))
 
         updated_series = series.with_updates(seasons=updated_seasons)
-        await self._series_repository.save(updated_series)
+        await uow.series.save(updated_series)
 
 
 def _remove_file_and_promote(

@@ -5,10 +5,13 @@ from src.modules.media.application.dtos.media_file_dtos import (
     AddFileVariantInput,
     MediaFileOutput,
 )
+from src.modules.media.application.unit_of_work import (
+    MediaUnitOfWork,
+    MediaUnitOfWorkFactory,
+)
 from src.modules.media.application.use_cases._media_file_helpers import (
     to_media_file_output,
 )
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import (
     EpisodeId,
     HdrFormat,
@@ -27,7 +30,7 @@ class AddFileVariantUseCase:
     the new file variant to its file list.
 
     Example:
-        >>> use_case = AddFileVariantUseCase(movie_repo, series_repo)
+        >>> use_case = AddFileVariantUseCase(uow_factory)
         >>> result = await use_case.execute(AddFileVariantInput(
         ...     media_id="mov_abc123",
         ...     file_path="/movies/inception_4k.mkv",
@@ -36,19 +39,13 @@ class AddFileVariantUseCase:
         ... ))
     """
 
-    def __init__(
-        self,
-        movie_repository: MovieRepository,
-        series_repository: SeriesRepository,
-    ) -> None:
+    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            movie_repository: Repository for movie persistence.
-            series_repository: Repository for series persistence.
+            uow_factory: Factory that opens a fresh media Unit of Work.
         """
-        self._movie_repository = movie_repository
-        self._series_repository = series_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: AddFileVariantInput) -> MediaFileOutput:
         """Execute the use case.
@@ -74,24 +71,35 @@ class AddFileVariantUseCase:
 
         prefix = input_dto.media_id.split("_")[0] if "_" in input_dto.media_id else ""
 
-        if prefix == "mov":
-            return await self._add_to_movie(input_dto.media_id, media_file)
-        if prefix == "epi":
-            return await self._add_to_episode(input_dto.media_id, media_file)
+        async with self._uow_factory() as uow:
+            if prefix == "mov":
+                return await self._add_to_movie(uow, input_dto.media_id, media_file)
+            if prefix == "epi":
+                return await self._add_to_episode(uow, input_dto.media_id, media_file)
 
         raise ResourceNotFoundException.for_resource("Media", input_dto.media_id)
 
-    async def _add_to_movie(self, movie_id: str, media_file: MediaFile) -> MediaFileOutput:
-        movie = await self._movie_repository.find_by_id(MovieId(movie_id))
+    @staticmethod
+    async def _add_to_movie(
+        uow: MediaUnitOfWork,
+        movie_id: str,
+        media_file: MediaFile,
+    ) -> MediaFileOutput:
+        movie = await uow.movies.find_by_id(MovieId(movie_id))
         if movie is None:
             raise ResourceNotFoundException.for_resource("Movie", movie_id)
 
         movie = movie.with_file(media_file)
-        await self._movie_repository.save(movie)
+        await uow.movies.save(movie)
         return to_media_file_output(media_file)
 
-    async def _add_to_episode(self, episode_id: str, media_file: MediaFile) -> MediaFileOutput:
-        series = await self._series_repository.find_by_episode_id(EpisodeId(episode_id))
+    @staticmethod
+    async def _add_to_episode(
+        uow: MediaUnitOfWork,
+        episode_id: str,
+        media_file: MediaFile,
+    ) -> MediaFileOutput:
+        series = await uow.series.find_by_episode_id(EpisodeId(episode_id))
         if series is None:
             raise ResourceNotFoundException.for_resource("Episode", episode_id)
 
@@ -105,7 +113,7 @@ class AddFileVariantUseCase:
             updated_seasons.append(season.with_updates(episodes=updated_episodes))
 
         updated_series = series.with_updates(seasons=updated_seasons)
-        await self._series_repository.save(updated_series)
+        await uow.series.save(updated_series)
         return to_media_file_output(media_file)
 
 

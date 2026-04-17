@@ -16,8 +16,8 @@ from src.modules.media.application.ports import (
     MetadataProvider,
     SeasonMetadata,
 )
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Episode, Season, Series
-from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import (
     AirDate,
     ContentRating,
@@ -39,18 +39,18 @@ class EnrichSeriesMetadataUseCase:
     Enriches series-level, season-level, and episode-level metadata.
 
     Args:
-        series_repository: Repository for series persistence.
+        uow_factory: Factory that opens a fresh media Unit of Work.
         primary_provider: Primary metadata provider (e.g., TMDB).
         fallback_provider: Optional fallback provider (e.g., OMDb).
     """
 
     def __init__(
         self,
-        series_repository: SeriesRepository,
+        uow_factory: MediaUnitOfWorkFactory,
         primary_provider: MetadataProvider,
         fallback_provider: MetadataProvider | None = None,
     ) -> None:
-        self._series_repository = series_repository
+        self._uow_factory = uow_factory
         self._primary = primary_provider
         self._fallback = fallback_provider
 
@@ -63,30 +63,33 @@ class EnrichSeriesMetadataUseCase:
         Returns:
             Enrichment result with success/failure status.
         """
-        series = await self._series_repository.find_by_id(SeriesId(input_dto.media_id))
-        if not series:
-            raise ResourceNotFoundException.for_resource("Series", input_dto.media_id)
+        async with self._uow_factory() as uow:
+            series = await uow.series.find_by_id(SeriesId(input_dto.media_id))
+            if not series:
+                raise ResourceNotFoundException.for_resource("Series", input_dto.media_id)
 
-        if series.tmdb_id and not input_dto.force:
-            return EnrichMediaOutput(media_id=input_dto.media_id, enriched=False, provider=None)
+            if series.tmdb_id and not input_dto.force:
+                return EnrichMediaOutput(
+                    media_id=input_dto.media_id, enriched=False, provider=None
+                )
 
-        metadata, provider_name = await self._fetch_metadata(series)
-        if not metadata:
-            return EnrichMediaOutput(
-                media_id=input_dto.media_id,
-                enriched=False,
-                error="No metadata found from any provider",
-            )
+            metadata, provider_name = await self._fetch_metadata(series)
+            if not metadata:
+                return EnrichMediaOutput(
+                    media_id=input_dto.media_id,
+                    enriched=False,
+                    error="No metadata found from any provider",
+                )
 
-        # Re-fetch with localization if provider supports it
-        if metadata.tmdb_id and hasattr(self._primary, "get_series_localized"):
-            get_localized = self._primary.get_series_localized
-            localized_meta: MediaMetadata | None = await get_localized(metadata.tmdb_id)
-            if localized_meta is not None:
-                metadata = localized_meta
+            # Re-fetch with localization if provider supports it
+            if metadata.tmdb_id and hasattr(self._primary, "get_series_localized"):
+                get_localized = self._primary.get_series_localized
+                localized_meta: MediaMetadata | None = await get_localized(metadata.tmdb_id)
+                if localized_meta is not None:
+                    metadata = localized_meta
 
-        series = _apply_series_metadata(series, metadata)
-        await self._series_repository.save(series)
+            series = _apply_series_metadata(series, metadata)
+            await uow.series.save(series)
 
         return EnrichMediaOutput(media_id=input_dto.media_id, enriched=True, provider=provider_name)
 

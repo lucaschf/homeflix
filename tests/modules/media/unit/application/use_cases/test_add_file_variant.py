@@ -1,14 +1,12 @@
 """Tests for AddFileVariantUseCase."""
 
-from unittest.mock import AsyncMock
-
 import pytest
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos import AddFileVariantInput, MediaFileOutput
 from src.modules.media.application.use_cases import AddFileVariantUseCase
 from src.modules.media.domain.entities import Movie
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
+from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
 @pytest.mark.unit
@@ -16,9 +14,8 @@ class TestAddFileVariantUseCase:
     """Tests for AddFileVariantUseCase."""
 
     @pytest.mark.asyncio
-    async def test_should_add_variant_to_movie(self):
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
+    async def test_should_add_variant_to_movie(self) -> None:
+        mocks = make_media_uow_mock()
 
         movie = Movie.create(
             title="Inception",
@@ -28,13 +25,10 @@ class TestAddFileVariantUseCase:
             file_size=4_000_000_000,
             resolution="1080p",
         )
-        mock_movie_repo.find_by_id.return_value = movie
-        mock_movie_repo.save.return_value = movie
+        mocks.movies.find_by_id.return_value = movie
+        mocks.movies.save.return_value = movie
 
-        use_case = AddFileVariantUseCase(
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
-        )
+        use_case = AddFileVariantUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(
             AddFileVariantInput(
@@ -48,18 +42,14 @@ class TestAddFileVariantUseCase:
         assert isinstance(result, MediaFileOutput)
         assert result.file_path == "/movies/inception_4k.mkv"
         assert result.resolution == "4K"
-        mock_movie_repo.save.assert_called_once()
+        mocks.movies.save.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_should_raise_not_found_for_missing_movie(self):
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
-        mock_movie_repo.find_by_id.return_value = None
+    async def test_should_raise_not_found_for_missing_movie(self) -> None:
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_id.return_value = None
 
-        use_case = AddFileVariantUseCase(
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
-        )
+        use_case = AddFileVariantUseCase(uow_factory=mocks.factory)
 
         with pytest.raises(ResourceNotFoundException):
             await use_case.execute(
@@ -72,14 +62,10 @@ class TestAddFileVariantUseCase:
             )
 
     @pytest.mark.asyncio
-    async def test_should_raise_not_found_for_invalid_prefix(self):
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
+    async def test_should_raise_not_found_for_invalid_prefix(self) -> None:
+        mocks = make_media_uow_mock()
 
-        use_case = AddFileVariantUseCase(
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
-        )
+        use_case = AddFileVariantUseCase(uow_factory=mocks.factory)
 
         with pytest.raises(ResourceNotFoundException):
             await use_case.execute(

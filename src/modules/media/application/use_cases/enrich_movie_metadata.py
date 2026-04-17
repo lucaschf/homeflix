@@ -8,8 +8,8 @@ from src.modules.media.application.dtos.enrichment_dtos import (
     EnrichMediaOutput,
 )
 from src.modules.media.application.ports import MediaMetadata, MetadataProvider
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie
-from src.modules.media.domain.repositories import MovieRepository
 from src.modules.media.domain.value_objects import (
     ContentRating,
     Duration,
@@ -32,18 +32,18 @@ class EnrichMovieMetadataUseCase:
     if the primary returns no results.
 
     Args:
-        movie_repository: Repository for movie persistence.
+        uow_factory: Factory that opens a fresh media Unit of Work.
         primary_provider: Primary metadata provider (e.g., TMDB).
         fallback_provider: Optional fallback provider (e.g., OMDb).
     """
 
     def __init__(
         self,
-        movie_repository: MovieRepository,
+        uow_factory: MediaUnitOfWorkFactory,
         primary_provider: MetadataProvider,
         fallback_provider: MetadataProvider | None = None,
     ) -> None:
-        self._movie_repository = movie_repository
+        self._uow_factory = uow_factory
         self._primary = primary_provider
         self._fallback = fallback_provider
 
@@ -56,30 +56,33 @@ class EnrichMovieMetadataUseCase:
         Returns:
             Enrichment result with success/failure status.
         """
-        movie = await self._movie_repository.find_by_id(MovieId(input_dto.media_id))
-        if not movie:
-            raise ResourceNotFoundException.for_resource("Movie", input_dto.media_id)
+        async with self._uow_factory() as uow:
+            movie = await uow.movies.find_by_id(MovieId(input_dto.media_id))
+            if not movie:
+                raise ResourceNotFoundException.for_resource("Movie", input_dto.media_id)
 
-        if movie.tmdb_id and not input_dto.force:
-            return EnrichMediaOutput(media_id=input_dto.media_id, enriched=False, provider=None)
+            if movie.tmdb_id and not input_dto.force:
+                return EnrichMediaOutput(
+                    media_id=input_dto.media_id, enriched=False, provider=None
+                )
 
-        metadata, provider_name = await self._fetch_metadata(movie)
-        if not metadata:
-            return EnrichMediaOutput(
-                media_id=input_dto.media_id,
-                enriched=False,
-                error="No metadata found from any provider",
-            )
+            metadata, provider_name = await self._fetch_metadata(movie)
+            if not metadata:
+                return EnrichMediaOutput(
+                    media_id=input_dto.media_id,
+                    enriched=False,
+                    error="No metadata found from any provider",
+                )
 
-        # Re-fetch with localization if TMDB provider supports it
-        if metadata.tmdb_id and hasattr(self._primary, "get_movie_localized"):
-            get_localized = self._primary.get_movie_localized
-            localized_meta: MediaMetadata | None = await get_localized(metadata.tmdb_id)
-            if localized_meta is not None:
-                metadata = localized_meta
+            # Re-fetch with localization if TMDB provider supports it
+            if metadata.tmdb_id and hasattr(self._primary, "get_movie_localized"):
+                get_localized = self._primary.get_movie_localized
+                localized_meta: MediaMetadata | None = await get_localized(metadata.tmdb_id)
+                if localized_meta is not None:
+                    metadata = localized_meta
 
-        movie = _apply_movie_metadata(movie, metadata)
-        await self._movie_repository.save(movie)
+            movie = _apply_movie_metadata(movie, metadata)
+            await uow.movies.save(movie)
 
         return EnrichMediaOutput(media_id=input_dto.media_id, enriched=True, provider=provider_name)
 

@@ -1,6 +1,6 @@
 """Tests for ScanMediaDirectoriesUseCase."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -10,7 +10,6 @@ from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
 )
 from src.modules.media.domain.entities import Episode, Movie, Season, Series
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import (
     Duration,
     EpisodeNumber,
@@ -27,6 +26,7 @@ from src.modules.media.infrastructure.streaming.media_probe_service import (
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
+from tests.modules.media.unit.conftest import MediaUoWMocks, make_media_uow_mock
 
 
 def _audio_track(lang: str, *, index: int = 0) -> AudioTrack:
@@ -88,32 +88,29 @@ def _episode_file(
 def _make_use_case(
     *,
     scanner_results: list[ScannedFile] | None = None,
-    movie_repo: AsyncMock | None = None,
-    series_repo: AsyncMock | None = None,
+    mocks: MediaUoWMocks | None = None,
     probe_service: MediaProbeService | MagicMock | None = None,
-) -> ScanMediaDirectoriesUseCase:
+) -> tuple[ScanMediaDirectoriesUseCase, MediaUoWMocks]:
+    """Build the scan use case wired to a mock Unit of Work factory."""
     file_scanner = MagicMock()
     file_scanner.scan_directories.return_value = scanner_results or []
 
     variant_detector = VariantDetector()
 
-    if movie_repo is None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_by_file_path.return_value = None
-        movie_repo.save.side_effect = lambda m: m
+    if mocks is None:
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.return_value = None
+        mocks.movies.save.side_effect = lambda m: m
+        mocks.series.find_by_title.return_value = None
+        mocks.series.save.side_effect = lambda s: s
 
-    if series_repo is None:
-        series_repo = AsyncMock(spec=SeriesRepository)
-        series_repo.find_by_title.return_value = None
-        series_repo.save.side_effect = lambda s: s
-
-    return ScanMediaDirectoriesUseCase(
+    use_case = ScanMediaDirectoriesUseCase(
         file_scanner=file_scanner,
         variant_detector=variant_detector,
-        movie_repository=movie_repo,
-        series_repository=series_repo,
+        uow_factory=mocks.factory,
         probe_service=probe_service,
     )
+    return use_case, mocks
 
 
 @pytest.mark.unit
@@ -123,7 +120,7 @@ class TestScanMovies:
     @pytest.mark.asyncio
     async def test_should_create_movie_from_scanned_file(self) -> None:
         files = [_movie_file("/movies/Inception.2010.1080p.mkv", "Inception", 2010)]
-        use_case = _make_use_case(scanner_results=files)
+        use_case, _ = _make_use_case(scanner_results=files)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -137,7 +134,7 @@ class TestScanMovies:
             _movie_file("/movies/Inception.2010.1080p.mkv", "Inception", 2010, "1080p"),
             _movie_file("/movies/Inception.2010.4K.mkv", "Inception", 2010, "4K"),
         ]
-        use_case = _make_use_case(scanner_results=files)
+        use_case, _ = _make_use_case(scanner_results=files)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -150,7 +147,7 @@ class TestScanMovies:
             _movie_file("/movies/Inception.2010.1080p.mkv", "Inception", 2010),
             _movie_file("/movies/Interstellar.2014.1080p.mkv", "Interstellar", 2014),
         ]
-        use_case = _make_use_case(scanner_results=files)
+        use_case, _ = _make_use_case(scanner_results=files)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -167,17 +164,17 @@ class TestScanMovies:
             resolution="1080p",
         )
 
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_by_file_path.side_effect = lambda fp: (
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda fp: (
             existing if fp.value == "/movies/Inception.2010.1080p.mkv" else None
         )
-        movie_repo.save.side_effect = lambda m: m
+        mocks.movies.save.side_effect = lambda m: m
 
         files = [
             _movie_file("/movies/Inception.2010.1080p.mkv", "Inception", 2010, "1080p"),
             _movie_file("/movies/Inception.2010.4K.mkv", "Inception", 2010, "4K"),
         ]
-        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo)
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -186,7 +183,7 @@ class TestScanMovies:
 
     @pytest.mark.asyncio
     async def test_should_return_empty_when_no_files(self) -> None:
-        use_case = _make_use_case(scanner_results=[])
+        use_case, _ = _make_use_case(scanner_results=[])
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -203,7 +200,7 @@ class TestScanEpisodes:
         files = [
             _episode_file("/series/Show/S01/Show.S01E01.mkv"),
         ]
-        use_case = _make_use_case(scanner_results=files)
+        use_case, _ = _make_use_case(scanner_results=files)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -216,7 +213,7 @@ class TestScanEpisodes:
             _episode_file("/series/Show/S01/Show.S01E02.mkv", episode=2),
             _episode_file("/series/Show/S01/Show.S01E03.mkv", episode=3),
         ]
-        use_case = _make_use_case(scanner_results=files)
+        use_case, _ = _make_use_case(scanner_results=files)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -228,7 +225,7 @@ class TestScanEpisodes:
             _episode_file("/series/Show/S01/Show.S01E01.mkv", season=1, episode=1),
             _episode_file("/series/Show/S02/Show.S02E01.mkv", season=2, episode=1),
         ]
-        use_case = _make_use_case(scanner_results=files)
+        use_case, _ = _make_use_case(scanner_results=files)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -240,7 +237,7 @@ class TestScanEpisodes:
             _movie_file("/movies/Movie.2024.mkv"),
             _episode_file("/series/Show/S01/Show.S01E01.mkv"),
         ]
-        use_case = _make_use_case(scanner_results=files)
+        use_case, _ = _make_use_case(scanner_results=files)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -263,14 +260,14 @@ class TestRescanResolutionUpgrade:
             resolution="Unknown",
         )
         saved: list[Movie] = []
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_by_file_path.side_effect = lambda fp: (
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda fp: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
-        movie_repo.save.side_effect = lambda m: saved.append(m) or m
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
-        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo)
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -287,20 +284,20 @@ class TestRescanResolutionUpgrade:
             file_size=4_000_000_000,
             resolution="1080p",
         )
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_by_file_path.side_effect = lambda fp: (
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda fp: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
-        movie_repo.save.side_effect = lambda m: m
+        mocks.movies.save.side_effect = lambda m: m
 
         # Same path, but scanned now reports a different/Unknown resolution
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
-        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo)
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
 
         result = await use_case.execute(ScanMediaInput())
 
         assert result.movies_updated == 0
-        movie_repo.save.assert_not_called()
+        mocks.movies.save.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_should_skip_when_rescan_also_returns_no_resolution(self) -> None:
@@ -312,19 +309,19 @@ class TestRescanResolutionUpgrade:
             file_size=4_000_000_000,
             resolution="Unknown",
         )
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_by_file_path.side_effect = lambda fp: (
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda fp: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
-        movie_repo.save.side_effect = lambda m: m
+        mocks.movies.save.side_effect = lambda m: m
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
-        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo)
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
 
         result = await use_case.execute(ScanMediaInput())
 
         assert result.movies_updated == 0
-        movie_repo.save.assert_not_called()
+        mocks.movies.save.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_should_probe_when_creating_movie_without_filename_resolution(
@@ -333,7 +330,7 @@ class TestRescanResolutionUpgrade:
         probe = MagicMock(spec=MediaProbeService)
         probe.probe.return_value = MediaProbeResult(resolution="1080p")
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
-        use_case = _make_use_case(scanner_results=files, probe_service=probe)
+        use_case, _ = _make_use_case(scanner_results=files, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -350,20 +347,20 @@ class TestRescanResolutionUpgrade:
             file_size=4_000_000_000,
             resolution="Unknown",
         )
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_by_file_path.side_effect = lambda fp: (
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda fp: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
         saved: list[Movie] = []
-        movie_repo.save.side_effect = lambda m: saved.append(m) or m
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
 
         probe = MagicMock(spec=MediaProbeService)
         probe.probe.return_value = MediaProbeResult(resolution="4K")
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
-        use_case = _make_use_case(
+        use_case, _ = _make_use_case(
             scanner_results=files,
-            movie_repo=movie_repo,
+            mocks=mocks,
             probe_service=probe,
         )
 
@@ -394,18 +391,18 @@ class TestRescanResolutionUpgrade:
         )
         existing = existing.with_updates(files=[populated_file])
 
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_by_file_path.side_effect = lambda fp: (
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda fp: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
-        movie_repo.save.side_effect = lambda m: m
+        mocks.movies.save.side_effect = lambda m: m
 
         probe = MagicMock(spec=MediaProbeService)
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
-        use_case = _make_use_case(
+        use_case, _ = _make_use_case(
             scanner_results=files,
-            movie_repo=movie_repo,
+            mocks=mocks,
             probe_service=probe,
         )
 
@@ -425,7 +422,7 @@ class TestRescanResolutionUpgrade:
             resolution="1080p",
         )
         files = [_movie_file("/movies/inception.1080p.mkv", "Inception", 2010, "1080p")]
-        use_case = _make_use_case(scanner_results=files, probe_service=probe)
+        use_case, _ = _make_use_case(scanner_results=files, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -459,9 +456,9 @@ class TestRescanResolutionUpgrade:
         series = series.with_updates(seasons=[season])
 
         saved: list[Series] = []
-        series_repo = AsyncMock(spec=SeriesRepository)
-        series_repo.find_by_title.return_value = series
-        series_repo.save.side_effect = lambda s: saved.append(s) or s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_title.return_value = series
+        mocks.series.save.side_effect = lambda s: saved.append(s) or s
 
         files = [
             _episode_file(
@@ -472,7 +469,7 @@ class TestRescanResolutionUpgrade:
                 resolution="720p",
             )
         ]
-        use_case = _make_use_case(scanner_results=files, series_repo=series_repo)
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -494,12 +491,12 @@ class TestTrackDetection:
             resolution="1080p",
         )
         saved: list[Movie] = []
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_by_file_path.return_value = None
-        movie_repo.save.side_effect = lambda m: saved.append(m) or m
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.return_value = None
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
 
         files = [_movie_file("/movies/Inception.mkv", "Inception", 2010, "1080p")]
-        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo, probe_service=probe)
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -519,14 +516,12 @@ class TestTrackDetection:
             resolution="1080p",
         )
         saved: list[Series] = []
-        series_repo = AsyncMock(spec=SeriesRepository)
-        series_repo.find_by_title.return_value = None
-        series_repo.save.side_effect = lambda s: saved.append(s) or s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_title.return_value = None
+        mocks.series.save.side_effect = lambda s: saved.append(s) or s
 
         files = [_episode_file("/series/Anime/S01/Anime.S01E01.mkv")]
-        use_case = _make_use_case(
-            scanner_results=files, series_repo=series_repo, probe_service=probe
-        )
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -548,11 +543,11 @@ class TestTrackDetection:
             resolution="1080p",
         )
         saved: list[Movie] = []
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_by_file_path.side_effect = lambda fp: (
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda fp: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
-        movie_repo.save.side_effect = lambda m: saved.append(m) or m
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
 
         probe = MagicMock(spec=MediaProbeService)
         probe.probe.return_value = MediaProbeResult(
@@ -561,7 +556,7 @@ class TestTrackDetection:
         )
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
-        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo, probe_service=probe)
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -589,16 +584,16 @@ class TestTrackDetection:
         )
         existing = existing.with_updates(files=[populated_file])
 
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_by_file_path.side_effect = lambda fp: (
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda fp: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
-        movie_repo.save.side_effect = lambda m: m
+        mocks.movies.save.side_effect = lambda m: m
 
         probe = MagicMock(spec=MediaProbeService)
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
-        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo, probe_service=probe)
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 
@@ -622,12 +617,12 @@ class TestTrackDetection:
             resolution="1080p",
         )
         saved: list[Movie] = []
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_by_file_path.return_value = None
-        movie_repo.save.side_effect = lambda m: saved.append(m) or m
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.return_value = None
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
-        use_case = _make_use_case(scanner_results=files, movie_repo=movie_repo, probe_service=probe)
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
 
         result = await use_case.execute(ScanMediaInput())
 

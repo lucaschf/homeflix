@@ -58,6 +58,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     media = providers.Container(
         MediaContainer,
         session=infrastructure.session,
+        session_factory=infrastructure.session_factory,
         event_bus=infrastructure.event_bus,
         tmdb_api_key=config.provided.tmdb_api_key,
         hls_cache_directory=config.provided.hls_cache_directory,

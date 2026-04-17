@@ -40,6 +40,9 @@ from src.modules.media.infrastructure.persistence.repositories.movie_repository 
 from src.modules.media.infrastructure.persistence.repositories.series_repository import (
     SQLAlchemySeriesRepository,
 )
+from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SqlAlchemyMediaUnitOfWorkFactory,
+)
 from src.modules.media.infrastructure.streaming import HlsService, MediaProbeService
 from src.modules.watch_progress.infrastructure.persistence.repositories import (
     SQLAlchemyWatchProgressRepository,
@@ -63,6 +66,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     # Must be wired from InfrastructureContainer
     session = providers.Dependency()
+    session_factory = providers.Dependency()
     event_bus = providers.Dependency()
 
     # Must be wired from parent container (Settings.hls_cache_directory / hls_cache_max_size_mb)
@@ -70,7 +74,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     hls_cache_max_size_mb = providers.Dependency(default=5120)
 
     # =========================================================================
-    # Repositories
+    # Repositories (read-only use cases) and Unit of Work (writes)
     # =========================================================================
 
     movie_repository = providers.Factory(
@@ -86,6 +90,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     progress_repository = providers.Factory(
         SQLAlchemyWatchProgressRepository,
         session=session,
+    )
+
+    media_unit_of_work_factory = providers.Singleton(
+        SqlAlchemyMediaUnitOfWorkFactory,
+        session_factory=session_factory,
     )
 
     # =========================================================================
@@ -110,7 +119,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     delete_movie = providers.Factory(
         DeleteMovieUseCase,
-        movie_repository=movie_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     get_series_by_id = providers.Factory(
@@ -158,20 +167,17 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     add_file_variant = providers.Factory(
         AddFileVariantUseCase,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     remove_file_variant = providers.Factory(
         RemoveFileVariantUseCase,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     set_primary_file = providers.Factory(
         SetPrimaryFileUseCase,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     # =========================================================================
@@ -200,8 +206,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         ScanMediaDirectoriesUseCase,
         file_scanner=file_scanner,
         variant_detector=variant_detector,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
         probe_service=media_probe_service,
         event_bus=event_bus,
     )
@@ -221,13 +226,13 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     enrich_movie_metadata = providers.Factory(
         EnrichMovieMetadataUseCase,
-        movie_repository=movie_repository,
+        uow_factory=media_unit_of_work_factory,
         primary_provider=tmdb_client,
     )
 
     enrich_series_metadata = providers.Factory(
         EnrichSeriesMetadataUseCase,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
         primary_provider=tmdb_client,
     )
 
