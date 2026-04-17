@@ -6,6 +6,7 @@ from typing import Any
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 
+from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
 from src.modules.preferences.application.dtos.preferences_dtos import (
     UpdatePreferencesInput,
@@ -32,7 +33,7 @@ async def get_preferences(
 ) -> dict[str, Any]:
     """Return the current user's playback preferences."""
     result = await use_case.execute()
-    return {"data": asdict(result)}
+    return api_single("preferences", asdict(result))
 
 
 @router.put("")  # type: ignore[misc]
@@ -53,7 +54,7 @@ async def update_preferences(
             speed=body.speed,
         )
     )
-    return {"data": asdict(result)}
+    return api_single("preferences", asdict(result))
 
 
 __all__ = ["router"]

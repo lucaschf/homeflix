@@ -6,6 +6,7 @@ from typing import Any
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 
+from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.enrichment_dtos import (
     BulkEnrichInput,
@@ -20,19 +21,12 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
 from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
 )
-from src.modules.media.presentation.schemas import (
-    BulkEnrichResponse,
-    EnrichRequest,
-    EnrichResponse,
-)
+from src.modules.media.presentation.schemas import EnrichRequest
 
 router = APIRouter(prefix="/api/v1", tags=["Metadata Enrichment"])
 
 
-@router.post(  # type: ignore[misc]
-    "/movies/{movie_id}/enrich",
-    response_model=EnrichResponse,
-)
+@router.post("/movies/{movie_id}/enrich")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def enrich_movie(
     movie_id: str,
@@ -44,13 +38,10 @@ async def enrich_movie(
     """Enrich a movie with metadata from TMDB."""
     force = body.force if body else False
     output = await use_case.execute(EnrichMediaInput(media_id=movie_id, force=force))
-    return asdict(output)
+    return api_single("enrichment", asdict(output))
 
 
-@router.post(  # type: ignore[misc]
-    "/series/{series_id}/enrich",
-    response_model=EnrichResponse,
-)
+@router.post("/series/{series_id}/enrich")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def enrich_series(
     series_id: str,
@@ -62,13 +53,10 @@ async def enrich_series(
     """Enrich a series with metadata from TMDB."""
     force = body.force if body else False
     output = await use_case.execute(EnrichMediaInput(media_id=series_id, force=force))
-    return asdict(output)
+    return api_single("enrichment", asdict(output))
 
 
-@router.post(  # type: ignore[misc]
-    "/enrich",
-    response_model=BulkEnrichResponse,
-)
+@router.post("/enrich")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def bulk_enrich(
     body: EnrichRequest | None = None,
@@ -79,7 +67,7 @@ async def bulk_enrich(
     """Enrich all movies and series with metadata from TMDB."""
     force = body.force if body else False
     output = await use_case.execute(BulkEnrichInput(force=force))
-    return asdict(output)
+    return api_single("bulk_enrichment", asdict(output))
 
 
 __all__ = ["router"]
