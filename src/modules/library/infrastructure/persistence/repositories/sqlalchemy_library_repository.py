@@ -57,8 +57,7 @@ class SqlAlchemyLibraryRepository(LibraryRepository):
             self._session.add(model)
             await self._session.flush()
 
-        await self._session.commit()
-
+        # Transaction commit is the Unit of Work's responsibility.
         assert library.id is not None
         saved = await self.find_by_id(library.id)
         assert saved is not None
@@ -116,7 +115,6 @@ class SqlAlchemyLibraryRepository(LibraryRepository):
             return False
         model.soft_delete()
         await self._session.flush()
-        await self._session.commit()
         return True
 
     async def exists(self, library_id: LibraryId) -> bool:
