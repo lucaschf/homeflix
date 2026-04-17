@@ -38,6 +38,11 @@ _STATUS_TO_ERROR_TYPE = {
     504: "gateway_timeout_error",
 }
 
+# Keys a caller may supply via ``HTTPException(detail={...})`` — everything
+# else is dropped so an attacker-controlled or typo'd dict can't reshape
+# the envelope (e.g. override the computed ``type``).
+_ALLOWED_DETAIL_KEYS = frozenset({"message", "code", "param", "details"})
+
 
 async def core_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Translate typed domain/application/infra exceptions into HTTP.
@@ -99,14 +104,16 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
     error_type = _STATUS_TO_ERROR_TYPE.get(exc.status_code, "api_error")
 
     detail = exc.detail
+    content: dict[str, Any] = {"type": error_type}
     if isinstance(detail, dict):
-        content: dict[str, Any] = {"type": error_type, **detail}
+        for key in _ALLOWED_DETAIL_KEYS:
+            if key in detail:
+                content[key] = detail[key]
+        content.setdefault("message", "")
+        content.setdefault("code", error_type.upper())
     else:
-        content = {
-            "type": error_type,
-            "message": str(detail) if detail is not None else "",
-            "code": error_type.upper(),
-        }
+        content["message"] = str(detail) if detail is not None else ""
+        content["code"] = error_type.upper()
     get_logger().info(
         "HTTP exception handled",
         path=request.url.path,

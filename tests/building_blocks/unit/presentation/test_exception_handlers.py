@@ -176,6 +176,77 @@ class TestHttpExceptionTranslation:
             "code": "EMAIL_EXISTS",
         }
 
+    def test_should_ignore_caller_supplied_type_override(self) -> None:
+        app = _make_app()
+
+        @app.get("/foo")
+        async def _route() -> None:
+            raise HTTPException(
+                status_code=404,
+                detail={"type": "attacker_injected", "message": "nope"},
+            )
+
+        response = TestClient(app).get("/foo")
+
+        body = response.json()
+        # envelope `type` is always derived from the HTTP status
+        assert body["type"] == "not_found_error"
+
+    def test_should_drop_unknown_keys_from_detail(self) -> None:
+        app = _make_app()
+
+        @app.get("/foo")
+        async def _route() -> None:
+            raise HTTPException(
+                status_code=400,
+                detail={"message": "bad", "secret": "oops", "debug": {"sql": "..."}},
+            )
+
+        response = TestClient(app).get("/foo")
+
+        body = response.json()
+        assert "secret" not in body
+        assert "debug" not in body
+        assert body["message"] == "bad"
+
+    def test_should_preserve_param_and_details_from_detail(self) -> None:
+        app = _make_app()
+
+        @app.get("/foo")
+        async def _route() -> None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "bad field",
+                    "code": "FIELD_INVALID",
+                    "param": "email",
+                    "details": {"expected": "string"},
+                },
+            )
+
+        response = TestClient(app).get("/foo")
+
+        body = response.json()
+        assert body["param"] == "email"
+        assert body["details"] == {"expected": "string"}
+
+    def test_should_default_message_and_code_when_dict_detail_lacks_them(self) -> None:
+        app = _make_app()
+
+        @app.get("/foo")
+        async def _route() -> None:
+            raise HTTPException(status_code=409, detail={"param": "email"})
+
+        response = TestClient(app).get("/foo")
+
+        body = response.json()
+        assert body == {
+            "type": "conflict_error",
+            "param": "email",
+            "message": "",
+            "code": "CONFLICT_ERROR",
+        }
+
 
 @pytest.mark.unit
 class TestUnhandledException:
