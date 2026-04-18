@@ -215,6 +215,13 @@ class LibraryScanScheduler:
         async with self._library_uow_factory() as uow:
             library = await uow.libraries.find_by_id(LibraryId(library_id))
             if library is None:
+                # Matches the warning emitted at load-time so ops can
+                # correlate "scan started" with "scan finished but row
+                # vanished" in the logs.
+                _logger.warning(
+                    "[scheduler] Library vanished before persisting last_scan_at",
+                    library_id=library_id,
+                )
                 return
             updated = library.with_scan_completed(datetime.now(UTC))
             await uow.libraries.save(updated)
