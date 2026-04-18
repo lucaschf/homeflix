@@ -2,11 +2,11 @@
 
 import pytest
 
-from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
-from src.modules.media.infrastructure.streaming.hls_service import (
+from src.modules.media.application.streaming.playlist_rewriter import (
     media_type_for,
     rewrite_m3u8,
 )
+from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
 
 
 @pytest.mark.unit

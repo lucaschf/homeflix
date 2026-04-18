@@ -28,7 +28,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import re
 import shutil
 import subprocess
 import threading
@@ -36,6 +35,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.modules.media.application.ports.hls_playlist_port import HlsPlaylistPort
 from src.modules.media.application.ports.media_probe_port import ProbeResult
 from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
@@ -111,38 +111,6 @@ def _build_two_pass_seek_args(
 
 _VIDEO_DIR = "video"
 
-# -- Playlist rewriting utilities (used by routes) ----------------------------
-
-# Matches standalone relative references (non-comment lines)
-_RELATIVE_REF_RE = re.compile(
-    r"^(?!#)(?!https?://)(?!/)(.+)$",
-    re.MULTILINE,
-)
-# Matches URI="..." with relative paths only (skip absolute/protocol URIs)
-_URI_ATTR_RE = re.compile(r'URI="(?!https?://)(?!/)([^"]+)"')
-# Identifies cache-relative paths under a sub_<index>/ directory so route
-# handlers can wait on the right per-subtitle extraction event.
-SUB_PATH_RE = re.compile(r"^sub_(\d+)/")
-
-_MEDIA_TYPES: dict[str, str] = {
-    ".m3u8": "application/vnd.apple.mpegurl",
-    ".ts": "video/mp2t",
-    ".vtt": "text/vtt",
-}
-
-
-def rewrite_m3u8(m3u8_text: str, base_url: str) -> str:
-    """Prefix all relative references in an m3u8 with an absolute base URL."""
-    result = _URI_ATTR_RE.sub(rf'URI="{base_url}/\1"', m3u8_text)
-    return _RELATIVE_REF_RE.sub(rf"{base_url}/\1", result)
-
-
-def media_type_for(filename: str) -> str:
-    """Determine media type from file extension."""
-    suffix = Path(filename).suffix.lower()
-    return _MEDIA_TYPES.get(suffix, "application/octet-stream")
-
-
 # -- Module helpers -----------------------------------------------------------
 
 
@@ -151,7 +119,7 @@ def _primary_audio_index(probe: ProbeResult) -> int:
     return probe.audio_tracks[0].index if probe.audio_tracks else 0
 
 
-class HlsService:
+class HlsService(HlsPlaylistPort):
     """Generate and cache HLS segments for video files.
 
     Args:
@@ -1059,4 +1027,4 @@ def _write_subtitle_playlist(sub_dir: Path) -> None:
     )
 
 
-__all__ = ["HlsService", "media_type_for", "rewrite_m3u8"]
+__all__ = ["HlsService"]

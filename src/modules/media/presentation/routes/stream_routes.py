@@ -4,95 +4,59 @@ Uses HLS (HTTP Live Streaming) for all video formats via FFmpeg.
 Supports multi-audio and subtitle tracks via master playlist.
 Segment endpoints use a path-hash scheme so they never touch the
 database — only the initial playlist request needs a DB lookup.
+
+Routes stay thin: look up the movie/episode, hand the file path to
+the streaming use cases, and map the DTO they return into the right
+FastAPI response.
 """
 
-import asyncio
-import logging
-from collections.abc import AsyncGenerator
-from pathlib import Path
+from dataclasses import asdict
+from typing import Any
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
+from src.building_blocks.application.errors import ResourceNotFoundException
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput
 from src.modules.media.application.dtos.series_dtos import GetSeriesByIdInput
-from src.modules.media.application.ports import ProbeResult
+from src.modules.media.application.use_cases.clear_hls_cache import (
+    ClearHlsCacheInput,
+    ClearHlsCacheUseCase,
+)
+from src.modules.media.application.use_cases.generate_hls_playlist import (
+    GenerateHlsPlaylistInput,
+    GenerateHlsPlaylistUseCase,
+)
+from src.modules.media.application.use_cases.get_file_tracks import (
+    GetFileTracksInput,
+    GetFileTracksUseCase,
+)
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
-from src.modules.media.infrastructure.streaming.hls_service import (
-    SUB_PATH_RE,
-    HlsService,
-    media_type_for,
-    rewrite_m3u8,
+from src.modules.media.application.use_cases.serve_hls_file import (
+    ServeHlsFileInput,
+    ServeHlsFileUseCase,
 )
-
-_logger = logging.getLogger(__name__)
-
-# Hard cap on how long the file route will park a request waiting for
-# a background subtitle extraction. Must comfortably exceed the per-track
-# ffmpeg timeout in HlsService so the player gets the .vtt instead of a
-# 404 when it picks a slow track right after playback starts.
-_SUBTITLE_WAIT_TIMEOUT = 60.0
+from src.modules.media.application.use_cases.stream_file_range import (
+    StreamFileRangeInput,
+    StreamFileRangeUseCase,
+)
 
 router = APIRouter(prefix="/api/v1/stream", tags=["Streaming"])
 
+# Base-URL templates consumed by the stream use cases. The use cases
+# don't know where they're mounted, so the router injects them.
+_MASTER_BASE_URL = "/api/v1/stream/hls/{path_hash}"
+_FILE_BASE_URL = "/api/v1/stream/hls/{path_hash}{parent}"
 
-def _resolve_file(file_path: str | None) -> Path:
-    """Validate file path exists and return Path object."""
+
+def _require_file(file_path: str | None) -> str:
+    """Validate that a file path was resolved and return it."""
     if not file_path:
         raise HTTPException(status_code=404, detail="No video file available")
-    path = Path(file_path)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Video file not found on disk")
-    return path
-
-
-def _serialize_tracks(probe: ProbeResult) -> dict[str, list[dict[str, object]]]:
-    """Serialize probe result into API response format."""
-    return {
-        "audio_tracks": [
-            {
-                "index": t.index,
-                "language": t.language.value,
-                "codec": t.codec,
-                "channels": t.channels,
-                "channel_layout": t.channel_layout,
-                "title": t.title,
-                "is_default": t.is_default,
-            }
-            for t in probe.audio_tracks
-        ],
-        "subtitle_tracks": [
-            {
-                "index": t.index,
-                "language": t.language.value,
-                "format": t.format,
-                "title": t.title,
-                "is_default": t.is_default,
-                "is_forced": t.is_forced,
-                "is_external": t.is_external,
-                "is_image_based": t.is_image_based,
-            }
-            for t in probe.all_subtitles
-            if t.is_text_based
-        ],
-    }
-
-
-def _serve_master_playlist(hls: HlsService, path_hash: str) -> Response:
-    """Read master playlist and rewrite all relative URLs."""
-    content = hls.get_master_playlist(path_hash)
-    if not content:
-        raise HTTPException(status_code=404, detail="Playlist not found")
-
-    base_url = f"/api/v1/stream/hls/{path_hash}"
-    return Response(
-        content=rewrite_m3u8(content, base_url),
-        media_type="application/vnd.apple.mpegurl",
-        headers={"Cache-Control": "no-cache"},
-    )
+    return file_path
 
 
 # -- HLS file serving (no DB access) ------------------------------------------
@@ -103,52 +67,30 @@ def _serve_master_playlist(hls: HlsService, path_hash: str) -> Response:
 async def hls_file(
     path_hash: str,
     file_path: str,
-    hls: HlsService = Depends(
-        Provide[ApplicationContainer.media.hls_service],
+    use_case: ServeHlsFileUseCase = Depends(
+        Provide[ApplicationContainer.media.serve_hls_file],
     ),
 ) -> Response:
-    """Serve any HLS file (segment, sub-playlist, VTT) by cache hash.
+    """Serve any HLS file (segment, sub-playlist, VTT) by cache hash."""
+    try:
+        output = await use_case.execute(
+            ServeHlsFileInput(
+                path_hash=path_hash,
+                relative_path=file_path,
+                base_url_template=_FILE_BASE_URL,
+            )
+        )
+    except ResourceNotFoundException as exc:
+        raise HTTPException(status_code=404, detail="File not found") from exc
 
-    For .m3u8 files, rewrites relative references to absolute URLs.
-    Subtitle requests block on the matching readiness event so the
-    player gets the .vtt as soon as ffmpeg finishes extracting it,
-    instead of getting an early 404 and giving up. No database access
-    needed.
-    """
-    sub_match = SUB_PATH_RE.match(file_path)
-    if sub_match:
-        sub_index = int(sub_match.group(1))
-        # Offload the blocking Event.wait so we don't pin an event
-        # loop thread for tens of seconds while ffmpeg is still
-        # demuxing the source container.
-        await asyncio.to_thread(hls.wait_for_subtitle, path_hash, sub_index, _SUBTITLE_WAIT_TIMEOUT)
-
-    resolved = hls.get_file_by_hash(path_hash, file_path)
-    if not resolved:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    if resolved.suffix == ".m3u8":
-        try:
-            content = resolved.read_text(encoding="utf-8")
-        except OSError as e:
-            raise HTTPException(status_code=404, detail="Playlist not readable") from e
-
-        parent_parts = str(Path(file_path).parent)
-        if parent_parts == ".":
-            base_url = f"/api/v1/stream/hls/{path_hash}"
-        else:
-            base_url = f"/api/v1/stream/hls/{path_hash}/{parent_parts}"
-
+    if output.kind == "playlist":
         return Response(
-            content=rewrite_m3u8(content, base_url),
-            media_type="application/vnd.apple.mpegurl",
+            content=output.content,
+            media_type=output.media_type,
             headers={"Cache-Control": "no-cache"},
         )
-
-    return FileResponse(
-        str(resolved),
-        media_type=media_type_for(file_path),
-    )
+    assert output.path is not None
+    return FileResponse(str(output.path), media_type=output.media_type)
 
 
 # -- HLS playlist endpoints (need DB to resolve file path) ---------------------
@@ -159,37 +101,17 @@ async def hls_file(
 async def movie_hls_playlist(
     movie_id: str,
     start: float = 0.0,
-    use_case: GetMovieByIdUseCase = Depends(
+    movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
-    hls: HlsService = Depends(
-        Provide[ApplicationContainer.media.hls_service],
+    hls_uc: GenerateHlsPlaylistUseCase = Depends(
+        Provide[ApplicationContainer.media.generate_hls_playlist],
     ),
 ) -> Response:
-    """Generate and serve HLS master playlist for a movie.
-
-    The ``start`` query parameter (default 0) is an optional seek offset
-    in seconds. FFmpeg trims the source so the HLS output starts at
-    (original time = start), which lets the client resume mid-file
-    without waiting for segments to be produced from position 0.
-    """
-    movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
-    file_path = _resolve_file(movie.file_path)
-    start_seconds = max(0.0, start)
-
-    try:
-        path_hash = await hls.ensure_playlist(str(file_path), start_seconds)
-    except Exception as e:
-        _logger.exception(
-            "HLS generation failed for movie %s (file=%s, start=%ss)",
-            movie_id,
-            file_path,
-            start_seconds,
-        )
-        detail = str(e) or f"{type(e).__name__}: check server logs"
-        raise HTTPException(status_code=500, detail=detail) from e
-
-    return _serve_master_playlist(hls, path_hash)
+    """Generate and serve HLS master playlist for a movie."""
+    movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
+    file_path = _require_file(movie.file_path)
+    return await _serve_master(hls_uc, file_path, start)
 
 
 @router.get("/episode/{series_id}/{season_number}/{episode_number}/hls/playlist.m3u8")  # type: ignore[misc]
@@ -199,37 +121,17 @@ async def episode_hls_playlist(
     season_number: int,
     episode_number: int,
     start: float = 0.0,
-    use_case: GetSeriesByIdUseCase = Depends(
+    series_uc: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
-    hls: HlsService = Depends(
-        Provide[ApplicationContainer.media.hls_service],
+    hls_uc: GenerateHlsPlaylistUseCase = Depends(
+        Provide[ApplicationContainer.media.generate_hls_playlist],
     ),
 ) -> Response:
-    """Generate and serve HLS master playlist for an episode.
-
-    The ``start`` query parameter (default 0) is an optional seek offset
-    in seconds — same semantics as the movie endpoint.
-    """
-    file_path = await _find_episode_file(use_case, series_id, season_number, episode_number)
-    path = _resolve_file(file_path)
-    start_seconds = max(0.0, start)
-
-    try:
-        path_hash = await hls.ensure_playlist(str(path), start_seconds)
-    except Exception as e:
-        _logger.exception(
-            "HLS generation failed for episode %s/S%sE%s (file=%s, start=%ss)",
-            series_id,
-            season_number,
-            episode_number,
-            path,
-            start_seconds,
-        )
-        detail = str(e) or f"{type(e).__name__}: check server logs"
-        raise HTTPException(status_code=500, detail=detail) from e
-
-    return _serve_master_playlist(hls, path_hash)
+    """Generate and serve HLS master playlist for an episode."""
+    file_path = await _find_episode_file(series_uc, series_id, season_number, episode_number)
+    file_path = _require_file(file_path)
+    return await _serve_master(hls_uc, file_path, start)
 
 
 # -- Track info ----------------------------------------------------------------
@@ -239,18 +141,18 @@ async def episode_hls_playlist(
 @inject  # type: ignore[misc]
 async def movie_tracks(
     movie_id: str,
-    use_case: GetMovieByIdUseCase = Depends(
+    movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
-    hls: HlsService = Depends(
-        Provide[ApplicationContainer.media.hls_service],
+    tracks_uc: GetFileTracksUseCase = Depends(
+        Provide[ApplicationContainer.media.get_file_tracks],
     ),
-) -> dict[str, list[dict[str, object]]]:
+) -> dict[str, Any]:
     """Get available audio and subtitle tracks for a movie."""
-    movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
-    file_path = _resolve_file(movie.file_path)
-    probe = hls.probe_tracks(str(file_path))
-    return _serialize_tracks(probe)
+    movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
+    file_path = _require_file(movie.file_path)
+    tracks = await tracks_uc.execute(GetFileTracksInput(file_path=file_path))
+    return asdict(tracks)
 
 
 @router.get("/episode/{series_id}/{season_number}/{episode_number}/tracks")  # type: ignore[misc]
@@ -259,18 +161,18 @@ async def episode_tracks(
     series_id: str,
     season_number: int,
     episode_number: int,
-    use_case: GetSeriesByIdUseCase = Depends(
+    series_uc: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
-    hls: HlsService = Depends(
-        Provide[ApplicationContainer.media.hls_service],
+    tracks_uc: GetFileTracksUseCase = Depends(
+        Provide[ApplicationContainer.media.get_file_tracks],
     ),
-) -> dict[str, list[dict[str, object]]]:
+) -> dict[str, Any]:
     """Get available audio and subtitle tracks for an episode."""
-    file_path = await _find_episode_file(use_case, series_id, season_number, episode_number)
-    path = _resolve_file(file_path)
-    probe = hls.probe_tracks(str(path))
-    return _serialize_tracks(probe)
+    file_path = await _find_episode_file(series_uc, series_id, season_number, episode_number)
+    file_path = _require_file(file_path)
+    tracks = await tracks_uc.execute(GetFileTracksInput(file_path=file_path))
+    return asdict(tracks)
 
 
 # -- Cache management ----------------------------------------------------------
@@ -280,17 +182,16 @@ async def episode_tracks(
 @inject  # type: ignore[misc]
 async def clear_movie_hls_cache(
     movie_id: str,
-    use_case: GetMovieByIdUseCase = Depends(
+    movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
-    hls: HlsService = Depends(
-        Provide[ApplicationContainer.media.hls_service],
+    clear_uc: ClearHlsCacheUseCase = Depends(
+        Provide[ApplicationContainer.media.clear_hls_cache],
     ),
 ) -> Response:
     """Clear cached HLS segments for a movie, forcing regeneration."""
-    movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
-    if movie.file_path:
-        hls.clear_cache(movie.file_path)
+    movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
+    await clear_uc.execute(ClearHlsCacheInput(file_path=movie.file_path))
     return Response(status_code=204)
 
 
@@ -302,15 +203,17 @@ async def clear_movie_hls_cache(
 async def stream_movie(
     movie_id: str,
     request: Request,
-    use_case: GetMovieByIdUseCase = Depends(
+    movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
+    ),
+    stream_uc: StreamFileRangeUseCase = Depends(
+        Provide[ApplicationContainer.media.stream_file_range],
     ),
 ) -> StreamingResponse:
     """Direct stream a movie file with Range support (MP4/WebM only)."""
-    movie = await use_case.execute(GetMovieByIdInput(movie_id=movie_id))
-    path = _resolve_file(movie.file_path)
-
-    return _build_range_response(str(path), path.stat().st_size, request.headers.get("range"))
+    movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
+    file_path = _require_file(movie.file_path)
+    return await _stream_range(stream_uc, file_path, request.headers.get("range"))
 
 
 @router.get("/episode/{series_id}/{season_number}/{episode_number}")  # type: ignore[misc]
@@ -320,18 +223,57 @@ async def stream_episode(
     season_number: int,
     episode_number: int,
     request: Request,
-    use_case: GetSeriesByIdUseCase = Depends(
+    series_uc: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
+    ),
+    stream_uc: StreamFileRangeUseCase = Depends(
+        Provide[ApplicationContainer.media.stream_file_range],
     ),
 ) -> StreamingResponse:
     """Direct stream an episode file with Range support."""
-    file_path = await _find_episode_file(use_case, series_id, season_number, episode_number)
-    path = _resolve_file(file_path)
-
-    return _build_range_response(str(path), path.stat().st_size, request.headers.get("range"))
+    file_path = await _find_episode_file(series_uc, series_id, season_number, episode_number)
+    file_path = _require_file(file_path)
+    return await _stream_range(stream_uc, file_path, request.headers.get("range"))
 
 
 # -- Helpers -------------------------------------------------------------------
+
+
+async def _serve_master(
+    use_case: GenerateHlsPlaylistUseCase,
+    file_path: str,
+    start_seconds: float,
+) -> Response:
+    """Run the generate-playlist use case and wrap its DTO in a Response."""
+    output = await use_case.execute(
+        GenerateHlsPlaylistInput(
+            file_path=file_path,
+            base_url_template=_MASTER_BASE_URL,
+            start_seconds=start_seconds,
+        )
+    )
+    return Response(
+        content=output.rewritten_content,
+        media_type="application/vnd.apple.mpegurl",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+async def _stream_range(
+    use_case: StreamFileRangeUseCase,
+    file_path: str,
+    range_header: str | None,
+) -> StreamingResponse:
+    """Run the range-streaming use case and build a StreamingResponse."""
+    output = await use_case.execute(
+        StreamFileRangeInput(file_path=file_path, range_header=range_header),
+    )
+    return StreamingResponse(
+        output.body,
+        status_code=output.status_code,
+        media_type=output.media_type,
+        headers=output.headers,
+    )
 
 
 async def _find_episode_file(
@@ -349,59 +291,6 @@ async def _find_episode_file(
                     return episode.file_path
             break
     return None
-
-
-async def _stream_range(
-    file_path: str,
-    start: int,
-    end: int,
-) -> AsyncGenerator[bytes, None]:
-    """Stream file bytes in 1MB chunks."""
-    chunk_size = 1024 * 1024
-    with Path(file_path).open("rb") as f:
-        f.seek(start)
-        remaining = end - start + 1
-        while remaining > 0:
-            data = f.read(min(chunk_size, remaining))
-            if not data:
-                break
-            remaining -= len(data)
-            yield data
-
-
-def _build_range_response(
-    file_path: str,
-    file_size: int,
-    range_header: str | None,
-) -> StreamingResponse:
-    """Build Range-based streaming response."""
-    if range_header:
-        range_spec = range_header.replace("bytes=", "")
-        parts = range_spec.split("-")
-        start = int(parts[0]) if parts[0] else 0
-        end = int(parts[1]) if parts[1] else file_size - 1
-        start = max(0, start)
-        end = min(end, file_size - 1)
-
-        return StreamingResponse(
-            _stream_range(file_path, start, end),
-            status_code=206,
-            media_type="video/mp4",
-            headers={
-                "Content-Range": f"bytes {start}-{end}/{file_size}",
-                "Accept-Ranges": "bytes",
-                "Content-Length": str(end - start + 1),
-            },
-        )
-
-    return StreamingResponse(
-        _stream_range(file_path, 0, file_size - 1),
-        media_type="video/mp4",
-        headers={
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(file_size),
-        },
-    )
 
 
 __all__ = ["router"]
