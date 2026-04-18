@@ -2,7 +2,9 @@
 
 from dataclasses import dataclass
 
-from src.modules.watch_progress.domain.repositories import WatchProgressRepository
+from src.modules.watch_progress.application.unit_of_work import (
+    WatchProgressUnitOfWorkFactory,
+)
 
 
 @dataclass(frozen=True)
@@ -25,8 +27,8 @@ class ClearSeriesProgressUseCase:
     next in-progress episode and the series reappears.
     """
 
-    def __init__(self, progress_repository: WatchProgressRepository) -> None:
-        self._repo = progress_repository
+    def __init__(self, uow_factory: WatchProgressUnitOfWorkFactory) -> None:
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: ClearSeriesProgressInput) -> int:
         """Execute the use case.
@@ -37,7 +39,8 @@ class ClearSeriesProgressUseCase:
         Returns:
             Number of episode progress records soft-deleted.
         """
-        return await self._repo.delete_by_series(input_dto.series_id)
+        async with self._uow_factory() as uow:
+            return await uow.progress.delete_by_series(input_dto.series_id)
 
 
 __all__ = ["ClearSeriesProgressUseCase"]

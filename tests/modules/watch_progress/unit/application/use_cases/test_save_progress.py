@@ -1,14 +1,13 @@
 """Tests for SaveProgressUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
 
 from src.modules.watch_progress.application.dtos import ProgressOutput, SaveProgressInput
 from src.modules.watch_progress.application.use_cases import SaveProgressUseCase
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.repositories import WatchProgressRepository
 from src.modules.watch_progress.domain.value_objects import WatchableMediaType
+from tests.modules.watch_progress.unit.conftest import make_watch_progress_uow_mock
 
 
 class TestSaveProgressUseCase:
@@ -16,10 +15,11 @@ class TestSaveProgressUseCase:
 
     @pytest.mark.asyncio
     async def test_creates_new_progress_when_none_exists(self):
-        mock_repo = AsyncMock(spec=WatchProgressRepository)
+        mocks = make_watch_progress_uow_mock()
+        mock_repo = mocks.progress
         mock_repo.find_by_media_id.return_value = None
         mock_repo.save.side_effect = lambda p: p
-        use_case = SaveProgressUseCase(progress_repository=mock_repo)
+        use_case = SaveProgressUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(
             SaveProgressInput(
@@ -44,10 +44,11 @@ class TestSaveProgressUseCase:
             position_seconds=1000,
             duration_seconds=7200,
         )
-        mock_repo = AsyncMock(spec=WatchProgressRepository)
+        mocks = make_watch_progress_uow_mock()
+        mock_repo = mocks.progress
         mock_repo.find_by_media_id.return_value = existing
         mock_repo.save.side_effect = lambda p: p
-        use_case = SaveProgressUseCase(progress_repository=mock_repo)
+        use_case = SaveProgressUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(
             SaveProgressInput(
@@ -63,10 +64,11 @@ class TestSaveProgressUseCase:
 
     @pytest.mark.asyncio
     async def test_auto_completes_at_90_percent(self):
-        mock_repo = AsyncMock(spec=WatchProgressRepository)
+        mocks = make_watch_progress_uow_mock()
+        mock_repo = mocks.progress
         mock_repo.find_by_media_id.return_value = None
         mock_repo.save.side_effect = lambda p: p
-        use_case = SaveProgressUseCase(progress_repository=mock_repo)
+        use_case = SaveProgressUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(
             SaveProgressInput(
@@ -81,10 +83,11 @@ class TestSaveProgressUseCase:
 
     @pytest.mark.asyncio
     async def test_saves_audio_and_subtitle_track(self):
-        mock_repo = AsyncMock(spec=WatchProgressRepository)
+        mocks = make_watch_progress_uow_mock()
+        mock_repo = mocks.progress
         mock_repo.find_by_media_id.return_value = None
         mock_repo.save.side_effect = lambda p: p
-        use_case = SaveProgressUseCase(progress_repository=mock_repo)
+        use_case = SaveProgressUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(
             SaveProgressInput(
