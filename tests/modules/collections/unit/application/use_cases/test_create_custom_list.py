@@ -1,8 +1,8 @@
 """Tests for CreateCustomListUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 from src.building_blocks.domain import BusinessRuleViolationException
 from src.modules.collections.application.dtos import (
@@ -11,7 +11,6 @@ from src.modules.collections.application.dtos import (
 )
 from src.modules.collections.application.use_cases import CreateCustomListUseCase
 from src.modules.collections.domain.entities import MAX_LISTS, CustomList
-from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 
 @pytest.mark.unit

@@ -1,8 +1,8 @@
 """Tests for ToggleWatchlistUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 from src.modules.collections.application.dtos import (
     ToggleWatchlistInput,
@@ -11,7 +11,6 @@ from src.modules.collections.application.dtos import (
 from src.modules.collections.application.use_cases import ToggleWatchlistUseCase
 from src.modules.collections.domain.entities import WatchlistItem
 from src.shared_kernel.value_objects import CollectionMediaType
-from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 
 @pytest.mark.unit

@@ -36,9 +36,7 @@ class AddItemToCustomListUseCase:
             if not custom_list:
                 raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
 
-            existing_item = await uow.custom_lists.find_item(
-                input_dto.list_id, input_dto.media_id
-            )
+            existing_item = await uow.custom_lists.find_item(input_dto.list_id, input_dto.media_id)
             if existing_item:
                 raise BusinessRuleViolationException(
                     message="Item already exists in this list",

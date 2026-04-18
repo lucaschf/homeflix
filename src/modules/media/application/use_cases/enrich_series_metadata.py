@@ -69,9 +69,7 @@ class EnrichSeriesMetadataUseCase:
                 raise ResourceNotFoundException.for_resource("Series", input_dto.media_id)
 
             if series.tmdb_id and not input_dto.force:
-                return EnrichMediaOutput(
-                    media_id=input_dto.media_id, enriched=False, provider=None
-                )
+                return EnrichMediaOutput(media_id=input_dto.media_id, enriched=False, provider=None)
 
             metadata, provider_name = await self._fetch_metadata(series)
             if not metadata:

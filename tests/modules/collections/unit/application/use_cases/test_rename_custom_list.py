@@ -1,8 +1,8 @@
 """Tests for RenameCustomListUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.building_blocks.domain import BusinessRuleViolationException
@@ -12,7 +12,6 @@ from src.modules.collections.application.dtos import (
 )
 from src.modules.collections.application.use_cases import RenameCustomListUseCase
 from src.modules.collections.domain.entities import CustomList
-from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 
 @pytest.mark.unit

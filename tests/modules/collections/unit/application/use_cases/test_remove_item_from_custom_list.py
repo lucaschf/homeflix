@@ -1,8 +1,8 @@
 """Tests for RemoveItemFromCustomListUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.collections.application.dtos import RemoveItemFromCustomListInput
@@ -10,7 +10,6 @@ from src.modules.collections.application.use_cases import (
     RemoveItemFromCustomListUseCase,
 )
 from src.modules.collections.domain.entities import CustomList
-from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 
 @pytest.mark.unit

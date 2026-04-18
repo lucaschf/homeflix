@@ -3,11 +3,11 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.library.unit.conftest import make_library_uow_mock
 
 from src.modules.library.application.dtos.library_dtos import CreateLibraryInput
 from src.modules.library.application.use_cases.create_library import CreateLibraryUseCase
 from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
-from tests.modules.library.unit.conftest import make_library_uow_mock
 
 
 def _configure_uow_mocks() -> "tuple[CreateLibraryUseCase, object, object]":

@@ -30,13 +30,9 @@ class RemoveItemFromCustomListUseCase:
             if not custom_list:
                 raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
 
-            removed = await uow.custom_lists.remove_item(
-                input_dto.list_id, input_dto.media_id
-            )
+            removed = await uow.custom_lists.remove_item(input_dto.list_id, input_dto.media_id)
             if not removed:
-                raise ResourceNotFoundException.for_resource(
-                    "CustomListItem", input_dto.media_id
-                )
+                raise ResourceNotFoundException.for_resource("CustomListItem", input_dto.media_id)
 
             updated_list = custom_list.decrement_item_count()
             await uow.custom_lists.update(updated_list)
