@@ -210,9 +210,7 @@ class ScanMediaDirectoriesUseCase:
         async with self._uow_factory() as uow:
             existing = await self._find_existing_movie(uow, paths, by_path)
             if existing:
-                created, updated, events = await self._update_movie(
-                    uow, existing, paths, by_path
-                )
+                created, updated, events = await self._update_movie(uow, existing, paths, by_path)
             else:
                 created, updated, events = await self._create_movie(uow, paths, by_path)
         await self._dispatch_events(events)
