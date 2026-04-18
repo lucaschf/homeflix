@@ -1,26 +1,47 @@
-"""SQLAlchemy repository for user preferences (singleton-per-user)."""
+"""SQLAlchemy repository implementing ``PreferencesRepository``."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.preferences.domain.entities import PlaybackPreferences
+from src.modules.preferences.domain.repositories import PreferencesRepository
+from src.modules.preferences.infrastructure.persistence.mappers import PreferencesMapper
 from src.modules.preferences.infrastructure.persistence.models.preferences_model import (
     PreferencesModel,
 )
 
-DEFAULT_USER_KEY = "default"
 
+class SQLAlchemyPreferencesRepository(PreferencesRepository):
+    """Persist preferences via SQLAlchemy.
 
-class PreferencesRepository:
-    """Read/upsert the preferences row for a given user key.
-
-    Until auth lands, every call uses ``DEFAULT_USER_KEY``.
+    Transaction boundary is owned by the surrounding Unit of Work —
+    this class never calls ``commit()`` or ``rollback()``.
     """
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def get(self, user_key: str = DEFAULT_USER_KEY) -> PreferencesModel | None:
-        """Return the preferences row or ``None`` if none exists yet."""
+    async def find_by_user_key(self, user_key: str) -> PlaybackPreferences | None:
+        """Map the persisted row (if any) back into a domain entity."""
+        model = await self._fetch_model(user_key)
+        return PreferencesMapper.to_entity(model) if model else None
+
+    async def save(self, preferences: PlaybackPreferences) -> PlaybackPreferences:
+        """Upsert the row; flush but leave the commit to the Unit of Work."""
+        existing = await self._fetch_model(preferences.user_key)
+        if existing is None:
+            model = PreferencesMapper.new_model(preferences)
+            self._session.add(model)
+        else:
+            model = PreferencesMapper.update_model(existing, preferences)
+
+        # Flush so server-generated timestamps/defaults land on the
+        # in-memory instance without committing — that's the UoW's job.
+        await self._session.flush()
+        await self._session.refresh(model)
+        return PreferencesMapper.to_entity(model)
+
+    async def _fetch_model(self, user_key: str) -> PreferencesModel | None:
         stmt = select(PreferencesModel).where(
             PreferencesModel.user_key == user_key,
             PreferencesModel.deleted_at.is_(None),
@@ -28,49 +49,5 @@ class PreferencesRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def upsert(
-        self,
-        *,
-        user_key: str = DEFAULT_USER_KEY,
-        audio_lang: str | None = None,
-        subtitle_lang: str | None = None,
-        subtitle_mode: str | None = None,
-        default_quality: str | None = None,
-        speed: float | None = None,
-    ) -> PreferencesModel:
-        """Create or update the preferences row.
 
-        Only non-``None`` fields are touched — callers can send a
-        partial update and the rest keeps its current value (or the
-        column default for a brand-new row).
-        """
-        model = await self.get(user_key)
-
-        if model is None:
-            model = PreferencesModel(
-                external_id=f"prf_{user_key}",
-                user_key=user_key,
-            )
-            self._session.add(model)
-
-        if audio_lang is not None:
-            model.audio_lang = audio_lang
-        if subtitle_lang is not None:
-            model.subtitle_lang = subtitle_lang
-        if subtitle_mode is not None:
-            model.subtitle_mode = subtitle_mode
-        if default_quality is not None:
-            model.default_quality = default_quality
-        if speed is not None:
-            model.speed = speed
-
-        await self._session.flush()
-        await self._session.commit()
-
-        # Re-read so we return server-generated timestamps.
-        refreshed = await self.get(user_key)
-        assert refreshed is not None
-        return refreshed
-
-
-__all__ = ["PreferencesRepository"]
+__all__ = ["SQLAlchemyPreferencesRepository"]
