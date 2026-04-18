@@ -10,6 +10,7 @@ from src.modules.media.application.use_cases.add_file_variant import AddFileVari
 from src.modules.media.application.use_cases.bulk_enrich_metadata import (
     BulkEnrichMetadataUseCase,
 )
+from src.modules.media.application.use_cases.clear_hls_cache import ClearHlsCacheUseCase
 from src.modules.media.application.use_cases.delete_movie import DeleteMovieUseCase
 from src.modules.media.application.use_cases.enrich_movie_metadata import (
     EnrichMovieMetadataUseCase,
@@ -17,7 +18,11 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
 from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
 )
+from src.modules.media.application.use_cases.generate_hls_playlist import (
+    GenerateHlsPlaylistUseCase,
+)
 from src.modules.media.application.use_cases.get_featured_media import GetFeaturedMediaUseCase
+from src.modules.media.application.use_cases.get_file_tracks import GetFileTracksUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
@@ -30,7 +35,9 @@ from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
 )
 from src.modules.media.application.use_cases.search_catalog import SearchCatalogUseCase
+from src.modules.media.application.use_cases.serve_hls_file import ServeHlsFileUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
+from src.modules.media.application.use_cases.stream_file_range import StreamFileRangeUseCase
 from src.modules.media.infrastructure.acl import ProgressLookupAdapter
 from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
@@ -45,6 +52,7 @@ from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import
     SqlAlchemyMediaUnitOfWorkFactory,
 )
 from src.modules.media.infrastructure.streaming import HlsService, MediaProbeService
+from src.modules.media.infrastructure.streaming.file_streamer import LocalFileStreamer
 from src.modules.watch_progress.infrastructure.persistence.repositories import (
     SQLAlchemyWatchProgressRepository,
 )
@@ -210,6 +218,37 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         probe_service=media_probe_service,
         enable_eviction=True,
         max_cache_size_mb=hls_cache_max_size_mb,
+    )
+
+    file_streamer = providers.Factory(LocalFileStreamer)
+
+    # =========================================================================
+    # Use Cases — Streaming
+    # =========================================================================
+
+    generate_hls_playlist = providers.Factory(
+        GenerateHlsPlaylistUseCase,
+        hls=hls_service,
+    )
+
+    serve_hls_file = providers.Factory(
+        ServeHlsFileUseCase,
+        hls=hls_service,
+    )
+
+    get_file_tracks = providers.Factory(
+        GetFileTracksUseCase,
+        hls=hls_service,
+    )
+
+    clear_hls_cache = providers.Factory(
+        ClearHlsCacheUseCase,
+        hls=hls_service,
+    )
+
+    stream_file_range = providers.Factory(
+        StreamFileRangeUseCase,
+        file_streamer=file_streamer,
     )
 
     # =========================================================================
