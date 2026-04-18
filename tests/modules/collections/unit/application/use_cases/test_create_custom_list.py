@@ -1,8 +1,8 @@
 """Tests for CreateCustomListUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 from src.building_blocks.domain import BusinessRuleViolationException
 from src.modules.collections.application.dtos import (
@@ -11,7 +11,6 @@ from src.modules.collections.application.dtos import (
 )
 from src.modules.collections.application.use_cases import CreateCustomListUseCase
 from src.modules.collections.domain.entities import MAX_LISTS, CustomList
-from src.modules.collections.domain.repositories import CustomListRepository
 
 
 @pytest.mark.unit
@@ -20,12 +19,13 @@ class TestCreateCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_create_list_successfully(self) -> None:
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.count.return_value = 0
         mock_repo.find_by_name.return_value = None
         saved_list = CustomList.create(name="Action Movies")
         mock_repo.add.return_value = saved_list
-        use_case = CreateCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = CreateCustomListUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(CreateCustomListInput(name="Action Movies"))
 
@@ -36,9 +36,10 @@ class TestCreateCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_raise_when_list_limit_reached(self) -> None:
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.count.return_value = MAX_LISTS
-        use_case = CreateCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = CreateCustomListUseCase(uow_factory=mocks.factory)
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await use_case.execute(CreateCustomListInput(name="New List"))
@@ -48,10 +49,11 @@ class TestCreateCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_raise_when_name_already_exists(self) -> None:
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.count.return_value = 1
         mock_repo.find_by_name.return_value = CustomList.create(name="Action Movies")
-        use_case = CreateCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = CreateCustomListUseCase(uow_factory=mocks.factory)
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await use_case.execute(CreateCustomListInput(name="Action Movies"))
@@ -61,12 +63,13 @@ class TestCreateCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_strip_name_before_duplicate_check(self) -> None:
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.count.return_value = 0
         mock_repo.find_by_name.return_value = None
         saved_list = CustomList.create(name="Action Movies")
         mock_repo.add.return_value = saved_list
-        use_case = CreateCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = CreateCustomListUseCase(uow_factory=mocks.factory)
 
         await use_case.execute(CreateCustomListInput(name="  Action Movies  "))
 

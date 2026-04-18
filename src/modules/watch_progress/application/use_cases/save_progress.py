@@ -1,8 +1,10 @@
 """SaveProgressUseCase - Save or update watch progress."""
 
 from src.modules.watch_progress.application.dtos import ProgressOutput, SaveProgressInput
+from src.modules.watch_progress.application.unit_of_work import (
+    WatchProgressUnitOfWorkFactory,
+)
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.repositories import WatchProgressRepository
 from src.modules.watch_progress.domain.value_objects import WatchableMediaType
 
 
@@ -11,24 +13,15 @@ class SaveProgressUseCase:
 
     Creates a new progress record if none exists, or updates the
     existing one. Automatically marks as completed at ≥90%.
-
-    Example:
-        >>> use_case = SaveProgressUseCase(progress_repository)
-        >>> result = await use_case.execute(SaveProgressInput(
-        ...     media_id="mov_abc123def456",
-        ...     media_type="movie",
-        ...     position_seconds=3600,
-        ...     duration_seconds=7200,
-        ... ))
     """
 
-    def __init__(self, progress_repository: WatchProgressRepository) -> None:
+    def __init__(self, uow_factory: WatchProgressUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            progress_repository: Repository for watch progress persistence.
+            uow_factory: Factory that opens a fresh watch progress UoW.
         """
-        self._repo = progress_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: SaveProgressInput) -> ProgressOutput:
         """Execute the use case.
@@ -39,26 +32,27 @@ class SaveProgressUseCase:
         Returns:
             The saved progress output.
         """
-        existing = await self._repo.find_by_media_id(input_dto.media_id)
+        async with self._uow_factory() as uow:
+            existing = await uow.progress.find_by_media_id(input_dto.media_id)
 
-        if existing:
-            progress = existing.update_position(
-                position_seconds=input_dto.position_seconds,
-                duration_seconds=input_dto.duration_seconds,
-                audio_track=input_dto.audio_track,
-                subtitle_track=input_dto.subtitle_track,
-            )
-        else:
-            progress = WatchProgress.create(
-                media_id=input_dto.media_id,
-                media_type=WatchableMediaType(input_dto.media_type),
-                position_seconds=input_dto.position_seconds,
-                duration_seconds=input_dto.duration_seconds,
-                audio_track=input_dto.audio_track,
-                subtitle_track=input_dto.subtitle_track,
-            )
+            if existing:
+                progress = existing.update_position(
+                    position_seconds=input_dto.position_seconds,
+                    duration_seconds=input_dto.duration_seconds,
+                    audio_track=input_dto.audio_track,
+                    subtitle_track=input_dto.subtitle_track,
+                )
+            else:
+                progress = WatchProgress.create(
+                    media_id=input_dto.media_id,
+                    media_type=WatchableMediaType(input_dto.media_type),
+                    position_seconds=input_dto.position_seconds,
+                    duration_seconds=input_dto.duration_seconds,
+                    audio_track=input_dto.audio_track,
+                    subtitle_track=input_dto.subtitle_track,
+                )
 
-        saved = await self._repo.save(progress)
+            saved = await uow.progress.save(progress)
         return ProgressOutput.from_entity(saved)
 
 

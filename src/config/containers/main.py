@@ -58,6 +58,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     media = providers.Container(
         MediaContainer,
         session=infrastructure.session,
+        session_factory=infrastructure.session_factory,
         event_bus=infrastructure.event_bus,
         tmdb_api_key=config.provided.tmdb_api_key,
         hls_cache_directory=config.provided.hls_cache_directory,
@@ -67,6 +68,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     library = providers.Container(
         LibraryContainer,
         session=infrastructure.session,
+        session_factory=infrastructure.session_factory,
         movie_repository=media.movie_repository,
         series_repository=media.series_repository,
     )
@@ -79,6 +81,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     watch_progress = providers.Container(
         WatchProgressContainer,
         session=infrastructure.session,
+        session_factory=infrastructure.session_factory,
         movie_repository=media.movie_repository,
         series_repository=media.series_repository,
     )
@@ -86,6 +89,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     collections = providers.Container(
         CollectionsContainer,
         session=infrastructure.session,
+        session_factory=infrastructure.session_factory,
         movie_repository=media.movie_repository,
         series_repository=media.series_repository,
     )

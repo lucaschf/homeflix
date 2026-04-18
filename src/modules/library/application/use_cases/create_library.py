@@ -6,9 +6,9 @@ from src.modules.library.application.dtos.library_dtos import (
     CreateLibraryInput,
     LibraryOutput,
 )
+from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
 from src.modules.library.application.use_cases._to_output import library_to_output
 from src.modules.library.domain.entities.library import Library
-from src.modules.library.domain.repositories.library_repository import LibraryRepository
 from src.modules.library.domain.value_objects.library_settings import LibrarySettings
 from src.modules.library.domain.value_objects.library_type import LibraryType
 from src.modules.library.domain.value_objects.metadata_provider import (
@@ -25,11 +25,11 @@ class CreateLibraryUseCase:
 
     def __init__(
         self,
-        library_repository: LibraryRepository,
+        uow_factory: LibraryUnitOfWorkFactory,
         movie_repository: MovieRepository,
         series_repository: SeriesRepository,
     ) -> None:
-        self._repo = library_repository
+        self._uow_factory = uow_factory
         self._movie_repo = movie_repository
         self._series_repo = series_repository
 
@@ -64,7 +64,8 @@ class CreateLibraryUseCase:
         if input_dto.scan_schedule:
             library = library.with_updates(scan_schedule=input_dto.scan_schedule)
 
-        saved = await self._repo.save(library)
+        async with self._uow_factory() as uow:
+            saved = await uow.libraries.save(library)
         return await library_to_output(saved, self._movie_repo, self._series_repo)
 
 

@@ -57,7 +57,7 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         """Persist a new custom list."""
         model = CustomListMapper.to_model(custom_list)
         self._session.add(model)
-        await self._session.commit()
+        await self._session.flush()
         await self._session.refresh(model)
         return CustomListMapper.to_entity(model)
 
@@ -75,7 +75,7 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
             raise ValueError(msg)
 
         CustomListMapper.update_model(model, custom_list)
-        await self._session.commit()
+        await self._session.flush()
         await self._session.refresh(model)
         return CustomListMapper.to_entity(model)
 
@@ -101,7 +101,7 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
             item_model.soft_delete()
 
         model.soft_delete()
-        await self._session.commit()
+        await self._session.flush()
         return True
 
     async def list_all(self) -> list[CustomList]:
@@ -177,13 +177,13 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
             existing.restore()
             existing.position = item.position
             existing.added_at = item.added_at
-            await self._session.commit()
+            await self._session.flush()
             await self._session.refresh(existing)
             return CustomListItemMapper.to_entity(existing)
 
         model = CustomListItemMapper.to_model(item, list_internal_id=internal_id)
         self._session.add(model)
-        await self._session.commit()
+        await self._session.flush()
         await self._session.refresh(model)
         return CustomListItemMapper.to_entity(model)
 
@@ -205,7 +205,7 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
             return False
 
         model.soft_delete()
-        await self._session.commit()
+        await self._session.flush()
         return True
 
     async def list_items(self, list_id: str) -> list[CustomListItem]:

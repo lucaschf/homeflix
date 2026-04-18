@@ -1,8 +1,8 @@
 """Tests for AddItemToCustomListUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.building_blocks.domain import BusinessRuleViolationException
@@ -13,7 +13,6 @@ from src.modules.collections.domain.entities import (
     CustomList,
     CustomListItem,
 )
-from src.modules.collections.domain.repositories import CustomListRepository
 from src.shared_kernel.value_objects import CollectionMediaType
 
 
@@ -28,7 +27,8 @@ class TestAddItemToCustomListUseCase:
     @pytest.mark.asyncio
     async def test_should_add_item_successfully(self) -> None:
         custom_list = _create_list()
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
         mock_repo.find_item.return_value = None
         mock_repo.get_next_position.return_value = 0
@@ -38,7 +38,7 @@ class TestAddItemToCustomListUseCase:
             position=0,
         )
         mock_repo.update.return_value = custom_list.increment_item_count()
-        use_case = AddItemToCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = AddItemToCustomListUseCase(uow_factory=mocks.factory)
 
         await use_case.execute(
             AddItemToCustomListInput(
@@ -53,9 +53,10 @@ class TestAddItemToCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_raise_when_list_not_found(self) -> None:
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = None
-        use_case = AddItemToCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = AddItemToCustomListUseCase(uow_factory=mocks.factory)
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
             await use_case.execute(
@@ -75,10 +76,11 @@ class TestAddItemToCustomListUseCase:
             media_id="mov_abc123def456",
             media_type=CollectionMediaType.MOVIE,
         )
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
         mock_repo.find_item.return_value = existing_item
-        use_case = AddItemToCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = AddItemToCustomListUseCase(uow_factory=mocks.factory)
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await use_case.execute(
@@ -94,10 +96,11 @@ class TestAddItemToCustomListUseCase:
     @pytest.mark.asyncio
     async def test_should_raise_when_list_is_full(self) -> None:
         custom_list = _create_list(item_count=MAX_ITEMS_PER_LIST)
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
         mock_repo.find_item.return_value = None
-        use_case = AddItemToCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = AddItemToCustomListUseCase(uow_factory=mocks.factory)
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await use_case.execute(
@@ -113,7 +116,8 @@ class TestAddItemToCustomListUseCase:
     @pytest.mark.asyncio
     async def test_should_use_next_position(self) -> None:
         custom_list = _create_list(item_count=3)
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
         mock_repo.find_item.return_value = None
         mock_repo.get_next_position.return_value = 3
@@ -123,7 +127,7 @@ class TestAddItemToCustomListUseCase:
             position=3,
         )
         mock_repo.update.return_value = custom_list.increment_item_count()
-        use_case = AddItemToCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = AddItemToCustomListUseCase(uow_factory=mocks.factory)
 
         await use_case.execute(
             AddItemToCustomListInput(

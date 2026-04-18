@@ -14,26 +14,36 @@ from src.modules.watch_progress.application.use_cases.clear_series_progress impo
 from src.modules.watch_progress.infrastructure.persistence.repositories import (
     SQLAlchemyWatchProgressRepository,
 )
+from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SqlAlchemyWatchProgressUnitOfWorkFactory,
+)
 
 
 class WatchProgressContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     """Container for Watch Progress bounded context dependencies.
 
-    The ``session`` and ``movie_repository`` dependencies must be
-    wired from the parent container.
+    The ``session``, ``session_factory``, ``movie_repository``, and
+    ``series_repository`` dependencies must be wired from the parent
+    container.
     """
 
     session = providers.Dependency()
+    session_factory = providers.Dependency()
     movie_repository = providers.Dependency()
     series_repository = providers.Dependency()
 
     # =========================================================================
-    # Repositories
+    # Repositories (read-only use cases) and Unit of Work (writes)
     # =========================================================================
 
     progress_repository = providers.Factory(
         SQLAlchemyWatchProgressRepository,
         session=session,
+    )
+
+    watch_progress_unit_of_work_factory = providers.Singleton(
+        SqlAlchemyWatchProgressUnitOfWorkFactory,
+        session_factory=session_factory,
     )
 
     # =========================================================================
@@ -42,7 +52,7 @@ class WatchProgressContainer(containers.DeclarativeContainer):  # type: ignore[m
 
     save_progress = providers.Factory(
         SaveProgressUseCase,
-        progress_repository=progress_repository,
+        uow_factory=watch_progress_unit_of_work_factory,
     )
 
     get_progress = providers.Factory(
@@ -59,10 +69,10 @@ class WatchProgressContainer(containers.DeclarativeContainer):  # type: ignore[m
 
     clear_progress = providers.Factory(
         ClearProgressUseCase,
-        progress_repository=progress_repository,
+        uow_factory=watch_progress_unit_of_work_factory,
     )
 
     clear_series_progress = providers.Factory(
         ClearSeriesProgressUseCase,
-        progress_repository=progress_repository,
+        uow_factory=watch_progress_unit_of_work_factory,
     )

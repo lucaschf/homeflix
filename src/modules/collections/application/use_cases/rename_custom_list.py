@@ -6,28 +6,19 @@ from src.modules.collections.application.dtos import (
     CustomListOutput,
     RenameCustomListInput,
 )
-from src.modules.collections.domain.repositories import CustomListRepository
+from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
 
 
 class RenameCustomListUseCase:
-    """Rename an existing custom list.
+    """Rename an existing custom list."""
 
-    Enforces unique name constraint.
-
-    Example:
-        >>> use_case = RenameCustomListUseCase(custom_list_repository)
-        >>> result = await use_case.execute(
-        ...     RenameCustomListInput(list_id="lst_abc123", name="New Name"),
-        ... )
-    """
-
-    def __init__(self, custom_list_repository: CustomListRepository) -> None:
+    def __init__(self, uow_factory: CollectionsUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            custom_list_repository: Repository for custom list persistence.
+            uow_factory: Factory that opens a fresh collections Unit of Work.
         """
-        self._repo = custom_list_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: RenameCustomListInput) -> CustomListOutput:
         """Execute the use case.
@@ -42,21 +33,22 @@ class RenameCustomListUseCase:
             ResourceNotFoundException: If the list does not exist.
             BusinessRuleViolationException: If the name is already taken.
         """
-        custom_list = await self._repo.find_by_id(input_dto.list_id)
-        if not custom_list:
-            raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
+        async with self._uow_factory() as uow:
+            custom_list = await uow.custom_lists.find_by_id(input_dto.list_id)
+            if not custom_list:
+                raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
 
-        new_name = input_dto.name.strip()
-        existing = await self._repo.find_by_name(new_name)
-        if existing and str(existing.id) != input_dto.list_id:
-            raise BusinessRuleViolationException(
-                message=f"A list named '{new_name}' already exists",
-                message_code="CUSTOM_LIST_NAME_DUPLICATE",
-                rule_code="CUSTOM_LIST_NAME_DUPLICATE",
-            )
+            new_name = input_dto.name.strip()
+            existing = await uow.custom_lists.find_by_name(new_name)
+            if existing and str(existing.id) != input_dto.list_id:
+                raise BusinessRuleViolationException(
+                    message=f"A list named '{new_name}' already exists",
+                    message_code="CUSTOM_LIST_NAME_DUPLICATE",
+                    rule_code="CUSTOM_LIST_NAME_DUPLICATE",
+                )
 
-        updated = custom_list.rename(new_name)
-        saved = await self._repo.update(updated)
+            updated = custom_list.rename(new_name)
+            saved = await uow.custom_lists.update(updated)
         return CustomListOutput.from_entity(saved)
 
 

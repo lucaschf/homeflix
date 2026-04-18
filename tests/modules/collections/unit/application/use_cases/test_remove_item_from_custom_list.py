@@ -1,8 +1,8 @@
 """Tests for RemoveItemFromCustomListUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.collections.application.dtos import RemoveItemFromCustomListInput
@@ -10,7 +10,6 @@ from src.modules.collections.application.use_cases import (
     RemoveItemFromCustomListUseCase,
 )
 from src.modules.collections.domain.entities import CustomList
-from src.modules.collections.domain.repositories import CustomListRepository
 
 
 @pytest.mark.unit
@@ -20,11 +19,12 @@ class TestRemoveItemFromCustomListUseCase:
     @pytest.mark.asyncio
     async def test_should_remove_item_successfully(self) -> None:
         custom_list = CustomList.create(name="Test").with_updates(item_count=3)
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
         mock_repo.remove_item.return_value = True
         mock_repo.update.return_value = custom_list.decrement_item_count()
-        use_case = RemoveItemFromCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = RemoveItemFromCustomListUseCase(uow_factory=mocks.factory)
 
         await use_case.execute(
             RemoveItemFromCustomListInput(
@@ -38,9 +38,10 @@ class TestRemoveItemFromCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_raise_when_list_not_found(self) -> None:
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = None
-        use_case = RemoveItemFromCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = RemoveItemFromCustomListUseCase(uow_factory=mocks.factory)
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
             await use_case.execute(
@@ -55,10 +56,11 @@ class TestRemoveItemFromCustomListUseCase:
     @pytest.mark.asyncio
     async def test_should_raise_when_item_not_in_list(self) -> None:
         custom_list = CustomList.create(name="Test")
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
         mock_repo.remove_item.return_value = False
-        use_case = RemoveItemFromCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = RemoveItemFromCustomListUseCase(uow_factory=mocks.factory)
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
             await use_case.execute(
@@ -73,11 +75,12 @@ class TestRemoveItemFromCustomListUseCase:
     @pytest.mark.asyncio
     async def test_should_decrement_item_count_after_removal(self) -> None:
         custom_list = CustomList.create(name="Test").with_updates(item_count=5)
-        mock_repo = AsyncMock(spec=CustomListRepository)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
         mock_repo.remove_item.return_value = True
         mock_repo.update.return_value = custom_list.decrement_item_count()
-        use_case = RemoveItemFromCustomListUseCase(custom_list_repository=mock_repo)
+        use_case = RemoveItemFromCustomListUseCase(uow_factory=mocks.factory)
 
         await use_case.execute(
             RemoveItemFromCustomListInput(

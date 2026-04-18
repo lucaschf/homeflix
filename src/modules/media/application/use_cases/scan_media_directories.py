@@ -7,9 +7,12 @@ from src.building_blocks.application.event_bus import EventBus
 from src.building_blocks.domain.events import DomainEvent
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput, ScanMediaOutput
 from src.modules.media.application.ports import FileSystemScanner, MediaType, ScannedFile
+from src.modules.media.application.unit_of_work import (
+    MediaUnitOfWork,
+    MediaUnitOfWorkFactory,
+)
 from src.modules.media.domain.entities import Episode, Movie, Season, Series
 from src.modules.media.domain.events import MediaCreatedEvent
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import (
     Duration,
     EpisodeNumber,
@@ -37,11 +40,14 @@ class ScanMediaDirectoriesUseCase:
     when their stored resolution is ``Unknown`` or their track lists are
     still empty, so rescans of fully-populated libraries skip ffprobe.
 
+    Each movie group and each series is persisted in its own Unit of
+    Work so a failure on one group rolls back only that transaction —
+    other groups discovered in the same scan commit independently.
+
     Args:
         file_scanner: Port for filesystem scanning.
         variant_detector: Service for grouping file variants.
-        movie_repository: Repository for movie persistence.
-        series_repository: Repository for series persistence.
+        uow_factory: Factory that opens a fresh media Unit of Work per group.
         probe_service: Optional ffprobe service for track and resolution detection.
         event_bus: Optional event bus for domain events.
     """
@@ -50,15 +56,13 @@ class ScanMediaDirectoriesUseCase:
         self,
         file_scanner: FileSystemScanner,
         variant_detector: VariantDetector,
-        movie_repository: MovieRepository,
-        series_repository: SeriesRepository,
+        uow_factory: MediaUnitOfWorkFactory,
         probe_service: MediaProbeService | None = None,
         event_bus: EventBus | None = None,
     ) -> None:
         self._file_scanner = file_scanner
         self._variant_detector = variant_detector
-        self._movie_repository = movie_repository
-        self._series_repository = series_repository
+        self._uow_factory = uow_factory
         self._probe_service = probe_service
         self._event_bus = event_bus
 
@@ -202,26 +206,29 @@ class ScanMediaDirectoriesUseCase:
         paths: list[str],
         by_path: dict[str, ScannedFile],
     ) -> tuple[int, int]:
-        """Process a single group of movie file variants."""
-        existing = await self._find_existing_movie(paths, by_path)
-        if existing:
-            return await self._update_movie(existing, paths, by_path)
-        return await self._create_movie(paths, by_path)
+        """Process a single group of movie file variants in its own UoW."""
+        async with self._uow_factory() as uow:
+            existing = await self._find_existing_movie(uow, paths, by_path)
+            if existing:
+                return await self._update_movie(uow, existing, paths, by_path)
+            return await self._create_movie(uow, paths, by_path)
 
+    @staticmethod
     async def _find_existing_movie(
-        self,
+        uow: MediaUnitOfWork,
         paths: list[str],
         by_path: dict[str, ScannedFile],
     ) -> Movie | None:
         """Find an existing movie matching any of the given file paths."""
         for path in paths:
-            movie = await self._movie_repository.find_by_file_path(by_path[path].file_path)
+            movie = await uow.movies.find_by_file_path(by_path[path].file_path)
             if movie:
                 return movie
         return None
 
     async def _update_movie(
         self,
+        uow: MediaUnitOfWork,
         movie: Movie,
         paths: list[str],
         by_path: dict[str, ScannedFile],
@@ -248,12 +255,13 @@ class ScanMediaDirectoriesUseCase:
 
         if changed:
             movie = movie.with_updates(files=files)
-            await self._movie_repository.save(movie)
+            await uow.movies.save(movie)
             return 0, 1
         return 0, 0
 
     async def _create_movie(
         self,
+        uow: MediaUnitOfWork,
         paths: list[str],
         by_path: dict[str, ScannedFile],
     ) -> tuple[int, int]:
@@ -274,7 +282,7 @@ class ScanMediaDirectoriesUseCase:
                 await self._build_new_media_file(by_path[path], is_primary=False)
             )
         events = movie.pull_events()
-        await self._movie_repository.save(movie)
+        await uow.movies.save(movie)
         await self._dispatch_events(events)
         return 1, 0
 
@@ -311,29 +319,30 @@ class ScanMediaDirectoriesUseCase:
         series_name: str,
         files: list[ScannedFile],
     ) -> tuple[int, int]:
-        """Process all episodes of a single series."""
+        """Process all episodes of a single series in its own UoW."""
         created = 0
         updated = 0
 
-        series = await self._series_repository.find_by_title(Title(series_name))
-        if not series:
-            year = min((f.year for f in files if f.year), default=_current_year())
-            series = Series.create(title=series_name, start_year=year)
+        async with self._uow_factory() as uow:
+            series = await uow.series.find_by_title(Title(series_name))
+            if not series:
+                year = min((f.year for f in files if f.year), default=_current_year())
+                series = Series.create(title=series_name, start_year=year)
 
-        ep_groups: dict[tuple[int, int], list[ScannedFile]] = defaultdict(list)
-        for f in files:
-            if f.season_number is not None and f.episode_number is not None:
-                ep_groups[(f.season_number, f.episode_number)].append(f)
+            ep_groups: dict[tuple[int, int], list[ScannedFile]] = defaultdict(list)
+            for f in files:
+                if f.season_number is not None and f.episode_number is not None:
+                    ep_groups[(f.season_number, f.episode_number)].append(f)
 
-        for (season_num, episode_num), ep_files in ep_groups.items():
-            series, c, u = await self._process_episode_group(
-                series, season_num, episode_num, ep_files
-            )
-            created += c
-            updated += u
+            for (season_num, episode_num), ep_files in ep_groups.items():
+                series, c, u = await self._process_episode_group(
+                    series, season_num, episode_num, ep_files
+                )
+                created += c
+                updated += u
 
-        events = series.pull_events()
-        await self._series_repository.save(series)
+            events = series.pull_events()
+            await uow.series.save(series)
         await self._dispatch_events(events)
         return created, updated
 

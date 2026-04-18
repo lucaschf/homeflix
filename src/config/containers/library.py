@@ -15,19 +15,24 @@ from src.modules.library.domain.services.track_selector import TrackSelector
 from src.modules.library.infrastructure.persistence.repositories.sqlalchemy_library_repository import (
     SqlAlchemyLibraryRepository,
 )
+from src.modules.library.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SqlAlchemyLibraryUnitOfWorkFactory,
+)
 
 
 class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     """Container for Library bounded context dependencies.
 
     Provides:
-    - Repository implementation (SQLAlchemy)
+    - Repository implementation (SQLAlchemy) for read use cases
+    - Unit of Work factory for write use cases
     - CRUD use cases
     - Domain services
     """
 
     # Wired from InfrastructureContainer via main container.
     session = providers.Dependency()
+    session_factory = providers.Dependency()
     # Media repositories come from MediaContainer — library responses
     # include per-library movie/series counts, so the library use
     # cases need to query those tables too.
@@ -35,12 +40,17 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     series_repository = providers.Dependency()
 
     # =========================================================================
-    # Repositories
+    # Repositories (read-only) and Unit of Work (writes)
     # =========================================================================
 
     library_repository = providers.Factory(
         SqlAlchemyLibraryRepository,
         session=session,
+    )
+
+    library_unit_of_work_factory = providers.Singleton(
+        SqlAlchemyLibraryUnitOfWorkFactory,
+        session_factory=session_factory,
     )
 
     # =========================================================================
@@ -49,7 +59,7 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     create_library = providers.Factory(
         CreateLibraryUseCase,
-        library_repository=library_repository,
+        uow_factory=library_unit_of_work_factory,
         movie_repository=movie_repository,
         series_repository=series_repository,
     )
@@ -70,14 +80,14 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     update_library = providers.Factory(
         UpdateLibraryUseCase,
-        library_repository=library_repository,
+        uow_factory=library_unit_of_work_factory,
         movie_repository=movie_repository,
         series_repository=series_repository,
     )
 
     delete_library = providers.Factory(
         DeleteLibraryUseCase,
-        library_repository=library_repository,
+        uow_factory=library_unit_of_work_factory,
     )
 
     # =========================================================================

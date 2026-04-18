@@ -20,7 +20,6 @@ from src.modules.media.application.use_cases.enrich_series_metadata import (
     _parse_date,
 )
 from src.modules.media.domain.entities import Episode, Season, Series
-from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import (
     ContentRating,
     Duration,
@@ -30,6 +29,7 @@ from src.modules.media.domain.value_objects import (
     Title,
     TmdbId,
 )
+from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
 def _make_series(**kwargs: object) -> Series:
@@ -93,37 +93,37 @@ class TestEnrichSeriesMetadata:
     @pytest.mark.asyncio
     async def test_should_enrich_series_with_metadata(self) -> None:
         series = _make_series()
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
-        repo.save.side_effect = lambda s: s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
 
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_series.return_value = _make_metadata()
 
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
         assert result.enriched is True
         assert result.provider == "tmdb"
 
-        saved = repo.save.call_args[0][0]
+        saved = mocks.series.save.call_args[0][0]
         assert saved.tmdb_id == TmdbId(1396)
         assert saved.synopsis is not None
 
     @pytest.mark.asyncio
     async def test_should_enrich_episode_title(self) -> None:
         series = _make_series()
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
-        repo.save.side_effect = lambda s: s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
 
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_series.return_value = _make_metadata()
 
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
         await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
-        saved = repo.save.call_args[0][0]
+        saved = mocks.series.save.call_args[0][0]
         episode = saved.seasons[0].episodes[0]
         assert episode.title.value == "Pilot"
 
@@ -132,11 +132,11 @@ class TestEnrichSeriesMetadata:
         series = _make_series()
         series = series.with_updates(tmdb_id=TmdbId(1396))
 
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
 
         provider = AsyncMock(spec=MetadataProvider)
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
 
         result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
@@ -144,11 +144,11 @@ class TestEnrichSeriesMetadata:
 
     @pytest.mark.asyncio
     async def test_should_raise_when_series_not_found(self) -> None:
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = None
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = None
 
         provider = AsyncMock(spec=MetadataProvider)
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
 
         from src.modules.media.domain.value_objects import SeriesId
 
@@ -207,17 +207,17 @@ class TestEnrichSeriesMetadata:
             ],
         )
 
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
-        repo.save.side_effect = lambda s: s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
 
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_series.return_value = metadata
 
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
         await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
-        saved = repo.save.call_args[0][0]
+        saved = mocks.series.save.call_args[0][0]
         ep = saved.seasons[0].episodes[0]
         assert ep.title.value == "Downtown as Fruits / Eugene's Bike"
         assert ep.duration.value == 1320  # 660 + 660
@@ -275,17 +275,17 @@ class TestEnrichSeriesMetadata:
             ],
         )
 
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
-        repo.save.side_effect = lambda s: s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
 
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_series.return_value = metadata
 
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
         await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
-        saved = repo.save.call_args[0][0]
+        saved = mocks.series.save.call_args[0][0]
         ep = saved.seasons[0].episodes[0]
         # Title already has " / " so should NOT be overwritten
         assert ep.title.value == "Downtown as Fruits / Eugene's Bike"
@@ -362,14 +362,14 @@ class TestEnrichSeriesByTmdbId:
     @pytest.mark.asyncio
     async def test_should_fetch_by_tmdb_id_when_force(self) -> None:
         series = _make_series().with_updates(tmdb_id=TmdbId(1396))
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
-        repo.save.side_effect = lambda s: s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
 
         provider = AsyncMock(spec=MetadataProvider)
         provider.get_series_by_id.return_value = _make_metadata()
 
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(series.id), force=True))
 
         assert result.enriched is True
@@ -378,15 +378,15 @@ class TestEnrichSeriesByTmdbId:
     @pytest.mark.asyncio
     async def test_should_retry_with_cleaned_title(self) -> None:
         series = Series.create(title="Breaking Bad 1080p BluRay", start_year=2008)
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
-        repo.save.side_effect = lambda s: s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
 
         provider = AsyncMock(spec=MetadataProvider)
         # First call (with year): None. Second call (cleaned): success
         provider.search_series.side_effect = [None, _make_metadata()]
 
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
         assert result.enriched is True
@@ -395,9 +395,9 @@ class TestEnrichSeriesByTmdbId:
     @pytest.mark.asyncio
     async def test_should_use_fallback_when_primary_fails(self) -> None:
         series = _make_series()
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
-        repo.save.side_effect = lambda s: s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
 
         primary = AsyncMock(spec=MetadataProvider)
         primary.search_series.return_value = None
@@ -406,7 +406,7 @@ class TestEnrichSeriesByTmdbId:
         fallback.search_series.return_value = _make_metadata()
 
         use_case = EnrichSeriesMetadataUseCase(
-            series_repository=repo,
+            uow_factory=mocks.factory,
             primary_provider=primary,
             fallback_provider=fallback,
         )
@@ -418,13 +418,13 @@ class TestEnrichSeriesByTmdbId:
     @pytest.mark.asyncio
     async def test_should_return_error_when_no_metadata_found(self) -> None:
         series = _make_series()
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
 
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_series.return_value = None
 
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
         assert result.enriched is False
@@ -433,9 +433,9 @@ class TestEnrichSeriesByTmdbId:
     @pytest.mark.asyncio
     async def test_should_use_localized_metadata_when_available(self) -> None:
         series = _make_series()
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
-        repo.save.side_effect = lambda s: s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
 
         provider = MagicMock(spec=["search_series", "get_series_by_id", "get_series_localized"])
         provider.search_series = AsyncMock(return_value=_make_metadata())
@@ -448,12 +448,12 @@ class TestEnrichSeriesByTmdbId:
         )
         provider.get_series_localized = AsyncMock(return_value=localized_meta)
 
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
         assert result.enriched is True
         provider.get_series_localized.assert_awaited_once_with(1396)
-        saved = repo.save.call_args[0][0]
+        saved = mocks.series.save.call_args[0][0]
         assert "pt-BR" in saved.localized
 
 
@@ -479,17 +479,17 @@ class TestApplySeriesFields:
             trailer_url="https://youtube.com/abc",
         )
 
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
-        repo.save.side_effect = lambda s: s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
 
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_series.return_value = metadata
 
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
         await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
-        saved = repo.save.call_args[0][0]
+        saved = mocks.series.save.call_args[0][0]
         assert saved.tmdb_id == TmdbId(1396)
         assert saved.end_year is not None
         assert saved.synopsis == "Crime drama."
@@ -513,15 +513,15 @@ class TestApplySeriesFields:
             },
         )
 
-        repo = AsyncMock(spec=SeriesRepository)
-        repo.find_by_id.return_value = series
-        repo.save.side_effect = lambda s: s
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_series.return_value = metadata
 
-        use_case = EnrichSeriesMetadataUseCase(series_repository=repo, primary_provider=provider)
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
         await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
-        saved = repo.save.call_args[0][0]
+        saved = mocks.series.save.call_args[0][0]
         assert "pt-BR" in saved.localized
         assert saved.localized["pt-BR"]["synopsis"] == "Drama de crime."

@@ -17,8 +17,8 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
     _clean_title,
 )
 from src.modules.media.domain.entities import Movie
-from src.modules.media.domain.repositories import MovieRepository
 from src.modules.media.domain.value_objects import ContentRating, TmdbId
+from tests.modules.media.unit.conftest import MediaUoWMocks, make_media_uow_mock
 
 
 def _make_movie() -> Movie:
@@ -45,6 +45,16 @@ def _make_metadata() -> MediaMetadata:
     )
 
 
+def _set_up_enrichment(
+    movie: Movie, provider: MetadataProvider
+) -> tuple[EnrichMovieMetadataUseCase, MediaUoWMocks]:
+    mocks = make_media_uow_mock()
+    mocks.movies.find_by_id.return_value = movie
+    mocks.movies.save.side_effect = lambda m: m
+    use_case = EnrichMovieMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+    return use_case, mocks
+
+
 @pytest.mark.unit
 class TestEnrichMovieMetadata:
     """Tests for EnrichMovieMetadataUseCase."""
@@ -52,31 +62,22 @@ class TestEnrichMovieMetadata:
     @pytest.mark.asyncio
     async def test_should_enrich_movie_with_metadata(self) -> None:
         movie = _make_movie()
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-        repo.save.side_effect = lambda m: m
-
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_movie.return_value = _make_metadata()
 
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
+        use_case, mocks = _set_up_enrichment(movie, provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         assert result.enriched is True
         assert result.provider == "tmdb"
-        repo.save.assert_called_once()
+        mocks.movies.save.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_should_skip_already_enriched_movie(self) -> None:
-        movie = _make_movie()
-        movie = movie.with_updates(tmdb_id=TmdbId(27205))
-
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-
+        movie = _make_movie().with_updates(tmdb_id=TmdbId(27205))
         provider = AsyncMock(spec=MetadataProvider)
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
 
+        use_case, _ = _set_up_enrichment(movie, provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         assert result.enriched is False
@@ -84,18 +85,11 @@ class TestEnrichMovieMetadata:
 
     @pytest.mark.asyncio
     async def test_should_force_re_enrich(self) -> None:
-        movie = _make_movie()
-        movie = movie.with_updates(tmdb_id=TmdbId(27205))
-
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-        repo.save.side_effect = lambda m: m
-
+        movie = _make_movie().with_updates(tmdb_id=TmdbId(27205))
         provider = AsyncMock(spec=MetadataProvider)
         provider.get_movie_by_id.return_value = _make_metadata()
 
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
-
+        use_case, _ = _set_up_enrichment(movie, provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id), force=True))
 
         assert result.enriched is True
@@ -103,10 +97,9 @@ class TestEnrichMovieMetadata:
     @pytest.mark.asyncio
     async def test_should_use_fallback_when_primary_fails(self) -> None:
         movie = _make_movie()
-
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-        repo.save.side_effect = lambda m: m
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_id.return_value = movie
+        mocks.movies.save.side_effect = lambda m: m
 
         primary = AsyncMock(spec=MetadataProvider)
         primary.search_movie.return_value = None
@@ -115,7 +108,7 @@ class TestEnrichMovieMetadata:
         fallback.search_movie.return_value = _make_metadata()
 
         use_case = EnrichMovieMetadataUseCase(
-            movie_repository=repo,
+            uow_factory=mocks.factory,
             primary_provider=primary,
             fallback_provider=fallback,
         )
@@ -128,15 +121,10 @@ class TestEnrichMovieMetadata:
     @pytest.mark.asyncio
     async def test_should_return_error_when_no_metadata_found(self) -> None:
         movie = _make_movie()
-
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_movie.return_value = None
 
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
-
+        use_case, _ = _set_up_enrichment(movie, provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         assert result.enriched is False
@@ -144,11 +132,11 @@ class TestEnrichMovieMetadata:
 
     @pytest.mark.asyncio
     async def test_should_raise_when_movie_not_found(self) -> None:
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = None
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_id.return_value = None
 
         provider = AsyncMock(spec=MetadataProvider)
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
+        use_case = EnrichMovieMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
 
         from src.modules.media.domain.value_objects import MovieId
 
@@ -159,11 +147,10 @@ class TestEnrichMovieMetadata:
     @pytest.mark.asyncio
     async def test_should_use_localized_metadata_when_available(self) -> None:
         movie = _make_movie()
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-        repo.save.side_effect = lambda m: m
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_id.return_value = movie
+        mocks.movies.save.side_effect = lambda m: m
 
-        # Provider with get_movie_localized method
         provider = MagicMock(spec=["search_movie", "get_movie_by_id", "get_movie_localized"])
         provider.search_movie = AsyncMock(return_value=_make_metadata())
         localized_meta = MediaMetadata(
@@ -175,12 +162,12 @@ class TestEnrichMovieMetadata:
         )
         provider.get_movie_localized = AsyncMock(return_value=localized_meta)
 
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
+        use_case = EnrichMovieMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         assert result.enriched is True
         provider.get_movie_localized.assert_awaited_once_with(27205)
-        saved = repo.save.call_args[0][0]
+        saved = mocks.movies.save.call_args[0][0]
         assert "pt-BR" in saved.localized
 
     @pytest.mark.asyncio
@@ -193,34 +180,22 @@ class TestEnrichMovieMetadata:
             file_size=4_000_000_000,
             resolution="1080p",
         )
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-        repo.save.side_effect = lambda m: m
-
         provider = AsyncMock(spec=MetadataProvider)
-
-        # First call (with year): None. Second call (cleaned title): success
         provider.search_movie.side_effect = [None, _make_metadata()]
 
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
+        use_case, _ = _set_up_enrichment(movie, provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         assert result.enriched is True
-        # Two attempts: with year, then cleaned
         assert provider.search_movie.await_count == 2
 
     @pytest.mark.asyncio
     async def test_should_retry_with_title_only_when_year_search_fails(self) -> None:
         movie = _make_movie()
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-        repo.save.side_effect = lambda m: m
-
         provider = AsyncMock(spec=MetadataProvider)
-        # All searches return None except the title-only one
         provider.search_movie.side_effect = [None, _make_metadata()]
 
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
+        use_case, _ = _set_up_enrichment(movie, provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         assert result.enriched is True
@@ -262,31 +237,25 @@ class TestApplyMetadataFields:
     @pytest.mark.asyncio
     async def test_should_apply_synopsis_when_missing(self) -> None:
         movie = _make_movie()
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-        repo.save.side_effect = lambda m: m
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_movie.return_value = _make_metadata()
 
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
+        use_case, mocks = _set_up_enrichment(movie, provider)
         await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
-        saved = repo.save.call_args[0][0]
+        saved = mocks.movies.save.call_args[0][0]
         assert saved.synopsis == "A mind-bending thriller."
 
     @pytest.mark.asyncio
     async def test_should_apply_genres_when_missing(self) -> None:
         movie = _make_movie()
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-        repo.save.side_effect = lambda m: m
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_movie.return_value = _make_metadata()
 
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
+        use_case, mocks = _set_up_enrichment(movie, provider)
         await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
-        saved = repo.save.call_args[0][0]
+        saved = mocks.movies.save.call_args[0][0]
         assert {g.value for g in saved.genres} == {"Sci-Fi", "Action"}
 
     @pytest.mark.asyncio
@@ -301,16 +270,13 @@ class TestApplyMetadataFields:
             content_rating="PG-13",
             trailer_url="https://youtube.com/abc",
         )
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-        repo.save.side_effect = lambda m: m
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_movie.return_value = metadata
 
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
+        use_case, mocks = _set_up_enrichment(movie, provider)
         await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
-        saved = repo.save.call_args[0][0]
+        saved = mocks.movies.save.call_args[0][0]
         assert saved.cast == ["Leonardo DiCaprio"]
         assert saved.directors == ["Christopher Nolan"]
         assert saved.writers == ["Christopher Nolan"]
@@ -331,16 +297,13 @@ class TestApplyMetadataFields:
                 ),
             },
         )
-        repo = AsyncMock(spec=MovieRepository)
-        repo.find_by_id.return_value = movie
-        repo.save.side_effect = lambda m: m
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_movie.return_value = metadata
 
-        use_case = EnrichMovieMetadataUseCase(movie_repository=repo, primary_provider=provider)
+        use_case, mocks = _set_up_enrichment(movie, provider)
         await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
-        saved = repo.save.call_args[0][0]
+        saved = mocks.movies.save.call_args[0][0]
         assert saved.localized["pt-BR"]["title"] == "A Origem"
         assert saved.localized["pt-BR"]["synopsis"] == "Sonho dentro do sonho."
         assert saved.localized["pt-BR"]["genres"] == ["Ficção Científica"]

@@ -1,24 +1,19 @@
 """DeleteCustomListUseCase - Delete a custom list."""
 
 from src.building_blocks.application.errors import ResourceNotFoundException
-from src.modules.collections.domain.repositories import CustomListRepository
+from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
 
 
 class DeleteCustomListUseCase:
-    """Delete a custom list and all its items.
+    """Delete a custom list and all its items."""
 
-    Example:
-        >>> use_case = DeleteCustomListUseCase(custom_list_repository)
-        >>> await use_case.execute("lst_abc123def456")
-    """
-
-    def __init__(self, custom_list_repository: CustomListRepository) -> None:
+    def __init__(self, uow_factory: CollectionsUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            custom_list_repository: Repository for custom list persistence.
+            uow_factory: Factory that opens a fresh collections Unit of Work.
         """
-        self._repo = custom_list_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, list_id: str) -> None:
         """Execute the use case.
@@ -29,7 +24,8 @@ class DeleteCustomListUseCase:
         Raises:
             ResourceNotFoundException: If the list does not exist.
         """
-        removed = await self._repo.remove(list_id)
+        async with self._uow_factory() as uow:
+            removed = await uow.custom_lists.remove(list_id)
         if not removed:
             raise ResourceNotFoundException.for_resource("CustomList", list_id)
 
