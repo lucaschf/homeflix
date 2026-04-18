@@ -27,6 +27,11 @@ class TestUpdatePreferencesUseCase:
         assert result.audio_lang == "pt-BR"
         mocks.preferences.save.assert_awaited_once()
         mocks.factory.assert_called_once()
+        # UoW was entered and exited exactly once — transaction
+        # management lives with the context manager, not with manual
+        # commit() calls in the use case.
+        mocks.uow.__aenter__.assert_awaited_once()  # type: ignore[attr-defined]
+        mocks.uow.__aexit__.assert_awaited_once()  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_should_update_existing_entity_without_touching_unset_fields(self) -> None:
@@ -64,5 +69,16 @@ class TestUpdatePreferencesUseCase:
 
         with pytest.raises(DomainValidationException):
             await use_case.execute(UpdatePreferencesInput(default_quality="ultra"))
+
+        mocks.preferences.save.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_should_reject_invalid_subtitle_mode(self) -> None:
+        mocks = make_preferences_uow_mock()
+        mocks.preferences.find_by_user_key.return_value = None
+        use_case = UpdatePreferencesUseCase(uow_factory=mocks.factory)
+
+        with pytest.raises(DomainValidationException):
+            await use_case.execute(UpdatePreferencesInput(subtitle_mode="invalid"))
 
         mocks.preferences.save.assert_not_awaited()

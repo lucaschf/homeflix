@@ -37,6 +37,12 @@ class SqlAlchemyPreferencesUnitOfWork(PreferencesUnitOfWork):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
+        # Session closure is intentionally NOT done here: the session
+        # was built via ``create_tracked_session`` which registers it
+        # on a ContextVar; ``SessionCleanupMiddleware`` closes every
+        # tracked session when the HTTP request finishes. Closing it
+        # twice would cause the middleware's cleanup loop to log a
+        # benign warning for every UoW exit.
         assert self._session is not None
         try:
             if exc_type is None:
