@@ -203,21 +203,6 @@ class MediaProbeService(MediaProbePort):
             resolution=resolution,
         )
 
-    def probe_resolution(self, file_path: str) -> str | None:
-        """Detect the video resolution of a media file via ffprobe.
-
-        Delegates to :meth:`probe` so there is a single ffprobe invocation
-        path.  Returns ``None`` when ffprobe is unavailable, the file does
-        not exist, has no video stream, or its dimensions fall below 360p.
-
-        Args:
-            file_path: Absolute path to the media file.
-
-        Returns:
-            A named resolution string, or ``None`` if it cannot be determined.
-        """
-        return self.probe(file_path).resolution
-
     @staticmethod
     def _run_ffprobe_video_dimensions(file_path: str) -> tuple[int, int] | None:
         """Run ffprobe to extract width/height of the first video stream."""

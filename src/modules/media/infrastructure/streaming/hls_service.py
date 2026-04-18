@@ -948,6 +948,7 @@ class HlsService:
     def _save_probe_cache(output_dir: Path, probe: ProbeResult) -> None:
         """Save probe result as JSON for the tracks API."""
         data = {
+            "resolution": probe.resolution,
             "audio_tracks": [
                 {
                     "index": t.index,
@@ -1024,7 +1025,12 @@ class HlsService:
             for t in data.get("subtitle_tracks", [])
             if t.get("is_external", False)
         ]
-        return ProbeResult(audio_tracks=audio, subtitle_tracks=subs, external_subtitles=ext)
+        return ProbeResult(
+            audio_tracks=audio,
+            subtitle_tracks=subs,
+            external_subtitles=ext,
+            resolution=data.get("resolution"),
+        )
 
     # -- Private: validation ---------------------------------------------------
 

@@ -53,10 +53,14 @@ class MediaProbePort(ABC):
         """
         ...
 
-    @abstractmethod
     def probe_resolution(self, file_path: str) -> str | None:
-        """Return only the named resolution (convenience over ``probe``)."""
-        ...
+        """Return only the named resolution (convenience over ``probe``).
+
+        Default implementation delegates to ``probe``; override only
+        when the adapter can produce the resolution more cheaply than
+        a full probe.
+        """
+        return self.probe(file_path).resolution
 
 
 __all__ = ["MediaProbePort", "ProbeResult"]
