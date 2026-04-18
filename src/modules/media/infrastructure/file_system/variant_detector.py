@@ -4,6 +4,8 @@ import re
 from collections import defaultdict
 from pathlib import PurePosixPath
 
+from src.modules.media.application.ports.variant_detector_port import VariantDetectorPort
+
 # Patterns stripped from filenames to get the base content name.
 # Order matters: more specific patterns before generic ones.
 _STRIP_PATTERNS = [
@@ -74,7 +76,7 @@ _COMBINED_PATTERN = re.compile(
 )
 
 
-class VariantDetector:
+class VariantDetector(VariantDetectorPort):
     """Detect file variants of the same content based on filename patterns.
 
     Strips quality indicators (resolution, codec, source) from filenames

@@ -36,11 +36,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.modules.media.application.ports.media_probe_port import ProbeResult
 from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
-from src.modules.media.infrastructure.streaming.media_probe_service import (
-    MediaProbeResult,
-    MediaProbeService,
-)
+from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
 from src.shared_kernel.value_objects.tracks import SubtitleTrack
 
 _logger = logging.getLogger(__name__)
@@ -148,7 +146,7 @@ def media_type_for(filename: str) -> str:
 # -- Module helpers -----------------------------------------------------------
 
 
-def _primary_audio_index(probe: MediaProbeResult) -> int:
+def _primary_audio_index(probe: ProbeResult) -> int:
     """Get the index of the primary audio track (first one, always index 0)."""
     return probe.audio_tracks[0].index if probe.audio_tracks else 0
 
@@ -465,7 +463,7 @@ class HlsService:
         msg = f"Timeout waiting for HLS segments ({_POLL_TIMEOUT}s)"
         raise RuntimeError(msg)
 
-    def probe_tracks(self, file_path: str) -> MediaProbeResult:
+    def probe_tracks(self, file_path: str) -> ProbeResult:
         """Probe a file for tracks, using cache when available."""
         path_hash = self.get_path_hash(file_path)
         cached = self.get_cached_tracks(path_hash)
@@ -684,7 +682,7 @@ class HlsService:
         self,
         file_path: str,
         output_dir: Path,
-        probe: MediaProbeResult,
+        probe: ProbeResult,
         start_seconds: float = 0.0,
     ) -> list[str]:
         """Build FFmpeg command for video + default audio.
@@ -895,7 +893,7 @@ class HlsService:
     # -- Private: master playlist ----------------------------------------------
 
     @staticmethod
-    def _build_master_playlist(output_dir: Path, probe: MediaProbeResult) -> None:
+    def _build_master_playlist(output_dir: Path, probe: ProbeResult) -> None:
         """Generate master.m3u8 with audio renditions and subtitle tracks."""
         lines = ["#EXTM3U", "#EXT-X-VERSION:3"]
 
@@ -947,7 +945,7 @@ class HlsService:
     # -- Private: probe cache --------------------------------------------------
 
     @staticmethod
-    def _save_probe_cache(output_dir: Path, probe: MediaProbeResult) -> None:
+    def _save_probe_cache(output_dir: Path, probe: ProbeResult) -> None:
         """Save probe result as JSON for the tracks API."""
         data = {
             "audio_tracks": [
@@ -982,8 +980,8 @@ class HlsService:
         )
 
     @staticmethod
-    def _deserialize_probe(data: dict[str, Any]) -> MediaProbeResult:
-        """Reconstruct MediaProbeResult from cached JSON."""
+    def _deserialize_probe(data: dict[str, Any]) -> ProbeResult:
+        """Reconstruct ProbeResult from cached JSON."""
         from src.shared_kernel.value_objects.language_code import LanguageCode
         from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
@@ -1026,7 +1024,7 @@ class HlsService:
             for t in data.get("subtitle_tracks", [])
             if t.get("is_external", False)
         ]
-        return MediaProbeResult(audio_tracks=audio, subtitle_tracks=subs, external_subtitles=ext)
+        return ProbeResult(audio_tracks=audio, subtitle_tracks=subs, external_subtitles=ext)
 
     # -- Private: validation ---------------------------------------------------
 

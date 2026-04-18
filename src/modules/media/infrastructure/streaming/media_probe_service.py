@@ -10,10 +10,10 @@ import logging
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.modules.media.application.ports.media_probe_port import MediaProbePort, ProbeResult
 from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
@@ -155,27 +155,7 @@ _ISO639_2_TO_1: dict[str, str] = {
 }
 
 
-@dataclass(frozen=True)
-class MediaProbeResult:
-    """Result of probing a media file for available tracks."""
-
-    audio_tracks: list[AudioTrack] = field(default_factory=list)
-    subtitle_tracks: list[SubtitleTrack] = field(default_factory=list)
-    external_subtitles: list[SubtitleTrack] = field(default_factory=list)
-    resolution: str | None = None
-
-    @property
-    def all_subtitles(self) -> list[SubtitleTrack]:
-        """All subtitle tracks (embedded + external)."""
-        return [*self.subtitle_tracks, *self.external_subtitles]
-
-    @property
-    def text_subtitles(self) -> list[SubtitleTrack]:
-        """Only text-based subtitles that can be converted to WebVTT."""
-        return [s for s in self.all_subtitles if s.is_text_based]
-
-
-class MediaProbeService:
+class MediaProbeService(MediaProbePort):
     """Probe media files for audio and subtitle track information.
 
     Uses ffprobe to inspect embedded streams and scans the file's
@@ -188,19 +168,19 @@ class MediaProbeService:
         2
     """
 
-    def probe(self, file_path: str) -> MediaProbeResult:
+    def probe(self, file_path: str) -> ProbeResult:
         """Probe a media file for all available tracks.
 
         Args:
             file_path: Absolute path to the media file.
 
         Returns:
-            MediaProbeResult with discovered tracks.
+            ProbeResult with discovered tracks.
         """
         source = Path(file_path).resolve()
         if not source.is_file():
             _logger.warning("Cannot probe non-existent file: %s", file_path)
-            return MediaProbeResult()
+            return ProbeResult()
 
         streams = self._run_ffprobe(str(source))
         audio_tracks = self._parse_audio_tracks(streams)
@@ -216,7 +196,7 @@ class MediaProbeService:
             len(external_subs),
         )
 
-        return MediaProbeResult(
+        return ProbeResult(
             audio_tracks=audio_tracks,
             subtitle_tracks=subtitle_tracks,
             external_subtitles=external_subs,
@@ -520,4 +500,4 @@ def _resolution_from_dimensions(width: int, height: int) -> str | None:
     return None
 
 
-__all__ = ["MediaProbeResult", "MediaProbeService"]
+__all__ = ["MediaProbeService"]

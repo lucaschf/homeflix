@@ -9,14 +9,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.modules.media.application.ports import ProbeResult
 from src.modules.media.infrastructure.streaming.hls_service import (
     HlsService,
     _primary_audio_index,
 )
-from src.modules.media.infrastructure.streaming.media_probe_service import (
-    MediaProbeResult,
-    MediaProbeService,
-)
+from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
@@ -58,13 +56,13 @@ class TestPrimaryAudioIndex:
     """Tests for the _primary_audio_index helper."""
 
     def test_should_return_first_track_index(self) -> None:
-        probe = MediaProbeResult(
+        probe = ProbeResult(
             audio_tracks=[_make_audio_track(index=2), _make_audio_track(index=5)],
         )
         assert _primary_audio_index(probe) == 2
 
     def test_should_return_zero_when_no_tracks(self) -> None:
-        probe = MediaProbeResult(audio_tracks=[])
+        probe = ProbeResult(audio_tracks=[])
         assert _primary_audio_index(probe) == 0
 
 
@@ -336,7 +334,7 @@ class TestHlsServiceBuildVideoCmd:
 
     def test_should_copy_video_for_h264(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path / "cache"))
-        probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
             cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
@@ -346,7 +344,7 @@ class TestHlsServiceBuildVideoCmd:
 
     def test_should_transcode_non_h264(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path / "cache"))
-        probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="hevc"):
             cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
@@ -355,7 +353,7 @@ class TestHlsServiceBuildVideoCmd:
 
     def test_should_map_primary_audio_track(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path / "cache"))
-        probe = MediaProbeResult(
+        probe = ProbeResult(
             audio_tracks=[_make_audio_track(index=3)],
         )
 
@@ -366,7 +364,7 @@ class TestHlsServiceBuildVideoCmd:
 
     def test_should_not_include_ss_when_start_is_zero(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path / "cache"))
-        probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
             cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start_seconds=0.0)
@@ -375,7 +373,7 @@ class TestHlsServiceBuildVideoCmd:
 
     def test_should_use_two_pass_seek_when_start_is_set(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path / "cache"))
-        probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
             cmd = service._build_video_cmd(
@@ -398,7 +396,7 @@ class TestHlsServiceBuildMasterPlaylist:
     """Tests for _build_master_playlist."""
 
     def test_should_write_master_m3u8(self, tmp_path: Path) -> None:
-        probe = MediaProbeResult(audio_tracks=[_make_audio_track()])
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         HlsService._build_master_playlist(tmp_path, probe)
 
@@ -409,7 +407,7 @@ class TestHlsServiceBuildMasterPlaylist:
         assert "video/playlist.m3u8" in content
 
     def test_should_include_ext_media_for_alt_audio(self, tmp_path: Path) -> None:
-        probe = MediaProbeResult(
+        probe = ProbeResult(
             audio_tracks=[
                 _make_audio_track(index=0, lang="en", is_default=True),
                 _make_audio_track(index=1, lang="pt", is_default=False),
@@ -425,7 +423,7 @@ class TestHlsServiceBuildMasterPlaylist:
         assert 'URI="audio_1/playlist.m3u8"' in content
 
     def test_should_include_ext_media_for_subtitles(self, tmp_path: Path) -> None:
-        probe = MediaProbeResult(
+        probe = ProbeResult(
             audio_tracks=[_make_audio_track()],
             subtitle_tracks=[_make_subtitle_track(index=0, lang="en", fmt="srt")],
         )
@@ -437,7 +435,7 @@ class TestHlsServiceBuildMasterPlaylist:
         assert 'URI="sub_0/playlist.m3u8"' in content
 
     def test_should_skip_image_based_subtitles(self, tmp_path: Path) -> None:
-        probe = MediaProbeResult(
+        probe = ProbeResult(
             audio_tracks=[_make_audio_track()],
             subtitle_tracks=[_make_subtitle_track(index=0, lang="en", fmt="pgs")],
         )
@@ -448,7 +446,7 @@ class TestHlsServiceBuildMasterPlaylist:
         assert 'URI="sub_0/playlist.m3u8"' not in content
 
     def test_should_mark_forced_subtitles(self, tmp_path: Path) -> None:
-        probe = MediaProbeResult(
+        probe = ProbeResult(
             audio_tracks=[_make_audio_track()],
             subtitle_tracks=[
                 _make_subtitle_track(index=0, lang="en", fmt="srt", is_forced=True),
@@ -466,7 +464,7 @@ class TestHlsServiceSaveAndDeserializeProbe:
     """Tests for probe cache serialization round-trip."""
 
     def test_should_save_probe_as_json(self, tmp_path: Path) -> None:
-        probe = MediaProbeResult(
+        probe = ProbeResult(
             audio_tracks=[_make_audio_track(index=0, lang="en", codec="aac")],
             subtitle_tracks=[_make_subtitle_track(index=0, lang="en", fmt="srt")],
         )
@@ -480,7 +478,7 @@ class TestHlsServiceSaveAndDeserializeProbe:
         assert data["audio_tracks"][0]["language"] == "en"
 
     def test_should_round_trip_probe_cache(self, tmp_path: Path) -> None:
-        probe = MediaProbeResult(
+        probe = ProbeResult(
             audio_tracks=[
                 _make_audio_track(index=0, lang="en", codec="aac", title="English"),
                 _make_audio_track(index=1, lang="pt", codec="ac3", channels=6),
@@ -521,7 +519,7 @@ class TestHlsServiceProbeTracks:
 
     def test_should_call_probe_service_when_no_cache(self, tmp_path: Path) -> None:
         probe_mock = MagicMock(spec=MediaProbeService)
-        probe_mock.probe.return_value = MediaProbeResult(audio_tracks=[_make_audio_track()])
+        probe_mock.probe.return_value = ProbeResult(audio_tracks=[_make_audio_track()])
         service = HlsService(cache_dir=str(tmp_path), probe_service=probe_mock)
 
         result = service.probe_tracks("/movies/test.mkv")
