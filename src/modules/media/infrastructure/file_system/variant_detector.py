@@ -1,8 +1,9 @@
 """Variant detection for grouping related media files."""
 
 import re
-from collections import defaultdict
 from pathlib import PurePosixPath
+
+from src.modules.media.application.ports.variant_detector_port import VariantDetectorPort
 
 # Patterns stripped from filenames to get the base content name.
 # Order matters: more specific patterns before generic ones.
@@ -74,7 +75,7 @@ _COMBINED_PATTERN = re.compile(
 )
 
 
-class VariantDetector:
+class VariantDetector(VariantDetectorPort):
     """Detect file variants of the same content based on filename patterns.
 
     Strips quality indicators (resolution, codec, source) from filenames
@@ -113,33 +114,6 @@ class VariantDetector:
         result = re.sub(r"[\.\s_-]+$", "", result)
 
         return result or name
-
-    def are_variants(self, file1: str, file2: str) -> bool:
-        """Check if two files are variants of the same content.
-
-        Args:
-            file1: First file path.
-            file2: Second file path.
-
-        Returns:
-            True if both files share the same base content name.
-        """
-        return self.extract_base_name(file1) == self.extract_base_name(file2)
-
-    def group_variants(self, files: list[str]) -> dict[str, list[str]]:
-        """Group files by their base content name.
-
-        Args:
-            files: List of file paths to group.
-
-        Returns:
-            Dictionary mapping base names to lists of file paths.
-        """
-        groups: dict[str, list[str]] = defaultdict(list)
-        for file_path in files:
-            base = self.extract_base_name(file_path)
-            groups[base].append(file_path)
-        return dict(groups)
 
 
 __all__ = ["VariantDetector"]

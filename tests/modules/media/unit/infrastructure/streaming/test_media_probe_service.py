@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.modules.media.application.ports import ProbeResult
 from src.modules.media.infrastructure.streaming.media_probe_service import (
-    MediaProbeResult,
     MediaProbeService,
     _ffprobe_path,
     _resolution_from_dimensions,
@@ -342,8 +342,8 @@ class TestScanExternalSubtitles:
 
 
 @pytest.mark.unit
-class TestMediaProbeResult:
-    """Tests for MediaProbeResult properties."""
+class TestProbeResult:
+    """Tests for ProbeResult properties."""
 
     def test_all_subtitles_should_combine_embedded_and_external(self) -> None:
         from src.shared_kernel.value_objects.file_path import FilePath
@@ -360,7 +360,7 @@ class TestMediaProbeResult:
             is_external=True,
             file_path=FilePath("/movies/Movie.pt.srt"),
         )
-        result = MediaProbeResult(
+        result = ProbeResult(
             subtitle_tracks=[embedded],
             external_subtitles=[external],
         )
@@ -374,7 +374,7 @@ class TestMediaProbeResult:
         text = SubtitleTrack(index=0, language=LanguageCode("en"), format="srt")
         image = SubtitleTrack(index=1, language=LanguageCode("en"), format="pgs")
 
-        result = MediaProbeResult(subtitle_tracks=[text, image])
+        result = ProbeResult(subtitle_tracks=[text, image])
 
         assert len(result.text_subtitles) == 1
         assert result.text_subtitles[0].format == "srt"

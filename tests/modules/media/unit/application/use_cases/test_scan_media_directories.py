@@ -5,7 +5,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput, ScanMediaOutput
-from src.modules.media.application.ports import MediaType, ScannedFile
+from src.modules.media.application.ports import (
+    MediaProbePort,
+    MediaType,
+    ProbeResult,
+    ScannedFile,
+)
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
 )
@@ -19,10 +24,6 @@ from src.modules.media.domain.value_objects import (
     Title,
 )
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
-from src.modules.media.infrastructure.streaming.media_probe_service import (
-    MediaProbeResult,
-    MediaProbeService,
-)
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
@@ -89,7 +90,7 @@ def _make_use_case(
     *,
     scanner_results: list[ScannedFile] | None = None,
     mocks: MediaUoWMocks | None = None,
-    probe_service: MediaProbeService | MagicMock | None = None,
+    probe_service: MediaProbePort | MagicMock | None = None,
 ) -> tuple[ScanMediaDirectoriesUseCase, MediaUoWMocks]:
     """Build the scan use case wired to a mock Unit of Work factory."""
     file_scanner = MagicMock()
@@ -327,8 +328,8 @@ class TestRescanResolutionUpgrade:
     async def test_should_probe_when_creating_movie_without_filename_resolution(
         self,
     ) -> None:
-        probe = MagicMock(spec=MediaProbeService)
-        probe.probe.return_value = MediaProbeResult(resolution="1080p")
+        probe = MagicMock(spec=MediaProbePort)
+        probe.probe.return_value = ProbeResult(resolution="1080p")
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
         use_case, _ = _make_use_case(scanner_results=files, probe_service=probe)
 
@@ -354,8 +355,8 @@ class TestRescanResolutionUpgrade:
         saved: list[Movie] = []
         mocks.movies.save.side_effect = lambda m: saved.append(m) or m
 
-        probe = MagicMock(spec=MediaProbeService)
-        probe.probe.return_value = MediaProbeResult(resolution="4K")
+        probe = MagicMock(spec=MediaProbePort)
+        probe.probe.return_value = ProbeResult(resolution="4K")
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
         use_case, _ = _make_use_case(
@@ -397,7 +398,7 @@ class TestRescanResolutionUpgrade:
         )
         mocks.movies.save.side_effect = lambda m: m
 
-        probe = MagicMock(spec=MediaProbeService)
+        probe = MagicMock(spec=MediaProbePort)
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
         use_case, _ = _make_use_case(
@@ -416,8 +417,8 @@ class TestRescanResolutionUpgrade:
         self,
     ) -> None:
         """New files are always probed so audio/subtitle tracks are captured."""
-        probe = MagicMock(spec=MediaProbeService)
-        probe.probe.return_value = MediaProbeResult(
+        probe = MagicMock(spec=MediaProbePort)
+        probe.probe.return_value = ProbeResult(
             audio_tracks=[_audio_track("en"), _audio_track("pt")],
             resolution="1080p",
         )
@@ -484,8 +485,8 @@ class TestTrackDetection:
 
     @pytest.mark.asyncio
     async def test_should_populate_tracks_on_new_movie(self) -> None:
-        probe = MagicMock(spec=MediaProbeService)
-        probe.probe.return_value = MediaProbeResult(
+        probe = MagicMock(spec=MediaProbePort)
+        probe.probe.return_value = ProbeResult(
             audio_tracks=[_audio_track("en"), _audio_track("pt", index=1)],
             subtitle_tracks=[_subtitle_track("en"), _subtitle_track("pt", index=1)],
             resolution="1080p",
@@ -509,8 +510,8 @@ class TestTrackDetection:
 
     @pytest.mark.asyncio
     async def test_should_populate_tracks_on_new_episode(self) -> None:
-        probe = MagicMock(spec=MediaProbeService)
-        probe.probe.return_value = MediaProbeResult(
+        probe = MagicMock(spec=MediaProbePort)
+        probe.probe.return_value = ProbeResult(
             audio_tracks=[_audio_track("ja")],
             subtitle_tracks=[_subtitle_track("en")],
             resolution="1080p",
@@ -549,8 +550,8 @@ class TestTrackDetection:
         )
         mocks.movies.save.side_effect = lambda m: saved.append(m) or m
 
-        probe = MagicMock(spec=MediaProbeService)
-        probe.probe.return_value = MediaProbeResult(
+        probe = MagicMock(spec=MediaProbePort)
+        probe.probe.return_value = ProbeResult(
             audio_tracks=[_audio_track("en")],
             subtitle_tracks=[_subtitle_track("pt")],
         )
@@ -590,7 +591,7 @@ class TestTrackDetection:
         )
         mocks.movies.save.side_effect = lambda m: m
 
-        probe = MagicMock(spec=MediaProbeService)
+        probe = MagicMock(spec=MediaProbePort)
 
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
@@ -609,8 +610,8 @@ class TestTrackDetection:
             is_external=True,
             file_path=FilePath("/movies/inception.pt.srt"),
         )
-        probe = MagicMock(spec=MediaProbeService)
-        probe.probe.return_value = MediaProbeResult(
+        probe = MagicMock(spec=MediaProbePort)
+        probe.probe.return_value = ProbeResult(
             audio_tracks=[_audio_track("en")],
             subtitle_tracks=[_subtitle_track("en")],
             external_subtitles=[ext_sub],

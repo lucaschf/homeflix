@@ -35,10 +35,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
     from src.building_blocks.application.event_bus import EventBus
-    from src.modules.media.application.ports import FileSystemScanner
-    from src.modules.media.infrastructure.file_system.variant_detector import (
-        VariantDetector,
-    )
+    from src.modules.media.application.ports import FileSystemScanner, VariantDetectorPort
 
 _logger = get_logger()
 
@@ -64,7 +61,7 @@ class LibraryScanScheduler:
         session_factory: async_sessionmaker[AsyncSession],
         event_bus: EventBus,
         file_scanner: FileSystemScanner,
-        variant_detector: VariantDetector,
+        variant_detector: VariantDetectorPort,
         reconcile_interval_minutes: int,
     ) -> None:
         self._session_factory = session_factory

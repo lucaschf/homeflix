@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput
 from src.modules.media.application.dtos.series_dtos import GetSeriesByIdInput
+from src.modules.media.application.ports import ProbeResult
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.infrastructure.streaming.hls_service import (
@@ -26,7 +27,6 @@ from src.modules.media.infrastructure.streaming.hls_service import (
     media_type_for,
     rewrite_m3u8,
 )
-from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeResult
 
 _logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ def _resolve_file(file_path: str | None) -> Path:
     return path
 
 
-def _serialize_tracks(probe: MediaProbeResult) -> dict[str, list[dict[str, object]]]:
+def _serialize_tracks(probe: ProbeResult) -> dict[str, list[dict[str, object]]]:
     """Serialize probe result into API response format."""
     return {
         "audio_tracks": [

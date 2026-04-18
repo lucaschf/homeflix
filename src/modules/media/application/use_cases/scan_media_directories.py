@@ -6,7 +6,14 @@ from collections import defaultdict
 from src.building_blocks.application.event_bus import EventBus
 from src.building_blocks.domain.events import DomainEvent
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput, ScanMediaOutput
-from src.modules.media.application.ports import FileSystemScanner, MediaType, ScannedFile
+from src.modules.media.application.ports import (
+    FileSystemScanner,
+    MediaProbePort,
+    MediaType,
+    ProbeResult,
+    ScannedFile,
+    VariantDetectorPort,
+)
 from src.modules.media.application.unit_of_work import (
     MediaUnitOfWork,
     MediaUnitOfWorkFactory,
@@ -22,11 +29,6 @@ from src.modules.media.domain.value_objects import (
     SeasonNumber,
     Title,
     Year,
-)
-from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
-from src.modules.media.infrastructure.streaming.media_probe_service import (
-    MediaProbeResult,
-    MediaProbeService,
 )
 
 
@@ -46,18 +48,18 @@ class ScanMediaDirectoriesUseCase:
 
     Args:
         file_scanner: Port for filesystem scanning.
-        variant_detector: Service for grouping file variants.
+        variant_detector: Port for grouping file variants.
         uow_factory: Factory that opens a fresh media Unit of Work per group.
-        probe_service: Optional ffprobe service for track and resolution detection.
+        probe_service: Optional probe port for track and resolution detection.
         event_bus: Optional event bus for domain events.
     """
 
     def __init__(
         self,
         file_scanner: FileSystemScanner,
-        variant_detector: VariantDetector,
+        variant_detector: VariantDetectorPort,
         uow_factory: MediaUnitOfWorkFactory,
-        probe_service: MediaProbeService | None = None,
+        probe_service: MediaProbePort | None = None,
         event_bus: EventBus | None = None,
     ) -> None:
         self._file_scanner = file_scanner
@@ -104,7 +106,7 @@ class ScanMediaDirectoriesUseCase:
     # ffprobe integration
     # =========================================================================
 
-    async def _probe(self, file_path: str) -> MediaProbeResult | None:
+    async def _probe(self, file_path: str) -> ProbeResult | None:
         """Run full ffprobe in a worker thread.
 
         Returns the complete probe result (tracks + resolution) or ``None``
