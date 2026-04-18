@@ -210,8 +210,11 @@ class ScanMediaDirectoriesUseCase:
         async with self._uow_factory() as uow:
             existing = await self._find_existing_movie(uow, paths, by_path)
             if existing:
-                return await self._update_movie(uow, existing, paths, by_path)
-            return await self._create_movie(uow, paths, by_path)
+                created, updated, events = await self._update_movie(uow, existing, paths, by_path)
+            else:
+                created, updated, events = await self._create_movie(uow, paths, by_path)
+        await self._dispatch_events(events)
+        return created, updated
 
     @staticmethod
     async def _find_existing_movie(
@@ -232,7 +235,7 @@ class ScanMediaDirectoriesUseCase:
         movie: Movie,
         paths: list[str],
         by_path: dict[str, ScannedFile],
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, list[DomainEvent]]:
         """Add new file variants and refresh existing ones from a fresh scan."""
         files = list(movie.files)
         changed = False
@@ -255,16 +258,17 @@ class ScanMediaDirectoriesUseCase:
 
         if changed:
             movie = movie.with_updates(files=files)
+            events = movie.pull_events()
             await uow.movies.save(movie)
-            return 0, 1
-        return 0, 0
+            return 0, 1, events
+        return 0, 0, []
 
     async def _create_movie(
         self,
         uow: MediaUnitOfWork,
         paths: list[str],
         by_path: dict[str, ScannedFile],
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, list[DomainEvent]]:
         """Create a new movie from a group of file variants."""
         first = by_path[paths[0]]
         primary_file = await self._build_new_media_file(first, is_primary=True)
@@ -283,8 +287,7 @@ class ScanMediaDirectoriesUseCase:
             )
         events = movie.pull_events()
         await uow.movies.save(movie)
-        await self._dispatch_events(events)
-        return 1, 0
+        return 1, 0, events
 
     # =========================================================================
     # Episodes
