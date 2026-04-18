@@ -5,25 +5,23 @@ from src.modules.library.application.dtos.library_dtos import (
     LibrarySettingsOutput,
     MetadataProviderOutput,
 )
+from src.modules.library.application.ports import MediaCountQueryPort
 from src.modules.library.domain.entities.library import Library
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 
 
 async def library_to_output(
     entity: Library,
-    movie_repository: MovieRepository,
-    series_repository: SeriesRepository,
+    media_count_query: MediaCountQueryPort,
 ) -> LibraryOutput:
     """Convert a Library domain entity to its output DTO.
 
-    The movie/series counts are computed inline from the media repos
-    — two ``COUNT(*)`` style queries per library. This is fine for
-    tens of libraries; batching across libraries would only matter
-    at a scale we don't have today.
+    The movie/series counts are resolved via the ``MediaCountQueryPort``
+    so the Library BC never imports Media repositories directly. See
+    ADR-009 for the cross-BC read port pattern.
     """
     paths = [p.value for p in entity.paths]
-    movie_count = await movie_repository.count_under_paths(paths)
-    series_count = await series_repository.count_under_paths(paths)
+    movie_count = await media_count_query.count_movies_under_paths(paths)
+    series_count = await media_count_query.count_series_under_paths(paths)
     return LibraryOutput(
         id=str(entity.id),
         name=entity.name.value,

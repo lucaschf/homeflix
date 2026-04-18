@@ -6,20 +6,23 @@ from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.collections.unit.application.use_cases.conftest import (
+    make_media_lookup_mock,
+)
 
 if TYPE_CHECKING:
     from tests.modules.collections.unit.application.use_cases.conftest import (
-        MediaMockFactory,
+        MediaSummaryFactory,
     )
 
 from src.modules.collections.application.dtos import (
     GetWatchlistInput,
     WatchlistItemOutput,
 )
+from src.modules.collections.application.ports import MediaLookupPort
 from src.modules.collections.application.use_cases import GetWatchlistUseCase
 from src.modules.collections.domain.entities import WatchlistItem
 from src.modules.collections.domain.repositories import WatchlistRepository
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.shared_kernel.value_objects import CollectionMediaType
 
 
@@ -28,27 +31,26 @@ class TestGetWatchlistUseCase:
     """Tests for getting watchlist items with metadata."""
 
     @pytest.mark.asyncio
-    async def test_should_return_items_with_metadata(self, movie_mock: MediaMockFactory) -> None:
+    async def test_should_return_items_with_metadata(
+        self, movie_summary: MediaSummaryFactory
+    ) -> None:
         items = [
             WatchlistItem.create(
                 media_id="mov_abc123def456",
                 media_type=CollectionMediaType.MOVIE,
             ),
         ]
-        movie = movie_mock("mov_abc123def456", "Inception")
 
         mock_watchlist_repo = AsyncMock(spec=WatchlistRepository)
         mock_watchlist_repo.list_all.return_value = items
 
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_movie_repo.find_by_ids.return_value = {"mov_abc123def456": movie}
-
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
+        media_lookup = make_media_lookup_mock(
+            movie_summary("mov_abc123def456", "Inception"),
+        )
 
         use_case = GetWatchlistUseCase(
             watchlist_repository=mock_watchlist_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=media_lookup,
         )
 
         result = await use_case.execute(GetWatchlistInput())
@@ -61,12 +63,9 @@ class TestGetWatchlistUseCase:
     async def test_should_return_empty_list_when_no_items(self) -> None:
         mock_watchlist_repo = AsyncMock(spec=WatchlistRepository)
         mock_watchlist_repo.list_all.return_value = []
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
         use_case = GetWatchlistUseCase(
             watchlist_repository=mock_watchlist_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=AsyncMock(spec=MediaLookupPort),
         )
 
         result = await use_case.execute(GetWatchlistInput())
@@ -84,15 +83,9 @@ class TestGetWatchlistUseCase:
         mock_watchlist_repo = AsyncMock(spec=WatchlistRepository)
         mock_watchlist_repo.list_all.return_value = items
 
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_movie_repo.find_by_ids.return_value = {}
-
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
-
         use_case = GetWatchlistUseCase(
             watchlist_repository=mock_watchlist_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=make_media_lookup_mock(),  # no summaries
         )
 
         result = await use_case.execute(GetWatchlistInput())
@@ -101,7 +94,9 @@ class TestGetWatchlistUseCase:
 
     @pytest.mark.asyncio
     async def test_should_handle_mixed_media_types(
-        self, movie_mock: MediaMockFactory, series_mock: MediaMockFactory
+        self,
+        movie_summary: MediaSummaryFactory,
+        series_summary: MediaSummaryFactory,
     ) -> None:
         items = [
             WatchlistItem.create(
@@ -113,22 +108,18 @@ class TestGetWatchlistUseCase:
                 media_type=CollectionMediaType.SERIES,
             ),
         ]
-        movie = movie_mock("mov_abc123def456", "Inception")
-        series = series_mock("ser_xyz789abc123", "Breaking Bad")
 
         mock_watchlist_repo = AsyncMock(spec=WatchlistRepository)
         mock_watchlist_repo.list_all.return_value = items
 
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_movie_repo.find_by_ids.return_value = {"mov_abc123def456": movie}
-
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
-        mock_series_repo.find_by_ids.return_value = {"ser_xyz789abc123": series}
+        media_lookup = make_media_lookup_mock(
+            movie_summary("mov_abc123def456", "Inception"),
+            series_summary("ser_xyz789abc123", "Breaking Bad"),
+        )
 
         use_case = GetWatchlistUseCase(
             watchlist_repository=mock_watchlist_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=media_lookup,
         )
 
         result = await use_case.execute(GetWatchlistInput())
@@ -141,12 +132,9 @@ class TestGetWatchlistUseCase:
     async def test_should_respect_limit(self) -> None:
         mock_watchlist_repo = AsyncMock(spec=WatchlistRepository)
         mock_watchlist_repo.list_all.return_value = []
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
         use_case = GetWatchlistUseCase(
             watchlist_repository=mock_watchlist_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=AsyncMock(spec=MediaLookupPort),
         )
 
         await use_case.execute(GetWatchlistInput(limit=25))
@@ -154,29 +142,30 @@ class TestGetWatchlistUseCase:
         mock_watchlist_repo.list_all.assert_called_once_with(limit=25)
 
     @pytest.mark.asyncio
-    async def test_should_pass_language_to_get_title(self, movie_mock: MediaMockFactory) -> None:
+    async def test_should_pass_language_to_media_lookup(
+        self, movie_summary: MediaSummaryFactory
+    ) -> None:
         items = [
             WatchlistItem.create(
                 media_id="mov_abc123def456",
                 media_type=CollectionMediaType.MOVIE,
             ),
         ]
-        movie = movie_mock("mov_abc123def456")
 
         mock_watchlist_repo = AsyncMock(spec=WatchlistRepository)
         mock_watchlist_repo.list_all.return_value = items
 
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_movie_repo.find_by_ids.return_value = {"mov_abc123def456": movie}
-
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
+        media_lookup = make_media_lookup_mock(movie_summary("mov_abc123def456"))
 
         use_case = GetWatchlistUseCase(
             watchlist_repository=mock_watchlist_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=media_lookup,
         )
 
         await use_case.execute(GetWatchlistInput(lang="pt-BR"))
 
-        movie.get_title.assert_called_once_with("pt-BR")
+        media_lookup.get_many.assert_awaited_once_with(
+            ["mov_abc123def456"],
+            [],
+            "pt-BR",
+        )

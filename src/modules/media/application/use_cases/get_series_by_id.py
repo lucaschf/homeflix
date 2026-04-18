@@ -7,14 +7,13 @@ from src.modules.media.application.dtos.series_dtos import (
     SeasonOutput,
     SeriesOutput,
 )
+from src.modules.media.application.ports import ProgressLookupPort, ProgressSummary
 from src.modules.media.application.use_cases._media_file_helpers import (
     to_media_file_output,
 )
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import SeriesId
-from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.repositories import WatchProgressRepository
 from src.shared_kernel.episode_composite_id import EpisodeCompositeId
 
 
@@ -22,10 +21,12 @@ class GetSeriesByIdUseCase:
     """Retrieve a series with all seasons and episodes.
 
     This use case fetches a complete series hierarchy from the repository,
-    enriching each episode with watch progress data when available.
+    enriching each episode with watch progress data when available. Progress
+    is resolved via ``ProgressLookupPort`` so the Media BC never imports
+    Watch Progress domain types.
 
     Example:
-        >>> use_case = GetSeriesByIdUseCase(series_repository, progress_repository)
+        >>> use_case = GetSeriesByIdUseCase(series_repository, progress_lookup)
         >>> result = await use_case.execute(GetSeriesByIdInput("ser_abc123"))
         >>> result.title
         'Breaking Bad'
@@ -36,16 +37,16 @@ class GetSeriesByIdUseCase:
     def __init__(
         self,
         series_repository: SeriesRepository,
-        progress_repository: WatchProgressRepository,
+        progress_lookup: ProgressLookupPort,
     ) -> None:
         """Initialize the use case.
 
         Args:
             series_repository: Repository for series persistence.
-            progress_repository: Repository for watch progress.
+            progress_lookup: Port for resolving watch progress snapshots.
         """
         self._series_repository = series_repository
-        self._progress_repo = progress_repository
+        self._progress_lookup = progress_lookup
 
     async def execute(self, input_dto: GetSeriesByIdInput) -> SeriesOutput:
         """Execute the use case.
@@ -73,7 +74,7 @@ class GetSeriesByIdUseCase:
             for s in series.seasons
             for ep in s.episodes
         ]
-        progress_map = await self._progress_repo.find_by_media_ids(composite_ids)
+        progress_map = await self._progress_lookup.find_for_media_ids(composite_ids)
 
         return self._to_output(series, input_dto.lang, progress_map)
 
@@ -81,14 +82,14 @@ class GetSeriesByIdUseCase:
         self,
         series: Series,
         lang: str,
-        progress_map: dict[str, WatchProgress],
+        progress_map: dict[str, ProgressSummary],
     ) -> SeriesOutput:
         """Convert Series entity to output DTO.
 
         Args:
             series: The Series entity to convert.
             lang: Language code for localized fields.
-            progress_map: Map of composite media_id to watch progress.
+            progress_map: Map of composite media_id to progress summary.
 
         Returns:
             SeriesOutput with all fields and nested seasons/episodes.
@@ -120,14 +121,14 @@ class GetSeriesByIdUseCase:
     def _to_season_output(
         season: Season,
         series_id: str,
-        progress_map: dict[str, WatchProgress],
+        progress_map: dict[str, ProgressSummary],
     ) -> SeasonOutput:
         """Convert Season entity to output DTO.
 
         Args:
             season: The Season entity to convert.
             series_id: External series ID for composite key lookup.
-            progress_map: Map of composite media_id to watch progress.
+            progress_map: Map of composite media_id to progress summary.
 
         Returns:
             SeasonOutput with episode list.
@@ -156,7 +157,7 @@ class GetSeriesByIdUseCase:
         episode: Episode,
         series_id: str,
         season_number: int,
-        progress_map: dict[str, WatchProgress],
+        progress_map: dict[str, ProgressSummary],
     ) -> EpisodeOutput:
         """Convert Episode entity to output DTO.
 
@@ -164,7 +165,7 @@ class GetSeriesByIdUseCase:
             episode: The Episode entity to convert.
             series_id: External series ID for composite key lookup.
             season_number: Season number for composite key lookup.
-            progress_map: Map of composite media_id to watch progress.
+            progress_map: Map of composite media_id to progress summary.
 
         Returns:
             EpisodeOutput with all fields including progress.

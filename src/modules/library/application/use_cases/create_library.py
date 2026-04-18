@@ -6,6 +6,7 @@ from src.modules.library.application.dtos.library_dtos import (
     CreateLibraryInput,
     LibraryOutput,
 )
+from src.modules.library.application.ports import MediaCountQueryPort
 from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
 from src.modules.library.application.use_cases._to_output import library_to_output
 from src.modules.library.domain.entities.library import Library
@@ -16,7 +17,6 @@ from src.modules.library.domain.value_objects.metadata_provider import (
     MetadataProviderConfig,
 )
 from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
@@ -26,12 +26,10 @@ class CreateLibraryUseCase:
     def __init__(
         self,
         uow_factory: LibraryUnitOfWorkFactory,
-        movie_repository: MovieRepository,
-        series_repository: SeriesRepository,
+        media_count_query: MediaCountQueryPort,
     ) -> None:
         self._uow_factory = uow_factory
-        self._movie_repo = movie_repository
-        self._series_repo = series_repository
+        self._media_count_query = media_count_query
 
     async def execute(self, input_dto: CreateLibraryInput) -> LibraryOutput:
         """Create and persist a new Library.
@@ -66,7 +64,7 @@ class CreateLibraryUseCase:
 
         async with self._uow_factory() as uow:
             saved = await uow.libraries.save(library)
-        return await library_to_output(saved, self._movie_repo, self._series_repo)
+        return await library_to_output(saved, self._media_count_query)
 
 
 def _build_settings(raw: dict[str, Any]) -> LibrarySettings:

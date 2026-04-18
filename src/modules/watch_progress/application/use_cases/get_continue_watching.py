@@ -17,8 +17,11 @@ from src.shared_kernel.episode_composite_id import EpisodeCompositeId
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from src.modules.media.domain.entities import Series
-    from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
+    from src.modules.watch_progress.application.ports import (
+        EpisodeInfo,
+        MediaLookupPort,
+        SeriesWithEpisodesInfo,
+    )
     from src.modules.watch_progress.domain.entities import WatchProgress
     from src.modules.watch_progress.domain.repositories import WatchProgressRepository
 
@@ -27,46 +30,47 @@ _logger = logging.getLogger(__name__)
 
 @dataclass
 class EpisodeCandidate:
-    """An episode with its coordinates and optional progress."""
+    """An episode with its series context, composite id and optional progress.
+
+    Season/episode numbers are always read from ``episode`` — keeping
+    them flat on the candidate risks drift if the episode is ever
+    rebuilt with different coordinates.
+    """
 
     series_id: str
-    season_number: int
-    episode_number: int
     media_id: str
+    episode: EpisodeInfo
     progress: WatchProgress | None
 
 
 class GetContinueWatchingUseCase:
     """List in-progress media items with display metadata.
 
-    Joins progress records with movie/series data to provide title and
-    poster for the "Continue Watching" UI section.
+    Joins progress records with movie/series data (via ``MediaLookupPort``)
+    to provide title and poster for the "Continue Watching" UI section.
 
     For series, returns at most one item per series — the best episode
     to resume. If no episode is in-progress but the series has unwatched
     episodes after completed ones, the next unwatched episode is returned.
 
     Example:
-        >>> use_case = GetContinueWatchingUseCase(progress_repo, movie_repo, series_repo)
+        >>> use_case = GetContinueWatchingUseCase(progress_repo, media_lookup)
         >>> result = await use_case.execute(GetContinueWatchingInput(limit=10))
     """
 
     def __init__(
         self,
         progress_repository: WatchProgressRepository,
-        movie_repository: MovieRepository,
-        series_repository: SeriesRepository,
+        media_lookup: MediaLookupPort,
     ) -> None:
         """Initialize the use case.
 
         Args:
             progress_repository: Repository for watch progress.
-            movie_repository: Repository for movie metadata.
-            series_repository: Repository for series metadata.
+            media_lookup: Port for resolving media display metadata.
         """
         self._progress_repo = progress_repository
-        self._movie_repo = movie_repository
-        self._series_repo = series_repository
+        self._media_lookup = media_lookup
 
     async def execute(self, input_dto: GetContinueWatchingInput) -> ContinueWatchingOutput:
         """Execute the use case.
@@ -121,9 +125,7 @@ class GetContinueWatchingUseCase:
         Returns:
             ContinueWatchingItem for the best episode, or None.
         """
-        from src.modules.media.domain.value_objects import SeriesId
-
-        series = await self._series_repo.find_by_id(SeriesId(series_id))
+        series = await self._media_lookup.get_series_with_episodes(series_id, lang)
         if not series:
             return None
 
@@ -135,34 +137,32 @@ class GetContinueWatchingUseCase:
         if not best:
             return None
 
-        return self._build_series_item(series, best, lang, latest_watched_at)
+        return self._build_series_item(series, best, latest_watched_at)
 
     async def _build_candidates(
         self,
         series_id: str,
-        series: Series,
+        series: SeriesWithEpisodesInfo,
     ) -> list[EpisodeCandidate]:
         """Build EpisodeCandidate list with progress for all episodes."""
-        candidates: list[EpisodeCandidate] = []
         media_ids: list[str] = []
+        candidates: list[EpisodeCandidate] = []
 
-        for s in sorted(series.seasons, key=lambda s: s.season_number.value):
-            for ep in sorted(s.episodes, key=lambda e: e.episode_number.value):
-                mid = EpisodeCompositeId.build(
-                    series_id,
-                    s.season_number.value,
-                    ep.episode_number.value,
-                ).media_id
-                media_ids.append(mid)
-                candidates.append(
-                    EpisodeCandidate(
-                        series_id=series_id,
-                        season_number=s.season_number.value,
-                        episode_number=ep.episode_number.value,
-                        media_id=mid,
-                        progress=None,
-                    )
+        for episode in series.episodes:
+            mid = EpisodeCompositeId.build(
+                series_id,
+                episode.season_number,
+                episode.episode_number,
+            ).media_id
+            media_ids.append(mid)
+            candidates.append(
+                EpisodeCandidate(
+                    series_id=series_id,
+                    media_id=mid,
+                    episode=episode,
+                    progress=None,
                 )
+            )
 
         if not candidates:
             return []
@@ -196,10 +196,10 @@ class GetContinueWatchingUseCase:
                 latest_watched_at = ep.progress.last_watched_at
 
             if ep.progress.status == WatchStatus.IN_PROGRESS:
-                coords = (ep.season_number, ep.episode_number)
+                coords = (ep.episode.season_number, ep.episode.episode_number)
                 if not best_in_progress or coords > (
-                    best_in_progress.season_number,
-                    best_in_progress.episode_number,
+                    best_in_progress.episode.season_number,
+                    best_in_progress.episode.episode_number,
                 ):
                     best_in_progress = ep
             elif ep.progress.status == WatchStatus.COMPLETED:
@@ -215,31 +215,22 @@ class GetContinueWatchingUseCase:
 
         return None, latest_watched_at
 
+    @staticmethod
     def _build_series_item(
-        self,
-        series: Series,
+        series: SeriesWithEpisodesInfo,
         candidate: EpisodeCandidate,
-        lang: str,
         fallback_last_watched: datetime | None = None,
-    ) -> ContinueWatchingItem | None:
+    ) -> ContinueWatchingItem:
         """Build a ContinueWatchingItem from a resolved candidate.
 
         Args:
-            series: The series entity.
+            series: The series metadata.
             candidate: The selected episode candidate.
-            lang: Language code.
             fallback_last_watched: Fallback timestamp for unwatched episodes.
 
         Returns:
-            ContinueWatchingItem or None if episode not found in series.
+            ContinueWatchingItem for the candidate.
         """
-        season = series.get_season(candidate.season_number)
-        if not season:
-            return None
-        episode = season.get_episode(candidate.episode_number)
-        if not episode:
-            return None
-
         progress = candidate.progress
         last_watched = (
             progress.last_watched_at.isoformat()
@@ -250,17 +241,19 @@ class GetContinueWatchingUseCase:
         return ContinueWatchingItem(
             media_id=candidate.media_id,
             media_type=WatchableMediaType.EPISODE,
-            title=episode.title.value,
-            poster_path=series.poster_path.value if series.poster_path else None,
-            backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
+            title=candidate.episode.title,
+            poster_path=series.poster_path,
+            backdrop_path=series.backdrop_path,
             position_seconds=progress.position_seconds if progress else 0,
-            duration_seconds=progress.duration_seconds if progress else episode.duration.value,
+            duration_seconds=(
+                progress.duration_seconds if progress else candidate.episode.duration_seconds
+            ),
             percentage=progress.percentage if progress else 0.0,
             last_watched_at=last_watched,
-            series_id=str(series.id),
-            series_title=series.get_title(lang),
-            season_number=candidate.season_number,
-            episode_number=candidate.episode_number,
+            series_id=series.series_id,
+            series_title=series.title,
+            season_number=candidate.episode.season_number,
+            episode_number=candidate.episode.episode_number,
         )
 
     async def _enrich_movie(
@@ -269,17 +262,15 @@ class GetContinueWatchingUseCase:
         lang: str,
     ) -> ContinueWatchingItem | None:
         """Enrich a movie progress record with metadata."""
-        from src.modules.media.domain.value_objects import MovieId
-
-        movie = await self._movie_repo.find_by_id(MovieId(progress.media_id))
+        movie = await self._media_lookup.get_movie(progress.media_id, lang)
         if not movie:
             return None
         return ContinueWatchingItem(
             media_id=progress.media_id,
             media_type=progress.media_type,
-            title=movie.get_title(lang),
-            poster_path=movie.poster_path.value if movie.poster_path else None,
-            backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
+            title=movie.title,
+            poster_path=movie.poster_path,
+            backdrop_path=movie.backdrop_path,
             position_seconds=progress.position_seconds,
             duration_seconds=progress.duration_seconds,
             percentage=progress.percentage,

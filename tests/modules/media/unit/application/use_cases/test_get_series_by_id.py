@@ -6,6 +6,7 @@ import pytest
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos import GetSeriesByIdInput, SeriesOutput
+from src.modules.media.application.ports import ProgressLookupPort
 from src.modules.media.application.use_cases import GetSeriesByIdUseCase
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
@@ -18,22 +19,21 @@ from src.modules.media.domain.value_objects import (
     SeasonId,
     Title,
 )
-from src.modules.watch_progress.domain.repositories import WatchProgressRepository
 
 
 @pytest.fixture()
-def mock_progress_repo() -> AsyncMock:
-    """Create a mock WatchProgressRepository with empty results."""
-    repo = AsyncMock(spec=WatchProgressRepository)
-    repo.find_by_media_ids.return_value = {}
-    return repo
+def mock_progress_lookup() -> AsyncMock:
+    """Create a mock ``ProgressLookupPort`` with empty results."""
+    lookup = AsyncMock(spec=ProgressLookupPort)
+    lookup.find_for_media_ids.return_value = {}
+    return lookup
 
 
 class TestGetSeriesByIdUseCase:
     """Tests for GetSeriesByIdUseCase."""
 
     @pytest.mark.asyncio
-    async def test_should_return_series_when_found(self, mock_progress_repo):
+    async def test_should_return_series_when_found(self, mock_progress_lookup):
         mock_repo = AsyncMock(spec=SeriesRepository)
         series = Series.create(
             title="Breaking Bad",
@@ -42,7 +42,7 @@ class TestGetSeriesByIdUseCase:
         mock_repo.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
             series_repository=mock_repo,
-            progress_repository=mock_progress_repo,
+            progress_lookup=mock_progress_lookup,
         )
 
         result = await use_case.execute(GetSeriesByIdInput(series_id=str(series.id)))
@@ -53,7 +53,7 @@ class TestGetSeriesByIdUseCase:
         assert result.is_ongoing is True
 
     @pytest.mark.asyncio
-    async def test_should_return_series_with_seasons(self, mock_progress_repo):
+    async def test_should_return_series_with_seasons(self, mock_progress_lookup):
         mock_repo = AsyncMock(spec=SeriesRepository)
         series = Series.create(
             title="Breaking Bad",
@@ -69,7 +69,7 @@ class TestGetSeriesByIdUseCase:
         mock_repo.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
             series_repository=mock_repo,
-            progress_repository=mock_progress_repo,
+            progress_lookup=mock_progress_lookup,
         )
 
         result = await use_case.execute(GetSeriesByIdInput(series_id=str(series.id)))
@@ -79,7 +79,7 @@ class TestGetSeriesByIdUseCase:
         assert result.seasons[0].season_number == 1
 
     @pytest.mark.asyncio
-    async def test_should_return_series_with_episodes(self, mock_progress_repo):
+    async def test_should_return_series_with_episodes(self, mock_progress_lookup):
         mock_repo = AsyncMock(spec=SeriesRepository)
         series = Series.create(
             title="Breaking Bad",
@@ -111,7 +111,7 @@ class TestGetSeriesByIdUseCase:
         mock_repo.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
             series_repository=mock_repo,
-            progress_repository=mock_progress_repo,
+            progress_lookup=mock_progress_lookup,
         )
 
         result = await use_case.execute(GetSeriesByIdInput(series_id=str(series.id)))
@@ -124,7 +124,7 @@ class TestGetSeriesByIdUseCase:
         assert episode_output.duration_formatted == "01:00:00"
 
     @pytest.mark.asyncio
-    async def test_should_return_ongoing_status(self, mock_progress_repo):
+    async def test_should_return_ongoing_status(self, mock_progress_lookup):
         mock_repo = AsyncMock(spec=SeriesRepository)
         series = Series.create(
             title="Ongoing Show",
@@ -133,7 +133,7 @@ class TestGetSeriesByIdUseCase:
         mock_repo.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
             series_repository=mock_repo,
-            progress_repository=mock_progress_repo,
+            progress_lookup=mock_progress_lookup,
         )
 
         result = await use_case.execute(GetSeriesByIdInput(series_id=str(series.id)))
@@ -142,7 +142,7 @@ class TestGetSeriesByIdUseCase:
         assert result.end_year is None
 
     @pytest.mark.asyncio
-    async def test_should_return_completed_status(self, mock_progress_repo):
+    async def test_should_return_completed_status(self, mock_progress_lookup):
         mock_repo = AsyncMock(spec=SeriesRepository)
         series = Series.create(
             title="Completed Show",
@@ -152,7 +152,7 @@ class TestGetSeriesByIdUseCase:
         mock_repo.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
             series_repository=mock_repo,
-            progress_repository=mock_progress_repo,
+            progress_lookup=mock_progress_lookup,
         )
 
         result = await use_case.execute(GetSeriesByIdInput(series_id=str(series.id)))
@@ -161,12 +161,12 @@ class TestGetSeriesByIdUseCase:
         assert result.end_year == 2015
 
     @pytest.mark.asyncio
-    async def test_should_raise_not_found_when_series_missing(self, mock_progress_repo):
+    async def test_should_raise_not_found_when_series_missing(self, mock_progress_lookup):
         mock_repo = AsyncMock(spec=SeriesRepository)
         mock_repo.find_by_id.return_value = None
         use_case = GetSeriesByIdUseCase(
             series_repository=mock_repo,
-            progress_repository=mock_progress_repo,
+            progress_lookup=mock_progress_lookup,
         )
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
@@ -176,7 +176,7 @@ class TestGetSeriesByIdUseCase:
         assert exc_info.value.resource_id == "ser_nonexistent1"
 
     @pytest.mark.asyncio
-    async def test_should_handle_series_with_no_seasons(self, mock_progress_repo):
+    async def test_should_handle_series_with_no_seasons(self, mock_progress_lookup):
         mock_repo = AsyncMock(spec=SeriesRepository)
         series = Series.create(
             title="New Show",
@@ -185,7 +185,7 @@ class TestGetSeriesByIdUseCase:
         mock_repo.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
             series_repository=mock_repo,
-            progress_repository=mock_progress_repo,
+            progress_lookup=mock_progress_lookup,
         )
 
         result = await use_case.execute(GetSeriesByIdInput(series_id=str(series.id)))
@@ -195,7 +195,7 @@ class TestGetSeriesByIdUseCase:
         assert result.seasons == []
 
     @pytest.mark.asyncio
-    async def test_should_return_genres_as_strings(self, mock_progress_repo):
+    async def test_should_return_genres_as_strings(self, mock_progress_lookup):
         mock_repo = AsyncMock(spec=SeriesRepository)
         series = Series.create(
             title="Drama Show",
@@ -205,7 +205,7 @@ class TestGetSeriesByIdUseCase:
         mock_repo.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
             series_repository=mock_repo,
-            progress_repository=mock_progress_repo,
+            progress_lookup=mock_progress_lookup,
         )
 
         result = await use_case.execute(GetSeriesByIdInput(series_id=str(series.id)))

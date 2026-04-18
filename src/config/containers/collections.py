@@ -14,6 +14,7 @@ from src.modules.collections.application.use_cases import (
     RenameCustomListUseCase,
     ToggleWatchlistUseCase,
 )
+from src.modules.collections.infrastructure.acl import MediaLookupAdapter
 from src.modules.collections.infrastructure.persistence.repositories import (
     SQLAlchemyCustomListRepository,
     SQLAlchemyWatchlistRepository,
@@ -33,6 +34,8 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
 
     session = providers.Dependency()
     session_factory = providers.Dependency()
+    # Media repositories come in so the ACL adapter can delegate
+    # metadata lookups. Use cases only ever see ``MediaLookupPort``.
     movie_repository = providers.Dependency()
     series_repository = providers.Dependency()
 
@@ -56,6 +59,16 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
     )
 
     # =========================================================================
+    # Anti-corruption layer (cross-BC read ports)
+    # =========================================================================
+
+    media_lookup = providers.Factory(
+        MediaLookupAdapter,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
+    )
+
+    # =========================================================================
     # Watchlist Use Cases
     # =========================================================================
 
@@ -67,8 +80,7 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
     get_watchlist = providers.Factory(
         GetWatchlistUseCase,
         watchlist_repository=watchlist_repository,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        media_lookup=media_lookup,
     )
 
     check_watchlist = providers.Factory(
@@ -113,6 +125,5 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
     get_custom_list_items = providers.Factory(
         GetCustomListItemsUseCase,
         custom_list_repository=custom_list_repository,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        media_lookup=media_lookup,
     )
