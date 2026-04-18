@@ -11,6 +11,7 @@ FastAPI response.
 """
 
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from dependency_injector.wiring import Provide, inject
@@ -53,9 +54,16 @@ _FILE_BASE_URL = "/api/v1/stream/hls/{path_hash}{parent}"
 
 
 def _require_file(file_path: str | None) -> str:
-    """Validate that a file path was resolved and return it."""
+    """Validate that a file was resolved and exists on disk, or 404.
+
+    Mirrors the pre-refactor behaviour: missing DB metadata and a
+    stale/removed file on disk both map to ``404`` here — the
+    streaming use cases downstream can assume the path is reachable.
+    """
     if not file_path:
         raise HTTPException(status_code=404, detail="No video file available")
+    if not Path(file_path).is_file():
+        raise HTTPException(status_code=404, detail="Video file not found on disk")
     return file_path
 
 

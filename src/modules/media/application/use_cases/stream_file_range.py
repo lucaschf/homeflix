@@ -1,10 +1,11 @@
 """StreamFileRangeUseCase — byte-range streaming for direct playback."""
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from src.modules.media.application.dtos.stream_dtos import RangeStreamOutput
 from src.modules.media.application.ports.file_streamer_port import FileStreamerPort
-from src.modules.media.application.streaming.range_parser import parse_range_header
+from src.modules.media.application.streaming.range_parser import ByteRange, parse_range_header
 
 _DEFAULT_MEDIA_TYPE = "video/mp4"
 
@@ -35,33 +36,34 @@ class StreamFileRangeUseCase:
         """Resolve the requested byte range and return the streaming DTO."""
         file_size = self._streamer.get_file_size(input_dto.file_path)
         byte_range = parse_range_header(input_dto.range_header, file_size)
-
         body = self._streamer.stream_range(
             input_dto.file_path,
             byte_range.start,
             byte_range.end,
         )
+        return self._build_output(input_dto.media_type, file_size, byte_range, body)
 
+    @staticmethod
+    def _build_output(
+        media_type: str,
+        file_size: int,
+        byte_range: ByteRange,
+        body: AsyncIterator[bytes],
+    ) -> RangeStreamOutput:
+        """Assemble status code + headers around ``body`` based on ``byte_range``."""
+        headers = {"Accept-Ranges": "bytes"}
         if byte_range.is_partial:
-            headers = {
-                "Content-Range": f"bytes {byte_range.start}-{byte_range.end}/{file_size}",
-                "Accept-Ranges": "bytes",
-                "Content-Length": str(byte_range.length),
-            }
-            return RangeStreamOutput(
-                status_code=206,
-                media_type=input_dto.media_type,
-                headers=headers,
-                body=body,
-            )
+            headers["Content-Range"] = f"bytes {byte_range.start}-{byte_range.end}/{file_size}"
+            headers["Content-Length"] = str(byte_range.length)
+            status_code = 206
+        else:
+            headers["Content-Length"] = str(file_size)
+            status_code = 200
 
         return RangeStreamOutput(
-            status_code=200,
-            media_type=input_dto.media_type,
-            headers={
-                "Accept-Ranges": "bytes",
-                "Content-Length": str(file_size),
-            },
+            status_code=status_code,
+            media_type=media_type,
+            headers=headers,
             body=body,
         )
 

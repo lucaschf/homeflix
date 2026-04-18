@@ -14,10 +14,13 @@ class GenerateHlsPlaylistInput:
 
     Attributes:
         file_path: Absolute path to the source video file.
-        base_url: Absolute URL that will prefix all relative references
-            inside the rewritten playlist (e.g.
-            ``/api/v1/stream/hls/<hash>``). The use case does not know
-            its own mount point, so presentation passes it in.
+        base_url_template: ``str.format``-style template the use case
+            resolves against the generated cache hash to produce the
+            absolute URL that prefixes every relative reference inside
+            the rewritten playlist. Must contain ``{path_hash}`` —
+            e.g. ``"/api/v1/stream/hls/{path_hash}"``. The use case
+            does not know its own mount point, so presentation passes
+            it in.
         start_seconds: Optional resume offset (see
             ``HlsPlaylistPort.ensure_playlist``).
     """
