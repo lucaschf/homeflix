@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # app.state so the shutdown handler can do a single truthy check.
     app.state.scheduler = None
     if settings.scheduler_enabled:
-        scheduler = await container.infrastructure.library_scan_scheduler()
+        scheduler = await container.library_scan_scheduler()
         await scheduler.start()
         app.state.scheduler = scheduler
 

@@ -15,6 +15,7 @@ from src.config.containers.media import MediaContainer
 from src.config.containers.preferences import PreferencesContainer
 from src.config.containers.watch_progress import WatchProgressContainer
 from src.config.settings import Settings
+from src.infrastructure.scheduling import LibraryScanScheduler
 
 
 class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[misc]
@@ -93,6 +94,23 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         session_factory=infrastructure.session_factory,
         movie_repository=media.movie_repository,
         series_repository=media.series_repository,
+    )
+
+    # =========================================================================
+    # Cross-BC Services
+    # =========================================================================
+    # Wired at the composition root because it needs UoW factories from
+    # two sibling containers (``library`` and ``media``).
+
+    library_scan_scheduler = providers.Singleton(
+        LibraryScanScheduler,
+        library_uow_factory=library.library_unit_of_work_factory,
+        media_uow_factory=media.media_unit_of_work_factory,
+        file_scanner=infrastructure.file_scanner,
+        variant_detector=infrastructure.variant_detector,
+        event_bus=infrastructure.event_bus,
+        reconcile_interval_minutes=config.provided.scheduler_reconcile_interval_minutes,
+        probe_service=media.media_probe_service,
     )
 
 
