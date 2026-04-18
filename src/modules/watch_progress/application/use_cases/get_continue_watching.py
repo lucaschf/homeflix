@@ -126,29 +126,23 @@ class GetContinueWatchingUseCase:
         series_id: str,
         series: SeriesWithEpisodesInfo,
     ) -> list[EpisodeCandidate]:
-        """Translate series episodes + their progress into selector inputs."""
-        media_ids: list[str] = []
-        episode_tuples: list[tuple[str, int, int, str, int]] = []
+        """Translate series episodes + their progress into selector inputs.
 
-        for episode in series.episodes:
-            mid = EpisodeCompositeId.build(
-                series_id,
-                episode.season_number,
-                episode.episode_number,
-            ).media_id
-            media_ids.append(mid)
-            episode_tuples.append(
-                (
-                    mid,
-                    episode.season_number,
-                    episode.episode_number,
-                    episode.title,
-                    episode.duration_seconds,
-                )
-            )
-
-        if not episode_tuples:
+        Candidate fields are kept flat (not composed with
+        ``EpisodeInfo``) so the domain ``EpisodeCandidate`` does not
+        transitively depend on an application-layer port DTO.
+        """
+        if not series.episodes:
             return []
+
+        media_ids = [
+            EpisodeCompositeId.build(
+                series_id,
+                ep.season_number,
+                ep.episode_number,
+            ).media_id
+            for ep in series.episodes
+        ]
 
         progress_map = await self._progress_repo.find_by_media_ids(media_ids)
 
@@ -156,13 +150,13 @@ class GetContinueWatchingUseCase:
             EpisodeCandidate(
                 series_id=series_id,
                 media_id=mid,
-                season_number=season,
-                episode_number=episode,
-                episode_title=title,
-                duration_seconds=duration,
+                season_number=ep.season_number,
+                episode_number=ep.episode_number,
+                episode_title=ep.title,
+                duration_seconds=ep.duration_seconds,
                 progress=progress_map.get(mid),
             )
-            for mid, season, episode, title, duration in episode_tuples
+            for ep, mid in zip(series.episodes, media_ids, strict=True)
         ]
 
     @staticmethod
