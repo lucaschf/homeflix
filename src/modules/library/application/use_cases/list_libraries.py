@@ -2,6 +2,7 @@
 
 from src.modules.library.application.dtos.library_dtos import LibraryOutput
 from src.modules.library.application.ports import MediaCountQueryPort
+from src.modules.library.application.use_cases._counts import resolve_counts
 from src.modules.library.application.use_cases._to_output import library_to_output
 from src.modules.library.domain.repositories.library_repository import LibraryRepository
 
@@ -33,7 +34,13 @@ class ListLibrariesUseCase:
             List of ``LibraryOutput`` ordered by name.
         """
         entities = await self._repo.find_all()
-        return [await library_to_output(e, self._media_count_query) for e in entities]
+        outputs: list[LibraryOutput] = []
+        for entity in entities:
+            movie_count, series_count = await resolve_counts(entity, self._media_count_query)
+            outputs.append(
+                library_to_output(entity, movie_count=movie_count, series_count=series_count)
+            )
+        return outputs
 
 
 __all__ = ["ListLibrariesUseCase"]

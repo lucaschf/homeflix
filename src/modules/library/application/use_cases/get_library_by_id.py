@@ -6,6 +6,7 @@ from src.modules.library.application.dtos.library_dtos import (
     LibraryOutput,
 )
 from src.modules.library.application.ports import MediaCountQueryPort
+from src.modules.library.application.use_cases._counts import resolve_counts
 from src.modules.library.application.use_cases._to_output import library_to_output
 from src.modules.library.domain.repositories.library_repository import LibraryRepository
 from src.modules.library.domain.value_objects.library_id import LibraryId
@@ -42,7 +43,8 @@ class GetLibraryByIdUseCase:
                 "Library",
                 input_dto.library_id,
             )
-        return await library_to_output(entity, self._media_count_query)
+        movie_count, series_count = await resolve_counts(entity, self._media_count_query)
+        return library_to_output(entity, movie_count=movie_count, series_count=series_count)
 
 
 __all__ = ["GetLibraryByIdUseCase"]
