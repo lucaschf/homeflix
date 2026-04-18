@@ -1,16 +1,16 @@
 """GetPreferencesUseCase."""
 
 from src.modules.preferences.application.dtos.preferences_dtos import PreferencesOutput
-from src.modules.preferences.infrastructure.persistence.repositories.preferences_repository import (
-    PreferencesRepository,
-)
+from src.modules.preferences.domain.entities import DEFAULT_USER_KEY, PlaybackPreferences
+from src.modules.preferences.domain.repositories import PreferencesRepository
 
 
 class GetPreferencesUseCase:
     """Return the current user's playback preferences.
 
-    If no row exists yet (first visit), returns the column defaults
-    baked into ``PreferencesModel``.
+    On first access (no row persisted yet) the domain factory
+    ``PlaybackPreferences.default_for`` supplies the defaults — the
+    use case stays thin and keeps no magic constants of its own.
     """
 
     def __init__(self, preferences_repository: PreferencesRepository) -> None:
@@ -18,23 +18,21 @@ class GetPreferencesUseCase:
 
     async def execute(self) -> PreferencesOutput:
         """Fetch or default the user's playback preferences."""
-        model = await self._repo.get()
-        if model is None:
-            # Return defaults — first visit, no row yet.
-            return PreferencesOutput(
-                audio_lang="pt-BR",
-                subtitle_lang="pt-BR",
-                subtitle_mode="foreignOnly",
-                default_quality="best",
-                speed=1.0,
-            )
-        return PreferencesOutput(
-            audio_lang=model.audio_lang,
-            subtitle_lang=model.subtitle_lang,
-            subtitle_mode=model.subtitle_mode,
-            default_quality=model.default_quality,
-            speed=model.speed,
-        )
+        entity = await self._repo.find_by_user_key(DEFAULT_USER_KEY)
+        if entity is None:
+            entity = PlaybackPreferences.default_for(DEFAULT_USER_KEY)
+        return _to_output(entity)
+
+
+def _to_output(entity: PlaybackPreferences) -> PreferencesOutput:
+    """Project the entity into the transport DTO."""
+    return PreferencesOutput(
+        audio_lang=entity.audio_lang,
+        subtitle_lang=entity.subtitle_lang,
+        subtitle_mode=entity.subtitle_mode.value,
+        default_quality=entity.default_quality.value,
+        speed=entity.speed.value,
+    )
 
 
 __all__ = ["GetPreferencesUseCase"]
