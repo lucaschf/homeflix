@@ -5,23 +5,24 @@ from src.modules.library.application.dtos.library_dtos import (
     LibrarySettingsOutput,
     MetadataProviderOutput,
 )
-from src.modules.library.application.ports import MediaCountQueryPort
 from src.modules.library.domain.entities.library import Library
 
 
-async def library_to_output(
+def library_to_output(
     entity: Library,
-    media_count_query: MediaCountQueryPort,
+    *,
+    movie_count: int,
+    series_count: int,
 ) -> LibraryOutput:
-    """Convert a Library domain entity to its output DTO.
+    """Project a ``Library`` entity into the transport DTO.
 
-    The movie/series counts are resolved via the ``MediaCountQueryPort``
-    so the Library BC never imports Media repositories directly. See
-    ADR-009 for the cross-BC read port pattern.
+    Pure: no IO, no port dependency. Callers are expected to resolve
+    ``movie_count`` / ``series_count`` via ``MediaCountQueryPort``
+    beforehand and pass them in. Keeping the mapper pure lets every
+    use case decide how to batch (or not) the count queries without
+    leaking that choice into the projection.
     """
     paths = [p.value for p in entity.paths]
-    movie_count = await media_count_query.count_movies_under_paths(paths)
-    series_count = await media_count_query.count_series_under_paths(paths)
     return LibraryOutput(
         id=str(entity.id),
         name=entity.name.value,

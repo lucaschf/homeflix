@@ -8,6 +8,7 @@ from src.modules.library.application.dtos.library_dtos import (
 )
 from src.modules.library.application.ports import MediaCountQueryPort
 from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
+from src.modules.library.application.use_cases._counts import resolve_counts
 from src.modules.library.application.use_cases._to_output import library_to_output
 from src.modules.library.domain.entities.library import Library
 from src.modules.library.domain.value_objects.library_settings import LibrarySettings
@@ -64,7 +65,8 @@ class CreateLibraryUseCase:
 
         async with self._uow_factory() as uow:
             saved = await uow.libraries.save(library)
-        return await library_to_output(saved, self._media_count_query)
+        movie_count, series_count = await resolve_counts(saved, self._media_count_query)
+        return library_to_output(saved, movie_count=movie_count, series_count=series_count)
 
 
 def _build_settings(raw: dict[str, Any]) -> LibrarySettings:
