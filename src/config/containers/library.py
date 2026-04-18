@@ -12,6 +12,7 @@ from src.modules.library.application.use_cases.get_library_by_id import GetLibra
 from src.modules.library.application.use_cases.list_libraries import ListLibrariesUseCase
 from src.modules.library.application.use_cases.update_library import UpdateLibraryUseCase
 from src.modules.library.domain.services.track_selector import TrackSelector
+from src.modules.library.infrastructure.acl import MediaCountQueryAdapter
 from src.modules.library.infrastructure.persistence.repositories.sqlalchemy_library_repository import (
     SqlAlchemyLibraryRepository,
 )
@@ -26,6 +27,7 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     Provides:
     - Repository implementation (SQLAlchemy) for read use cases
     - Unit of Work factory for write use cases
+    - ACL adapter for the Media BC read port
     - CRUD use cases
     - Domain services
     """
@@ -33,9 +35,9 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # Wired from InfrastructureContainer via main container.
     session = providers.Dependency()
     session_factory = providers.Dependency()
-    # Media repositories come from MediaContainer — library responses
-    # include per-library movie/series counts, so the library use
-    # cases need to query those tables too.
+    # Media repositories come in so the ACL adapter can delegate
+    # count queries. The use cases themselves only know the
+    # ``MediaCountQueryPort`` — they never see these concretes.
     movie_repository = providers.Dependency()
     series_repository = providers.Dependency()
 
@@ -54,35 +56,41 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     )
 
     # =========================================================================
+    # Anti-corruption layer (cross-BC read ports)
+    # =========================================================================
+
+    media_count_query = providers.Factory(
+        MediaCountQueryAdapter,
+        movie_repository=movie_repository,
+        series_repository=series_repository,
+    )
+
+    # =========================================================================
     # Use Cases
     # =========================================================================
 
     create_library = providers.Factory(
         CreateLibraryUseCase,
         uow_factory=library_unit_of_work_factory,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        media_count_query=media_count_query,
     )
 
     list_libraries = providers.Factory(
         ListLibrariesUseCase,
         library_repository=library_repository,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        media_count_query=media_count_query,
     )
 
     get_library_by_id = providers.Factory(
         GetLibraryByIdUseCase,
         library_repository=library_repository,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        media_count_query=media_count_query,
     )
 
     update_library = providers.Factory(
         UpdateLibraryUseCase,
         uow_factory=library_unit_of_work_factory,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        media_count_query=media_count_query,
     )
 
     delete_library = providers.Factory(

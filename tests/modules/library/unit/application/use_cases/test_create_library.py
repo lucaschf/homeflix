@@ -6,23 +6,21 @@ import pytest
 from tests.modules.library.unit.conftest import make_library_uow_mock
 
 from src.modules.library.application.dtos.library_dtos import CreateLibraryInput
+from src.modules.library.application.ports import MediaCountQueryPort
 from src.modules.library.application.use_cases.create_library import CreateLibraryUseCase
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 
 
 def _configure_uow_mocks() -> "tuple[CreateLibraryUseCase, object, object]":
     mocks = make_library_uow_mock()
     mocks.libraries.save.side_effect = lambda lib: lib
 
-    movie_repo = AsyncMock(spec=MovieRepository)
-    movie_repo.count_under_paths.return_value = 0
-    series_repo = AsyncMock(spec=SeriesRepository)
-    series_repo.count_under_paths.return_value = 0
+    media_count_query = AsyncMock(spec=MediaCountQueryPort)
+    media_count_query.count_movies_under_paths.return_value = 0
+    media_count_query.count_series_under_paths.return_value = 0
 
     use_case = CreateLibraryUseCase(
         uow_factory=mocks.factory,
-        movie_repository=movie_repo,
-        series_repository=series_repo,
+        media_count_query=media_count_query,
     )
     return use_case, mocks.libraries.save, mocks.factory
 

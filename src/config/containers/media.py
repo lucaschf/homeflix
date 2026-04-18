@@ -31,6 +31,7 @@ from src.modules.media.application.use_cases.scan_media_directories import (
 )
 from src.modules.media.application.use_cases.search_catalog import SearchCatalogUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
+from src.modules.media.infrastructure.acl import ProgressLookupAdapter
 from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
 from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
@@ -55,6 +56,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     Provides:
     - Repository implementations (SQLAlchemy)
     - Use cases for movie, series, and file variant operations
+    - ACL adapter for the Watch Progress BC read port
 
     The ``session`` dependency must be wired from the parent container
     once the database provider is added to InfrastructureContainer.
@@ -87,14 +89,26 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         session=session,
     )
 
-    progress_repository = providers.Factory(
+    media_unit_of_work_factory = providers.Singleton(
+        SqlAlchemyMediaUnitOfWorkFactory,
+        session_factory=session_factory,
+    )
+
+    # =========================================================================
+    # Anti-corruption layer (cross-BC read ports)
+    # =========================================================================
+    # Wraps the Watch Progress repository so media use cases see only
+    # the ``ProgressLookupPort`` and never import progress domain types.
+    # Each request builds a fresh adapter bound to the request session.
+
+    _progress_repository = providers.Factory(
         SQLAlchemyWatchProgressRepository,
         session=session,
     )
 
-    media_unit_of_work_factory = providers.Singleton(
-        SqlAlchemyMediaUnitOfWorkFactory,
-        session_factory=session_factory,
+    progress_lookup = providers.Factory(
+        ProgressLookupAdapter,
+        progress_repository=_progress_repository,
     )
 
     # =========================================================================
@@ -125,7 +139,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     get_series_by_id = providers.Factory(
         GetSeriesByIdUseCase,
         series_repository=series_repository,
-        progress_repository=progress_repository,
+        progress_lookup=progress_lookup,
     )
 
     list_series = providers.Factory(

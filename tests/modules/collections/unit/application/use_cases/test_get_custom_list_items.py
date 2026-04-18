@@ -6,10 +6,13 @@ from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.collections.unit.application.use_cases.conftest import (
+    make_media_lookup_mock,
+)
 
 if TYPE_CHECKING:
     from tests.modules.collections.unit.application.use_cases.conftest import (
-        MediaMockFactory,
+        MediaSummaryFactory,
     )
 
 from src.building_blocks.application.errors import ResourceNotFoundException
@@ -17,10 +20,10 @@ from src.modules.collections.application.dtos import (
     CustomListItemOutput,
     GetCustomListItemsInput,
 )
+from src.modules.collections.application.ports import MediaLookupPort
 from src.modules.collections.application.use_cases import GetCustomListItemsUseCase
 from src.modules.collections.domain.entities import CustomList, CustomListItem
 from src.modules.collections.domain.repositories import CustomListRepository
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.shared_kernel.value_objects import CollectionMediaType
 
 
@@ -29,7 +32,9 @@ class TestGetCustomListItemsUseCase:
     """Tests for getting custom list items with metadata."""
 
     @pytest.mark.asyncio
-    async def test_should_return_items_with_metadata(self, movie_mock: MediaMockFactory) -> None:
+    async def test_should_return_items_with_metadata(
+        self, movie_summary: MediaSummaryFactory
+    ) -> None:
         custom_list = CustomList.create(name="Test")
         items = [
             CustomListItem.create(
@@ -38,21 +43,18 @@ class TestGetCustomListItemsUseCase:
                 position=0,
             ),
         ]
-        movie = movie_mock("mov_abc123def456", "Inception")
 
         mock_list_repo = AsyncMock(spec=CustomListRepository)
         mock_list_repo.find_by_id.return_value = custom_list
         mock_list_repo.list_items.return_value = items
 
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_movie_repo.find_by_ids.return_value = {"mov_abc123def456": movie}
-
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
+        media_lookup = make_media_lookup_mock(
+            movie_summary("mov_abc123def456", "Inception"),
+        )
 
         use_case = GetCustomListItemsUseCase(
             custom_list_repository=mock_list_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=media_lookup,
         )
 
         result = await use_case.execute(GetCustomListItemsInput(list_id=str(custom_list.id)))
@@ -66,12 +68,9 @@ class TestGetCustomListItemsUseCase:
     async def test_should_raise_when_list_not_found(self) -> None:
         mock_list_repo = AsyncMock(spec=CustomListRepository)
         mock_list_repo.find_by_id.return_value = None
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
         use_case = GetCustomListItemsUseCase(
             custom_list_repository=mock_list_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=AsyncMock(spec=MediaLookupPort),
         )
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
@@ -85,12 +84,9 @@ class TestGetCustomListItemsUseCase:
         mock_list_repo = AsyncMock(spec=CustomListRepository)
         mock_list_repo.find_by_id.return_value = custom_list
         mock_list_repo.list_items.return_value = []
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
         use_case = GetCustomListItemsUseCase(
             custom_list_repository=mock_list_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=AsyncMock(spec=MediaLookupPort),
         )
 
         result = await use_case.execute(GetCustomListItemsInput(list_id=str(custom_list.id)))
@@ -111,15 +107,9 @@ class TestGetCustomListItemsUseCase:
         mock_list_repo.find_by_id.return_value = custom_list
         mock_list_repo.list_items.return_value = items
 
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_movie_repo.find_by_ids.return_value = {}
-
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
-
         use_case = GetCustomListItemsUseCase(
             custom_list_repository=mock_list_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=make_media_lookup_mock(),
         )
 
         result = await use_case.execute(GetCustomListItemsInput(list_id=str(custom_list.id)))
@@ -128,7 +118,9 @@ class TestGetCustomListItemsUseCase:
 
     @pytest.mark.asyncio
     async def test_should_handle_mixed_media_types(
-        self, movie_mock: MediaMockFactory, series_mock: MediaMockFactory
+        self,
+        movie_summary: MediaSummaryFactory,
+        series_summary: MediaSummaryFactory,
     ) -> None:
         custom_list = CustomList.create(name="Mixed")
         items = [
@@ -143,23 +135,19 @@ class TestGetCustomListItemsUseCase:
                 position=1,
             ),
         ]
-        movie = movie_mock("mov_abc123def456", "Inception")
-        series = series_mock("ser_xyz789abc123", "Breaking Bad")
 
         mock_list_repo = AsyncMock(spec=CustomListRepository)
         mock_list_repo.find_by_id.return_value = custom_list
         mock_list_repo.list_items.return_value = items
 
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_movie_repo.find_by_ids.return_value = {"mov_abc123def456": movie}
-
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
-        mock_series_repo.find_by_ids.return_value = {"ser_xyz789abc123": series}
+        media_lookup = make_media_lookup_mock(
+            movie_summary("mov_abc123def456", "Inception"),
+            series_summary("ser_xyz789abc123", "Breaking Bad"),
+        )
 
         use_case = GetCustomListItemsUseCase(
             custom_list_repository=mock_list_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=media_lookup,
         )
 
         result = await use_case.execute(GetCustomListItemsInput(list_id=str(custom_list.id)))
@@ -169,7 +157,9 @@ class TestGetCustomListItemsUseCase:
         assert result[1].title == "Breaking Bad"
 
     @pytest.mark.asyncio
-    async def test_should_pass_language_to_get_title(self, movie_mock: MediaMockFactory) -> None:
+    async def test_should_pass_language_to_media_lookup(
+        self, movie_summary: MediaSummaryFactory
+    ) -> None:
         custom_list = CustomList.create(name="Test")
         items = [
             CustomListItem.create(
@@ -178,23 +168,22 @@ class TestGetCustomListItemsUseCase:
                 position=0,
             ),
         ]
-        movie = movie_mock("mov_abc123def456")
 
         mock_list_repo = AsyncMock(spec=CustomListRepository)
         mock_list_repo.find_by_id.return_value = custom_list
         mock_list_repo.list_items.return_value = items
 
-        mock_movie_repo = AsyncMock(spec=MovieRepository)
-        mock_movie_repo.find_by_ids.return_value = {"mov_abc123def456": movie}
-
-        mock_series_repo = AsyncMock(spec=SeriesRepository)
+        media_lookup = make_media_lookup_mock(movie_summary("mov_abc123def456"))
 
         use_case = GetCustomListItemsUseCase(
             custom_list_repository=mock_list_repo,
-            movie_repository=mock_movie_repo,
-            series_repository=mock_series_repo,
+            media_lookup=media_lookup,
         )
 
         await use_case.execute(GetCustomListItemsInput(list_id=str(custom_list.id), lang="pt-BR"))
 
-        movie.get_title.assert_called_once_with("pt-BR")
+        media_lookup.get_many.assert_awaited_once_with(
+            ["mov_abc123def456"],
+            [],
+            "pt-BR",
+        )

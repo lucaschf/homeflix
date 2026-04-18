@@ -4,18 +4,17 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.modules.library.application.ports import MediaCountQueryPort
 from src.modules.library.application.use_cases.list_libraries import ListLibrariesUseCase
 from src.modules.library.domain.entities.library import Library
 from src.modules.library.domain.repositories.library_repository import LibraryRepository
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 
 
-def _make_media_repos() -> tuple[AsyncMock, AsyncMock]:
-    movie_repo = AsyncMock(spec=MovieRepository)
-    movie_repo.count_under_paths.return_value = 0
-    series_repo = AsyncMock(spec=SeriesRepository)
-    series_repo.count_under_paths.return_value = 0
-    return movie_repo, series_repo
+def _make_media_count_query() -> AsyncMock:
+    query = AsyncMock(spec=MediaCountQueryPort)
+    query.count_movies_under_paths.return_value = 0
+    query.count_series_under_paths.return_value = 0
+    return query
 
 
 @pytest.mark.unit
@@ -26,8 +25,7 @@ class TestListLibrariesUseCase:
     async def test_should_return_empty_list_when_no_libraries(self) -> None:
         repo = AsyncMock(spec=LibraryRepository)
         repo.find_all.return_value = []
-        movie_repo, series_repo = _make_media_repos()
-        use_case = ListLibrariesUseCase(repo, movie_repo, series_repo)
+        use_case = ListLibrariesUseCase(repo, _make_media_count_query())
 
         result = await use_case.execute()
 
@@ -40,8 +38,7 @@ class TestListLibrariesUseCase:
             Library.create(name="Movies", library_type="movies", paths=["/m"]),
             Library.create(name="Series", library_type="series", paths=["/s"]),
         ]
-        movie_repo, series_repo = _make_media_repos()
-        use_case = ListLibrariesUseCase(repo, movie_repo, series_repo)
+        use_case = ListLibrariesUseCase(repo, _make_media_count_query())
 
         result = await use_case.execute()
 
