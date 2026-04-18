@@ -30,11 +30,14 @@ _logger = logging.getLogger(__name__)
 
 @dataclass
 class EpisodeCandidate:
-    """An episode with its coordinates and optional progress."""
+    """An episode with its series context, composite id and optional progress.
+
+    Season/episode numbers are always read from ``episode`` — keeping
+    them flat on the candidate risks drift if the episode is ever
+    rebuilt with different coordinates.
+    """
 
     series_id: str
-    season_number: int
-    episode_number: int
     media_id: str
     episode: EpisodeInfo
     progress: WatchProgress | None
@@ -155,8 +158,6 @@ class GetContinueWatchingUseCase:
             candidates.append(
                 EpisodeCandidate(
                     series_id=series_id,
-                    season_number=episode.season_number,
-                    episode_number=episode.episode_number,
                     media_id=mid,
                     episode=episode,
                     progress=None,
@@ -195,10 +196,10 @@ class GetContinueWatchingUseCase:
                 latest_watched_at = ep.progress.last_watched_at
 
             if ep.progress.status == WatchStatus.IN_PROGRESS:
-                coords = (ep.season_number, ep.episode_number)
+                coords = (ep.episode.season_number, ep.episode.episode_number)
                 if not best_in_progress or coords > (
-                    best_in_progress.season_number,
-                    best_in_progress.episode_number,
+                    best_in_progress.episode.season_number,
+                    best_in_progress.episode.episode_number,
                 ):
                     best_in_progress = ep
             elif ep.progress.status == WatchStatus.COMPLETED:
@@ -251,8 +252,8 @@ class GetContinueWatchingUseCase:
             last_watched_at=last_watched,
             series_id=series.series_id,
             series_title=series.title,
-            season_number=candidate.season_number,
-            episode_number=candidate.episode_number,
+            season_number=candidate.episode.season_number,
+            episode_number=candidate.episode.episode_number,
         )
 
     async def _enrich_movie(

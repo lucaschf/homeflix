@@ -33,7 +33,7 @@ class ProgressLookupAdapter(ProgressLookupPort):
                 media_id=media_id,
                 percentage=progress.percentage,
                 position_seconds=progress.position_seconds,
-                status=progress.status,
+                status=progress.status.value,
                 last_watched_at=progress.last_watched_at,
             )
             for media_id, progress in progress_map.items()
