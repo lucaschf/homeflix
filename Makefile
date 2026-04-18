@@ -61,6 +61,7 @@ test-cov:
 
 lint:
 	poetry run ruff check src tests
+	poetry run ruff format --check src tests
 
 format:
 	poetry run ruff check --fix src tests
