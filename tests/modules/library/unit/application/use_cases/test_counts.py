@@ -18,7 +18,7 @@ class TestResolveCounts:
             library_type="mixed",
             paths=["/media/movies", "/media/shows"],
         )
-        query = AsyncMock(spec=MediaCountQueryPort)
+        query = AsyncMock(spec_set=MediaCountQueryPort)
         query.count_movies_under_paths.return_value = 12
         query.count_series_under_paths.return_value = 3
 
