@@ -73,9 +73,7 @@ def _series_with_episodes(
                 duration=Duration(1800),
                 files=[
                     MediaFile(
-                        file_path=FilePath(
-                            f"/series/{title}/s{season_num:02d}e{ep_num:02d}.mkv"
-                        ),
+                        file_path=FilePath(f"/series/{title}/s{season_num:02d}e{ep_num:02d}.mkv"),
                         file_size=500_000,
                         resolution=Resolution("1080p"),
                         is_primary=True,
@@ -113,9 +111,7 @@ class TestWatchProgressMediaLookupAdapter:
         assert result.poster_path == "/p/m.jpg"
         assert result.backdrop_path == "/b/m.jpg"
 
-    async def test_get_movie_returns_none_for_missing_id(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_get_movie_returns_none_for_missing_id(self, db_session: AsyncSession) -> None:
         movie_repo = SQLAlchemyMovieRepository(db_session)
         series_repo = SQLAlchemySeriesRepository(db_session)
         adapter = MediaLookupAdapter(movie_repo, series_repo)
@@ -149,9 +145,7 @@ class TestWatchProgressMediaLookupAdapter:
         assert [e.title for e in result.episodes] == ["S01E01", "S01E02", "S02E01"]
         assert all(e.duration_seconds == 1800 for e in result.episodes)
 
-    async def test_get_series_returns_none_for_missing_id(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_get_series_returns_none_for_missing_id(self, db_session: AsyncSession) -> None:
         movie_repo = SQLAlchemyMovieRepository(db_session)
         series_repo = SQLAlchemySeriesRepository(db_session)
         adapter = MediaLookupAdapter(movie_repo, series_repo)

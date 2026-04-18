@@ -29,9 +29,7 @@ def _progress(
 class TestProgressLookupAdapter:
     """The adapter exposes ProgressSummary without leaking domain types."""
 
-    async def test_find_for_media_ids_returns_summaries(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_find_for_media_ids_returns_summaries(self, db_session: AsyncSession) -> None:
         progress_repo = SQLAlchemyWatchProgressRepository(db_session)
         await progress_repo.save(_progress("epi_ser_ABC_1_1", position=900))
         await progress_repo.save(_progress("epi_ser_ABC_1_2", position=3300))
@@ -47,9 +45,7 @@ class TestProgressLookupAdapter:
         assert result["epi_ser_ABC_1_1"].percentage == pytest.approx(25.0)
         assert result["epi_ser_ABC_1_2"].status == "completed"
 
-    async def test_find_for_media_ids_with_empty_input(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_find_for_media_ids_with_empty_input(self, db_session: AsyncSession) -> None:
         progress_repo = SQLAlchemyWatchProgressRepository(db_session)
         adapter = ProgressLookupAdapter(progress_repo)
 

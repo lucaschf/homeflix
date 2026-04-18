@@ -54,9 +54,7 @@ def _series(series_id: SeriesId, title: str, poster: str | None = None) -> Serie
 class TestCollectionsMediaLookupAdapter:
     """The adapter resolves titles + posters for the Collections BC."""
 
-    async def test_get_many_resolves_movies_and_series(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_get_many_resolves_movies_and_series(self, db_session: AsyncSession) -> None:
         movie_repo = SQLAlchemyMovieRepository(db_session)
         series_repo = SQLAlchemySeriesRepository(db_session)
 
@@ -93,9 +91,7 @@ class TestCollectionsMediaLookupAdapter:
 
         assert await adapter.get_many([], [], "en") == {}
 
-    async def test_poster_path_is_none_when_media_has_none(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_poster_path_is_none_when_media_has_none(self, db_session: AsyncSession) -> None:
         movie_repo = SQLAlchemyMovieRepository(db_session)
         series_repo = SQLAlchemySeriesRepository(db_session)
 
