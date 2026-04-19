@@ -11,8 +11,8 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.building_blocks.infrastructure.in_process_event_bus import InProcessEventBus
-from src.config.persistence.session_manager import create_tracked_session
 from src.config.settings import Settings
+from src.infrastructure.persistence.session_manager import create_tracked_session
 from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
 
@@ -41,7 +41,7 @@ async def _init_engine(
         import src.modules.collections.infrastructure.persistence.models
         import src.modules.media.infrastructure.persistence.models
         import src.modules.watch_progress.infrastructure.persistence.models  # noqa: F401
-        from src.config.persistence.base import Base
+        from src.infrastructure.persistence.base import Base
 
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

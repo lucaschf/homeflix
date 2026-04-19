@@ -5,7 +5,7 @@ from typing import Self
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.config.persistence.session_manager import create_tracked_session
+from src.infrastructure.persistence.session_manager import create_tracked_session
 from src.modules.media.application.unit_of_work import (
     MediaUnitOfWork,
     MediaUnitOfWorkFactory,

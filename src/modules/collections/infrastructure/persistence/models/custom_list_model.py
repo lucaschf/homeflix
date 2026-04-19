@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.config.persistence.base import Base
+from src.infrastructure.persistence.base import Base
 
 
 class CustomListModel(Base):

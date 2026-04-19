@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Import all models so they register on Base.metadata
 import src.modules.media.infrastructure.persistence.models  # noqa: F401
-from src.config.persistence.base import Base
+from src.infrastructure.persistence.base import Base
 from src.config.settings import get_settings
 
 config = context.config

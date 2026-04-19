@@ -10,7 +10,7 @@ from collections.abc import AsyncGenerator
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.config.persistence import Base
+from src.infrastructure.persistence import Base
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
     Duration,

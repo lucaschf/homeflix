@@ -75,12 +75,17 @@ src/
 │       ├── infrastructure/
 │       └── presentation/
 │
+├── infrastructure/               # Shared infrastructure (cross-module)
+│   ├── persistence/              # Database engine, Base model, session cleanup
+│   │   ├── database.py
+│   │   ├── base.py               # SQLAlchemy Base
+│   │   └── session_manager.py
+│   └── scheduling/               # APScheduler wrapper for recurring jobs
+│       └── scheduler_service.py
+│
 ├── config/
 │   ├── settings.py
 │   ├── logging.py
-│   ├── persistence/              # Shared persistence (database + Base model)
-│   │   ├── database.py
-│   │   └── base.py               # SQLAlchemy Base
 │   └── containers/
 │       ├── main.py               # ApplicationContainer
 │       ├── infrastructure.py     # InfrastructureContainer
@@ -98,20 +103,23 @@ src/
 4. **Cada módulo tem as 4 camadas** — domain, application, infrastructure, presentation
 5. **Regra de dependência** — `modules → shared_kernel → building_blocks`
 
-### Persistence compartilhada
+### Infraestrutura compartilhada
 
-`config/persistence/` contém `database.py` (engine, session factory) e `base.py` (SQLAlchemy Base com soft delete, timestamps). Esses recursos são usados por todos os módulos que têm persistência. Ficam em `config/` porque são configuração de infraestrutura — não são domínio nem pertencem a um módulo específico. Isso elimina a necessidade de um `src/infrastructure/` top-level, mantendo o top-level do `src/` focado em domínio.
+`src/infrastructure/` abriga recursos técnicos usados por múltiplos módulos:
 
-Implementações concretas (ORM models, repository implementations, mappers) ficam em `modules/<ctx>/infrastructure/`.
+- `persistence/` — `database.py` (engine, session factory), `base.py` (SQLAlchemy Base com soft delete, timestamps), `session_manager.py` (middleware de cleanup por request).
+- `scheduling/` — `scheduler_service.py` (wrapper APScheduler para scans recorrentes).
+
+Implementações concretas específicas de um contexto (ORM models, repository implementations, mappers) ficam em `modules/<ctx>/infrastructure/`.
 
 ### Imports permitidos e proibidos
 
 ```python
-# ✅ Permitido — módulo importa de building_blocks, shared_kernel, config/persistence
+# ✅ Permitido — módulo importa de building_blocks, shared_kernel, infrastructure
 from src.building_blocks.domain.entity import AggregateRoot
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.modules.media.domain.entities import Movie                    # dentro do próprio módulo
-from src.config.persistence.base import Base                           # shared persistence
+from src.infrastructure.persistence.base import Base                           # shared persistence
 
 # ✅ Permitido — config/containers importa de módulos (é o composition root)
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemyMovieRepository
@@ -123,10 +131,11 @@ from src.modules.library.domain.entities import Library                # dentro 
 from src.config.containers import ApplicationContainer                 # dentro de modules/media/
 ```
 
-`config/` tem dois papéis distintos:
+Papéis separados:
 
 - **`config/containers/`** é o **composition root** — o único lugar que conhece módulos e monta o grafo de dependências. Módulos nunca importam de containers.
-- **`config/persistence/`** é **infraestrutura compartilhada** (Base, Database) — módulos podem importar livremente, assim como importam de `building_blocks` ou `shared_kernel`.
+- **`config/settings.py` / `config/logging.py`** são configuração de runtime (env vars, logger setup).
+- **`src/infrastructure/`** é **infraestrutura compartilhada** (Base, Database, scheduler) — módulos podem importar livremente, assim como importam de `building_blocks` ou `shared_kernel`.
 
 ## Consequências
 
