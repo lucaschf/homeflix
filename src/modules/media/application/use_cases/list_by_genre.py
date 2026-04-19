@@ -16,8 +16,8 @@ from src.modules.media.application.dtos.catalog_dtos import (
     ListByGenreInput,
     ListByGenreOutput,
 )
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie, Series
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import Genre
 
 _T = TypeVar("_T")
@@ -85,13 +85,8 @@ class ListByGenreUseCase:
     free.
     """
 
-    def __init__(
-        self,
-        movie_repository: MovieRepository,
-        series_repository: SeriesRepository,
-    ) -> None:
-        self._movie_repository = movie_repository
-        self._series_repository = series_repository
+    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: ListByGenreInput) -> ListByGenreOutput:
         """Execute the use case.
@@ -107,13 +102,6 @@ class ListByGenreUseCase:
         decoded = decode_dual_cursor(input_dto.cursor)
         genre = Genre(input_dto.genre)
 
-        # Both repository calls are independent I/O — issue them
-        # concurrently via `asyncio.gather` so the by-genre endpoint
-        # only waits for the slower of the two queries instead of
-        # serializing them. The DI container hands each repository
-        # its own AsyncSession (Factory provider), so there's no
-        # session contention to worry about.
-        #
         # When ``media_type`` restricts the stream to one side, the
         # excluded repo is skipped entirely and a synthetic empty
         # page stands in for it so the merge / cursor logic below
@@ -187,40 +175,64 @@ class ListByGenreUseCase:
     ) -> tuple[PaginatedResult[Movie], PaginatedResult[Series]]:
         """Fetch the movie and series pages, honoring the media-type filter.
 
-        Both repos are awaited concurrently via ``asyncio.gather``
-        when no filter is active. When ``media_type`` excludes a
-        stream, only the surviving repo is called and an empty
-        ``PaginatedResult`` stands in for the other — preserving the
-        caller's ``(movies, series)`` tuple shape and the "previous
-        cursor stays put if nothing is consumed" semantics of the
-        merge sort.
+        Both repos are awaited concurrently via ``asyncio.gather`` when
+        no filter is active; each branch opens its own ``MediaUnitOfWork``
+        so the two queries run on independent sessions (SQLAlchemy's
+        AsyncSession forbids concurrent execution on the same session).
+        When ``media_type`` excludes a stream, only the surviving repo
+        is called and an empty ``PaginatedResult`` stands in for the
+        other — preserving the caller's ``(movies, series)`` tuple
+        shape and the "previous cursor stays put if nothing is consumed"
+        semantics of the merge sort.
         """
         if media_type == "movie":
-            movies_page = await self._movie_repository.list_paginated_by_genre(
-                genre=genre,
-                cursor=decoded.movies,
-                limit=limit,
-            )
+            async with self._uow_factory() as uow:
+                movies_page = await uow.movies.list_paginated_by_genre(
+                    genre=genre,
+                    cursor=decoded.movies,
+                    limit=limit,
+                )
             return movies_page, _empty_page(Series)
         if media_type == "series":
-            series_page = await self._series_repository.list_paginated_by_genre(
-                genre=genre,
-                cursor=decoded.series,
-                limit=limit,
-            )
+            async with self._uow_factory() as uow:
+                series_page = await uow.series.list_paginated_by_genre(
+                    genre=genre,
+                    cursor=decoded.series,
+                    limit=limit,
+                )
             return _empty_page(Movie), series_page
         return await asyncio.gather(
-            self._movie_repository.list_paginated_by_genre(
-                genre=genre,
-                cursor=decoded.movies,
-                limit=limit,
-            ),
-            self._series_repository.list_paginated_by_genre(
-                genre=genre,
-                cursor=decoded.series,
-                limit=limit,
-            ),
+            self._fetch_movies_page(genre=genre, cursor=decoded.movies, limit=limit),
+            self._fetch_series_page(genre=genre, cursor=decoded.series, limit=limit),
         )
+
+    async def _fetch_movies_page(
+        self,
+        *,
+        genre: Genre,
+        cursor: str | None,
+        limit: int,
+    ) -> PaginatedResult[Movie]:
+        async with self._uow_factory() as uow:
+            return await uow.movies.list_paginated_by_genre(
+                genre=genre,
+                cursor=cursor,
+                limit=limit,
+            )
+
+    async def _fetch_series_page(
+        self,
+        *,
+        genre: Genre,
+        cursor: str | None,
+        limit: int,
+    ) -> PaginatedResult[Series]:
+        async with self._uow_factory() as uow:
+            return await uow.series.list_paginated_by_genre(
+                genre=genre,
+                cursor=cursor,
+                limit=limit,
+            )
 
     @staticmethod
     def _compute_next_cursor(

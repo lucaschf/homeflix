@@ -6,8 +6,8 @@ from src.modules.media.application.dtos.featured_dtos import (
     FeaturedItemOutput,
     GetFeaturedInput,
 )
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie, Series
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 
 
 class GetFeaturedMediaUseCase:
@@ -17,23 +17,17 @@ class GetFeaturedMediaUseCase:
     random ordering, then maps to a flat output list.
 
     Example:
-        >>> use_case = GetFeaturedMediaUseCase(movie_repo, series_repo)
+        >>> use_case = GetFeaturedMediaUseCase(uow_factory)
         >>> items = await use_case.execute(GetFeaturedInput(media_type="all", limit=6))
     """
 
-    def __init__(
-        self,
-        movie_repository: MovieRepository,
-        series_repository: SeriesRepository,
-    ) -> None:
+    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            movie_repository: Repository for movie persistence.
-            series_repository: Repository for series persistence.
+            uow_factory: Factory that opens a fresh media Unit of Work.
         """
-        self._movie_repo = movie_repository
-        self._series_repo = series_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: GetFeaturedInput) -> list[FeaturedItemOutput]:
         """Execute the use case.
@@ -47,15 +41,14 @@ class GetFeaturedMediaUseCase:
         results: list[FeaturedItemOutput] = []
         lang = input_dto.lang
 
-        if input_dto.media_type in ("all", "movie"):
-            limit = input_dto.limit if input_dto.media_type == "movie" else input_dto.limit
-            movies = await self._movie_repo.find_random(limit, with_backdrop=True)
-            results.extend(self._movie_to_output(m, lang) for m in movies)
+        async with self._uow_factory() as uow:
+            if input_dto.media_type in ("all", "movie"):
+                movies = await uow.movies.find_random(input_dto.limit, with_backdrop=True)
+                results.extend(self._movie_to_output(m, lang) for m in movies)
 
-        if input_dto.media_type in ("all", "series"):
-            limit = input_dto.limit if input_dto.media_type == "series" else input_dto.limit
-            series_list = await self._series_repo.find_random(limit, with_backdrop=True)
-            results.extend(self._series_to_output(s, lang) for s in series_list)
+            if input_dto.media_type in ("all", "series"):
+                series_list = await uow.series.find_random(input_dto.limit, with_backdrop=True)
+                results.extend(self._series_to_output(s, lang) for s in series_list)
 
         if input_dto.media_type == "all":
             random.shuffle(results)

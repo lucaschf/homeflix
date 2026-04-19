@@ -1,6 +1,5 @@
 """Tests for SearchCatalogUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -11,7 +10,7 @@ from src.modules.media.application.dtos.search_dtos import (
 )
 from src.modules.media.application.use_cases.search_catalog import SearchCatalogUseCase
 from src.modules.media.domain.entities import Movie, Series
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
+from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
 def _movie(title: str) -> Movie:
@@ -35,12 +34,11 @@ class TestSearchCatalogUseCase:
 
     @pytest.mark.asyncio
     async def test_should_merge_results_from_both_repos_by_rank(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         # Movie rank -5 (better) + series rank -2 (worse)
-        movie_repo.search.return_value = [(_movie("Inception"), -5.0)]
-        series_repo.search.return_value = [(_series("Breaking Bad"), -2.0)]
-        use_case = SearchCatalogUseCase(movie_repo, series_repo)
+        mocks.movies.search.return_value = [(_movie("Inception"), -5.0)]
+        mocks.series.search.return_value = [(_series("Breaking Bad"), -2.0)]
+        use_case = SearchCatalogUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(SearchInput(query="test"))
 
@@ -51,46 +49,43 @@ class TestSearchCatalogUseCase:
 
     @pytest.mark.asyncio
     async def test_should_skip_series_repo_when_filtered_to_movies(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.search.return_value = [(_movie("Avatar"), -3.0)]
-        use_case = SearchCatalogUseCase(movie_repo, series_repo)
+        mocks = make_media_uow_mock()
+        mocks.movies.search.return_value = [(_movie("Avatar"), -3.0)]
+        use_case = SearchCatalogUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(SearchInput(query="avatar", media_type="movie"))
 
-        movie_repo.search.assert_awaited_once()
-        series_repo.search.assert_not_awaited()
+        mocks.movies.search.assert_awaited_once()
+        mocks.series.search.assert_not_awaited()
         assert len(result.items) == 1
         assert result.items[0].type == "movie"
 
     @pytest.mark.asyncio
     async def test_should_skip_movie_repo_when_filtered_to_series(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        series_repo.search.return_value = [(_series("Dark"), -4.0)]
-        use_case = SearchCatalogUseCase(movie_repo, series_repo)
+        mocks = make_media_uow_mock()
+        mocks.series.search.return_value = [(_series("Dark"), -4.0)]
+        use_case = SearchCatalogUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(SearchInput(query="dark", media_type="series"))
 
-        series_repo.search.assert_awaited_once()
-        movie_repo.search.assert_not_awaited()
+        mocks.series.search.assert_awaited_once()
+        mocks.movies.search.assert_not_awaited()
         assert len(result.items) == 1
         assert result.items[0].type == "series"
 
     @pytest.mark.asyncio
     async def test_should_trim_combined_results_to_limit(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.search.return_value = [
+        mocks = make_media_uow_mock()
+        mocks.movies.search.return_value = [
             (_movie("A"), -5.0),
             (_movie("B"), -4.0),
             (_movie("C"), -3.0),
         ]
-        series_repo.search.return_value = [
+        mocks.series.search.return_value = [
             (_series("D"), -2.0),
             (_series("E"), -1.0),
         ]
-        use_case = SearchCatalogUseCase(movie_repo, series_repo)
+        use_case = SearchCatalogUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(SearchInput(query="test", limit=3))
 
@@ -99,11 +94,10 @@ class TestSearchCatalogUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_empty_when_no_matches(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.search.return_value = []
-        series_repo.search.return_value = []
-        use_case = SearchCatalogUseCase(movie_repo, series_repo)
+        mocks = make_media_uow_mock()
+        mocks.movies.search.return_value = []
+        mocks.series.search.return_value = []
+        use_case = SearchCatalogUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(SearchInput(query="nonexistent"))
 
@@ -112,11 +106,10 @@ class TestSearchCatalogUseCase:
 
     @pytest.mark.asyncio
     async def test_should_forward_filters_to_repos(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.search.return_value = []
-        series_repo.search.return_value = []
-        use_case = SearchCatalogUseCase(movie_repo, series_repo)
+        mocks = make_media_uow_mock()
+        mocks.movies.search.return_value = []
+        mocks.series.search.return_value = []
+        use_case = SearchCatalogUseCase(uow_factory=mocks.factory)
 
         await use_case.execute(
             SearchInput(
@@ -128,7 +121,7 @@ class TestSearchCatalogUseCase:
             )
         )
 
-        call_kwargs = movie_repo.search.await_args
+        call_kwargs = mocks.movies.search.await_args
         assert call_kwargs.kwargs["genre"] == "Action"
         assert call_kwargs.kwargs["year_min"] == 2000
         assert call_kwargs.kwargs["year_max"] == 2020
@@ -136,11 +129,10 @@ class TestSearchCatalogUseCase:
 
     @pytest.mark.asyncio
     async def test_search_item_output_carries_required_fields(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.search.return_value = [(_movie("Test Movie"), -5.0)]
-        series_repo.search.return_value = [(_series("Test Series"), -3.0)]
-        use_case = SearchCatalogUseCase(movie_repo, series_repo)
+        mocks = make_media_uow_mock()
+        mocks.movies.search.return_value = [(_movie("Test Movie"), -5.0)]
+        mocks.series.search.return_value = [(_series("Test Series"), -3.0)]
+        use_case = SearchCatalogUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(SearchInput(query="test"))
 
@@ -153,11 +145,10 @@ class TestSearchCatalogUseCase:
 
     @pytest.mark.asyncio
     async def test_should_tag_items_with_correct_type(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.search.return_value = [(_movie("Avatar"), -5.0)]
-        series_repo.search.return_value = [(_series("Dark"), -3.0)]
-        use_case = SearchCatalogUseCase(movie_repo, series_repo)
+        mocks = make_media_uow_mock()
+        mocks.movies.search.return_value = [(_movie("Avatar"), -5.0)]
+        mocks.series.search.return_value = [(_series("Dark"), -3.0)]
+        use_case = SearchCatalogUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(SearchInput(query="test"))
 

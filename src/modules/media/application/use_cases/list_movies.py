@@ -5,8 +5,8 @@ from src.modules.media.application.dtos.movie_dtos import (
     ListMoviesOutput,
     MovieSummaryOutput,
 )
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie
-from src.modules.media.domain.repositories import MovieRepository
 
 
 class ListMoviesUseCase:
@@ -18,7 +18,7 @@ class ListMoviesUseCase:
     decodes or encodes it, the repository owns that contract.
 
     Example:
-        >>> use_case = ListMoviesUseCase(movie_repository)
+        >>> use_case = ListMoviesUseCase(uow_factory)
         >>> result = await use_case.execute(ListMoviesInput(limit=20))
         >>> len(result.movies)
         20
@@ -26,13 +26,13 @@ class ListMoviesUseCase:
         True
     """
 
-    def __init__(self, movie_repository: MovieRepository) -> None:
+    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            movie_repository: Repository for movie persistence.
+            uow_factory: Factory that opens a fresh media Unit of Work.
         """
-        self._movie_repository = movie_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: ListMoviesInput) -> ListMoviesOutput:
         """Execute the use case.
@@ -46,11 +46,12 @@ class ListMoviesUseCase:
             ``has_more``, and an optional ``total_count`` (only when
             ``include_total=True``).
         """
-        page = await self._movie_repository.list_paginated(
-            cursor=input_dto.cursor,
-            limit=input_dto.limit,
-            include_total=input_dto.include_total,
-        )
+        async with self._uow_factory() as uow:
+            page = await uow.movies.list_paginated(
+                cursor=input_dto.cursor,
+                limit=input_dto.limit,
+                include_total=input_dto.include_total,
+            )
 
         return ListMoviesOutput(
             movies=[self._to_summary(movie, input_dto.lang) for movie in page.items],

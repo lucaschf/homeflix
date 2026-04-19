@@ -7,8 +7,8 @@ from src.modules.media.application.dtos.search_dtos import (
     SearchItemOutput,
     SearchOutput,
 )
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie, Series
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 
 
 class SearchCatalogUseCase:
@@ -27,13 +27,8 @@ class SearchCatalogUseCase:
     tables produces comparable scores for practical purposes.
     """
 
-    def __init__(
-        self,
-        movie_repository: MovieRepository,
-        series_repository: SeriesRepository,
-    ) -> None:
-        self._movie_repository = movie_repository
-        self._series_repository = series_repository
+    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: SearchInput) -> SearchOutput:
         """Execute the search.
@@ -46,42 +41,20 @@ class SearchCatalogUseCase:
             total count.
         """
         # Fetch from both repos in parallel, skipping the excluded
-        # type when a filter is active.
+        # type when a filter is active. Each branch opens its own
+        # UoW so parallel queries run on independent sessions
+        # (AsyncSession forbids concurrent execution on the same one).
         movie_hits: list[tuple[Movie, float]] = []
         series_hits: list[tuple[Series, float]] = []
 
         if input_dto.media_type == "movie":
-            movie_hits = await self._movie_repository.search(
-                input_dto.query,
-                genre=input_dto.genre,
-                year_min=input_dto.year_min,
-                year_max=input_dto.year_max,
-                limit=input_dto.limit,
-            )
+            movie_hits = await self._search_movies(input_dto)
         elif input_dto.media_type == "series":
-            series_hits = await self._series_repository.search(
-                input_dto.query,
-                genre=input_dto.genre,
-                year_min=input_dto.year_min,
-                year_max=input_dto.year_max,
-                limit=input_dto.limit,
-            )
+            series_hits = await self._search_series(input_dto)
         else:
             movie_hits, series_hits = await asyncio.gather(
-                self._movie_repository.search(
-                    input_dto.query,
-                    genre=input_dto.genre,
-                    year_min=input_dto.year_min,
-                    year_max=input_dto.year_max,
-                    limit=input_dto.limit,
-                ),
-                self._series_repository.search(
-                    input_dto.query,
-                    genre=input_dto.genre,
-                    year_min=input_dto.year_min,
-                    year_max=input_dto.year_max,
-                    limit=input_dto.limit,
-                ),
+                self._search_movies(input_dto),
+                self._search_series(input_dto),
             )
 
         # Pool and sort by rank (ascending = most relevant first)
@@ -95,6 +68,26 @@ class SearchCatalogUseCase:
         items = [self._to_output(kind, entity, input_dto.lang) for entity, _, kind in page]
 
         return SearchOutput(items=items, total=len(combined))
+
+    async def _search_movies(self, input_dto: SearchInput) -> list[tuple[Movie, float]]:
+        async with self._uow_factory() as uow:
+            return await uow.movies.search(
+                input_dto.query,
+                genre=input_dto.genre,
+                year_min=input_dto.year_min,
+                year_max=input_dto.year_max,
+                limit=input_dto.limit,
+            )
+
+    async def _search_series(self, input_dto: SearchInput) -> list[tuple[Series, float]]:
+        async with self._uow_factory() as uow:
+            return await uow.series.search(
+                input_dto.query,
+                genre=input_dto.genre,
+                year_min=input_dto.year_min,
+                year_max=input_dto.year_max,
+                limit=input_dto.limit,
+            )
 
     @staticmethod
     def _to_output(kind: str, entity: Movie | Series, lang: str) -> SearchItemOutput:

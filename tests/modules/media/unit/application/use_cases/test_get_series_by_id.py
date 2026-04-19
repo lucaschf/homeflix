@@ -9,7 +9,6 @@ from src.modules.media.application.dtos import GetSeriesByIdInput, SeriesOutput
 from src.modules.media.application.ports import ProgressLookupPort
 from src.modules.media.application.use_cases import GetSeriesByIdUseCase
 from src.modules.media.domain.entities import Episode, Season, Series
-from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import (
     Duration,
     EpisodeId,
@@ -19,6 +18,7 @@ from src.modules.media.domain.value_objects import (
     SeasonId,
     Title,
 )
+from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
 @pytest.fixture()
@@ -34,14 +34,14 @@ class TestGetSeriesByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_series_when_found(self, mock_progress_lookup):
-        mock_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         series = Series.create(
             title="Breaking Bad",
             start_year=2008,
         )
-        mock_repo.find_by_id.return_value = series
+        mocks.series.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
-            series_repository=mock_repo,
+            uow_factory=mocks.factory,
             progress_lookup=mock_progress_lookup,
         )
 
@@ -54,7 +54,7 @@ class TestGetSeriesByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_series_with_seasons(self, mock_progress_lookup):
-        mock_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         series = Series.create(
             title="Breaking Bad",
             start_year=2008,
@@ -66,9 +66,9 @@ class TestGetSeriesByIdUseCase:
             season_number=1,
         )
         series = series.with_season(season)
-        mock_repo.find_by_id.return_value = series
+        mocks.series.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
-            series_repository=mock_repo,
+            uow_factory=mocks.factory,
             progress_lookup=mock_progress_lookup,
         )
 
@@ -80,7 +80,7 @@ class TestGetSeriesByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_series_with_episodes(self, mock_progress_lookup):
-        mock_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         series = Series.create(
             title="Breaking Bad",
             start_year=2008,
@@ -108,9 +108,9 @@ class TestGetSeriesByIdUseCase:
         )
         season = season.with_episode(episode)
         series = series.with_season(season)
-        mock_repo.find_by_id.return_value = series
+        mocks.series.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
-            series_repository=mock_repo,
+            uow_factory=mocks.factory,
             progress_lookup=mock_progress_lookup,
         )
 
@@ -125,14 +125,14 @@ class TestGetSeriesByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_ongoing_status(self, mock_progress_lookup):
-        mock_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         series = Series.create(
             title="Ongoing Show",
             start_year=2020,
         )
-        mock_repo.find_by_id.return_value = series
+        mocks.series.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
-            series_repository=mock_repo,
+            uow_factory=mocks.factory,
             progress_lookup=mock_progress_lookup,
         )
 
@@ -143,15 +143,15 @@ class TestGetSeriesByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_completed_status(self, mock_progress_lookup):
-        mock_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         series = Series.create(
             title="Completed Show",
             start_year=2010,
             end_year=2015,
         )
-        mock_repo.find_by_id.return_value = series
+        mocks.series.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
-            series_repository=mock_repo,
+            uow_factory=mocks.factory,
             progress_lookup=mock_progress_lookup,
         )
 
@@ -162,10 +162,10 @@ class TestGetSeriesByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_raise_not_found_when_series_missing(self, mock_progress_lookup):
-        mock_repo = AsyncMock(spec=SeriesRepository)
-        mock_repo.find_by_id.return_value = None
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = None
         use_case = GetSeriesByIdUseCase(
-            series_repository=mock_repo,
+            uow_factory=mocks.factory,
             progress_lookup=mock_progress_lookup,
         )
 
@@ -177,14 +177,14 @@ class TestGetSeriesByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_handle_series_with_no_seasons(self, mock_progress_lookup):
-        mock_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         series = Series.create(
             title="New Show",
             start_year=2024,
         )
-        mock_repo.find_by_id.return_value = series
+        mocks.series.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
-            series_repository=mock_repo,
+            uow_factory=mocks.factory,
             progress_lookup=mock_progress_lookup,
         )
 
@@ -196,15 +196,15 @@ class TestGetSeriesByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_genres_as_strings(self, mock_progress_lookup):
-        mock_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         series = Series.create(
             title="Drama Show",
             start_year=2020,
             genres=["Drama", "Thriller"],
         )
-        mock_repo.find_by_id.return_value = series
+        mocks.series.find_by_id.return_value = series
         use_case = GetSeriesByIdUseCase(
-            series_repository=mock_repo,
+            uow_factory=mocks.factory,
             progress_lookup=mock_progress_lookup,
         )
 

@@ -2,11 +2,11 @@
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput, MovieOutput
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._media_file_helpers import (
     to_media_file_output,
 )
 from src.modules.media.domain.entities.movie import Movie
-from src.modules.media.domain.repositories import MovieRepository
 from src.modules.media.domain.value_objects import MovieId
 
 
@@ -17,19 +17,19 @@ class GetMovieByIdUseCase:
     it in a format suitable for API consumption.
 
     Example:
-        >>> use_case = GetMovieByIdUseCase(movie_repository)
+        >>> use_case = GetMovieByIdUseCase(uow_factory)
         >>> result = await use_case.execute(GetMovieByIdInput("mov_abc123"))
         >>> result.title
         'Inception'
     """
 
-    def __init__(self, movie_repository: MovieRepository) -> None:
+    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            movie_repository: Repository for movie persistence.
+            uow_factory: Factory that opens a fresh media Unit of Work.
         """
-        self._movie_repository = movie_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: GetMovieByIdInput) -> MovieOutput:
         """Execute the use case.
@@ -44,7 +44,8 @@ class GetMovieByIdUseCase:
             ResourceNotFoundException: If movie with given ID doesn't exist.
         """
         movie_id = MovieId(input_dto.movie_id)
-        movie = await self._movie_repository.find_by_id(movie_id)
+        async with self._uow_factory() as uow:
+            movie = await uow.movies.find_by_id(movie_id)
 
         if movie is None:
             raise ResourceNotFoundException.for_resource("Movie", input_dto.movie_id)
