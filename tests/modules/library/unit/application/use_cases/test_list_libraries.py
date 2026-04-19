@@ -3,11 +3,11 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.library.unit.conftest import make_library_uow_mock
 
 from src.modules.library.application.ports import MediaCountQueryPort
 from src.modules.library.application.use_cases.list_libraries import ListLibrariesUseCase
 from src.modules.library.domain.entities.library import Library
-from src.modules.library.domain.repositories.library_repository import LibraryRepository
 
 
 def _make_media_count_query() -> AsyncMock:
@@ -23,9 +23,9 @@ class TestListLibrariesUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_empty_list_when_no_libraries(self) -> None:
-        repo = AsyncMock(spec=LibraryRepository)
-        repo.find_all.return_value = []
-        use_case = ListLibrariesUseCase(repo, _make_media_count_query())
+        mocks = make_library_uow_mock()
+        mocks.libraries.find_all.return_value = []
+        use_case = ListLibrariesUseCase(mocks.factory, _make_media_count_query())
 
         result = await use_case.execute()
 
@@ -33,12 +33,12 @@ class TestListLibrariesUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_all_libraries(self) -> None:
-        repo = AsyncMock(spec=LibraryRepository)
-        repo.find_all.return_value = [
+        mocks = make_library_uow_mock()
+        mocks.libraries.find_all.return_value = [
             Library.create(name="Movies", library_type="movies", paths=["/m"]),
             Library.create(name="Series", library_type="series", paths=["/s"]),
         ]
-        use_case = ListLibrariesUseCase(repo, _make_media_count_query())
+        use_case = ListLibrariesUseCase(mocks.factory, _make_media_count_query())
 
         result = await use_case.execute()
 

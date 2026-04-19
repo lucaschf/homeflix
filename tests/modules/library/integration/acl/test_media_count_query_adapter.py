@@ -1,7 +1,7 @@
 """Integration tests for MediaCountQueryAdapter."""
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.modules.library.infrastructure.acl import MediaCountQueryAdapter
 from src.modules.media.domain.entities import Episode, Movie, Season, Series
@@ -19,6 +19,9 @@ from src.modules.media.domain.value_objects import (
 from src.modules.media.infrastructure.persistence.repositories import (
     SQLAlchemyMovieRepository,
     SQLAlchemySeriesRepository,
+)
+from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SqlAlchemyMediaUnitOfWorkFactory,
 )
 
 
@@ -64,41 +67,46 @@ def _series_with_episode(title: str, file_path: str) -> Series:
 
 @pytest.mark.integration
 class TestMediaCountQueryAdapter:
-    """The adapter delegates counts to Media repositories."""
+    """The adapter delegates counts to the Media Unit of Work."""
 
     async def test_count_movies_under_paths_matches_repository(
-        self, db_session: AsyncSession
+        self,
+        db_session: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         movie_repo = SQLAlchemyMovieRepository(db_session)
-        series_repo = SQLAlchemySeriesRepository(db_session)
         await movie_repo.save(_movie("A", "/movies/a.mkv"))
         await movie_repo.save(_movie("B", "/movies/b.mkv"))
         await movie_repo.save(_movie("C", "/other/c.mkv"))
+        await db_session.commit()
 
-        adapter = MediaCountQueryAdapter(movie_repo, series_repo)
+        adapter = MediaCountQueryAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
 
         assert await adapter.count_movies_under_paths(["/movies"]) == 2
         assert await adapter.count_movies_under_paths(["/other"]) == 1
         assert await adapter.count_movies_under_paths(["/missing"]) == 0
 
     async def test_count_series_under_paths_matches_repository(
-        self, db_session: AsyncSession
+        self,
+        db_session: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        movie_repo = SQLAlchemyMovieRepository(db_session)
         series_repo = SQLAlchemySeriesRepository(db_session)
         await series_repo.save(_series_with_episode("Series A", "/series/a/s01e01.mkv"))
         await series_repo.save(_series_with_episode("Series B", "/series/b/s01e01.mkv"))
+        await db_session.commit()
 
-        adapter = MediaCountQueryAdapter(movie_repo, series_repo)
+        adapter = MediaCountQueryAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
 
         assert await adapter.count_series_under_paths(["/series"]) == 2
         assert await adapter.count_series_under_paths(["/series/a"]) == 1
         assert await adapter.count_series_under_paths(["/missing"]) == 0
 
-    async def test_empty_paths_returns_zero(self, db_session: AsyncSession) -> None:
-        movie_repo = SQLAlchemyMovieRepository(db_session)
-        series_repo = SQLAlchemySeriesRepository(db_session)
-        adapter = MediaCountQueryAdapter(movie_repo, series_repo)
+    async def test_empty_paths_returns_zero(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        adapter = MediaCountQueryAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
 
         assert await adapter.count_movies_under_paths([]) == 0
         assert await adapter.count_series_under_paths([]) == 0
