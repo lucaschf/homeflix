@@ -4,8 +4,8 @@ Wraps APScheduler with a domain-aware reconciliation loop.  The
 ``Library`` entity stores its own cron expression; this service reads
 those rows periodically and mirrors them into the APScheduler job
 registry — adding new jobs, removing deleted ones, and replacing jobs
-whose cron changed.  Each scan opens a fresh DB session so background
-work never shares a request-scoped one.
+whose cron changed.  Each scan opens its own Unit of Work so
+background work never shares a request-scoped session.
 """
 
 from __future__ import annotations
@@ -17,25 +17,21 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.config.logging import get_logger
-from src.modules.library.infrastructure.persistence.repositories.sqlalchemy_library_repository import (
-    SqlAlchemyLibraryRepository,
-)
+from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
 )
-from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
-    SQLAlchemyMovieRepository,
-)
-from src.modules.media.infrastructure.persistence.repositories.series_repository import (
-    SQLAlchemySeriesRepository,
-)
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
     from src.building_blocks.application.event_bus import EventBus
-    from src.modules.media.application.ports import FileSystemScanner, VariantDetectorPort
+    from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
+    from src.modules.media.application.ports import (
+        FileSystemScanner,
+        MediaProbePort,
+        VariantDetectorPort,
+    )
+    from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 
 _logger = get_logger()
 
@@ -58,17 +54,21 @@ class LibraryScanScheduler:
 
     def __init__(
         self,
-        session_factory: async_sessionmaker[AsyncSession],
-        event_bus: EventBus,
+        library_uow_factory: LibraryUnitOfWorkFactory,
+        media_uow_factory: MediaUnitOfWorkFactory,
         file_scanner: FileSystemScanner,
         variant_detector: VariantDetectorPort,
+        event_bus: EventBus,
         reconcile_interval_minutes: int,
+        probe_service: MediaProbePort | None = None,
     ) -> None:
-        self._session_factory = session_factory
-        self._event_bus = event_bus
+        self._library_uow_factory = library_uow_factory
+        self._media_uow_factory = media_uow_factory
         self._file_scanner = file_scanner
         self._variant_detector = variant_detector
+        self._event_bus = event_bus
         self._reconcile_interval_minutes = reconcile_interval_minutes
+        self._probe_service = probe_service
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     async def start(self) -> None:
@@ -104,9 +104,8 @@ class LibraryScanScheduler:
         Invalid crons are logged and skipped — we never crash startup
         or reconciliation over a bad expression.
         """
-        async with self._session_factory() as session:
-            repo = SqlAlchemyLibraryRepository(session)
-            libraries = await repo.find_all()
+        async with self._library_uow_factory() as uow:
+            libraries = await uow.libraries.find_all()
 
         desired: dict[str, tuple[str, str]] = {}  # job_id -> (library_id, cron)
         for library in libraries:
@@ -157,49 +156,37 @@ class LibraryScanScheduler:
     async def _run_scan(self, library_id: str) -> None:
         """Run a single library scan and record completion.
 
-        Opens a fresh session, loads the library, runs the scan use
-        case for its configured paths, and persists an updated
-        ``last_scan_at`` on success. Errors are logged — failure
-        tracking beyond logs is out of scope for v1.
+        Loads the library in a short-lived UoW, releases it before the
+        long-running scan, then opens a fresh UoW to persist
+        ``last_scan_at`` on success. The scan use case drives its own
+        media UoW per file group so failures on one group roll back
+        only that transaction.
         """
         _logger.info("[scheduler] Running scan", library_id=library_id)
 
-        async with self._session_factory() as session:
-            library_repo = SqlAlchemyLibraryRepository(session)
-            from src.modules.library.domain.value_objects.library_id import LibraryId
+        paths = await self._load_library_paths(library_id)
+        if paths is None:
+            return
 
-            library = await library_repo.find_by_id(LibraryId(library_id))
-            if library is None:
-                _logger.warning(
-                    "[scheduler] Library vanished before scan; skipping",
-                    library_id=library_id,
-                )
-                return
-
-            scan_input = ScanMediaInput(directories=list(library.paths))
-            use_case = ScanMediaDirectoriesUseCase(
-                file_scanner=self._file_scanner,
-                variant_detector=self._variant_detector,
-                movie_repository=SQLAlchemyMovieRepository(session),
-                series_repository=SQLAlchemySeriesRepository(session),
-                event_bus=self._event_bus,
+        use_case = ScanMediaDirectoriesUseCase(
+            file_scanner=self._file_scanner,
+            variant_detector=self._variant_detector,
+            uow_factory=self._media_uow_factory,
+            probe_service=self._probe_service,
+            event_bus=self._event_bus,
+        )
+        try:
+            result = await use_case.execute(ScanMediaInput(directories=paths))
+        except Exception as exc:
+            _logger.error(
+                "[scheduler] Scan failed",
+                library_id=library_id,
+                error=str(exc),
+                exc_info=True,
             )
+            return
 
-            try:
-                result = await use_case.execute(scan_input)
-            except Exception as exc:
-                _logger.error(
-                    "[scheduler] Scan failed",
-                    library_id=library_id,
-                    error=str(exc),
-                    exc_info=True,
-                )
-                await session.rollback()
-                return
-
-            updated = library.with_scan_completed(datetime.now(UTC))
-            await library_repo.save(updated)
-            await session.commit()
+        await self._mark_library_scanned(library_id)
 
         _logger.info(
             "[scheduler] Scan done",
@@ -210,6 +197,34 @@ class LibraryScanScheduler:
             episodes_updated=result.episodes_updated,
             errors=len(result.errors),
         )
+
+    async def _load_library_paths(self, library_id: str) -> list[str] | None:
+        """Return the library's configured paths, or ``None`` if it vanished."""
+        async with self._library_uow_factory() as uow:
+            library = await uow.libraries.find_by_id(LibraryId(library_id))
+            if library is None:
+                _logger.warning(
+                    "[scheduler] Library vanished before scan; skipping",
+                    library_id=library_id,
+                )
+                return None
+            return [p.value for p in library.paths]
+
+    async def _mark_library_scanned(self, library_id: str) -> None:
+        """Persist the completed-scan timestamp in its own UoW."""
+        async with self._library_uow_factory() as uow:
+            library = await uow.libraries.find_by_id(LibraryId(library_id))
+            if library is None:
+                # Matches the warning emitted at load-time so ops can
+                # correlate "scan started" with "scan finished but row
+                # vanished" in the logs.
+                _logger.warning(
+                    "[scheduler] Library vanished before persisting last_scan_at",
+                    library_id=library_id,
+                )
+                return
+            updated = library.with_scan_completed(datetime.now(UTC))
+            await uow.libraries.save(updated)
 
 
 __all__ = ["LibraryScanScheduler"]
