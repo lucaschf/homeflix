@@ -21,10 +21,11 @@ from src.modules.media.infrastructure.persistence.repositories.series_repository
 class SqlAlchemyMediaUnitOfWork(MediaUnitOfWork):
     """SQLAlchemy-backed Unit of Work for the media bounded context.
 
-    Each ``async with`` block opens a fresh session registered for the
-    request-scoped cleanup middleware, instantiates the movie and
-    series repositories on that session, and commits on success or
-    rolls back on exception.
+    Each ``async with`` block opens a fresh session, instantiates the
+    movie and series repositories on that session, commits on success
+    or rolls back on exception, and always closes the session on exit
+    so the UoW is safe to use outside an HTTP request (scheduler, CLI,
+    workers).
 
     Nesting is not supported — entering an already-open UoW raises
     ``RuntimeError`` rather than silently creating a parallel session.
@@ -55,9 +56,7 @@ class SqlAlchemyMediaUnitOfWork(MediaUnitOfWork):
             else:
                 await self._session.rollback()
         finally:
-            # The request-scoped middleware closes tracked sessions, but
-            # we reset our handle so the UoW instance could be reused in
-            # a new ``async with`` block if the caller holds it.
+            await self._session.close()
             self._session = None
 
     async def commit(self) -> None:

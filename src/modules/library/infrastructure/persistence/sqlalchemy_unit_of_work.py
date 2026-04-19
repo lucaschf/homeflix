@@ -42,6 +42,7 @@ class SqlAlchemyLibraryUnitOfWork(LibraryUnitOfWork):
             else:
                 await self._session.rollback()
         finally:
+            await self._session.close()
             self._session = None
 
     async def commit(self) -> None:
