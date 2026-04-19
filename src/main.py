@@ -155,7 +155,7 @@ def create_app() -> FastAPI:
     )
 
     # Session cleanup middleware (must be added before CORS)
-    from src.config.persistence.session_manager import SessionCleanupMiddleware
+    from src.infrastructure.persistence.session_manager import SessionCleanupMiddleware
 
     app.add_middleware(SessionCleanupMiddleware)
 

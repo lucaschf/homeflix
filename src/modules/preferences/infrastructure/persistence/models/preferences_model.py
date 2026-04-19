@@ -3,7 +3,7 @@
 from sqlalchemy import Float, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.config.persistence.base import Base
+from src.infrastructure.persistence.base import Base
 
 
 class PreferencesModel(Base):
