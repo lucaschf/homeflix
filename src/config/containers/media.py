@@ -125,18 +125,17 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     get_featured_media = providers.Factory(
         GetFeaturedMediaUseCase,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     get_movie_by_id = providers.Factory(
         GetMovieByIdUseCase,
-        movie_repository=movie_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     list_movies = providers.Factory(
         ListMoviesUseCase,
-        movie_repository=movie_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     delete_movie = providers.Factory(
@@ -146,13 +145,13 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     get_series_by_id = providers.Factory(
         GetSeriesByIdUseCase,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
         progress_lookup=progress_lookup,
     )
 
     list_series = providers.Factory(
         ListSeriesUseCase,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     # =========================================================================
@@ -161,20 +160,17 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     list_genres = providers.Factory(
         ListGenresUseCase,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     list_by_genre = providers.Factory(
         ListByGenreUseCase,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     search_catalog = providers.Factory(
         SearchCatalogUseCase,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     # =========================================================================
@@ -183,8 +179,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     get_file_variants = providers.Factory(
         GetFileVariantsUseCase,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     add_file_variant = providers.Factory(
@@ -293,8 +288,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         BulkEnrichMetadataUseCase,
         enrich_movie=enrich_movie_metadata,
         enrich_series=enrich_series_metadata,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        uow_factory=media_unit_of_work_factory,
     )
 
     # =========================================================================

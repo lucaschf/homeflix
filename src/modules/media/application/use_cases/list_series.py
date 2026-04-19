@@ -5,8 +5,8 @@ from src.modules.media.application.dtos.series_dtos import (
     ListSeriesOutput,
     SeriesSummaryOutput,
 )
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Series
-from src.modules.media.domain.repositories import SeriesRepository
 
 
 class ListSeriesUseCase:
@@ -18,7 +18,7 @@ class ListSeriesUseCase:
     opaquely.
 
     Example:
-        >>> use_case = ListSeriesUseCase(series_repository)
+        >>> use_case = ListSeriesUseCase(uow_factory)
         >>> result = await use_case.execute(ListSeriesInput())
         >>> len(result.series)
         20
@@ -26,13 +26,13 @@ class ListSeriesUseCase:
         True
     """
 
-    def __init__(self, series_repository: SeriesRepository) -> None:
+    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            series_repository: Repository for series persistence.
+            uow_factory: Factory that opens a fresh media Unit of Work.
         """
-        self._series_repository = series_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: ListSeriesInput) -> ListSeriesOutput:
         """Execute the use case.
@@ -46,11 +46,12 @@ class ListSeriesUseCase:
             ``has_more``, and an optional ``total_count`` (only when
             ``include_total=True``).
         """
-        page = await self._series_repository.list_paginated(
-            cursor=input_dto.cursor,
-            limit=input_dto.limit,
-            include_total=input_dto.include_total,
-        )
+        async with self._uow_factory() as uow:
+            page = await uow.series.list_paginated(
+                cursor=input_dto.cursor,
+                limit=input_dto.limit,
+                include_total=input_dto.include_total,
+            )
 
         return ListSeriesOutput(
             series=[self._to_summary(s, input_dto.lang) for s in page.items],

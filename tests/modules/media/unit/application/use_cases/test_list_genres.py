@@ -1,6 +1,5 @@
 """Tests for ListGenresUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -10,8 +9,8 @@ from src.modules.media.application.dtos.catalog_dtos import (
     ListGenresOutput,
 )
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.repositories.movie_repository import GenreRow
+from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
 def _row(canonical: list[str], localized: list[str] | None = None) -> GenreRow:
@@ -24,17 +23,16 @@ class TestListGenresUseCase:
 
     @pytest.mark.asyncio
     async def test_should_count_unique_genres_across_movies_and_series(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.list_genre_rows.return_value = [
+        mocks = make_media_uow_mock()
+        mocks.movies.list_genre_rows.return_value = [
             _row(["Action", "Comedy"]),
             _row(["Action"]),
         ]
-        series_repo.list_genre_rows.return_value = [
+        mocks.series.list_genre_rows.return_value = [
             _row(["Comedy"]),
             _row(["Drama"]),
         ]
-        use_case = ListGenresUseCase(movie_repo, series_repo)
+        use_case = ListGenresUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListGenresInput())
 
@@ -44,9 +42,8 @@ class TestListGenresUseCase:
 
     @pytest.mark.asyncio
     async def test_should_sort_by_count_desc_then_alphabetical(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.list_genre_rows.return_value = [
+        mocks = make_media_uow_mock()
+        mocks.movies.list_genre_rows.return_value = [
             _row(["Drama"]),
             _row(["Drama"]),
             _row(["Drama"]),
@@ -55,8 +52,8 @@ class TestListGenresUseCase:
             _row(["Action"]),
             _row(["Action"]),
         ]
-        series_repo.list_genre_rows.return_value = []
-        use_case = ListGenresUseCase(movie_repo, series_repo)
+        mocks.series.list_genre_rows.return_value = []
+        use_case = ListGenresUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListGenresInput())
 
@@ -65,14 +62,13 @@ class TestListGenresUseCase:
 
     @pytest.mark.asyncio
     async def test_should_use_first_seen_localized_label(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.list_genre_rows.return_value = [
+        mocks = make_media_uow_mock()
+        mocks.movies.list_genre_rows.return_value = [
             _row(["Action"], ["Ação"]),
             _row(["Action"], ["A Wrong Translation"]),  # ignored — first wins
         ]
-        series_repo.list_genre_rows.return_value = []
-        use_case = ListGenresUseCase(movie_repo, series_repo)
+        mocks.series.list_genre_rows.return_value = []
+        use_case = ListGenresUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListGenresInput(lang="pt-BR"))
 
@@ -80,12 +76,11 @@ class TestListGenresUseCase:
 
     @pytest.mark.asyncio
     async def test_should_fall_back_to_canonical_when_no_localized_label(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         # No localized genres available — repo returns empty list for that field
-        movie_repo.list_genre_rows.return_value = [_row(["Action"])]
-        series_repo.list_genre_rows.return_value = []
-        use_case = ListGenresUseCase(movie_repo, series_repo)
+        mocks.movies.list_genre_rows.return_value = [_row(["Action"])]
+        mocks.series.list_genre_rows.return_value = []
+        use_case = ListGenresUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListGenresInput(lang="pt-BR"))
 
@@ -96,14 +91,13 @@ class TestListGenresUseCase:
     async def test_should_skip_empty_localized_label(self) -> None:
         # An empty string in the localized list shouldn't beat a later
         # non-empty translation. The "first non-empty" rule.
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.list_genre_rows.return_value = [
+        mocks = make_media_uow_mock()
+        mocks.movies.list_genre_rows.return_value = [
             _row(["Action"], [""]),
             _row(["Action"], ["Ação"]),
         ]
-        series_repo.list_genre_rows.return_value = []
-        use_case = ListGenresUseCase(movie_repo, series_repo)
+        mocks.series.list_genre_rows.return_value = []
+        use_case = ListGenresUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListGenresInput(lang="pt-BR"))
 
@@ -111,11 +105,10 @@ class TestListGenresUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_empty_list_when_no_rows(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.list_genre_rows.return_value = []
-        series_repo.list_genre_rows.return_value = []
-        use_case = ListGenresUseCase(movie_repo, series_repo)
+        mocks = make_media_uow_mock()
+        mocks.movies.list_genre_rows.return_value = []
+        mocks.series.list_genre_rows.return_value = []
+        use_case = ListGenresUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListGenresInput())
 
@@ -123,16 +116,15 @@ class TestListGenresUseCase:
 
     @pytest.mark.asyncio
     async def test_should_pass_lang_through_to_repos(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.list_genre_rows.return_value = []
-        series_repo.list_genre_rows.return_value = []
-        use_case = ListGenresUseCase(movie_repo, series_repo)
+        mocks = make_media_uow_mock()
+        mocks.movies.list_genre_rows.return_value = []
+        mocks.series.list_genre_rows.return_value = []
+        use_case = ListGenresUseCase(uow_factory=mocks.factory)
 
         await use_case.execute(ListGenresInput(lang="pt-BR"))
 
-        movie_repo.list_genre_rows.assert_awaited_once_with("pt-BR")
-        series_repo.list_genre_rows.assert_awaited_once_with("pt-BR")
+        mocks.movies.list_genre_rows.assert_awaited_once_with("pt-BR")
+        mocks.series.list_genre_rows.assert_awaited_once_with("pt-BR")
 
     @pytest.mark.asyncio
     async def test_should_skip_series_repo_when_filtered_to_movies(self) -> None:
@@ -140,30 +132,28 @@ class TestListGenresUseCase:
         # repo — the series repo must not be called at all so the
         # counts reflect movies only (and the Movies tab on the
         # frontend doesn't surface series-only genres).
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.list_genre_rows.return_value = [_row(["Action"]), _row(["Comedy"])]
-        series_repo.list_genre_rows.return_value = [_row(["Drama"])]
-        use_case = ListGenresUseCase(movie_repo, series_repo)
+        mocks = make_media_uow_mock()
+        mocks.movies.list_genre_rows.return_value = [_row(["Action"]), _row(["Comedy"])]
+        mocks.series.list_genre_rows.return_value = [_row(["Drama"])]
+        use_case = ListGenresUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListGenresInput(media_type="movie"))
 
-        movie_repo.list_genre_rows.assert_awaited_once()
-        series_repo.list_genre_rows.assert_not_awaited()
+        mocks.movies.list_genre_rows.assert_awaited_once()
+        mocks.series.list_genre_rows.assert_not_awaited()
         assert {g.id for g in result.genres} == {"Action", "Comedy"}
 
     @pytest.mark.asyncio
     async def test_should_skip_movie_repo_when_filtered_to_series(self) -> None:
         # Mirror of the previous test — Series tab should only hit
         # the series repo.
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        movie_repo.list_genre_rows.return_value = [_row(["Action"])]
-        series_repo.list_genre_rows.return_value = [_row(["Drama"]), _row(["Thriller"])]
-        use_case = ListGenresUseCase(movie_repo, series_repo)
+        mocks = make_media_uow_mock()
+        mocks.movies.list_genre_rows.return_value = [_row(["Action"])]
+        mocks.series.list_genre_rows.return_value = [_row(["Drama"]), _row(["Thriller"])]
+        use_case = ListGenresUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListGenresInput(media_type="series"))
 
-        series_repo.list_genre_rows.assert_awaited_once()
-        movie_repo.list_genre_rows.assert_not_awaited()
+        mocks.series.list_genre_rows.assert_awaited_once()
+        mocks.movies.list_genre_rows.assert_not_awaited()
         assert {g.id for g in result.genres} == {"Drama", "Thriller"}

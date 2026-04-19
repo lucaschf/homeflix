@@ -1,6 +1,5 @@
 """Tests for GetMovieByIdUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -8,7 +7,7 @@ from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos import GetMovieByIdInput, MovieOutput
 from src.modules.media.application.use_cases import GetMovieByIdUseCase
 from src.modules.media.domain.entities import Movie
-from src.modules.media.domain.repositories import MovieRepository
+from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
 class TestGetMovieByIdUseCase:
@@ -16,7 +15,7 @@ class TestGetMovieByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_movie_when_found(self):
-        mock_repo = AsyncMock(spec=MovieRepository)
+        mocks = make_media_uow_mock()
         movie = Movie.create(
             title="Inception",
             year=2010,
@@ -25,8 +24,8 @@ class TestGetMovieByIdUseCase:
             file_size=4_000_000_000,
             resolution="1080p",
         )
-        mock_repo.find_by_id.return_value = movie
-        use_case = GetMovieByIdUseCase(movie_repository=mock_repo)
+        mocks.movies.find_by_id.return_value = movie
+        use_case = GetMovieByIdUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetMovieByIdInput(movie_id=str(movie.id)))
 
@@ -38,7 +37,7 @@ class TestGetMovieByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_formatted_duration(self):
-        mock_repo = AsyncMock(spec=MovieRepository)
+        mocks = make_media_uow_mock()
         movie = Movie.create(
             title="Test Movie",
             year=2020,
@@ -47,8 +46,8 @@ class TestGetMovieByIdUseCase:
             file_size=1_000_000_000,
             resolution="1080p",
         )
-        mock_repo.find_by_id.return_value = movie
-        use_case = GetMovieByIdUseCase(movie_repository=mock_repo)
+        mocks.movies.find_by_id.return_value = movie
+        use_case = GetMovieByIdUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetMovieByIdInput(movie_id=str(movie.id)))
 
@@ -56,7 +55,7 @@ class TestGetMovieByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_genres_as_strings(self):
-        mock_repo = AsyncMock(spec=MovieRepository)
+        mocks = make_media_uow_mock()
         movie = Movie.create(
             title="Test Movie",
             year=2020,
@@ -67,8 +66,8 @@ class TestGetMovieByIdUseCase:
         )
         movie = movie.with_genre("Action")
         movie = movie.with_genre("Sci-Fi")
-        mock_repo.find_by_id.return_value = movie
-        use_case = GetMovieByIdUseCase(movie_repository=mock_repo)
+        mocks.movies.find_by_id.return_value = movie
+        use_case = GetMovieByIdUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetMovieByIdInput(movie_id=str(movie.id)))
 
@@ -76,7 +75,7 @@ class TestGetMovieByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_handle_optional_fields_as_none(self):
-        mock_repo = AsyncMock(spec=MovieRepository)
+        mocks = make_media_uow_mock()
         movie = Movie.create(
             title="Test Movie",
             year=2020,
@@ -85,8 +84,8 @@ class TestGetMovieByIdUseCase:
             file_size=1_000_000_000,
             resolution="1080p",
         )
-        mock_repo.find_by_id.return_value = movie
-        use_case = GetMovieByIdUseCase(movie_repository=mock_repo)
+        mocks.movies.find_by_id.return_value = movie
+        use_case = GetMovieByIdUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetMovieByIdInput(movie_id=str(movie.id)))
 
@@ -99,9 +98,9 @@ class TestGetMovieByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_raise_not_found_when_movie_missing(self):
-        mock_repo = AsyncMock(spec=MovieRepository)
-        mock_repo.find_by_id.return_value = None
-        use_case = GetMovieByIdUseCase(movie_repository=mock_repo)
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_id.return_value = None
+        use_case = GetMovieByIdUseCase(uow_factory=mocks.factory)
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
             await use_case.execute(GetMovieByIdInput(movie_id="mov_nonexistent1"))
@@ -111,7 +110,7 @@ class TestGetMovieByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_call_repository_with_movie_id(self):
-        mock_repo = AsyncMock(spec=MovieRepository)
+        mocks = make_media_uow_mock()
         movie = Movie.create(
             title="Test Movie",
             year=2020,
@@ -120,11 +119,11 @@ class TestGetMovieByIdUseCase:
             file_size=1_000_000_000,
             resolution="1080p",
         )
-        mock_repo.find_by_id.return_value = movie
-        use_case = GetMovieByIdUseCase(movie_repository=mock_repo)
+        mocks.movies.find_by_id.return_value = movie
+        use_case = GetMovieByIdUseCase(uow_factory=mocks.factory)
 
         await use_case.execute(GetMovieByIdInput(movie_id=str(movie.id)))
 
-        mock_repo.find_by_id.assert_called_once()
-        call_arg = mock_repo.find_by_id.call_args[0][0]
+        mocks.movies.find_by_id.assert_called_once()
+        call_arg = mocks.movies.find_by_id.call_args[0][0]
         assert str(call_arg) == str(movie.id)

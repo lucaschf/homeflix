@@ -1,6 +1,5 @@
 """Tests for ListSeriesUseCase."""
 
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -12,7 +11,7 @@ from src.modules.media.application.dtos import (
 )
 from src.modules.media.application.use_cases import ListSeriesUseCase
 from src.modules.media.domain.entities import Series
-from src.modules.media.domain.repositories import SeriesRepository
+from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
 def _page(
@@ -34,14 +33,14 @@ class TestListSeriesUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_first_page(self) -> None:
-        mock_repo = AsyncMock(spec=SeriesRepository)
-        mock_repo.list_paginated.return_value = _page(
+        mocks = make_media_uow_mock()
+        mocks.series.list_paginated.return_value = _page(
             [
                 Series.create(title="Show 1", start_year=2020),
                 Series.create(title="Show 2", start_year=2021),
             ]
         )
-        use_case = ListSeriesUseCase(series_repository=mock_repo)
+        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListSeriesInput())
 
@@ -50,7 +49,7 @@ class TestListSeriesUseCase:
         assert result.has_more is False
         assert result.next_cursor is None
         assert result.total_count is None
-        mock_repo.list_paginated.assert_awaited_once_with(
+        mocks.series.list_paginated.assert_awaited_once_with(
             cursor=None,
             limit=20,
             include_total=False,
@@ -58,15 +57,15 @@ class TestListSeriesUseCase:
 
     @pytest.mark.asyncio
     async def test_should_convert_series_to_summaries(self) -> None:
-        mock_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         series = Series.create(
             title="Breaking Bad",
             start_year=2008,
             end_year=2013,
             genres=["Drama", "Crime"],
         )
-        mock_repo.list_paginated.return_value = _page([series])
-        use_case = ListSeriesUseCase(series_repository=mock_repo)
+        mocks.series.list_paginated.return_value = _page([series])
+        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListSeriesInput())
 
@@ -80,13 +79,13 @@ class TestListSeriesUseCase:
 
     @pytest.mark.asyncio
     async def test_should_pass_cursor_and_limit_to_repository(self) -> None:
-        mock_repo = AsyncMock(spec=SeriesRepository)
-        mock_repo.list_paginated.return_value = _page([])
-        use_case = ListSeriesUseCase(series_repository=mock_repo)
+        mocks = make_media_uow_mock()
+        mocks.series.list_paginated.return_value = _page([])
+        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
 
         await use_case.execute(ListSeriesInput(cursor="abc123", limit=15))
 
-        mock_repo.list_paginated.assert_awaited_once_with(
+        mocks.series.list_paginated.assert_awaited_once_with(
             cursor="abc123",
             limit=15,
             include_total=False,
@@ -94,13 +93,13 @@ class TestListSeriesUseCase:
 
     @pytest.mark.asyncio
     async def test_should_propagate_next_cursor_and_has_more(self) -> None:
-        mock_repo = AsyncMock(spec=SeriesRepository)
-        mock_repo.list_paginated.return_value = _page(
+        mocks = make_media_uow_mock()
+        mocks.series.list_paginated.return_value = _page(
             [Series.create(title="Show 1", start_year=2020)],
             next_cursor="next-token",
             has_more=True,
         )
-        use_case = ListSeriesUseCase(series_repository=mock_repo)
+        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListSeriesInput())
 
@@ -109,9 +108,9 @@ class TestListSeriesUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_empty_page_when_no_series(self) -> None:
-        mock_repo = AsyncMock(spec=SeriesRepository)
-        mock_repo.list_paginated.return_value = _page([])
-        use_case = ListSeriesUseCase(series_repository=mock_repo)
+        mocks = make_media_uow_mock()
+        mocks.series.list_paginated.return_value = _page([])
+        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListSeriesInput())
 
@@ -121,10 +120,10 @@ class TestListSeriesUseCase:
 
     @pytest.mark.asyncio
     async def test_should_indicate_ongoing_series(self) -> None:
-        mock_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         series = Series.create(title="Ongoing Show", start_year=2020)
-        mock_repo.list_paginated.return_value = _page([series])
-        use_case = ListSeriesUseCase(series_repository=mock_repo)
+        mocks.series.list_paginated.return_value = _page([series])
+        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListSeriesInput())
 
@@ -133,10 +132,10 @@ class TestListSeriesUseCase:
 
     @pytest.mark.asyncio
     async def test_should_include_season_and_episode_counts(self) -> None:
-        mock_repo = AsyncMock(spec=SeriesRepository)
+        mocks = make_media_uow_mock()
         series = Series.create(title="Test Show", start_year=2020)
-        mock_repo.list_paginated.return_value = _page([series])
-        use_case = ListSeriesUseCase(series_repository=mock_repo)
+        mocks.series.list_paginated.return_value = _page([series])
+        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListSeriesInput())
 
@@ -145,17 +144,17 @@ class TestListSeriesUseCase:
 
     @pytest.mark.asyncio
     async def test_should_request_total_when_include_total_is_true(self) -> None:
-        mock_repo = AsyncMock(spec=SeriesRepository)
-        mock_repo.list_paginated.return_value = _page(
+        mocks = make_media_uow_mock()
+        mocks.series.list_paginated.return_value = _page(
             [Series.create(title="Show 1", start_year=2020)],
             total_count=10,
         )
-        use_case = ListSeriesUseCase(series_repository=mock_repo)
+        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(ListSeriesInput(include_total=True))
 
         assert result.total_count == 10
-        mock_repo.list_paginated.assert_awaited_once_with(
+        mocks.series.list_paginated.assert_awaited_once_with(
             cursor=None,
             limit=20,
             include_total=True,

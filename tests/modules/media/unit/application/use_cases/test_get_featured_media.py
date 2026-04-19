@@ -1,7 +1,5 @@
 """Tests for GetFeaturedMediaUseCase."""
 
-from unittest.mock import AsyncMock
-
 import pytest
 
 from src.modules.media.application.dtos.featured_dtos import (
@@ -12,8 +10,8 @@ from src.modules.media.application.use_cases.get_featured_media import (
     GetFeaturedMediaUseCase,
 )
 from src.modules.media.domain.entities import Movie, Series
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
 from src.modules.media.domain.value_objects import ImageUrl
+from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
 def _make_movie(title: str = "Inception") -> Movie:
@@ -43,13 +41,9 @@ class TestGetFeaturedMediaUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_movies_only(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_random.return_value = [_make_movie("Inception")]
-        series_repo = AsyncMock(spec=SeriesRepository)
-        use_case = GetFeaturedMediaUseCase(
-            movie_repository=movie_repo,
-            series_repository=series_repo,
-        )
+        mocks = make_media_uow_mock()
+        mocks.movies.find_random.return_value = [_make_movie("Inception")]
+        use_case = GetFeaturedMediaUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetFeaturedInput(media_type="movie", limit=10))
 
@@ -57,35 +51,27 @@ class TestGetFeaturedMediaUseCase:
         assert isinstance(result[0], FeaturedItemOutput)
         assert result[0].type == "movie"
         assert result[0].title == "Inception"
-        series_repo.find_random.assert_not_called()
+        mocks.series.find_random.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_should_return_series_only(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        series_repo.find_random.return_value = [_make_series("Breaking Bad")]
-        use_case = GetFeaturedMediaUseCase(
-            movie_repository=movie_repo,
-            series_repository=series_repo,
-        )
+        mocks = make_media_uow_mock()
+        mocks.series.find_random.return_value = [_make_series("Breaking Bad")]
+        use_case = GetFeaturedMediaUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetFeaturedInput(media_type="series", limit=10))
 
         assert len(result) == 1
         assert result[0].type == "series"
         assert result[0].title == "Breaking Bad"
-        movie_repo.find_random.assert_not_called()
+        mocks.movies.find_random.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_should_return_both_movies_and_series_when_all(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_random.return_value = [_make_movie("Inception")]
-        series_repo = AsyncMock(spec=SeriesRepository)
-        series_repo.find_random.return_value = [_make_series("Breaking Bad")]
-        use_case = GetFeaturedMediaUseCase(
-            movie_repository=movie_repo,
-            series_repository=series_repo,
-        )
+        mocks = make_media_uow_mock()
+        mocks.movies.find_random.return_value = [_make_movie("Inception")]
+        mocks.series.find_random.return_value = [_make_series("Breaking Bad")]
+        use_case = GetFeaturedMediaUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetFeaturedInput(media_type="all", limit=10))
 
@@ -95,14 +81,10 @@ class TestGetFeaturedMediaUseCase:
 
     @pytest.mark.asyncio
     async def test_should_truncate_to_limit(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_random.return_value = [_make_movie(f"Movie{i}") for i in range(5)]
-        series_repo = AsyncMock(spec=SeriesRepository)
-        series_repo.find_random.return_value = [_make_series(f"Series{i}") for i in range(5)]
-        use_case = GetFeaturedMediaUseCase(
-            movie_repository=movie_repo,
-            series_repository=series_repo,
-        )
+        mocks = make_media_uow_mock()
+        mocks.movies.find_random.return_value = [_make_movie(f"Movie{i}") for i in range(5)]
+        mocks.series.find_random.return_value = [_make_series(f"Series{i}") for i in range(5)]
+        use_case = GetFeaturedMediaUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetFeaturedInput(media_type="all", limit=4))
 
@@ -110,14 +92,10 @@ class TestGetFeaturedMediaUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_empty_when_no_results(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_random.return_value = []
-        series_repo = AsyncMock(spec=SeriesRepository)
-        series_repo.find_random.return_value = []
-        use_case = GetFeaturedMediaUseCase(
-            movie_repository=movie_repo,
-            series_repository=series_repo,
-        )
+        mocks = make_media_uow_mock()
+        mocks.movies.find_random.return_value = []
+        mocks.series.find_random.return_value = []
+        use_case = GetFeaturedMediaUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetFeaturedInput(media_type="all", limit=10))
 
@@ -125,18 +103,13 @@ class TestGetFeaturedMediaUseCase:
 
     @pytest.mark.asyncio
     async def test_should_filter_with_backdrop(self) -> None:
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_random.return_value = []
-        series_repo = AsyncMock(spec=SeriesRepository)
-        series_repo.find_random.return_value = []
-        use_case = GetFeaturedMediaUseCase(
-            movie_repository=movie_repo,
-            series_repository=series_repo,
-        )
+        mocks = make_media_uow_mock()
+        mocks.movies.find_random.return_value = []
+        use_case = GetFeaturedMediaUseCase(uow_factory=mocks.factory)
 
         await use_case.execute(GetFeaturedInput(media_type="movie", limit=5))
 
-        movie_repo.find_random.assert_called_once_with(5, with_backdrop=True)
+        mocks.movies.find_random.assert_called_once_with(5, with_backdrop=True)
 
     @pytest.mark.asyncio
     async def test_should_pass_language_to_movie_outputs(self) -> None:
@@ -144,13 +117,9 @@ class TestGetFeaturedMediaUseCase:
         movie = movie.with_updates(
             localized={"pt-BR": {"title": "A Origem"}},
         )
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_random.return_value = [movie]
-        series_repo = AsyncMock(spec=SeriesRepository)
-        use_case = GetFeaturedMediaUseCase(
-            movie_repository=movie_repo,
-            series_repository=series_repo,
-        )
+        mocks = make_media_uow_mock()
+        mocks.movies.find_random.return_value = [movie]
+        use_case = GetFeaturedMediaUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetFeaturedInput(media_type="movie", limit=1, lang="pt-BR"))
 
@@ -159,13 +128,9 @@ class TestGetFeaturedMediaUseCase:
     @pytest.mark.asyncio
     async def test_movie_output_should_include_backdrop_and_genres(self) -> None:
         movie = _make_movie("Inception")
-        movie_repo = AsyncMock(spec=MovieRepository)
-        movie_repo.find_random.return_value = [movie]
-        series_repo = AsyncMock(spec=SeriesRepository)
-        use_case = GetFeaturedMediaUseCase(
-            movie_repository=movie_repo,
-            series_repository=series_repo,
-        )
+        mocks = make_media_uow_mock()
+        mocks.movies.find_random.return_value = [movie]
+        use_case = GetFeaturedMediaUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetFeaturedInput(media_type="movie", limit=1))
 
@@ -176,13 +141,9 @@ class TestGetFeaturedMediaUseCase:
     @pytest.mark.asyncio
     async def test_series_output_should_have_no_duration(self) -> None:
         series = _make_series("Breaking Bad")
-        movie_repo = AsyncMock(spec=MovieRepository)
-        series_repo = AsyncMock(spec=SeriesRepository)
-        series_repo.find_random.return_value = [series]
-        use_case = GetFeaturedMediaUseCase(
-            movie_repository=movie_repo,
-            series_repository=series_repo,
-        )
+        mocks = make_media_uow_mock()
+        mocks.series.find_random.return_value = [series]
+        use_case = GetFeaturedMediaUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetFeaturedInput(media_type="series", limit=1))
 

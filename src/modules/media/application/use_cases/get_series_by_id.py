@@ -8,11 +8,11 @@ from src.modules.media.application.dtos.series_dtos import (
     SeriesOutput,
 )
 from src.modules.media.application.ports import ProgressLookupPort, ProgressSummary
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._media_file_helpers import (
     to_media_file_output,
 )
 from src.modules.media.domain.entities import Episode, Season, Series
-from src.modules.media.domain.repositories import SeriesRepository
 from src.modules.media.domain.value_objects import SeriesId
 from src.shared_kernel.episode_composite_id import EpisodeCompositeId
 
@@ -26,7 +26,7 @@ class GetSeriesByIdUseCase:
     Watch Progress domain types.
 
     Example:
-        >>> use_case = GetSeriesByIdUseCase(series_repository, progress_lookup)
+        >>> use_case = GetSeriesByIdUseCase(uow_factory, progress_lookup)
         >>> result = await use_case.execute(GetSeriesByIdInput("ser_abc123"))
         >>> result.title
         'Breaking Bad'
@@ -36,16 +36,16 @@ class GetSeriesByIdUseCase:
 
     def __init__(
         self,
-        series_repository: SeriesRepository,
+        uow_factory: MediaUnitOfWorkFactory,
         progress_lookup: ProgressLookupPort,
     ) -> None:
         """Initialize the use case.
 
         Args:
-            series_repository: Repository for series persistence.
+            uow_factory: Factory that opens a fresh media Unit of Work.
             progress_lookup: Port for resolving watch progress snapshots.
         """
-        self._series_repository = series_repository
+        self._uow_factory = uow_factory
         self._progress_lookup = progress_lookup
 
     async def execute(self, input_dto: GetSeriesByIdInput) -> SeriesOutput:
@@ -61,7 +61,8 @@ class GetSeriesByIdUseCase:
             ResourceNotFoundException: If series doesn't exist.
         """
         series_id = SeriesId(input_dto.series_id)
-        series = await self._series_repository.find_by_id(series_id)
+        async with self._uow_factory() as uow:
+            series = await uow.series.find_by_id(series_id)
 
         if series is None:
             raise ResourceNotFoundException.for_resource("Series", input_dto.series_id)

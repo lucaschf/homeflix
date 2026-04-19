@@ -5,7 +5,7 @@ from src.modules.media.application.dtos.catalog_dtos import (
     ListGenresInput,
     ListGenresOutput,
 )
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.repositories.movie_repository import GenreRow
 
 
@@ -29,25 +29,19 @@ class ListGenresUseCase:
     Home page where they're most useful.
 
     Example:
-        >>> use_case = ListGenresUseCase(movie_repo, series_repo)
+        >>> use_case = ListGenresUseCase(uow_factory)
         >>> result = await use_case.execute(ListGenresInput(lang="pt-BR"))
         >>> result.genres[0]
         GenreOutput(id="Action", name="Ação", count=42)
     """
 
-    def __init__(
-        self,
-        movie_repository: MovieRepository,
-        series_repository: SeriesRepository,
-    ) -> None:
+    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            movie_repository: Movie repo, used for ``list_genre_rows``.
-            series_repository: Series repo, used for ``list_genre_rows``.
+            uow_factory: Factory that opens a fresh media Unit of Work.
         """
-        self._movie_repository = movie_repository
-        self._series_repository = series_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: ListGenresInput) -> ListGenresOutput:
         """Execute the use case.
@@ -66,16 +60,17 @@ class ListGenresUseCase:
         # use this to get counts scoped to just their half of the
         # catalog, so e.g. a genre that only tags series shouldn't
         # appear on the Movies tab.
-        movie_rows = (
-            await self._movie_repository.list_genre_rows(input_dto.lang)
-            if input_dto.media_type != "series"
-            else []
-        )
-        series_rows = (
-            await self._series_repository.list_genre_rows(input_dto.lang)
-            if input_dto.media_type != "movie"
-            else []
-        )
+        async with self._uow_factory() as uow:
+            movie_rows = (
+                await uow.movies.list_genre_rows(input_dto.lang)
+                if input_dto.media_type != "series"
+                else []
+            )
+            series_rows = (
+                await uow.series.list_genre_rows(input_dto.lang)
+                if input_dto.media_type != "movie"
+                else []
+            )
 
         counts: dict[str, int] = {}
         localized_label: dict[str, str] = {}
