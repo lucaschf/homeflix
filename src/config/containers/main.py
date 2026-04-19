@@ -68,10 +68,8 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
 
     library = providers.Container(
         LibraryContainer,
-        session=infrastructure.session,
         session_factory=infrastructure.session_factory,
-        movie_repository=media.movie_repository,
-        series_repository=media.series_repository,
+        media_uow_factory=media.media_unit_of_work_factory,
     )
 
     preferences = providers.Container(

@@ -13,9 +13,6 @@ from src.modules.library.application.use_cases.list_libraries import ListLibrari
 from src.modules.library.application.use_cases.update_library import UpdateLibraryUseCase
 from src.modules.library.domain.services.track_selector import TrackSelector
 from src.modules.library.infrastructure.acl import MediaCountQueryAdapter
-from src.modules.library.infrastructure.persistence.repositories.sqlalchemy_library_repository import (
-    SqlAlchemyLibraryRepository,
-)
 from src.modules.library.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyLibraryUnitOfWorkFactory,
 )
@@ -25,30 +22,22 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     """Container for Library bounded context dependencies.
 
     Provides:
-    - Repository implementation (SQLAlchemy) for read use cases
-    - Unit of Work factory for write use cases
+    - Unit of Work factory (reads and writes both go through it)
     - ACL adapter for the Media BC read port
     - CRUD use cases
     - Domain services
     """
 
     # Wired from InfrastructureContainer via main container.
-    session = providers.Dependency()
     session_factory = providers.Dependency()
-    # Media repositories come in so the ACL adapter can delegate
-    # count queries. The use cases themselves only know the
-    # ``MediaCountQueryPort`` — they never see these concretes.
-    movie_repository = providers.Dependency()
-    series_repository = providers.Dependency()
+    # Media UoW factory comes in so the ACL adapter can open short-lived
+    # transactions against the Media catalog for count queries. Use
+    # cases themselves only know ``MediaCountQueryPort``.
+    media_uow_factory = providers.Dependency()
 
     # =========================================================================
-    # Repositories (read-only) and Unit of Work (writes)
+    # Unit of Work
     # =========================================================================
-
-    library_repository = providers.Factory(
-        SqlAlchemyLibraryRepository,
-        session=session,
-    )
 
     library_unit_of_work_factory = providers.Singleton(
         SqlAlchemyLibraryUnitOfWorkFactory,
@@ -61,8 +50,7 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     media_count_query = providers.Factory(
         MediaCountQueryAdapter,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        media_uow_factory=media_uow_factory,
     )
 
     # =========================================================================
@@ -77,13 +65,13 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     list_libraries = providers.Factory(
         ListLibrariesUseCase,
-        library_repository=library_repository,
+        uow_factory=library_unit_of_work_factory,
         media_count_query=media_count_query,
     )
 
     get_library_by_id = providers.Factory(
         GetLibraryByIdUseCase,
-        library_repository=library_repository,
+        uow_factory=library_unit_of_work_factory,
         media_count_query=media_count_query,
     )
 

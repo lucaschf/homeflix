@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.modules.library.unit.conftest import make_library_uow_mock
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.library.application.dtos.library_dtos import GetLibraryByIdInput
@@ -11,7 +12,6 @@ from src.modules.library.application.use_cases.get_library_by_id import (
     GetLibraryByIdUseCase,
 )
 from src.modules.library.domain.entities.library import Library
-from src.modules.library.domain.repositories.library_repository import LibraryRepository
 from src.modules.library.domain.value_objects.library_id import LibraryId
 
 
@@ -29,9 +29,9 @@ class TestGetLibraryByIdUseCase:
     @pytest.mark.asyncio
     async def test_should_return_library_when_found(self) -> None:
         lib = Library.create(name="Movies", library_type="movies", paths=["/m"])
-        repo = AsyncMock(spec=LibraryRepository)
-        repo.find_by_id.return_value = lib
-        use_case = GetLibraryByIdUseCase(repo, _make_media_count_query())
+        mocks = make_library_uow_mock()
+        mocks.libraries.find_by_id.return_value = lib
+        use_case = GetLibraryByIdUseCase(mocks.factory, _make_media_count_query())
 
         result = await use_case.execute(
             GetLibraryByIdInput(library_id=str(lib.id)),
@@ -41,9 +41,9 @@ class TestGetLibraryByIdUseCase:
 
     @pytest.mark.asyncio
     async def test_should_raise_when_not_found(self) -> None:
-        repo = AsyncMock(spec=LibraryRepository)
-        repo.find_by_id.return_value = None
-        use_case = GetLibraryByIdUseCase(repo, _make_media_count_query())
+        mocks = make_library_uow_mock()
+        mocks.libraries.find_by_id.return_value = None
+        use_case = GetLibraryByIdUseCase(mocks.factory, _make_media_count_query())
         lib_id = str(LibraryId.generate())
 
         with pytest.raises(ResourceNotFoundException):

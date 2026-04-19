@@ -2,9 +2,9 @@
 
 from src.modules.library.application.dtos.library_dtos import LibraryOutput
 from src.modules.library.application.ports import MediaCountQueryPort
+from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
 from src.modules.library.application.use_cases._counts import resolve_counts
 from src.modules.library.application.use_cases._to_output import library_to_output
-from src.modules.library.domain.repositories.library_repository import LibraryRepository
 
 
 class ListLibrariesUseCase:
@@ -12,28 +12,27 @@ class ListLibrariesUseCase:
 
     def __init__(
         self,
-        library_repository: LibraryRepository,
+        uow_factory: LibraryUnitOfWorkFactory,
         media_count_query: MediaCountQueryPort,
     ) -> None:
-        self._repo = library_repository
+        self._uow_factory = uow_factory
         self._media_count_query = media_count_query
 
     async def execute(self) -> list[LibraryOutput]:
         """List all libraries.
 
-        The count queries fan out serially on purpose: every repo on
-        this request shares the same ``AsyncSession`` (see
-        ``session_manager.py``), and SQLAlchemy sessions forbid
-        concurrent ``execute`` calls on the same transaction — a
-        ``gather`` here raises ``InvalidRequestError`` the moment two
-        libraries exist. For tens of libraries the serial cost is
-        negligible; batching would require a dedicated short-lived
-        session per library and isn't worth the complexity today.
+        The count queries fan out serially: each
+        ``MediaCountQueryPort`` call opens its own short-lived
+        ``AsyncSession`` internally, so a ``gather`` would only buy
+        concurrency at the cost of spawning 2N connections for N
+        libraries. For tens of libraries the serial cost is
+        negligible.
 
         Returns:
             List of ``LibraryOutput`` ordered by name.
         """
-        entities = await self._repo.find_all()
+        async with self._uow_factory() as uow:
+            entities = await uow.libraries.find_all()
         outputs: list[LibraryOutput] = []
         for entity in entities:
             movie_count, series_count = await resolve_counts(entity, self._media_count_query)
