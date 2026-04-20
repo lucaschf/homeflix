@@ -21,6 +21,9 @@ Cache structure per file::
     ├── sub_0/
     │   ├── playlist.m3u8     # WebVTT wrapper playlist
     │   └── sub.vtt
+    ├── thumbnails/
+    │   ├── sprite.jpg        # Scrub-preview sprite (lazy, best-effort)
+    │   └── sprite.vtt        # Cue points into sprite tiles
     └── tracks.json           # Cached probe result
 """
 
@@ -37,6 +40,15 @@ from typing import Any
 
 from src.modules.media.application.ports.hls_playlist_port import HlsPlaylistPort
 from src.modules.media.application.ports.media_probe_port import ProbeResult
+from src.modules.media.application.streaming.thumbnail_vtt import (
+    DEFAULT_INTERVAL_SECONDS as _THUMB_INTERVAL,
+)
+from src.modules.media.application.streaming.thumbnail_vtt import (
+    build_vtt as _build_thumbnail_vtt,
+)
+from src.modules.media.application.streaming.thumbnail_vtt import (
+    compute_layout as _compute_thumbnail_layout,
+)
 from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
 from src.shared_kernel.value_objects.tracks import SubtitleTrack
@@ -110,6 +122,17 @@ def _build_two_pass_seek_args(
 
 
 _VIDEO_DIR = "video"
+_THUMBNAILS_DIR = "thumbnails"
+_THUMBNAIL_SPRITE_NAME = "sprite.jpg"
+_THUMBNAIL_VTT_NAME = "sprite.vtt"
+# JPEG quality for the sprite: ffmpeg -q:v where 2 is near-lossless and
+# 31 is worst. 5 keeps previews sharp enough for hover without bloating
+# the sprite — each 160x90 tile lands around 5-8KB on real content.
+_THUMBNAIL_JPEG_QUALITY = 5
+# Max seconds we give ffmpeg to finish the sprite. Thumbs are a nice-to-have;
+# if ffmpeg is still running at this point we kill it and move on — the
+# user just won't see scrub previews on this session.
+_THUMBNAIL_TIMEOUT = 300.0
 
 # -- Module helpers -----------------------------------------------------------
 
@@ -603,6 +626,17 @@ class HlsService(HlsPlaylistPort):
                 name=f"hls-sub-{path_hash[:8]}-{sub.index}",
             ).start()
 
+        # 6. Generate the scrub-preview sprite + VTT in the background.
+        # Thumbnails are a nice-to-have: the main HLS pipeline never
+        # waits for them, and the player simply shows no preview for
+        # sessions that started before the sprite was ready.
+        threading.Thread(
+            target=self._extract_thumbnails,
+            args=(safe_path, output_dir, start_seconds),
+            daemon=True,
+            name=f"hls-thumbs-{path_hash[:8]}",
+        ).start()
+
         return path_hash
 
     @staticmethod
@@ -857,6 +891,164 @@ class HlsService(HlsPlaylistPort):
                 event = self._subtitle_events.get(path_hash, {}).get(track.index)
             if event is not None:
                 event.set()
+
+    # -- Private: thumbnails ---------------------------------------------------
+
+    def _extract_thumbnails(
+        self,
+        file_path: str,
+        output_dir: Path,
+        start_seconds: float,
+    ) -> None:
+        """Produce sprite.jpg + sprite.vtt for scrub preview.
+
+        Synchronous (runs inside its own thread from ``_start_generation``).
+        Every failure mode — missing ffprobe, zero duration, ffmpeg
+        non-zero exit, timeout — degrades to "no thumbnails this session"
+        rather than bubbling up, because the player works fine without them.
+
+        ``start_seconds`` shifts the source so the sprite covers from that
+        offset forward, matching the bucket's HLS timeline (which also
+        starts at zero local time when resuming mid-file).
+        """
+        duration = self._probe_duration(file_path)
+        if duration <= 0:
+            _logger.debug("Thumbs skipped for %s: unknown duration", file_path)
+            return
+        effective_duration = max(0.0, duration - start_seconds)
+        if effective_duration < _THUMB_INTERVAL:
+            _logger.debug(
+                "Thumbs skipped for %s: effective duration %.1fs below interval",
+                file_path,
+                effective_duration,
+            )
+            return
+
+        layout = _compute_thumbnail_layout(effective_duration)
+        thumbs_dir = output_dir / _THUMBNAILS_DIR
+        thumbs_dir.mkdir(exist_ok=True)
+        sprite_path = thumbs_dir / _THUMBNAIL_SPRITE_NAME
+        vtt_path = thumbs_dir / _THUMBNAIL_VTT_NAME
+
+        filter_expr = (
+            f"fps=1/{_THUMB_INTERVAL},"
+            f"scale={layout.tile_width}:{layout.tile_height}:force_original_aspect_ratio=decrease,"
+            f"pad={layout.tile_width}:{layout.tile_height}:(ow-iw)/2:(oh-ih)/2,"
+            f"tile={layout.columns}x{layout.rows}"
+        )
+
+        # ffmpeg is invoked with two separate inline literal-list calls
+        # (with vs without ``-ss``) instead of building one ``cmd``
+        # variable so the static-analysis rule against passing a
+        # non-literal command to ``subprocess.run`` stays happy, and
+        # every argument on screen is either a constant or a validated
+        # path so a quick audit confirms nothing is user-controllable.
+        try:
+            if start_seconds > 0:
+                result = subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-ss",
+                        str(start_seconds),
+                        "-i",
+                        file_path,
+                        "-vf",
+                        filter_expr,
+                        "-frames:v",
+                        "1",
+                        "-q:v",
+                        str(_THUMBNAIL_JPEG_QUALITY),
+                        "-an",
+                        "-sn",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        str(sprite_path),
+                    ],
+                    **SUBPROCESS_TEXT_KWARGS,
+                    check=False,
+                    timeout=_THUMBNAIL_TIMEOUT,
+                )
+            else:
+                result = subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-i",
+                        file_path,
+                        "-vf",
+                        filter_expr,
+                        "-frames:v",
+                        "1",
+                        "-q:v",
+                        str(_THUMBNAIL_JPEG_QUALITY),
+                        "-an",
+                        "-sn",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        str(sprite_path),
+                    ],
+                    **SUBPROCESS_TEXT_KWARGS,
+                    check=False,
+                    timeout=_THUMBNAIL_TIMEOUT,
+                )
+        except subprocess.TimeoutExpired:
+            _logger.warning("Thumbnail generation timed out for %s", file_path)
+            return
+
+        if result.returncode != 0 or not sprite_path.is_file():
+            _logger.warning(
+                "Thumbnail ffmpeg failed for %s (code %s): %s",
+                file_path,
+                result.returncode,
+                result.stderr.strip() if result.stderr else "",
+            )
+            return
+
+        try:
+            vtt_path.write_text(
+                _build_thumbnail_vtt(_THUMBNAIL_SPRITE_NAME, layout),
+                encoding="utf-8",
+            )
+        except OSError:
+            _logger.exception("Failed writing thumbnail VTT for %s", file_path)
+            return
+
+        _logger.info(
+            "Thumbnails ready for %s: %d tiles (%dx%d grid)",
+            file_path,
+            layout.count,
+            layout.columns,
+            layout.rows,
+        )
+
+    @staticmethod
+    def _probe_duration(file_path: str) -> float:
+        """Return the source duration in seconds, or 0.0 on any failure."""
+        if not shutil.which("ffprobe"):
+            return 0.0
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    file_path,
+                ],
+                **SUBPROCESS_TEXT_KWARGS,
+                check=False,
+                timeout=10,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return 0.0
+        try:
+            return float(result.stdout.strip())
+        except (TypeError, ValueError):
+            return 0.0
 
     # -- Private: master playlist ----------------------------------------------
 
