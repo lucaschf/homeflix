@@ -8,9 +8,6 @@ from src.modules.preferences.application.use_cases.get_preferences import (
 from src.modules.preferences.application.use_cases.update_preferences import (
     UpdatePreferencesUseCase,
 )
-from src.modules.preferences.infrastructure.persistence.repositories import (
-    SQLAlchemyPreferencesRepository,
-)
 from src.modules.preferences.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyPreferencesUnitOfWorkFactory,
 )
@@ -19,13 +16,7 @@ from src.modules.preferences.infrastructure.persistence.sqlalchemy_unit_of_work 
 class PreferencesContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     """Container for Preferences bounded context."""
 
-    session = providers.Dependency()
     session_factory = providers.Dependency()
-
-    preferences_repository = providers.Factory(
-        SQLAlchemyPreferencesRepository,
-        session=session,
-    )
 
     preferences_unit_of_work_factory = providers.Singleton(
         SqlAlchemyPreferencesUnitOfWorkFactory,
@@ -34,7 +25,7 @@ class PreferencesContainer(containers.DeclarativeContainer):  # type: ignore[mis
 
     get_preferences = providers.Factory(
         GetPreferencesUseCase,
-        preferences_repository=preferences_repository,
+        uow_factory=preferences_unit_of_work_factory,
     )
 
     update_preferences = providers.Factory(

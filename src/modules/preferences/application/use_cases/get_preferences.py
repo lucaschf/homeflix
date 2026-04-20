@@ -1,8 +1,8 @@
 """GetPreferencesUseCase."""
 
 from src.modules.preferences.application.dtos.preferences_dtos import PreferencesOutput
+from src.modules.preferences.application.unit_of_work import PreferencesUnitOfWorkFactory
 from src.modules.preferences.domain.entities import DEFAULT_USER_KEY, PlaybackPreferences
-from src.modules.preferences.domain.repositories import PreferencesRepository
 
 
 class GetPreferencesUseCase:
@@ -13,12 +13,13 @@ class GetPreferencesUseCase:
     use case stays thin and keeps no magic constants of its own.
     """
 
-    def __init__(self, preferences_repository: PreferencesRepository) -> None:
-        self._repo = preferences_repository
+    def __init__(self, uow_factory: PreferencesUnitOfWorkFactory) -> None:
+        self._uow_factory = uow_factory
 
     async def execute(self) -> PreferencesOutput:
         """Fetch or default the user's playback preferences."""
-        entity = await self._repo.find_by_user_key(DEFAULT_USER_KEY)
+        async with self._uow_factory() as uow:
+            entity = await uow.preferences.find_by_user_key(DEFAULT_USER_KEY)
         if entity is None:
             entity = PlaybackPreferences.default_for(DEFAULT_USER_KEY)
         return _to_output(entity)
