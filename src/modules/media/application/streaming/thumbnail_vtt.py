@@ -54,9 +54,7 @@ def compute_layout(
     ffmpeg command builder and the VTT builder so the two stay in
     lock-step.
     """
-    count = (
-        1 if duration_seconds <= 0 else max(1, math.ceil(duration_seconds / interval))
-    )
+    count = 1 if duration_seconds <= 0 else max(1, math.ceil(duration_seconds / interval))
     rows = (count + columns - 1) // columns
     return SpriteLayout(
         columns=columns,
@@ -88,9 +86,7 @@ def build_vtt(
         x = col * layout.tile_width
         y = row * layout.tile_height
         lines.append(f"{_fmt_timestamp(start)} --> {_fmt_timestamp(end)}")
-        lines.append(
-            f"{sprite_filename}#xywh={x},{y},{layout.tile_width},{layout.tile_height}"
-        )
+        lines.append(f"{sprite_filename}#xywh={x},{y},{layout.tile_width},{layout.tile_height}")
         lines.append("")
     return "\n".join(lines)
 

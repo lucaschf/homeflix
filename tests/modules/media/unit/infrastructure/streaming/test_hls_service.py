@@ -980,7 +980,10 @@ class TestHlsServiceExtractThumbnails:
         sprite_path = output_dir / "thumbnails" / "sprite.jpg"
 
         with (
-            patch("src.modules.media.infrastructure.streaming.hls_service.shutil.which", return_value="/usr/bin/ffprobe"),
+            patch(
+                "src.modules.media.infrastructure.streaming.hls_service.shutil.which",
+                return_value="/usr/bin/ffprobe",
+            ),
             patch(
                 "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
                 side_effect=self._patch_ffmpeg_success(sprite_path),
@@ -1006,7 +1009,10 @@ class TestHlsServiceExtractThumbnails:
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
         with (
-            patch("src.modules.media.infrastructure.streaming.hls_service.shutil.which", return_value="/usr/bin/ffprobe"),
+            patch(
+                "src.modules.media.infrastructure.streaming.hls_service.shutil.which",
+                return_value="/usr/bin/ffprobe",
+            ),
             patch(
                 "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
                 side_effect=run,
@@ -1027,7 +1033,10 @@ class TestHlsServiceExtractThumbnails:
             return subprocess.CompletedProcess(cmd, 0, stdout="3.0\n", stderr="")
 
         with (
-            patch("src.modules.media.infrastructure.streaming.hls_service.shutil.which", return_value="/usr/bin/ffprobe"),
+            patch(
+                "src.modules.media.infrastructure.streaming.hls_service.shutil.which",
+                return_value="/usr/bin/ffprobe",
+            ),
             patch(
                 "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
                 side_effect=run,
@@ -1050,7 +1059,10 @@ class TestHlsServiceExtractThumbnails:
             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
 
         with (
-            patch("src.modules.media.infrastructure.streaming.hls_service.shutil.which", return_value="/usr/bin/ffprobe"),
+            patch(
+                "src.modules.media.infrastructure.streaming.hls_service.shutil.which",
+                return_value="/usr/bin/ffprobe",
+            ),
             patch(
                 "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
                 side_effect=run,
@@ -1074,7 +1086,10 @@ class TestHlsServiceExtractThumbnails:
             raise subprocess.TimeoutExpired(cmd, timeout=1)
 
         with (
-            patch("src.modules.media.infrastructure.streaming.hls_service.shutil.which", return_value="/usr/bin/ffprobe"),
+            patch(
+                "src.modules.media.infrastructure.streaming.hls_service.shutil.which",
+                return_value="/usr/bin/ffprobe",
+            ),
             patch(
                 "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
                 side_effect=run,
@@ -1094,7 +1109,10 @@ class TestHlsServiceExtractThumbnails:
         sprite_path = output_dir / "thumbnails" / "sprite.jpg"
 
         with (
-            patch("src.modules.media.infrastructure.streaming.hls_service.shutil.which", return_value="/usr/bin/ffprobe"),
+            patch(
+                "src.modules.media.infrastructure.streaming.hls_service.shutil.which",
+                return_value="/usr/bin/ffprobe",
+            ),
             patch(
                 "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
                 side_effect=self._patch_ffmpeg_success(sprite_path),
@@ -1103,9 +1121,7 @@ class TestHlsServiceExtractThumbnails:
             service._extract_thumbnails("/fake/movie.mkv", output_dir, start_seconds=90.0)
 
         # ffmpeg invocation should have carried a -ss 90.0 before -i.
-        ffmpeg_call = next(
-            call for call in mock_run.call_args_list if call.args[0][0] == "ffmpeg"
-        )
+        ffmpeg_call = next(call for call in mock_run.call_args_list if call.args[0][0] == "ffmpeg")
         cmd = ffmpeg_call.args[0]
         assert "-ss" in cmd
         assert cmd[cmd.index("-ss") + 1] == "90.0"
