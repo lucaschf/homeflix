@@ -7,7 +7,7 @@ from src.modules.collections.application.dtos import (
     WatchlistItemOutput,
 )
 from src.modules.collections.application.ports import MediaLookupPort
-from src.modules.collections.domain.repositories import WatchlistRepository
+from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
 from src.shared_kernel.value_objects import CollectionMediaType
 
 _logger = logging.getLogger(__name__)
@@ -22,22 +22,22 @@ class GetWatchlistUseCase:
     N+1 queries.
 
     Example:
-        >>> use_case = GetWatchlistUseCase(watchlist_repo, media_lookup)
+        >>> use_case = GetWatchlistUseCase(uow_factory, media_lookup)
         >>> items = await use_case.execute(GetWatchlistInput(limit=50, lang="pt-BR"))
     """
 
     def __init__(
         self,
-        watchlist_repository: WatchlistRepository,
+        uow_factory: CollectionsUnitOfWorkFactory,
         media_lookup: MediaLookupPort,
     ) -> None:
         """Initialize the use case.
 
         Args:
-            watchlist_repository: Repository for watchlist items.
+            uow_factory: Factory that opens a fresh collections Unit of Work.
             media_lookup: Port for resolving media display metadata.
         """
-        self._watchlist_repo = watchlist_repository
+        self._uow_factory = uow_factory
         self._media_lookup = media_lookup
 
     async def execute(self, input_dto: GetWatchlistInput) -> list[WatchlistItemOutput]:
@@ -49,7 +49,8 @@ class GetWatchlistUseCase:
         Returns:
             List of WatchlistItemOutput with media metadata.
         """
-        items = await self._watchlist_repo.list_all(limit=input_dto.limit)
+        async with self._uow_factory() as uow:
+            items = await uow.watchlist.list_all(limit=input_dto.limit)
         _logger.info("Found %d watchlist items", len(items))
 
         if not items:

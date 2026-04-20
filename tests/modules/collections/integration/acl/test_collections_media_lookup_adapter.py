@@ -1,7 +1,7 @@
 """Integration tests for the Collections MediaLookupAdapter."""
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.modules.collections.infrastructure.acl import MediaLookupAdapter
 from src.modules.media.domain.entities import Movie, Series
@@ -19,6 +19,9 @@ from src.modules.media.domain.value_objects import (
 from src.modules.media.infrastructure.persistence.repositories import (
     SQLAlchemyMovieRepository,
     SQLAlchemySeriesRepository,
+)
+from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SqlAlchemyMediaUnitOfWorkFactory,
 )
 from src.shared_kernel.value_objects import CollectionMediaType
 
@@ -54,16 +57,22 @@ def _series(series_id: SeriesId, title: str, poster: str | None = None) -> Serie
 class TestCollectionsMediaLookupAdapter:
     """The adapter resolves titles + posters for the Collections BC."""
 
-    async def test_get_many_resolves_movies_and_series(self, db_session: AsyncSession) -> None:
-        movie_repo = SQLAlchemyMovieRepository(db_session)
-        series_repo = SQLAlchemySeriesRepository(db_session)
-
+    async def test_get_many_resolves_movies_and_series(
+        self,
+        db_session: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
         movie_id = MovieId.generate()
         series_id = SeriesId.generate()
-        await movie_repo.save(_movie(movie_id, "Inception", "/p/inception.jpg"))
-        await series_repo.save(_series(series_id, "Breaking Bad", "/p/bb.jpg"))
+        await SQLAlchemyMovieRepository(db_session).save(
+            _movie(movie_id, "Inception", "/p/inception.jpg"),
+        )
+        await SQLAlchemySeriesRepository(db_session).save(
+            _series(series_id, "Breaking Bad", "/p/bb.jpg"),
+        )
+        await db_session.commit()
 
-        adapter = MediaLookupAdapter(movie_repo, series_repo)
+        adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
 
         summaries = await adapter.get_many([str(movie_id)], [str(series_id)], "en")
 
@@ -75,30 +84,33 @@ class TestCollectionsMediaLookupAdapter:
         assert series_summary.title == "Breaking Bad"
         assert series_summary.poster_path == "/p/bb.jpg"
 
-    async def test_get_many_omits_missing_ids(self, db_session: AsyncSession) -> None:
-        movie_repo = SQLAlchemyMovieRepository(db_session)
-        series_repo = SQLAlchemySeriesRepository(db_session)
-
-        adapter = MediaLookupAdapter(movie_repo, series_repo)
+    async def test_get_many_omits_missing_ids(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
         summaries = await adapter.get_many(["mov_missing00000"], [], "en")
 
         assert summaries == {}
 
-    async def test_get_many_handles_empty_input(self, db_session: AsyncSession) -> None:
-        movie_repo = SQLAlchemyMovieRepository(db_session)
-        series_repo = SQLAlchemySeriesRepository(db_session)
-        adapter = MediaLookupAdapter(movie_repo, series_repo)
+    async def test_get_many_handles_empty_input(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
 
         assert await adapter.get_many([], [], "en") == {}
 
-    async def test_poster_path_is_none_when_media_has_none(self, db_session: AsyncSession) -> None:
-        movie_repo = SQLAlchemyMovieRepository(db_session)
-        series_repo = SQLAlchemySeriesRepository(db_session)
-
+    async def test_poster_path_is_none_when_media_has_none(
+        self,
+        db_session: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
         movie_id = MovieId.generate()
-        await movie_repo.save(_movie(movie_id, "No Poster"))
+        await SQLAlchemyMovieRepository(db_session).save(_movie(movie_id, "No Poster"))
+        await db_session.commit()
 
-        adapter = MediaLookupAdapter(movie_repo, series_repo)
+        adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
         summaries = await adapter.get_many([str(movie_id)], [], "en")
 
         summary = summaries[(CollectionMediaType.MOVIE, str(movie_id))]
