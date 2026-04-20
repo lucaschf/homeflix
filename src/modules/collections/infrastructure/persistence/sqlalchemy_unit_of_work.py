@@ -5,7 +5,6 @@ from typing import Self
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.infrastructure.persistence.session_manager import create_tracked_session
 from src.modules.collections.application.unit_of_work import (
     CollectionsUnitOfWork,
     CollectionsUnitOfWorkFactory,
@@ -30,7 +29,7 @@ class SqlAlchemyCollectionsUnitOfWork(CollectionsUnitOfWork):
             raise RuntimeError(
                 "CollectionsUnitOfWork is already active; nested use is not supported."
             )
-        self._session = create_tracked_session(self._session_factory)
+        self._session = self._session_factory()
         self.watchlist = SQLAlchemyWatchlistRepository(self._session)
         self.custom_lists = SQLAlchemyCustomListRepository(self._session)
         return self

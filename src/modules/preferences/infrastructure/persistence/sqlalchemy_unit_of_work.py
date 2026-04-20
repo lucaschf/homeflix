@@ -5,7 +5,6 @@ from typing import Self
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.infrastructure.persistence.session_manager import create_tracked_session
 from src.modules.preferences.application.unit_of_work import (
     PreferencesUnitOfWork,
     PreferencesUnitOfWorkFactory,
@@ -27,7 +26,7 @@ class SqlAlchemyPreferencesUnitOfWork(PreferencesUnitOfWork):
             raise RuntimeError(
                 "PreferencesUnitOfWork is already active; nested use is not supported."
             )
-        self._session = create_tracked_session(self._session_factory)
+        self._session = self._session_factory()
         self.preferences = SQLAlchemyPreferencesRepository(self._session)
         return self
 

@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from src.building_blocks.infrastructure.in_process_event_bus import InProcessEventBus
 from src.config.settings import Settings
-from src.infrastructure.persistence.session_manager import create_tracked_session
 from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
 
@@ -66,11 +65,6 @@ class InfrastructureContainer(containers.DeclarativeContainer):  # type: ignore[
     session_factory = providers.Resource(
         _init_engine,
         database_url=config.provided.database_url,
-    )
-
-    session = providers.Factory(
-        create_tracked_session,
-        factory=session_factory,
     )
 
     event_bus = providers.Singleton(InProcessEventBus)

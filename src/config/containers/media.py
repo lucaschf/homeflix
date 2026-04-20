@@ -38,85 +38,51 @@ from src.modules.media.application.use_cases.search_catalog import SearchCatalog
 from src.modules.media.application.use_cases.serve_hls_file import ServeHlsFileUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
 from src.modules.media.application.use_cases.stream_file_range import StreamFileRangeUseCase
-from src.modules.media.infrastructure.acl import ProgressLookupAdapter
 from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
 from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
-from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
-    SQLAlchemyMovieRepository,
-)
-from src.modules.media.infrastructure.persistence.repositories.series_repository import (
-    SQLAlchemySeriesRepository,
-)
 from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyMediaUnitOfWorkFactory,
 )
 from src.modules.media.infrastructure.streaming import HlsService, MediaProbeService
 from src.modules.media.infrastructure.streaming.file_streamer import LocalFileStreamer
-from src.modules.watch_progress.infrastructure.persistence.repositories import (
-    SQLAlchemyWatchProgressRepository,
-)
 
 
 class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     """Container for Media bounded context dependencies.
 
     Provides:
-    - Repository implementations (SQLAlchemy)
+    - Unit of Work factory (covers both reads and writes)
     - Use cases for movie, series, and file variant operations
-    - ACL adapter for the Watch Progress BC read port
+    - Streaming and metadata infrastructure
 
-    The ``session`` dependency must be wired from the parent container
-    once the database provider is added to InfrastructureContainer.
+    The ``session_factory``, ``event_bus``, and ``progress_lookup``
+    dependencies must be wired from the parent container.
 
     Example:
-        >>> container = MediaContainer(session=session_provider)
+        >>> container = MediaContainer(session_factory=sf, ...)
         >>> use_case = container.get_movie_by_id()
     """
 
     # Must be wired from InfrastructureContainer
-    session = providers.Dependency()
     session_factory = providers.Dependency()
     event_bus = providers.Dependency()
+
+    # Wired at the composition root — the adapter depends on the
+    # Watch Progress UoW factory so the Media BC only knows the port.
+    progress_lookup = providers.Dependency()
 
     # Must be wired from parent container (Settings.hls_cache_directory / hls_cache_max_size_mb)
     hls_cache_directory = providers.Dependency(default="./hls_cache")
     hls_cache_max_size_mb = providers.Dependency(default=5120)
 
     # =========================================================================
-    # Repositories (read-only use cases) and Unit of Work (writes)
+    # Unit of Work
     # =========================================================================
-
-    movie_repository = providers.Factory(
-        SQLAlchemyMovieRepository,
-        session=session,
-    )
-
-    series_repository = providers.Factory(
-        SQLAlchemySeriesRepository,
-        session=session,
-    )
 
     media_unit_of_work_factory = providers.Singleton(
         SqlAlchemyMediaUnitOfWorkFactory,
         session_factory=session_factory,
-    )
-
-    # =========================================================================
-    # Anti-corruption layer (cross-BC read ports)
-    # =========================================================================
-    # Wraps the Watch Progress repository so media use cases see only
-    # the ``ProgressLookupPort`` and never import progress domain types.
-    # Each request builds a fresh adapter bound to the request session.
-
-    _progress_repository = providers.Factory(
-        SQLAlchemyWatchProgressRepository,
-        session=session,
-    )
-
-    progress_lookup = providers.Factory(
-        ProgressLookupAdapter,
-        progress_repository=_progress_repository,
     )
 
     # =========================================================================

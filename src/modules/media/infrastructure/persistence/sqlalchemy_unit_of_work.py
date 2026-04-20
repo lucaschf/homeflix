@@ -5,7 +5,6 @@ from typing import Self
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.infrastructure.persistence.session_manager import create_tracked_session
 from src.modules.media.application.unit_of_work import (
     MediaUnitOfWork,
     MediaUnitOfWorkFactory,
@@ -38,7 +37,7 @@ class SqlAlchemyMediaUnitOfWork(MediaUnitOfWork):
     async def __aenter__(self) -> Self:
         if self._session is not None:
             raise RuntimeError("MediaUnitOfWork is already active; nested use is not supported.")
-        self._session = create_tracked_session(self._session_factory)
+        self._session = self._session_factory()
         self.movies = SQLAlchemyMovieRepository(self._session)
         self.series = SQLAlchemySeriesRepository(self._session)
         return self

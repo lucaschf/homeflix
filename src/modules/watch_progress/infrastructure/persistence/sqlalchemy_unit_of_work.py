@@ -5,7 +5,6 @@ from typing import Self
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.infrastructure.persistence.session_manager import create_tracked_session
 from src.modules.watch_progress.application.unit_of_work import (
     WatchProgressUnitOfWork,
     WatchProgressUnitOfWorkFactory,
@@ -27,7 +26,7 @@ class SqlAlchemyWatchProgressUnitOfWork(WatchProgressUnitOfWork):
             raise RuntimeError(
                 "WatchProgressUnitOfWork is already active; nested use is not supported."
             )
-        self._session = create_tracked_session(self._session_factory)
+        self._session = self._session_factory()
         self.progress = SQLAlchemyWatchProgressRepository(self._session)
         return self
 
