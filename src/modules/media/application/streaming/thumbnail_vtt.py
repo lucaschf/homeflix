@@ -9,6 +9,7 @@ FFmpeg side (producing the sprite image itself) lives in
 concerns.
 """
 
+import math
 from dataclasses import dataclass
 
 DEFAULT_INTERVAL_SECONDS = 10
@@ -47,11 +48,14 @@ def compute_layout(
     """Compute the sprite grid for a video of ``duration_seconds``.
 
     Takes the ceiling so a clip slightly shorter than ``interval``
-    still gets one tile. Used by both the ffmpeg command builder and
-    the VTT builder so the two stay in lock-step.
+    still gets one tile. Ceiling happens on the float division (not
+    ``int(duration_seconds) // interval``) so fractional seconds like
+    ``10.1`` correctly land on 2 tiles instead of 1. Used by both the
+    ffmpeg command builder and the VTT builder so the two stay in
+    lock-step.
     """
     count = (
-        1 if duration_seconds <= 0 else max(1, -(-int(duration_seconds) // interval))
+        1 if duration_seconds <= 0 else max(1, math.ceil(duration_seconds / interval))
     )
     rows = (count + columns - 1) // columns
     return SpriteLayout(

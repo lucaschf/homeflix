@@ -33,6 +33,14 @@ class TestComputeLayout:
         layout = compute_layout(25.0)
         assert layout.count == 3
 
+    def test_should_ceil_fractional_durations_past_an_interval_boundary(self) -> None:
+        # Regression: integer truncation of ``duration_seconds`` before
+        # the ceiling would treat 10.1s as exactly 10s and emit a single
+        # tile, losing the last ~100ms of the clip. The ceiling must
+        # operate on the raw float.
+        layout = compute_layout(10.1)
+        assert layout.count == 2
+
     def test_should_wrap_to_new_row_after_full_column_run(self) -> None:
         # 11 intervals at 10 columns = 2 rows (10 + 1).
         layout = compute_layout(110.0)
@@ -69,9 +77,16 @@ class TestBuildVtt:
         layout = compute_layout(25.0)  # 3 tiles at 10s interval
         vtt = build_vtt("sprite.jpg", layout)
 
+        # Concrete ranges prove the math; the count + last-cue
+        # assertions tie the VTT output tightly to ``layout`` so a
+        # future change to either side can't silently drift.
         assert "00:00:00.000 --> 00:00:10.000" in vtt
         assert "00:00:10.000 --> 00:00:20.000" in vtt
         assert "00:00:20.000 --> 00:00:30.000" in vtt
+
+        assert vtt.count("-->") == layout.count
+        cue_lines = [line for line in vtt.splitlines() if "-->" in line]
+        assert cue_lines[-1].endswith("00:00:30.000")
 
     def test_should_reference_sprite_with_xywh_fragment(self) -> None:
         layout = compute_layout(10.0)
