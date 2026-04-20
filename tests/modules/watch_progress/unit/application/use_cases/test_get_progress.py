@@ -1,14 +1,12 @@
 """Tests for GetProgressUseCase."""
 
-from unittest.mock import AsyncMock
-
 import pytest
 
 from src.modules.watch_progress.application.dtos import GetProgressInput, ProgressOutput
 from src.modules.watch_progress.application.use_cases import GetProgressUseCase
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.repositories import WatchProgressRepository
 from src.modules.watch_progress.domain.value_objects import WatchableMediaType
+from tests.modules.watch_progress.unit.conftest import make_watch_progress_uow_mock
 
 
 class TestGetProgressUseCase:
@@ -22,9 +20,9 @@ class TestGetProgressUseCase:
             position_seconds=1800,
             duration_seconds=7200,
         )
-        mock_repo = AsyncMock(spec=WatchProgressRepository)
-        mock_repo.find_by_media_id.return_value = existing
-        use_case = GetProgressUseCase(progress_repository=mock_repo)
+        mocks = make_watch_progress_uow_mock()
+        mocks.progress.find_by_media_id.return_value = existing
+        use_case = GetProgressUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetProgressInput(media_id="mov_abc123def456"))
 
@@ -34,9 +32,9 @@ class TestGetProgressUseCase:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_not_found(self):
-        mock_repo = AsyncMock(spec=WatchProgressRepository)
-        mock_repo.find_by_media_id.return_value = None
-        use_case = GetProgressUseCase(progress_repository=mock_repo)
+        mocks = make_watch_progress_uow_mock()
+        mocks.progress.find_by_media_id.return_value = None
+        use_case = GetProgressUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(GetProgressInput(media_id="mov_abc123def456"))
 

@@ -12,9 +12,6 @@ from src.modules.watch_progress.application.use_cases.clear_series_progress impo
     ClearSeriesProgressUseCase,
 )
 from src.modules.watch_progress.infrastructure.acl import MediaLookupAdapter
-from src.modules.watch_progress.infrastructure.persistence.repositories import (
-    SQLAlchemyWatchProgressRepository,
-)
 from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyWatchProgressUnitOfWorkFactory,
 )
@@ -23,26 +20,19 @@ from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_wo
 class WatchProgressContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     """Container for Watch Progress bounded context dependencies.
 
-    The ``session``, ``session_factory``, ``movie_repository``, and
-    ``series_repository`` dependencies must be wired from the parent
-    container.
+    The ``session_factory`` and ``media_uow_factory`` dependencies
+    must be wired from the parent container.
     """
 
-    session = providers.Dependency()
     session_factory = providers.Dependency()
-    # Media repositories come in so the ACL adapter can delegate
-    # display lookups. Use cases only ever see ``MediaLookupPort``.
-    movie_repository = providers.Dependency()
-    series_repository = providers.Dependency()
+    # Media UoW factory comes in so the ACL adapter can open its own
+    # short-lived Media transactions. Use cases only see
+    # ``MediaLookupPort``.
+    media_uow_factory = providers.Dependency()
 
     # =========================================================================
-    # Repositories (read-only use cases) and Unit of Work (writes)
+    # Unit of Work
     # =========================================================================
-
-    progress_repository = providers.Factory(
-        SQLAlchemyWatchProgressRepository,
-        session=session,
-    )
 
     watch_progress_unit_of_work_factory = providers.Singleton(
         SqlAlchemyWatchProgressUnitOfWorkFactory,
@@ -55,8 +45,7 @@ class WatchProgressContainer(containers.DeclarativeContainer):  # type: ignore[m
 
     media_lookup = providers.Factory(
         MediaLookupAdapter,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        media_uow_factory=media_uow_factory,
     )
 
     # =========================================================================
@@ -70,12 +59,12 @@ class WatchProgressContainer(containers.DeclarativeContainer):  # type: ignore[m
 
     get_progress = providers.Factory(
         GetProgressUseCase,
-        progress_repository=progress_repository,
+        uow_factory=watch_progress_unit_of_work_factory,
     )
 
     get_continue_watching = providers.Factory(
         GetContinueWatchingUseCase,
-        progress_repository=progress_repository,
+        uow_factory=watch_progress_unit_of_work_factory,
         media_lookup=media_lookup,
     )
 

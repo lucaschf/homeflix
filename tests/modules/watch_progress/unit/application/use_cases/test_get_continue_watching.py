@@ -16,8 +16,11 @@ from src.modules.watch_progress.application.ports import (
 )
 from src.modules.watch_progress.application.use_cases import GetContinueWatchingUseCase
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.repositories import WatchProgressRepository
 from src.modules.watch_progress.domain.value_objects import WatchableMediaType
+from tests.modules.watch_progress.unit.conftest import (
+    WatchProgressUoWMocks,
+    make_watch_progress_uow_mock,
+)
 
 
 def _make_progress(
@@ -72,19 +75,19 @@ def _make_series_info(
 
 
 @pytest.fixture()
-def repos() -> tuple[AsyncMock, AsyncMock]:
-    """Create mock progress repository and media lookup port."""
-    progress_repo = AsyncMock(spec=WatchProgressRepository)
+def repos() -> tuple[WatchProgressUoWMocks, AsyncMock]:
+    """Create mock UoW and media lookup port."""
+    mocks = make_watch_progress_uow_mock()
     media_lookup = AsyncMock(spec=MediaLookupPort)
-    return progress_repo, media_lookup
+    return mocks, media_lookup
 
 
 def _make_use_case(
-    repos: tuple[AsyncMock, AsyncMock],
+    repos: tuple[WatchProgressUoWMocks, AsyncMock],
 ) -> GetContinueWatchingUseCase:
-    progress_repo, media_lookup = repos
+    mocks, media_lookup = repos
     return GetContinueWatchingUseCase(
-        progress_repository=progress_repo,
+        uow_factory=mocks.factory,
         media_lookup=media_lookup,
     )
 
@@ -94,11 +97,11 @@ class TestEnrichEpisode:
 
     @pytest.mark.asyncio
     async def test_enrich_valid_composite_episode(self, repos):
-        progress_repo, media_lookup = repos
+        mocks, media_lookup = repos
         series = _make_series_info("ser_Hy9VjMfILYZe", {3: [2]})
         progress = _make_progress("epi_ser_Hy9VjMfILYZe_3_2")
-        progress_repo.list_recently_watched.return_value = [progress]
-        progress_repo.find_by_media_ids.return_value = {
+        mocks.progress.list_recently_watched.return_value = [progress]
+        mocks.progress.find_by_media_ids.return_value = {
             "epi_ser_Hy9VjMfILYZe_3_2": progress,
         }
         media_lookup.get_series_with_episodes.return_value = series
@@ -115,8 +118,8 @@ class TestEnrichEpisode:
 
     @pytest.mark.asyncio
     async def test_enrich_returns_none_for_standard_episode_id(self, repos):
-        progress_repo, _ = repos
-        progress_repo.list_recently_watched.return_value = [
+        mocks, _ = repos
+        mocks.progress.list_recently_watched.return_value = [
             _make_progress("epi_03ZzYaQ77FaB"),
         ]
 
@@ -125,8 +128,8 @@ class TestEnrichEpisode:
 
     @pytest.mark.asyncio
     async def test_enrich_returns_none_for_missing_series(self, repos):
-        progress_repo, media_lookup = repos
-        progress_repo.list_recently_watched.return_value = [
+        mocks, media_lookup = repos
+        mocks.progress.list_recently_watched.return_value = [
             _make_progress("epi_ser_NotExists123_1_1"),
         ]
         media_lookup.get_series_with_episodes.return_value = None
@@ -136,11 +139,11 @@ class TestEnrichEpisode:
 
     @pytest.mark.asyncio
     async def test_enrich_returns_none_for_missing_season(self, repos):
-        progress_repo, media_lookup = repos
+        mocks, media_lookup = repos
         series = _make_series_info("ser_Hy9VjMfILYZe", {3: [2]})
         progress = _make_progress("epi_ser_Hy9VjMfILYZe_99_1")
-        progress_repo.list_recently_watched.return_value = [progress]
-        progress_repo.find_by_media_ids.return_value = {
+        mocks.progress.list_recently_watched.return_value = [progress]
+        mocks.progress.find_by_media_ids.return_value = {
             "epi_ser_Hy9VjMfILYZe_99_1": progress,
         }
         media_lookup.get_series_with_episodes.return_value = series
@@ -150,11 +153,11 @@ class TestEnrichEpisode:
 
     @pytest.mark.asyncio
     async def test_enrich_returns_none_for_missing_episode(self, repos):
-        progress_repo, media_lookup = repos
+        mocks, media_lookup = repos
         series = _make_series_info("ser_Hy9VjMfILYZe", {3: [2]})
         progress = _make_progress("epi_ser_Hy9VjMfILYZe_3_99")
-        progress_repo.list_recently_watched.return_value = [progress]
-        progress_repo.find_by_media_ids.return_value = {
+        mocks.progress.list_recently_watched.return_value = [progress]
+        mocks.progress.find_by_media_ids.return_value = {
             "epi_ser_Hy9VjMfILYZe_3_99": progress,
         }
         media_lookup.get_series_with_episodes.return_value = series
@@ -164,8 +167,8 @@ class TestEnrichEpisode:
 
     @pytest.mark.asyncio
     async def test_enrich_returns_none_for_malformed_media_id(self, repos):
-        progress_repo, _ = repos
-        progress_repo.list_recently_watched.return_value = [
+        mocks, _ = repos
+        mocks.progress.list_recently_watched.return_value = [
             _make_progress("epi_ser_broken"),
         ]
 
@@ -179,15 +182,15 @@ class TestSeriesDeduplication:
     @pytest.mark.asyncio
     async def test_multiple_episodes_same_series_returns_one_item(self, repos):
         """Multiple in-progress episodes from same series → single item."""
-        progress_repo, media_lookup = repos
+        mocks, media_lookup = repos
         series = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2, 3]})
         media_lookup.get_series_with_episodes.return_value = series
 
         p1 = _make_progress("epi_ser_AAAAAAAAAAAA_1_1")
         p2 = _make_progress("epi_ser_AAAAAAAAAAAA_1_2")
         p3 = _make_progress("epi_ser_AAAAAAAAAAAA_1_3")
-        progress_repo.list_recently_watched.return_value = [p1, p2, p3]
-        progress_repo.find_by_media_ids.return_value = {
+        mocks.progress.list_recently_watched.return_value = [p1, p2, p3]
+        mocks.progress.find_by_media_ids.return_value = {
             "epi_ser_AAAAAAAAAAAA_1_1": p1,
             "epi_ser_AAAAAAAAAAAA_1_2": p2,
             "epi_ser_AAAAAAAAAAAA_1_3": p3,
@@ -200,14 +203,14 @@ class TestSeriesDeduplication:
     @pytest.mark.asyncio
     async def test_picks_highest_in_progress_episode(self, repos):
         """Should pick the highest-numbered in-progress episode."""
-        progress_repo, media_lookup = repos
+        mocks, media_lookup = repos
         series = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2, 3], 2: [1, 2]})
         media_lookup.get_series_with_episodes.return_value = series
 
-        progress_repo.list_recently_watched.return_value = [
+        mocks.progress.list_recently_watched.return_value = [
             _make_progress("epi_ser_AAAAAAAAAAAA_1_2"),
         ]
-        progress_repo.find_by_media_ids.return_value = {
+        mocks.progress.find_by_media_ids.return_value = {
             "epi_ser_AAAAAAAAAAAA_1_2": _make_progress(
                 "epi_ser_AAAAAAAAAAAA_1_2",
                 status="completed",
@@ -231,14 +234,14 @@ class TestSeriesDeduplication:
     @pytest.mark.asyncio
     async def test_picks_next_unwatched_when_all_completed(self, repos):
         """Completed episodes + unwatched episodes → next unwatched."""
-        progress_repo, media_lookup = repos
+        mocks, media_lookup = repos
         series = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2, 3]})
         media_lookup.get_series_with_episodes.return_value = series
 
-        progress_repo.list_recently_watched.return_value = [
+        mocks.progress.list_recently_watched.return_value = [
             _make_progress("epi_ser_AAAAAAAAAAAA_1_1", status="completed"),
         ]
-        progress_repo.find_by_media_ids.return_value = {
+        mocks.progress.find_by_media_ids.return_value = {
             "epi_ser_AAAAAAAAAAAA_1_1": _make_progress(
                 "epi_ser_AAAAAAAAAAAA_1_1",
                 status="completed",
@@ -259,14 +262,14 @@ class TestSeriesDeduplication:
     @pytest.mark.asyncio
     async def test_returns_nothing_when_all_episodes_completed(self, repos):
         """All episodes completed, none unwatched → no item."""
-        progress_repo, media_lookup = repos
+        mocks, media_lookup = repos
         series = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2]})
         media_lookup.get_series_with_episodes.return_value = series
 
-        progress_repo.list_recently_watched.return_value = [
+        mocks.progress.list_recently_watched.return_value = [
             _make_progress("epi_ser_AAAAAAAAAAAA_1_1", status="completed"),
         ]
-        progress_repo.find_by_media_ids.return_value = {
+        mocks.progress.find_by_media_ids.return_value = {
             "epi_ser_AAAAAAAAAAAA_1_1": _make_progress(
                 "epi_ser_AAAAAAAAAAAA_1_1",
                 status="completed",
@@ -283,7 +286,7 @@ class TestSeriesDeduplication:
     @pytest.mark.asyncio
     async def test_two_series_return_one_item_each(self, repos):
         """Two different series → two items, one per series."""
-        progress_repo, media_lookup = repos
+        mocks, media_lookup = repos
         series_a = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2]}, title="Series A")
         series_b = _make_series_info("ser_BBBBBBBBBBBB", {1: [1]}, title="Series B")
 
@@ -298,7 +301,7 @@ class TestSeriesDeduplication:
 
         pa = _make_progress("epi_ser_AAAAAAAAAAAA_1_1")
         pb = _make_progress("epi_ser_BBBBBBBBBBBB_1_1")
-        progress_repo.list_recently_watched.return_value = [pa, pb]
+        mocks.progress.list_recently_watched.return_value = [pa, pb]
 
         def find_by_media_ids_side_effect(ids):
             result = {}
@@ -308,7 +311,7 @@ class TestSeriesDeduplication:
                 result["epi_ser_BBBBBBBBBBBB_1_1"] = pb
             return result
 
-        progress_repo.find_by_media_ids.side_effect = find_by_media_ids_side_effect
+        mocks.progress.find_by_media_ids.side_effect = find_by_media_ids_side_effect
 
         result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
 
@@ -319,14 +322,14 @@ class TestSeriesDeduplication:
     @pytest.mark.asyncio
     async def test_mixed_in_progress_and_completed_across_seasons(self, repos):
         """S1 completed, S2E1 in-progress → picks S2E1."""
-        progress_repo, media_lookup = repos
+        mocks, media_lookup = repos
         series = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2], 2: [1, 2]})
         media_lookup.get_series_with_episodes.return_value = series
 
-        progress_repo.list_recently_watched.return_value = [
+        mocks.progress.list_recently_watched.return_value = [
             _make_progress("epi_ser_AAAAAAAAAAAA_2_1"),
         ]
-        progress_repo.find_by_media_ids.return_value = {
+        mocks.progress.find_by_media_ids.return_value = {
             "epi_ser_AAAAAAAAAAAA_1_1": _make_progress(
                 "epi_ser_AAAAAAAAAAAA_1_1",
                 status="completed",
