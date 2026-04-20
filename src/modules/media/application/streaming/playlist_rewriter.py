@@ -28,6 +28,8 @@ _MEDIA_TYPES: dict[str, str] = {
     ".m3u8": "application/vnd.apple.mpegurl",
     ".ts": "video/mp2t",
     ".vtt": "text/vtt",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
 }
 
 
