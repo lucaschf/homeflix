@@ -1,24 +1,22 @@
 """Tests for GetPreferencesUseCase."""
 
-from unittest.mock import AsyncMock
-
 import pytest
 
 from src.modules.preferences.application.use_cases.get_preferences import (
     GetPreferencesUseCase,
 )
 from src.modules.preferences.domain.entities import DEFAULT_USER_KEY, PlaybackPreferences
-from src.modules.preferences.domain.repositories import PreferencesRepository
 from src.modules.preferences.domain.value_objects import Quality, Speed, SubtitleMode
+from tests.modules.preferences.unit.application.conftest import make_preferences_uow_mock
 
 
 @pytest.mark.unit
 class TestGetPreferencesUseCase:
     @pytest.mark.asyncio
     async def test_should_return_defaults_when_no_row_exists(self) -> None:
-        repo = AsyncMock(spec=PreferencesRepository)
-        repo.find_by_user_key.return_value = None
-        use_case = GetPreferencesUseCase(preferences_repository=repo)
+        mocks = make_preferences_uow_mock()
+        mocks.preferences.find_by_user_key.return_value = None
+        use_case = GetPreferencesUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute()
 
@@ -27,17 +25,19 @@ class TestGetPreferencesUseCase:
         assert result.subtitle_mode == "foreignOnly"
         assert result.default_quality == "best"
         assert result.speed == 1.0
-        repo.find_by_user_key.assert_awaited_once_with(DEFAULT_USER_KEY)
+        mocks.preferences.find_by_user_key.assert_awaited_once_with(DEFAULT_USER_KEY)
 
     @pytest.mark.asyncio
     async def test_should_project_persisted_entity(self) -> None:
-        repo = AsyncMock(spec=PreferencesRepository)
-        repo.find_by_user_key.return_value = PlaybackPreferences.default_for().apply_updates(
-            subtitle_mode="always",
-            default_quality="1080p",
-            speed=1.5,
+        mocks = make_preferences_uow_mock()
+        mocks.preferences.find_by_user_key.return_value = (
+            PlaybackPreferences.default_for().apply_updates(
+                subtitle_mode="always",
+                default_quality="1080p",
+                speed=1.5,
+            )
         )
-        use_case = GetPreferencesUseCase(preferences_repository=repo)
+        use_case = GetPreferencesUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute()
 
