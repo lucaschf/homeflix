@@ -1,11 +1,8 @@
 """SQLAlchemy implementation of LibraryUnitOfWork."""
 
-from types import TracebackType
-from typing import Self
-
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.infrastructure.persistence.session_manager import create_tracked_session
+from src.building_blocks.infrastructure.sqlalchemy_unit_of_work import SqlAlchemyUnitOfWork
 from src.modules.library.application.unit_of_work import (
     LibraryUnitOfWork,
     LibraryUnitOfWorkFactory,
@@ -15,45 +12,11 @@ from src.modules.library.infrastructure.persistence.repositories.sqlalchemy_libr
 )
 
 
-class SqlAlchemyLibraryUnitOfWork(LibraryUnitOfWork):
+class SqlAlchemyLibraryUnitOfWork(SqlAlchemyUnitOfWork, LibraryUnitOfWork):
     """SQLAlchemy-backed Unit of Work for the library bounded context."""
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
-        self._session_factory = session_factory
-        self._session: AsyncSession | None = None
-
-    async def __aenter__(self) -> Self:
-        if self._session is not None:
-            raise RuntimeError("LibraryUnitOfWork is already active; nested use is not supported.")
-        self._session = create_tracked_session(self._session_factory)
-        self.libraries = SqlAlchemyLibraryRepository(self._session)
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        assert self._session is not None
-        try:
-            if exc_type is None:
-                await self._session.commit()
-            else:
-                await self._session.rollback()
-        finally:
-            await self._session.close()
-            self._session = None
-
-    async def commit(self) -> None:
-        """Commit the active transaction."""
-        assert self._session is not None, "UnitOfWork not started; use `async with`."
-        await self._session.commit()
-
-    async def rollback(self) -> None:
-        """Roll back the active transaction."""
-        assert self._session is not None, "UnitOfWork not started; use `async with`."
-        await self._session.rollback()
+    def _build_repositories(self, session: AsyncSession) -> None:
+        self.libraries = SqlAlchemyLibraryRepository(session)
 
 
 class SqlAlchemyLibraryUnitOfWorkFactory(LibraryUnitOfWorkFactory):

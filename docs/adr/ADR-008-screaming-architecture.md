@@ -76,10 +76,9 @@ src/
 │       └── presentation/
 │
 ├── infrastructure/               # Shared infrastructure (cross-module)
-│   ├── persistence/              # Database engine, Base model, session cleanup
+│   ├── persistence/              # Database engine, Base model
 │   │   ├── database.py
-│   │   ├── base.py               # SQLAlchemy Base
-│   │   └── session_manager.py
+│   │   └── base.py               # SQLAlchemy Base
 │   └── scheduling/               # APScheduler wrapper for recurring jobs
 │       └── scheduler_service.py
 │
@@ -107,7 +106,7 @@ src/
 
 `src/infrastructure/` abriga recursos técnicos usados por múltiplos módulos:
 
-- `persistence/` — `database.py` (engine, session factory), `base.py` (SQLAlchemy Base com soft delete, timestamps), `session_manager.py` (middleware de cleanup por request).
+- `persistence/` — `database.py` (engine, session factory) e `base.py` (SQLAlchemy Base com soft delete, timestamps). Cada Unit of Work abre e fecha a própria `AsyncSession` via ``session_factory``, sem depender de middleware de request.
 - `scheduling/` — `scheduler_service.py` (wrapper APScheduler para scans recorrentes).
 
 Implementações concretas específicas de um contexto (ORM models, repository implementations, mappers) ficam em `modules/<ctx>/infrastructure/`.

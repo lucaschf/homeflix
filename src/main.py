@@ -154,11 +154,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Session cleanup middleware (must be added before CORS)
-    from src.infrastructure.persistence.session_manager import SessionCleanupMiddleware
-
-    app.add_middleware(SessionCleanupMiddleware)
-
     # Request correlation + timing — must run before routes so the
     # request_id is bound while handlers execute.
     app.add_middleware(RequestContextMiddleware)

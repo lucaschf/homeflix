@@ -16,6 +16,10 @@ from src.config.containers.preferences import PreferencesContainer
 from src.config.containers.watch_progress import WatchProgressContainer
 from src.config.settings import Settings
 from src.infrastructure.scheduling import LibraryScanScheduler
+from src.modules.media.infrastructure.acl import ProgressLookupAdapter
+from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SqlAlchemyWatchProgressUnitOfWorkFactory,
+)
 
 
 class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[misc]
@@ -56,11 +60,26 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     # Bounded Context Containers
     # =========================================================================
 
+    # Cross-BC adapter: Media use cases that resolve watch progress go
+    # through this port. Built here rather than inside MediaContainer
+    # so the Media BC does not take a circular dependency on the full
+    # WatchProgressContainer (which itself consumes
+    # ``media.media_unit_of_work_factory``).
+    _watch_progress_uow_factory_for_progress_lookup = providers.Singleton(
+        SqlAlchemyWatchProgressUnitOfWorkFactory,
+        session_factory=infrastructure.session_factory,
+    )
+
+    _progress_lookup_adapter = providers.Factory(
+        ProgressLookupAdapter,
+        watch_progress_uow_factory=_watch_progress_uow_factory_for_progress_lookup,
+    )
+
     media = providers.Container(
         MediaContainer,
-        session=infrastructure.session,
         session_factory=infrastructure.session_factory,
         event_bus=infrastructure.event_bus,
+        progress_lookup=_progress_lookup_adapter,
         tmdb_api_key=config.provided.tmdb_api_key,
         hls_cache_directory=config.provided.hls_cache_directory,
         hls_cache_max_size_mb=config.provided.hls_cache_max_size_mb,
