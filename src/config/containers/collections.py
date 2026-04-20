@@ -15,10 +15,6 @@ from src.modules.collections.application.use_cases import (
     ToggleWatchlistUseCase,
 )
 from src.modules.collections.infrastructure.acl import MediaLookupAdapter
-from src.modules.collections.infrastructure.persistence.repositories import (
-    SQLAlchemyCustomListRepository,
-    SQLAlchemyWatchlistRepository,
-)
 from src.modules.collections.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyCollectionsUnitOfWorkFactory,
 )
@@ -27,31 +23,19 @@ from src.modules.collections.infrastructure.persistence.sqlalchemy_unit_of_work 
 class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     """Container for Collections bounded context dependencies.
 
-    The ``session``, ``session_factory``, ``movie_repository``, and
-    ``series_repository`` dependencies must be wired from the parent
-    container.
+    The ``session_factory`` and ``media_uow_factory`` dependencies must
+    be wired from the parent container.
     """
 
-    session = providers.Dependency()
     session_factory = providers.Dependency()
-    # Media repositories come in so the ACL adapter can delegate
-    # metadata lookups. Use cases only ever see ``MediaLookupPort``.
-    movie_repository = providers.Dependency()
-    series_repository = providers.Dependency()
+    # Media UoW factory comes in so the ACL adapter can open its own
+    # short-lived Media transactions. Use cases only see
+    # ``MediaLookupPort``.
+    media_uow_factory = providers.Dependency()
 
     # =========================================================================
-    # Repositories (read-only use cases) and Unit of Work (writes)
+    # Unit of Work
     # =========================================================================
-
-    watchlist_repository = providers.Factory(
-        SQLAlchemyWatchlistRepository,
-        session=session,
-    )
-
-    custom_list_repository = providers.Factory(
-        SQLAlchemyCustomListRepository,
-        session=session,
-    )
 
     collections_unit_of_work_factory = providers.Singleton(
         SqlAlchemyCollectionsUnitOfWorkFactory,
@@ -64,8 +48,7 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
 
     media_lookup = providers.Factory(
         MediaLookupAdapter,
-        movie_repository=movie_repository,
-        series_repository=series_repository,
+        media_uow_factory=media_uow_factory,
     )
 
     # =========================================================================
@@ -79,13 +62,13 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
 
     get_watchlist = providers.Factory(
         GetWatchlistUseCase,
-        watchlist_repository=watchlist_repository,
+        uow_factory=collections_unit_of_work_factory,
         media_lookup=media_lookup,
     )
 
     check_watchlist = providers.Factory(
         CheckWatchlistUseCase,
-        watchlist_repository=watchlist_repository,
+        uow_factory=collections_unit_of_work_factory,
     )
 
     # =========================================================================
@@ -99,7 +82,7 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
 
     list_custom_lists = providers.Factory(
         ListCustomListsUseCase,
-        custom_list_repository=custom_list_repository,
+        uow_factory=collections_unit_of_work_factory,
     )
 
     rename_custom_list = providers.Factory(
@@ -124,6 +107,6 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
 
     get_custom_list_items = providers.Factory(
         GetCustomListItemsUseCase,
-        custom_list_repository=custom_list_repository,
+        uow_factory=collections_unit_of_work_factory,
         media_lookup=media_lookup,
     )

@@ -8,7 +8,7 @@ from src.modules.collections.application.dtos import (
     GetCustomListItemsInput,
 )
 from src.modules.collections.application.ports import MediaLookupPort
-from src.modules.collections.domain.repositories import CustomListRepository
+from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
 from src.shared_kernel.value_objects import CollectionMediaType
 
 _logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ class GetCustomListItemsUseCase:
     via ``MediaLookupPort``. Uses a single batch lookup to avoid N+1.
 
     Example:
-        >>> use_case = GetCustomListItemsUseCase(custom_list_repo, media_lookup)
+        >>> use_case = GetCustomListItemsUseCase(uow_factory, media_lookup)
         >>> items = await use_case.execute(
         ...     GetCustomListItemsInput(list_id="lst_abc123", lang="pt-BR"),
         ... )
@@ -29,16 +29,16 @@ class GetCustomListItemsUseCase:
 
     def __init__(
         self,
-        custom_list_repository: CustomListRepository,
+        uow_factory: CollectionsUnitOfWorkFactory,
         media_lookup: MediaLookupPort,
     ) -> None:
         """Initialize the use case.
 
         Args:
-            custom_list_repository: Repository for custom list items.
+            uow_factory: Factory that opens a fresh collections Unit of Work.
             media_lookup: Port for resolving media display metadata.
         """
-        self._list_repo = custom_list_repository
+        self._uow_factory = uow_factory
         self._media_lookup = media_lookup
 
     async def execute(
@@ -56,11 +56,12 @@ class GetCustomListItemsUseCase:
         Raises:
             ResourceNotFoundException: If the list does not exist.
         """
-        custom_list = await self._list_repo.find_by_id(input_dto.list_id)
-        if not custom_list:
-            raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
+        async with self._uow_factory() as uow:
+            custom_list = await uow.custom_lists.find_by_id(input_dto.list_id)
+            if not custom_list:
+                raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
 
-        items = await self._list_repo.list_items(input_dto.list_id)
+            items = await uow.custom_lists.list_items(input_dto.list_id)
         _logger.info("Found %d items in custom list %s", len(items), input_dto.list_id)
 
         if not items:
