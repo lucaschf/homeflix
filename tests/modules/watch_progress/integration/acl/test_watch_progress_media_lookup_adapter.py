@@ -1,7 +1,7 @@
 """Integration tests for the Watch Progress MediaLookupAdapter."""
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.modules.media.domain.entities import Episode, Movie, Season, Series
 from src.modules.media.domain.value_objects import (
@@ -20,6 +20,9 @@ from src.modules.media.domain.value_objects import (
 from src.modules.media.infrastructure.persistence.repositories import (
     SQLAlchemyMovieRepository,
     SQLAlchemySeriesRepository,
+)
+from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SqlAlchemyMediaUnitOfWorkFactory,
 )
 from src.modules.watch_progress.infrastructure.acl import MediaLookupAdapter
 
@@ -95,14 +98,16 @@ def _series_with_episodes(
 class TestWatchProgressMediaLookupAdapter:
     """The adapter returns display-ready DTOs for the Watch Progress BC."""
 
-    async def test_get_movie_returns_display_info(self, db_session: AsyncSession) -> None:
-        movie_repo = SQLAlchemyMovieRepository(db_session)
-        series_repo = SQLAlchemySeriesRepository(db_session)
-
+    async def test_get_movie_returns_display_info(
+        self,
+        db_session: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
         movie_id = MovieId.generate()
-        await movie_repo.save(_movie(movie_id, "Inception"))
+        await SQLAlchemyMovieRepository(db_session).save(_movie(movie_id, "Inception"))
+        await db_session.commit()
 
-        adapter = MediaLookupAdapter(movie_repo, series_repo)
+        adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
         result = await adapter.get_movie(str(movie_id), "en")
 
         assert result is not None
@@ -111,28 +116,29 @@ class TestWatchProgressMediaLookupAdapter:
         assert result.poster_path == "/p/m.jpg"
         assert result.backdrop_path == "/b/m.jpg"
 
-    async def test_get_movie_returns_none_for_missing_id(self, db_session: AsyncSession) -> None:
-        movie_repo = SQLAlchemyMovieRepository(db_session)
-        series_repo = SQLAlchemySeriesRepository(db_session)
-        adapter = MediaLookupAdapter(movie_repo, series_repo)
+    async def test_get_movie_returns_none_for_missing_id(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
 
         assert await adapter.get_movie("mov_missing00000", "en") is None
 
     async def test_get_series_with_episodes_returns_sorted_list(
-        self, db_session: AsyncSession
+        self,
+        db_session: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        movie_repo = SQLAlchemyMovieRepository(db_session)
-        series_repo = SQLAlchemySeriesRepository(db_session)
-
         series_id = SeriesId.generate()
         series = _series_with_episodes(
             series_id,
             "Breaking Bad",
             [(2, 1, "S02E01"), (1, 2, "S01E02"), (1, 1, "S01E01")],
         )
-        await series_repo.save(series)
+        await SQLAlchemySeriesRepository(db_session).save(series)
+        await db_session.commit()
 
-        adapter = MediaLookupAdapter(movie_repo, series_repo)
+        adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
         result = await adapter.get_series_with_episodes(str(series_id), "en")
 
         assert result is not None
@@ -145,9 +151,10 @@ class TestWatchProgressMediaLookupAdapter:
         assert [e.title for e in result.episodes] == ["S01E01", "S01E02", "S02E01"]
         assert all(e.duration_seconds == 1800 for e in result.episodes)
 
-    async def test_get_series_returns_none_for_missing_id(self, db_session: AsyncSession) -> None:
-        movie_repo = SQLAlchemyMovieRepository(db_session)
-        series_repo = SQLAlchemySeriesRepository(db_session)
-        adapter = MediaLookupAdapter(movie_repo, series_repo)
+    async def test_get_series_returns_none_for_missing_id(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
 
         assert await adapter.get_series_with_episodes("ser_missing00000", "en") is None

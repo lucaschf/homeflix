@@ -1,11 +1,11 @@
-"""Adapter that implements ``MediaLookupPort`` using Media repositories.
+"""Adapter that implements ``MediaLookupPort`` using the Media UoW.
 
-This is the only file in the Watch Progress BC that imports from
-``src.modules.media.domain``. Above the adapter, the use cases only
-see ``MovieDisplayInfo`` / ``SeriesWithEpisodesInfo``.
+This is the only file in the Watch Progress BC that imports from the
+Media BC. Above the adapter, the use cases only see
+``MovieDisplayInfo`` / ``SeriesWithEpisodesInfo``.
 """
 
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.value_objects import MovieId, SeriesId
 from src.modules.watch_progress.application.ports.media_lookup_port import (
     EpisodeInfo,
@@ -16,19 +16,15 @@ from src.modules.watch_progress.application.ports.media_lookup_port import (
 
 
 class MediaLookupAdapter(MediaLookupPort):
-    """Resolve media metadata via the Media BC's repositories."""
+    """Resolve media metadata via the Media BC's Unit of Work."""
 
-    def __init__(
-        self,
-        movie_repository: MovieRepository,
-        series_repository: SeriesRepository,
-    ) -> None:
-        self._movie_repo = movie_repository
-        self._series_repo = series_repository
+    def __init__(self, media_uow_factory: MediaUnitOfWorkFactory) -> None:
+        self._media_uow_factory = media_uow_factory
 
     async def get_movie(self, media_id: str, lang: str) -> MovieDisplayInfo | None:
         """Map a ``Movie`` entity to a display DTO, or ``None`` when absent."""
-        movie = await self._movie_repo.find_by_id(MovieId(media_id))
+        async with self._media_uow_factory() as uow:
+            movie = await uow.movies.find_by_id(MovieId(media_id))
         if movie is None:
             return None
         return MovieDisplayInfo(
@@ -44,7 +40,8 @@ class MediaLookupAdapter(MediaLookupPort):
         lang: str,
     ) -> SeriesWithEpisodesInfo | None:
         """Flatten a ``Series`` into display + sorted-episode DTOs."""
-        series = await self._series_repo.find_by_id(SeriesId(series_id))
+        async with self._media_uow_factory() as uow:
+            series = await uow.series.find_by_id(SeriesId(series_id))
         if series is None:
             return None
 

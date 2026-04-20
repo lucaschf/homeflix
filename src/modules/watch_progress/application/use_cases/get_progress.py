@@ -1,7 +1,7 @@
 """GetProgressUseCase - Get watch progress for a media item."""
 
 from src.modules.watch_progress.application.dtos import GetProgressInput, ProgressOutput
-from src.modules.watch_progress.domain.repositories import WatchProgressRepository
+from src.modules.watch_progress.application.unit_of_work import WatchProgressUnitOfWorkFactory
 
 
 class GetProgressUseCase:
@@ -10,17 +10,17 @@ class GetProgressUseCase:
     Returns None if no progress exists (does not raise 404).
 
     Example:
-        >>> use_case = GetProgressUseCase(progress_repository)
+        >>> use_case = GetProgressUseCase(uow_factory)
         >>> result = await use_case.execute(GetProgressInput("mov_abc123def456"))
     """
 
-    def __init__(self, progress_repository: WatchProgressRepository) -> None:
+    def __init__(self, uow_factory: WatchProgressUnitOfWorkFactory) -> None:
         """Initialize the use case.
 
         Args:
-            progress_repository: Repository for watch progress persistence.
+            uow_factory: Factory that opens a fresh watch progress UoW.
         """
-        self._repo = progress_repository
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: GetProgressInput) -> ProgressOutput | None:
         """Execute the use case.
@@ -31,7 +31,8 @@ class GetProgressUseCase:
         Returns:
             ProgressOutput if found, None otherwise.
         """
-        progress = await self._repo.find_by_media_id(input_dto.media_id)
+        async with self._uow_factory() as uow:
+            progress = await uow.progress.find_by_media_id(input_dto.media_id)
         if progress is None:
             return None
         return ProgressOutput.from_entity(progress)

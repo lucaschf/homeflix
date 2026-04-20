@@ -25,8 +25,11 @@ if TYPE_CHECKING:
         MediaLookupPort,
         SeriesWithEpisodesInfo,
     )
+    from src.modules.watch_progress.application.unit_of_work import (
+        WatchProgressUnitOfWork,
+        WatchProgressUnitOfWorkFactory,
+    )
     from src.modules.watch_progress.domain.entities import WatchProgress
-    from src.modules.watch_progress.domain.repositories import WatchProgressRepository
 
 _logger = logging.getLogger(__name__)
 
@@ -43,26 +46,26 @@ class GetContinueWatchingUseCase:
     loading data and projecting the selector's output into the DTO.
 
     Example:
-        >>> use_case = GetContinueWatchingUseCase(progress_repo, media_lookup)
+        >>> use_case = GetContinueWatchingUseCase(uow_factory, media_lookup)
         >>> result = await use_case.execute(GetContinueWatchingInput(limit=10))
     """
 
     def __init__(
         self,
-        progress_repository: WatchProgressRepository,
+        uow_factory: WatchProgressUnitOfWorkFactory,
         media_lookup: MediaLookupPort,
         selector: ContinueWatchingSelector | None = None,
     ) -> None:
         """Initialize the use case.
 
         Args:
-            progress_repository: Repository for watch progress.
+            uow_factory: Factory that opens a fresh watch progress UoW.
             media_lookup: Port for resolving media display metadata.
             selector: Domain service that picks the best episode. The
                 default is a fresh instance — callers only pass one in
                 tests that want to stub selection.
         """
-        self._progress_repo = progress_repository
+        self._uow_factory = uow_factory
         self._media_lookup = media_lookup
         self._selector = selector or ContinueWatchingSelector()
 
@@ -75,34 +78,37 @@ class GetContinueWatchingUseCase:
         Returns:
             ContinueWatchingOutput with items including media metadata.
         """
-        progress_list = await self._progress_repo.list_recently_watched(limit=input_dto.limit)
-
         items: list[ContinueWatchingItem] = []
         seen_series: set[str] = set()
 
-        for progress in progress_list:
-            if progress.media_type == WatchableMediaType.MOVIE:
-                if progress.status != WatchStatus.IN_PROGRESS:
-                    continue
-                item = await self._enrich_movie(progress, input_dto.lang)
-                if item:
-                    items.append(item)
-            elif progress.media_type == WatchableMediaType.EPISODE:
-                parsed = EpisodeCompositeId.parse(progress.media_id)
-                if not parsed or parsed.series_id in seen_series:
-                    continue
-                seen_series.add(parsed.series_id)
-                item = await self._resolve_series_episode(
-                    parsed.series_id,
-                    input_dto.lang,
-                )
-                if item:
-                    items.append(item)
+        async with self._uow_factory() as uow:
+            progress_list = await uow.progress.list_recently_watched(limit=input_dto.limit)
+
+            for progress in progress_list:
+                if progress.media_type == WatchableMediaType.MOVIE:
+                    if progress.status != WatchStatus.IN_PROGRESS:
+                        continue
+                    item = await self._enrich_movie(progress, input_dto.lang)
+                    if item:
+                        items.append(item)
+                elif progress.media_type == WatchableMediaType.EPISODE:
+                    parsed = EpisodeCompositeId.parse(progress.media_id)
+                    if not parsed or parsed.series_id in seen_series:
+                        continue
+                    seen_series.add(parsed.series_id)
+                    item = await self._resolve_series_episode(
+                        uow,
+                        parsed.series_id,
+                        input_dto.lang,
+                    )
+                    if item:
+                        items.append(item)
 
         return ContinueWatchingOutput(items=items)
 
     async def _resolve_series_episode(
         self,
+        uow: WatchProgressUnitOfWork,
         series_id: str,
         lang: str,
     ) -> ContinueWatchingItem | None:
@@ -111,7 +117,7 @@ class GetContinueWatchingUseCase:
         if not series:
             return None
 
-        candidates = await self._build_candidates(series_id, series)
+        candidates = await self._build_candidates(uow, series_id, series)
         if not candidates:
             return None
 
@@ -121,8 +127,9 @@ class GetContinueWatchingUseCase:
 
         return self._build_series_item(series, selection.candidate, selection.latest_watched_at)
 
+    @staticmethod
     async def _build_candidates(
-        self,
+        uow: WatchProgressUnitOfWork,
         series_id: str,
         series: SeriesWithEpisodesInfo,
     ) -> list[EpisodeCandidate]:
@@ -144,7 +151,7 @@ class GetContinueWatchingUseCase:
             for ep in series.episodes
         ]
 
-        progress_map = await self._progress_repo.find_by_media_ids(media_ids)
+        progress_map = await uow.progress.find_by_media_ids(media_ids)
 
         return [
             EpisodeCandidate(

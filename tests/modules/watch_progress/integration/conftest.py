@@ -4,38 +4,49 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from src.infrastructure.persistence import Base
 
 
 @pytest.fixture(scope="function")
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Create an in-memory SQLite database session for testing.
+async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    """Expose an ``async_sessionmaker`` bound to an in-memory SQLite database.
 
-    Creates fresh tables for each test function and tears them down after.
-
-    Yields:
-        AsyncSession: A database session connected to an in-memory SQLite database.
+    ``StaticPool`` pins every connection to the same underlying SQLite
+    instance so sessions created for seeding (via ``db_session``) and
+    sessions opened later by a Unit of Work under test see the same
+    schema and rows.
     """
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         echo=False,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    session_factory = async_sessionmaker(
+    factory = async_sessionmaker(
         bind=engine,
         class_=AsyncSession,
         expire_on_commit=False,
         autoflush=False,
     )
 
-    async with session_factory() as session:
-        yield session
+    yield factory
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
     await engine.dispose()
+
+
+@pytest.fixture(scope="function")
+async def db_session(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[AsyncSession, None]:
+    """Seed-time session sharing the ``session_factory`` engine."""
+    async with session_factory() as session:
+        yield session
