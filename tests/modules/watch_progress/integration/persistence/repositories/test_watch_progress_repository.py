@@ -54,6 +54,21 @@ class TestSQLAlchemyWatchProgressRepositorySave:
         assert found is not None
         assert found.position_seconds == 3000
 
+    async def test_save_should_restore_and_update_soft_deleted_row(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        original = _create_progress(position=500)
+        await repo.save(original)
+        await repo.delete(SAMPLE_MOVIE_ID)
+
+        resumed = _create_progress(position=750)
+        await repo.save(resumed)
+
+        found = await repo.find_by_media_id(SAMPLE_MOVIE_ID)
+        assert found is not None
+        assert found.position_seconds == 750
+
     async def test_save_should_auto_complete_at_90_percent(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyWatchProgressRepository(db_session)
         progress = WatchProgress.create(

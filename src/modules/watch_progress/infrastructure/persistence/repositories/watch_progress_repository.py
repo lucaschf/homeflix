@@ -40,16 +40,21 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
         return None if model is None else WatchProgressMapper.to_entity(model)
 
     async def save(self, progress: WatchProgress) -> WatchProgress:
-        """Create or update a watch progress record."""
+        """Create or update a watch progress record.
+
+        Looks up by ``media_id`` including soft-deleted rows so that
+        resuming a previously dismissed item reuses the original row
+        instead of colliding with the UNIQUE(media_id) index.
+        """
         stmt = select(WatchProgressModel).where(
             WatchProgressModel.media_id == progress.media_id,
-            WatchProgressModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
         existing = result.scalar_one_or_none()
 
         if existing:
             WatchProgressMapper.update_model(existing, progress)
+            existing.restore()
             await self._session.flush()
             await self._session.refresh(existing)
             return WatchProgressMapper.to_entity(existing)
