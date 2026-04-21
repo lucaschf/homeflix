@@ -292,6 +292,18 @@ class TestHlsServiceBuildAudioCmd:
 
         assert "aac" in cmd
 
+    def test_should_resample_audio_async_to_align_start_with_video(self, tmp_path: Path) -> None:
+        # ``aresample=async=1000`` pads or drops samples at the stream
+        # start so the first AAC frame aligns with the first video
+        # frame. Without it the AAC encoder's priming gap shows up as
+        # a buffer hole and hls.js stalls on resume.
+        cmd = HlsService._build_audio_cmd(
+            "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=30.0
+        )
+
+        af_idx = cmd.index("-af")
+        assert cmd[af_idx + 1] == "aresample=async=1000"
+
     def test_should_not_include_ss_when_start_is_zero(self, tmp_path: Path) -> None:
         cmd = HlsService._build_audio_cmd(
             "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=0.0
@@ -311,8 +323,16 @@ class TestHlsServiceBuildAudioCmd:
         assert ss_positions[1] > i_idx, "Second -ss must come after -i"
         assert cmd[ss_positions[0] + 1] == "1795.0"  # 1800 - 5 runway
         assert cmd[ss_positions[1] + 1] == "5.0"  # runway
+        # ``-avoid_negative_ts make_zero`` keeps the rebase-to-zero.
+        # Explicitly asserting the ABSENCE of ``-copyts`` / ``-start_at_zero``
+        # so a well-meaning future edit can't reintroduce them: combined
+        # with two-pass seek those flags preserve the pre-runway samples
+        # the inner ``-ss`` is supposed to drop and push audio ~5s ahead
+        # of video.
         assert "-avoid_negative_ts" in cmd
         assert cmd[cmd.index("-avoid_negative_ts") + 1] == "make_zero"
+        assert "-copyts" not in cmd
+        assert "-start_at_zero" not in cmd
 
     def test_should_clamp_runway_when_start_is_less_than_runway(self, tmp_path: Path) -> None:
         cmd = HlsService._build_audio_cmd(
@@ -351,6 +371,19 @@ class TestHlsServiceBuildVideoCmd:
 
         assert "libx264" in cmd
 
+    def test_should_resample_audio_async_to_align_start_with_video(self, tmp_path: Path) -> None:
+        # Same fix as in the audio-only path: the video pipeline's
+        # muxed AAC track needs the initial resample-pad so it doesn't
+        # lag behind the video at the start of each bucket.
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start_seconds=30.0)
+
+        af_idx = cmd.index("-af")
+        assert cmd[af_idx + 1] == "aresample=async=1000"
+
     def test_should_map_primary_audio_track(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path / "cache"))
         probe = ProbeResult(
@@ -387,8 +420,13 @@ class TestHlsServiceBuildVideoCmd:
         assert ss_positions[1] > i_idx, "Second -ss must come after -i"
         assert cmd[ss_positions[0] + 1] == "5395.0"  # 5400 - 5 runway
         assert cmd[ss_positions[1] + 1] == "5.0"  # runway
+        # Two-pass seek keeps just ``-avoid_negative_ts make_zero`` — see
+        # the matching comment in the audio-cmd test for why we keep
+        # ``-copyts`` / ``-start_at_zero`` OUT of this pipeline.
         assert "-avoid_negative_ts" in cmd
         assert cmd[cmd.index("-avoid_negative_ts") + 1] == "make_zero"
+        assert "-copyts" not in cmd
+        assert "-start_at_zero" not in cmd
 
 
 @pytest.mark.unit

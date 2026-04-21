@@ -98,6 +98,16 @@ def _build_two_pass_seek_args(
       * ``-avoid_negative_ts make_zero``: rebase PTS so both streams
         start at exactly 0.
 
+    Do NOT add ``-copyts -start_at_zero`` here: those flags preserve
+    the pre-runway timestamps the inner ``-ss`` was supposed to drop,
+    which pushes audio ~``_SEEK_RUNWAY`` seconds ahead of video.
+    The audio-priming gap that the original two-pass seek was meant
+    to hide (video at local t=0, audio at t~0.5-1.0s from AAC warm-up)
+    is smoothed out in the encoder-level audio filter
+    (``aresample=async=1000``), which pads silence at the front of
+    the audio stream so both tracks start at t=0 without disturbing
+    the inner-seek trim.
+
     When ``start_seconds <= 0`` (fresh play from the beginning),
     returns just ``["-i", file_path]`` with no seek flags.
 
@@ -718,6 +728,16 @@ class HlsService(HlsPlaylistPort):
                 *video_args,
                 "-c:a",
                 "aac",
+                # aresample=async=1000 pads silence (or drops up to 1000
+                # samples per second) at the audio stream start so the
+                # first AAC frame aligns with the first video frame even
+                # after the two-pass seek. Without it the AAC encoder's
+                # priming period leaves a ~0.5-1s gap at the front of
+                # the audio stream; hls.js reads the gap as a buffer
+                # hole and the player either stalls or the user hears
+                # the dialogue start a beat after the picture.
+                "-af",
+                "aresample=async=1000",
                 "-ac",
                 "2",
                 "-ar",
@@ -766,6 +786,11 @@ class HlsService(HlsPlaylistPort):
                 "-sn",
                 "-c:a",
                 "aac",
+                # Pad/drop at the stream start so audio_N segments stay
+                # aligned with the video track across seek boundaries.
+                # See the matching comment in ``_build_video_cmd``.
+                "-af",
+                "aresample=async=1000",
                 "-ac",
                 "2",
                 "-ar",
