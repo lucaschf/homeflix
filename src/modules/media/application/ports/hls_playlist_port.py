@@ -17,13 +17,15 @@ class HlsPlaylistPort(ABC):
     """Manage the HLS cache: playlists, segments, subtitles, eviction."""
 
     @abstractmethod
-    async def ensure_playlist(self, file_path: str, start_seconds: float = 0.0) -> str:
+    async def ensure_playlist(self, file_path: str) -> str:
         """Prepare an HLS cache for ``file_path`` and return its path hash.
 
-        Blocks until at least the master playlist and the first few
-        segments are ready so the caller can serve the playlist
-        immediately. ``start_seconds > 0`` seeks the source before
-        encoding (resume mid-file).
+        Blocks until at least the master playlist and the first segment
+        are ready so the caller can serve the playlist immediately. The
+        transcode always starts at the beginning of the source —
+        resume positions are a player-side concern applied via
+        ``HTMLMediaElement.currentTime`` once the manifest loads, which
+        keeps a single cache bucket per file reusable across sessions.
         """
         ...
 
@@ -49,7 +51,7 @@ class HlsPlaylistPort(ABC):
 
     @abstractmethod
     def clear_cache(self, file_path: str) -> None:
-        """Discard every cache entry tied to ``file_path`` (all seek offsets)."""
+        """Discard the cache entry for ``file_path``."""
         ...
 
 
