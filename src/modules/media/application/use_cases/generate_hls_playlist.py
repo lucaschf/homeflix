@@ -21,13 +21,10 @@ class GenerateHlsPlaylistInput:
             e.g. ``"/api/v1/stream/hls/{path_hash}"``. The use case
             does not know its own mount point, so presentation passes
             it in.
-        start_seconds: Optional resume offset (see
-            ``HlsPlaylistPort.ensure_playlist``).
     """
 
     file_path: str
     base_url_template: str
-    start_seconds: float = 0.0
 
 
 class GenerateHlsPlaylistUseCase:
@@ -40,7 +37,7 @@ class GenerateHlsPlaylistUseCase:
         """Generate (or reuse) the cache and return the rewritten master playlist.
 
         Args:
-            input_dto: File path, base URL, and optional seek.
+            input_dto: File path and base URL template.
 
         Returns:
             Path hash and rewritten master m3u8 content.
@@ -49,8 +46,7 @@ class GenerateHlsPlaylistUseCase:
             ResourceNotFoundException: If the playlist content is missing
                 from the cache after ``ensure_playlist`` returns.
         """
-        start = max(0.0, input_dto.start_seconds)
-        path_hash = await self._hls.ensure_playlist(input_dto.file_path, start)
+        path_hash = await self._hls.ensure_playlist(input_dto.file_path)
 
         content = self._hls.get_master_playlist(path_hash)
         if content is None:

@@ -108,7 +108,6 @@ async def hls_file(
 @inject  # type: ignore[misc]
 async def movie_hls_playlist(
     movie_id: str,
-    start: float = 0.0,
     movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
@@ -119,7 +118,7 @@ async def movie_hls_playlist(
     """Generate and serve HLS master playlist for a movie."""
     movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
     file_path = _require_file(movie.file_path)
-    return await _serve_master(hls_uc, file_path, start)
+    return await _serve_master(hls_uc, file_path)
 
 
 @router.get("/episode/{series_id}/{season_number}/{episode_number}/hls/playlist.m3u8")  # type: ignore[misc]
@@ -128,7 +127,6 @@ async def episode_hls_playlist(
     series_id: str,
     season_number: int,
     episode_number: int,
-    start: float = 0.0,
     series_uc: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
@@ -139,7 +137,7 @@ async def episode_hls_playlist(
     """Generate and serve HLS master playlist for an episode."""
     file_path = await _find_episode_file(series_uc, series_id, season_number, episode_number)
     file_path = _require_file(file_path)
-    return await _serve_master(hls_uc, file_path, start)
+    return await _serve_master(hls_uc, file_path)
 
 
 # -- Track info ----------------------------------------------------------------
@@ -250,14 +248,12 @@ async def stream_episode(
 async def _serve_master(
     use_case: GenerateHlsPlaylistUseCase,
     file_path: str,
-    start_seconds: float,
 ) -> Response:
     """Run the generate-playlist use case and wrap its DTO in a Response."""
     output = await use_case.execute(
         GenerateHlsPlaylistInput(
             file_path=file_path,
             base_url_template=_MASTER_BASE_URL,
-            start_seconds=start_seconds,
         )
     )
     return Response(

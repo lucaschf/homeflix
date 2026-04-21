@@ -103,25 +103,14 @@ class TestHlsServiceGetPathHash:
         service = HlsService(cache_dir=str(tmp_path / "hls"))
         assert service.get_path_hash("/a.mkv") != service.get_path_hash("/b.mkv")
 
-    def test_should_match_default_hash_when_start_seconds_is_zero(self, tmp_path: Path) -> None:
+    def test_should_depend_only_on_file_path(self, tmp_path: Path) -> None:
+        # The cache bucket is keyed by the source file alone: resume
+        # positions apply client-side via ``video.currentTime`` so every
+        # session for the same file reuses the same transcode output.
         service = HlsService(cache_dir=str(tmp_path / "hls"))
         path = "/movies/test.mkv"
-        assert service.get_path_hash(path) == service.get_path_hash(path, 0.0)
-
-    def test_should_differ_for_different_start_seconds(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "hls"))
-        path = "/movies/test.mkv"
-        hash_zero = service.get_path_hash(path, 0.0)
-        hash_middle = service.get_path_hash(path, 1800.0)
-        hash_end = service.get_path_hash(path, 5400.0)
-        assert hash_zero != hash_middle
-        assert hash_middle != hash_end
-        assert hash_zero != hash_end
-
-    def test_should_be_deterministic_with_start_seconds(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "hls"))
-        path = "/movies/test.mkv"
-        assert service.get_path_hash(path, 1234.5) == service.get_path_hash(path, 1234.5)
+        expected = hashlib.md5(path.encode()).hexdigest()
+        assert service.get_path_hash(path) == expected
 
 
 @pytest.mark.unit
@@ -292,60 +281,14 @@ class TestHlsServiceBuildAudioCmd:
 
         assert "aac" in cmd
 
-    def test_should_resample_audio_async_to_align_start_with_video(self, tmp_path: Path) -> None:
-        # ``aresample=async=1000`` pads or drops samples at the stream
-        # start so the first AAC frame aligns with the first video
-        # frame. Without it the AAC encoder's priming gap shows up as
-        # a buffer hole and hls.js stalls on resume.
-        cmd = HlsService._build_audio_cmd(
-            "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=30.0
-        )
-
-        af_idx = cmd.index("-af")
-        assert cmd[af_idx + 1] == "aresample=async=1000"
-
-    def test_should_not_include_ss_when_start_is_zero(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd(
-            "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=0.0
-        )
+    def test_should_never_emit_a_seek_flag(self, tmp_path: Path) -> None:
+        # The transcode always starts at t=0 — resume positions are
+        # applied client-side via ``video.currentTime``. A ``-ss`` in
+        # the ffmpeg argv would re-introduce the per-offset bucket
+        # problem the per-file cache was designed to avoid.
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0)
 
         assert "-ss" not in cmd
-
-    def test_should_use_two_pass_seek_when_start_is_set(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd(
-            "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=1800.0
-        )
-
-        ss_positions = [i for i, v in enumerate(cmd) if v == "-ss"]
-        assert len(ss_positions) == 2, "Expected two -ss flags (fast + accurate)"
-        i_idx = cmd.index("-i")
-        assert ss_positions[0] < i_idx, "First -ss must come before -i"
-        assert ss_positions[1] > i_idx, "Second -ss must come after -i"
-        assert cmd[ss_positions[0] + 1] == "1795.0"  # 1800 - 5 runway
-        assert cmd[ss_positions[1] + 1] == "5.0"  # runway
-        # ``-avoid_negative_ts make_zero`` keeps the rebase-to-zero.
-        # Explicitly asserting the ABSENCE of ``-copyts`` / ``-start_at_zero``
-        # so a well-meaning future edit can't reintroduce them: combined
-        # with two-pass seek those flags preserve the pre-runway samples
-        # the inner ``-ss`` is supposed to drop and push audio ~5s ahead
-        # of video.
-        assert "-avoid_negative_ts" in cmd
-        assert cmd[cmd.index("-avoid_negative_ts") + 1] == "make_zero"
-        assert "-copyts" not in cmd
-        assert "-start_at_zero" not in cmd
-
-    def test_should_clamp_runway_when_start_is_less_than_runway(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd(
-            "/movies/test.mkv", tmp_path, audio_index=0, start_seconds=2.0
-        )
-
-        ss_positions = [i for i, v in enumerate(cmd) if v == "-ss"]
-        assert len(ss_positions) == 2
-        # Outer seek is clamped to 0 so we never seek to a negative position
-        assert cmd[ss_positions[0] + 1] == "0.0"
-        # Inner seek equals the full start_seconds (runway == start)
-        assert cmd[ss_positions[1] + 1] == "2.0"
-        assert "-avoid_negative_ts" in cmd
 
 
 @pytest.mark.unit
@@ -371,19 +314,6 @@ class TestHlsServiceBuildVideoCmd:
 
         assert "libx264" in cmd
 
-    def test_should_resample_audio_async_to_align_start_with_video(self, tmp_path: Path) -> None:
-        # Same fix as in the audio-only path: the video pipeline's
-        # muxed AAC track needs the initial resample-pad so it doesn't
-        # lag behind the video at the start of each bucket.
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
-        probe = ProbeResult(audio_tracks=[_make_audio_track()])
-
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start_seconds=30.0)
-
-        af_idx = cmd.index("-af")
-        assert cmd[af_idx + 1] == "aresample=async=1000"
-
     def test_should_map_primary_audio_track(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path / "cache"))
         probe = ProbeResult(
@@ -395,38 +325,16 @@ class TestHlsServiceBuildVideoCmd:
 
         assert "0:a:3" in cmd
 
-    def test_should_not_include_ss_when_start_is_zero(self, tmp_path: Path) -> None:
+    def test_should_never_emit_a_seek_flag(self, tmp_path: Path) -> None:
+        # Symmetric with the audio-only pipeline: the video transcode
+        # starts at t=0 and the player seeks natively.
         service = HlsService(cache_dir=str(tmp_path / "cache"))
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start_seconds=0.0)
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "-ss" not in cmd
-
-    def test_should_use_two_pass_seek_when_start_is_set(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
-        probe = ProbeResult(audio_tracks=[_make_audio_track()])
-
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd(
-                "/movies/test.mkv", tmp_path, probe, start_seconds=5400.0
-            )
-
-        ss_positions = [i for i, v in enumerate(cmd) if v == "-ss"]
-        assert len(ss_positions) == 2, "Expected two -ss flags (fast + accurate)"
-        i_idx = cmd.index("-i")
-        assert ss_positions[0] < i_idx, "First -ss must come before -i"
-        assert ss_positions[1] > i_idx, "Second -ss must come after -i"
-        assert cmd[ss_positions[0] + 1] == "5395.0"  # 5400 - 5 runway
-        assert cmd[ss_positions[1] + 1] == "5.0"  # runway
-        # Two-pass seek keeps just ``-avoid_negative_ts make_zero`` — see
-        # the matching comment in the audio-cmd test for why we keep
-        # ``-copyts`` / ``-start_at_zero`` OUT of this pipeline.
-        assert "-avoid_negative_ts" in cmd
-        assert cmd[cmd.index("-avoid_negative_ts") + 1] == "make_zero"
-        assert "-copyts" not in cmd
-        assert "-start_at_zero" not in cmd
 
 
 @pytest.mark.unit
@@ -792,7 +700,6 @@ class TestHlsServiceExtractOneSubtitle:
                 file_path="/movies/test.mkv",
                 output_dir=output_dir,
                 track=track,
-                start_seconds=0.0,
                 path_hash="abc",
             )
 
@@ -817,7 +724,6 @@ class TestHlsServiceExtractOneSubtitle:
                 file_path="/movies/test.mkv",
                 output_dir=output_dir,
                 track=track,
-                start_seconds=0.0,
                 path_hash="abc",
             )
 
@@ -842,13 +748,14 @@ class TestHlsServiceExtractOneSubtitle:
                 file_path="/movies/test.mkv",
                 output_dir=output_dir,
                 track=track,
-                start_seconds=0.0,
                 path_hash="abc",
             )
 
         assert event.is_set()
 
-    def test_should_pass_ss_args_when_start_seconds_is_positive(self, tmp_path: Path) -> None:
+    def test_should_not_emit_a_seek_flag(self, tmp_path: Path) -> None:
+        # Subtitle timestamps are absolute source times, which is also
+        # what the player's ``currentTime`` reports — no seek needed.
         import threading
 
         service, output_dir = self._make_service(tmp_path)
@@ -867,18 +774,10 @@ class TestHlsServiceExtractOneSubtitle:
                 file_path="/movies/test.mkv",
                 output_dir=output_dir,
                 track=track,
-                start_seconds=42.0,
                 path_hash="abc",
             )
 
-        cmd = captured["cmd"]
-        assert "-ss" in cmd
-        ss_index = cmd.index("-ss")
-        assert cmd[ss_index + 1] == "42.0"
-        # -ss must come AFTER -i for accurate decoder-level seek
-        # (subtitles are text — accurate seek has negligible cost
-        # and keeps subs in sync with the two-pass video seek)
-        assert cmd.index("-ss") > cmd.index("-i")
+        assert "-ss" not in captured["cmd"]
 
     def test_kill_processes_should_release_subtitle_waiters(self, tmp_path: Path) -> None:
         import threading
@@ -1027,7 +926,7 @@ class TestHlsServiceExtractThumbnails:
                 side_effect=self._patch_ffmpeg_success(sprite_path),
             ),
         ):
-            service._extract_thumbnails("/fake/movie.mkv", output_dir, start_seconds=0.0)
+            service._extract_thumbnails("/fake/movie.mkv", output_dir)
 
         vtt_path = output_dir / "thumbnails" / "sprite.vtt"
         assert sprite_path.is_file()
@@ -1056,13 +955,13 @@ class TestHlsServiceExtractThumbnails:
                 side_effect=run,
             ) as mock_run,
         ):
-            service._extract_thumbnails("/fake/movie.mkv", output_dir, start_seconds=0.0)
+            service._extract_thumbnails("/fake/movie.mkv", output_dir)
 
         # Only ffprobe should have been called — no ffmpeg attempt, no outputs.
         assert mock_run.call_count == 1
         assert not (output_dir / "thumbnails").exists()
 
-    def test_should_skip_when_effective_duration_below_interval(self, tmp_path: Path) -> None:
+    def test_should_skip_when_duration_below_interval(self, tmp_path: Path) -> None:
         service = self._service(tmp_path)
         output_dir = tmp_path / "bucket"
         output_dir.mkdir()
@@ -1080,7 +979,7 @@ class TestHlsServiceExtractThumbnails:
                 side_effect=run,
             ) as mock_run,
         ):
-            service._extract_thumbnails("/fake/movie.mkv", output_dir, start_seconds=0.0)
+            service._extract_thumbnails("/fake/movie.mkv", output_dir)
 
         # Duration too short — no ffmpeg, no thumbnails directory.
         assert mock_run.call_count == 1
@@ -1106,7 +1005,7 @@ class TestHlsServiceExtractThumbnails:
                 side_effect=run,
             ),
         ):
-            service._extract_thumbnails("/fake/movie.mkv", output_dir, start_seconds=0.0)
+            service._extract_thumbnails("/fake/movie.mkv", output_dir)
 
         # thumbs dir was created before ffmpeg ran — but neither the
         # sprite nor the VTT should exist after the failure.
@@ -1133,14 +1032,15 @@ class TestHlsServiceExtractThumbnails:
                 side_effect=run,
             ),
         ):
-            service._extract_thumbnails("/fake/movie.mkv", output_dir, start_seconds=0.0)
+            service._extract_thumbnails("/fake/movie.mkv", output_dir)
 
         assert not (output_dir / "thumbnails" / "sprite.jpg").exists()
         assert not (output_dir / "thumbnails" / "sprite.vtt").exists()
 
-    def test_should_shift_sprite_coverage_by_start_seconds(self, tmp_path: Path) -> None:
-        # Resume at 90s out of 120s leaves 30s of effective duration,
-        # which should still produce at least one tile.
+    def test_should_cover_full_source_duration_without_seeking(self, tmp_path: Path) -> None:
+        # The sprite covers source time 0..duration for every session:
+        # resume positions are a player-side concern and the VTT's cue
+        # times match ``video.currentTime`` directly.
         service = self._service(tmp_path)
         output_dir = tmp_path / "bucket"
         output_dir.mkdir()
@@ -1156,17 +1056,14 @@ class TestHlsServiceExtractThumbnails:
                 side_effect=self._patch_ffmpeg_success(sprite_path),
             ) as mock_run,
         ):
-            service._extract_thumbnails("/fake/movie.mkv", output_dir, start_seconds=90.0)
+            service._extract_thumbnails("/fake/movie.mkv", output_dir)
 
-        # ffmpeg invocation should have carried a -ss 90.0 before -i.
+        # No ``-ss`` anywhere — the ffmpeg call reads the whole file.
         ffmpeg_call = next(call for call in mock_run.call_args_list if call.args[0][0] == "ffmpeg")
         cmd = ffmpeg_call.args[0]
-        assert "-ss" in cmd
-        assert cmd[cmd.index("-ss") + 1] == "90.0"
-        # And the VTT covers only the remaining 30 seconds from t=0 locally —
-        # three cues of 10s each, last one ending exactly at 30s.
+        assert "-ss" not in cmd
+
+        # 120s / 10s interval → 12 cues, last one ending at 02:00.
         vtt_text = (output_dir / "thumbnails" / "sprite.vtt").read_text(encoding="utf-8")
-        assert "00:00:00.000 --> 00:00:10.000" in vtt_text
-        assert "00:00:20.000 --> 00:00:30.000" in vtt_text
-        assert "00:00:30.000 --> 00:00:40.000" not in vtt_text
-        assert vtt_text.count("-->") == 3
+        assert vtt_text.count("-->") == 12
+        assert "00:01:50.000 --> 00:02:00.000" in vtt_text

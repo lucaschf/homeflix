@@ -41,21 +41,7 @@ class TestGenerateHlsPlaylistUseCase:
 
         assert output.path_hash == "abc"
         assert "/api/v1/stream/hls/abc/video/playlist.m3u8" in output.rewritten_content
-        hls.ensure_playlist.assert_awaited_once_with("/movies/file.mkv", 0.0)
-
-    @pytest.mark.asyncio
-    async def test_should_clamp_negative_start_to_zero(self) -> None:
-        hls = _make_hls_mock()
-        use_case = GenerateHlsPlaylistUseCase(hls=hls)
-
-        await use_case.execute(
-            GenerateHlsPlaylistInput(
-                file_path="/a.mkv",
-                base_url_template="/base/{path_hash}",
-                start_seconds=-5.0,
-            )
-        )
-        hls.ensure_playlist.assert_awaited_once_with("/a.mkv", 0.0)
+        hls.ensure_playlist.assert_awaited_once_with("/movies/file.mkv")
 
     @pytest.mark.asyncio
     async def test_should_raise_when_master_playlist_missing(self) -> None:
