@@ -270,6 +270,31 @@ class SQLAlchemyMovieRepository(MovieRepository):
         result = await self._session.execute(stmt)
         return {model.external_id: MovieMapper.to_entity(model) for model in result.scalars().all()}
 
+    async def find_by_tmdb_ids(self, tmdb_ids: Sequence[int]) -> dict[int, Movie]:
+        """Find movies whose ``tmdb_id`` matches any of ``tmdb_ids``.
+
+        Used by ``GetRelatedMovies`` to resolve the subset of TMDB's
+        recommendation list that exists locally. Returning a dict
+        keyed by ``tmdb_id`` lets the caller preserve TMDB's
+        relevance ordering by iterating the request list.
+        """
+        if not tmdb_ids:
+            return {}
+        stmt = (
+            select(MovieModel)
+            .where(
+                MovieModel.tmdb_id.in_(tmdb_ids),
+                MovieModel.deleted_at.is_(None),
+            )
+            .options(selectinload(MovieModel.file_variants))
+        )
+        result = await self._session.execute(stmt)
+        return {
+            model.tmdb_id: MovieMapper.to_entity(model)
+            for model in result.scalars().all()
+            if model.tmdb_id is not None
+        }
+
     async def find_by_file_path(self, file_path: FilePath) -> Movie | None:
         """Find a movie by any of its file variant paths.
 

@@ -167,6 +167,116 @@ class TmdbClient(MetadataProvider):
         """Fetch series details by TMDB ID."""
         return await self._fetch_series_details(tmdb_id)
 
+    async def get_movie_recommendations(self, tmdb_id: int) -> list[int]:
+        """Return TMDB ids of movies related to ``tmdb_id``.
+
+        Three sources are merged, in descending relevance:
+
+        1. **Collection siblings** — when the movie belongs to a TMDB
+           collection (franchises, e.g. "Creepshow Collection"), every
+           other entry in the collection. Sequels / prequels are the
+           most obvious "related" signal but TMDB's ML doesn't always
+           expose them, especially for older or less popular titles.
+        2. **``/recommendations``** — ML-based.
+        3. **``/similar``** — heuristic fallback (genre / keyword
+           overlap), only used when recommendations is empty.
+
+        Sources 1 + 2 (or 1 + 3) are merged in order, with the input
+        movie itself skipped and duplicates removed so the same id
+        never appears twice.
+
+        Network failures and unexpected payload shapes degrade to an
+        empty list — recommendation rendering is best-effort polish,
+        never load-bearing.
+        """
+        collection_ids = await self._fetch_collection_movie_ids(tmdb_id)
+        other_ids = await self._fetch_related_movie_ids(tmdb_id, "recommendations")
+        if not other_ids:
+            other_ids = await self._fetch_related_movie_ids(tmdb_id, "similar")
+
+        seen: set[int] = {tmdb_id}
+        ordered: list[int] = []
+        for tid in [*collection_ids, *other_ids]:
+            if tid in seen:
+                continue
+            seen.add(tid)
+            ordered.append(tid)
+        return ordered
+
+    async def _fetch_collection_movie_ids(self, tmdb_id: int) -> list[int]:  # noqa: PLR0911
+        """Return ids of every movie in the input movie's TMDB collection.
+
+        Two-call shape: first ``/movie/{id}`` (minimal, just to read
+        ``belongs_to_collection``), then ``/collection/{coll_id}`` for
+        the ``parts`` list. Both are cheap on the TMDB side and only
+        run for the recommendations endpoint, so the extra round-trip
+        is fine.
+
+        Returns an empty list when the movie has no collection or any
+        step fails — collection lookup is best-effort polish.
+        """
+        try:
+            resp = await self._client.get(
+                f"{self._base_url}/movie/{tmdb_id}",
+                params=self._params(),
+            )
+        except httpx.HTTPError:
+            return []
+        if resp.status_code != 200:
+            return []
+
+        coll = resp.json().get("belongs_to_collection")
+        if not isinstance(coll, dict):
+            return []
+        coll_id = coll.get("id")
+        if not isinstance(coll_id, int):
+            return []
+
+        try:
+            resp = await self._client.get(
+                f"{self._base_url}/collection/{coll_id}",
+                params=self._params(),
+            )
+        except httpx.HTTPError:
+            return []
+        if resp.status_code != 200:
+            return []
+
+        parts = resp.json().get("parts") or []
+        ids: list[int] = []
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            pid = part.get("id")
+            if isinstance(pid, int):
+                ids.append(pid)
+        return ids
+
+    async def _fetch_related_movie_ids(self, tmdb_id: int, endpoint: str) -> list[int]:
+        """Hit a single ``/movie/{id}/<endpoint>`` and extract numeric ids.
+
+        ``endpoint`` is ``"recommendations"`` or ``"similar"``; both
+        paginate but page 1 already carries enough candidates for the
+        UI's ~10-item carousel and a second request would just burn
+        latency on results we'd discard.
+        """
+        try:
+            resp = await self._client.get(
+                f"{self._base_url}/movie/{tmdb_id}/{endpoint}",
+                params=self._params(),
+            )
+        except httpx.HTTPError:
+            return []
+        if resp.status_code != 200:
+            return []
+        results = resp.json().get("results") or []
+        ids: list[int] = []
+        for item in results:
+            raw = item.get("id") if isinstance(item, dict) else None
+            if isinstance(raw, int):
+                ids.append(raw)
+        return ids
+
     async def get_series_localized(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch series details in English with pt-BR localization.
 
