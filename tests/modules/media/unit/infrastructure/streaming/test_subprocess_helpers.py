@@ -63,6 +63,21 @@ class TestWithFfmpegThreads:
         cmd: list[str] = []
         assert with_ffmpeg_threads(cmd, 4) is cmd
 
+    def test_recognises_absolute_path_to_ffmpeg(self) -> None:
+        # Future refactors might use ``shutil.which("ffmpeg")`` (which
+        # returns an absolute path) as ``argv[0]``. The helper must
+        # still inject the cap or the silent no-op resurfaces.
+        result = with_ffmpeg_threads(["/usr/bin/ffmpeg", "-i", "in.mkv"], 4)
+        assert result == ["/usr/bin/ffmpeg", "-threads", "4", "-i", "in.mkv"]
+
+    def test_recognises_windows_ffmpeg_exe(self) -> None:
+        result = with_ffmpeg_threads(
+            ["C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe", "-i", "in.mkv"],
+            4,
+        )
+        assert result[0] == "C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe"
+        assert result[1:3] == ["-threads", "4"]
+
 
 @pytest.mark.unit
 class TestMediaTypeFor:

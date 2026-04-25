@@ -7,6 +7,26 @@ subprocess.run() call in the streaming package stays consistent.
 from types import MappingProxyType
 from typing import Any
 
+# Match against the binary's basename so absolute paths
+# (``/usr/bin/ffmpeg``) and the Windows executable suffix
+# (``ffmpeg.exe``) both flow through the cap. A bare ``cmd[0] ==
+# "ffmpeg"`` check would silently no-op on either, leaving the
+# threads cap unapplied without any signal.
+_FFMPEG_BINARY_NAMES = frozenset({"ffmpeg", "ffmpeg.exe"})
+
+
+def _binary_name(argv0: str) -> str:
+    """Return the lowercase binary filename from an ``argv[0]`` value.
+
+    Splits on both POSIX and Windows separators so the result is the
+    same regardless of the host OS — ``Path.name`` /
+    ``os.path.basename`` are platform-aware and would treat a Windows
+    path on Linux (or vice versa) as a single filename, defeating the
+    purpose of normalising the binary name here.
+    """
+    return argv0.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].lower()
+
+
 #: Common kwargs for ``subprocess.run`` calls that capture text output.
 #: Each call site should unpack this and add its own ``timeout``.
 SUBPROCESS_TEXT_KWARGS: MappingProxyType[str, Any] = MappingProxyType(
@@ -44,6 +64,8 @@ def with_ffmpeg_threads(cmd: list[str], max_threads: int | None) -> list[str]:
         Either ``cmd`` itself or a new list with ``-threads N``
         inserted after the binary.
     """
-    if max_threads is None or not cmd or cmd[0] != "ffmpeg":
+    if max_threads is None or not cmd:
+        return cmd
+    if _binary_name(cmd[0]) not in _FFMPEG_BINARY_NAMES:
         return cmd
     return [cmd[0], "-threads", str(max_threads), *cmd[1:]]
