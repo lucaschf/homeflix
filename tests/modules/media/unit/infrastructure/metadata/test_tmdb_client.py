@@ -1,5 +1,6 @@
 """Tests for TmdbClient."""
 
+import itertools
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -27,11 +28,22 @@ def _build_response(status_code: int = 200, json_data: dict[str, Any] | None = N
 
 
 def _make_client(get_responses: list[MagicMock] | MagicMock | None = None) -> TmdbClient:
-    """Build a TmdbClient with a mocked HTTP client."""
+    """Build a TmdbClient with a mocked HTTP client.
+
+    For list-mode fixtures, the helper appends an infinite tail of
+    ``{"logos": []}`` responses so newly-added side calls — e.g. the
+    ``/images`` fetch the production code does to populate
+    ``logo_url`` — never exhaust the queue. Tests that need to assert
+    on the logo fetch can still inject a specific response inside the
+    list before the queue runs out.
+    """
     client = TmdbClient(api_key="test-key")
     mock_http = MagicMock()
     if isinstance(get_responses, list):
-        mock_http.get = AsyncMock(side_effect=get_responses)
+        empty_logos_tail = itertools.repeat(_build_response(json_data={"logos": []}))
+        mock_http.get = AsyncMock(
+            side_effect=itertools.chain(get_responses, empty_logos_tail),
+        )
     elif get_responses is not None:
         mock_http.get = AsyncMock(return_value=get_responses)
     else:
@@ -547,10 +559,12 @@ class TestGetMovieLocalized:
             "overview": "Sinopse em português.",
             "genres": [{"name": "Ficção Científica"}],
         }
+        # Logos now come bundled in the details response via
+        # ``append_to_response=images`` — no separate ``/images`` call.
         client = _make_client(
             get_responses=[
-                _build_response(json_data=_movie_details()),  # English
-                _build_response(json_data=pt_data),  # pt-BR
+                _build_response(json_data=_movie_details()),  # English details (with images)
+                _build_response(json_data=pt_data),  # pt-BR details (with images)
             ]
         )
 
@@ -565,8 +579,8 @@ class TestGetMovieLocalized:
     async def test_should_return_en_only_when_pt_fails(self) -> None:
         client = _make_client(
             get_responses=[
-                _build_response(json_data=_movie_details()),
-                _build_response(status_code=404),
+                _build_response(json_data=_movie_details()),  # English details
+                _build_response(status_code=404),  # pt-BR details (fails)
             ]
         )
 
@@ -596,11 +610,12 @@ class TestGetSeriesLocalized:
             "overview": "Série brasileira localizada.",
             "genres": [{"name": "Drama BR"}],
         }
+        # Logos come bundled in details now — no extra ``/images`` calls.
         client = _make_client(
             get_responses=[
-                _build_response(json_data=_series_details()),
-                _build_response(json_data=_season_details()),
-                _build_response(json_data=pt_data),
+                _build_response(json_data=_series_details()),  # series details (with images)
+                _build_response(json_data=_season_details()),  # season fetch
+                _build_response(json_data=pt_data),  # pt-BR details (with images)
             ]
         )
 
@@ -614,9 +629,9 @@ class TestGetSeriesLocalized:
     async def test_should_return_en_only_when_pt_fails(self) -> None:
         client = _make_client(
             get_responses=[
-                _build_response(json_data=_series_details()),
-                _build_response(json_data=_season_details()),
-                _build_response(status_code=404),
+                _build_response(json_data=_series_details()),  # series details
+                _build_response(json_data=_season_details()),  # season fetch
+                _build_response(status_code=404),  # pt-BR details (fails)
             ]
         )
 
@@ -624,6 +639,81 @@ class TestGetSeriesLocalized:
 
         assert result is not None
         assert result.localized == {}
+
+
+@pytest.mark.unit
+class TestPickBestLogoUrl:
+    """Priority order for the ``_pick_best_logo_url`` parser.
+
+    Pure-function tests — no HTTP. The fetcher is now baked into
+    ``_fetch_*_details`` via ``append_to_response=images`` and the
+    parser only operates on the returned ``logos`` array.
+    """
+
+    def _client(self) -> TmdbClient:
+        return TmdbClient(api_key="test-key")
+
+    def test_prefers_exact_language_match(self) -> None:
+        url = self._client()._pick_best_logo_url(
+            [
+                {"iso_639_1": "en", "file_path": "/en.png"},
+                {"iso_639_1": "pt-BR", "file_path": "/ptbr.png"},
+                {"iso_639_1": None, "file_path": "/neutral.png"},
+            ],
+            "pt-BR",
+        )
+        assert url is not None
+        assert url.endswith("/ptbr.png")
+
+    def test_falls_back_to_base_language(self) -> None:
+        # Search for ``pt-PT`` should fall back to the ``pt-BR`` logo
+        # (same base ``pt``) when no exact match exists, before
+        # English or language-neutral.
+        url = self._client()._pick_best_logo_url(
+            [
+                {"iso_639_1": "en", "file_path": "/en.png"},
+                {"iso_639_1": "pt-BR", "file_path": "/ptbr.png"},
+            ],
+            "pt-PT",
+        )
+        assert url is not None
+        assert url.endswith("/ptbr.png")
+
+    def test_falls_back_to_english(self) -> None:
+        url = self._client()._pick_best_logo_url(
+            [
+                {"iso_639_1": "fr", "file_path": "/fr.png"},
+                {"iso_639_1": "en", "file_path": "/en.png"},
+            ],
+            "pt-BR",
+        )
+        assert url is not None
+        assert url.endswith("/en.png")
+
+    def test_falls_back_to_language_neutral(self) -> None:
+        url = self._client()._pick_best_logo_url(
+            [
+                {"iso_639_1": "ja", "file_path": "/ja.png"},
+                {"iso_639_1": None, "file_path": "/neutral.png"},
+            ],
+            "pt-BR",
+        )
+        assert url is not None
+        assert url.endswith("/neutral.png")
+
+    def test_falls_back_to_first_logo_when_nothing_else_matches(self) -> None:
+        url = self._client()._pick_best_logo_url(
+            [{"iso_639_1": "ja", "file_path": "/ja.png"}],
+            "pt-BR",
+        )
+        assert url is not None
+        assert url.endswith("/ja.png")
+
+    def test_returns_none_when_list_empty(self) -> None:
+        assert self._client()._pick_best_logo_url([], "pt-BR") is None
+
+    def test_returns_none_when_list_is_none(self) -> None:
+        assert self._client()._pick_best_logo_url(None, "pt-BR") is None
 
 
 @pytest.mark.unit

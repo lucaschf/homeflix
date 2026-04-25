@@ -148,6 +148,8 @@ def _apply_localized(
             loc_entry["synopsis"] = fields.synopsis
         if fields.genres:
             loc_entry["genres"] = fields.genres
+        if fields.logo_url:
+            loc_entry["logo_path"] = fields.logo_url
         if loc_entry:
             localized[lang] = loc_entry
     if localized:
@@ -194,6 +196,7 @@ def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
             "genres": ("genres", lambda v: [Genre(g) for g in v]),
             "poster_url": ("poster_path", ImageUrl),
             "backdrop_url": ("backdrop_path", ImageUrl),
+            "logo_url": ("logo_path", ImageUrl),
             "content_rating": ("content_rating", ContentRating),
             "trailer_url": ("trailer_url", None),
         },

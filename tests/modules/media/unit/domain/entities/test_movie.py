@@ -574,3 +574,48 @@ class TestMovieImmutability:
         assert updated is not movie
         assert len(updated.files) == 2
         assert len(movie.files) == 1
+
+
+class TestMovieLogoLocalization:
+    """Tests for ``Movie.get_logo_path`` per-language fallback."""
+
+    def _movie(self, **kwargs):
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import (
+            Duration,
+            ImageUrl,
+            Title,
+            Year,
+        )
+
+        defaults: dict[str, object] = {
+            "title": Title("Inception"),
+            "year": Year(2010),
+            "duration": Duration(8880),
+            "logo_path": ImageUrl("https://img.example/en.png"),
+            "localized": {
+                "pt-BR": {"title": "A Origem", "logo_path": "https://img.example/ptbr.png"},
+            },
+        }
+        defaults.update(kwargs)
+        return Movie(**defaults)
+
+    def test_returns_localized_logo_when_lang_has_one(self):
+        movie = self._movie()
+        assert movie.get_logo_path("pt-BR") == "https://img.example/ptbr.png"
+
+    def test_falls_back_to_default_logo_when_lang_missing(self):
+        movie = self._movie()
+        assert movie.get_logo_path("es") == "https://img.example/en.png"
+
+    def test_falls_back_to_default_when_localized_entry_has_no_logo(self):
+        movie = self._movie(localized={"pt-BR": {"title": "A Origem"}})  # no logo_path
+        assert movie.get_logo_path("pt-BR") == "https://img.example/en.png"
+
+    def test_returns_none_when_neither_localized_nor_default_has_logo(self):
+        movie = self._movie(logo_path=None, localized={"pt-BR": {"title": "A Origem"}})
+        assert movie.get_logo_path("pt-BR") is None
+
+    def test_returns_none_when_no_logo_anywhere(self):
+        movie = self._movie(logo_path=None, localized={})
+        assert movie.get_logo_path("en") is None

@@ -55,6 +55,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     # Images
     poster_path: ImageUrl | None = None
     backdrop_path: ImageUrl | None = None
+    logo_path: ImageUrl | None = None
     scrub_preview_path: ImageUrl | None = None
 
     # Categorization
@@ -116,6 +117,20 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
         if loc_genres and isinstance(loc_genres, list):
             return [str(g) for g in loc_genres]
         return [g.value for g in self.genres]
+
+    def get_logo_path(self, lang: str = "en") -> str | None:
+        """Get title-logo URL for the requested language.
+
+        Falls back to ``self.logo_path`` (the language at enrich time,
+        typically en) when the language has no localized override —
+        mirroring how ``get_title`` / ``get_synopsis`` behave so the
+        UI sees a consistent "best available" graphic per language.
+        """
+        loc = self.localized.get(lang, {})
+        loc_logo = loc.get("logo_path")
+        if loc_logo:
+            return str(loc_logo)
+        return self.logo_path.value if self.logo_path else None
 
     # ── genre helpers ─────────────────────────────────────────────────
 

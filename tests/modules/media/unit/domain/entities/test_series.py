@@ -262,3 +262,41 @@ class TestSeriesImmutability:
         result = series.with_season(season)
 
         assert result is series
+
+
+class TestSeriesLogoLocalization:
+    """Tests for ``Series.get_logo_path`` per-language fallback."""
+
+    def _series(self, **kwargs):
+        from src.modules.media.domain.entities import Series
+        from src.modules.media.domain.value_objects import ImageUrl, Title, Year
+
+        defaults: dict[str, object] = {
+            "title": Title("Breaking Bad"),
+            "start_year": Year(2008),
+            "logo_path": ImageUrl("https://img.example/en.png"),
+            "localized": {
+                "pt-BR": {
+                    "title": "Quimica do Mal",
+                    "logo_path": "https://img.example/ptbr.png",
+                },
+            },
+        }
+        defaults.update(kwargs)
+        return Series(**defaults)
+
+    def test_returns_localized_logo_when_lang_has_one(self):
+        series = self._series()
+        assert series.get_logo_path("pt-BR") == "https://img.example/ptbr.png"
+
+    def test_falls_back_to_default_logo_when_lang_missing(self):
+        series = self._series()
+        assert series.get_logo_path("es") == "https://img.example/en.png"
+
+    def test_falls_back_to_default_when_localized_entry_has_no_logo(self):
+        series = self._series(localized={"pt-BR": {"title": "Quimica do Mal"}})
+        assert series.get_logo_path("pt-BR") == "https://img.example/en.png"
+
+    def test_returns_none_when_no_logo_anywhere(self):
+        series = self._series(logo_path=None, localized={})
+        assert series.get_logo_path("en") is None

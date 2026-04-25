@@ -52,6 +52,10 @@ class MovieOutput:
         synopsis: Movie synopsis (optional).
         poster_path: Path to poster image (optional).
         backdrop_path: Path to backdrop image (optional).
+        logo_path: URL of the title-logo image (transparent PNG)
+            populated from TMDB during enrich, ``None`` if not
+            available. Used by the hero/detail UI to render the title
+            as a graphic.
         scrub_preview_path: Absolute filesystem path to the scrub-preview
             VTT, or ``None`` until the backfill job generates it.
         genres: List of genre strings.
@@ -73,6 +77,7 @@ class MovieOutput:
     synopsis: str | None
     poster_path: str | None
     backdrop_path: str | None
+    logo_path: str | None
     scrub_preview_path: str | None
     genres: list[str]
     cast: list[str]

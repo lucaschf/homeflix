@@ -72,11 +72,15 @@ class LocalizedFields:
         title: Localized title.
         synopsis: Localized plot overview.
         genres: Localized genre names.
+        logo_url: Localized title-logo URL (transparent PNG). When
+            present, the entity's ``get_logo_path(lang)`` accessor
+            returns this in preference to the global ``logo_path``.
     """
 
     title: str | None = None
     synopsis: str | None = None
     genres: list[str] = field(default_factory=list)
+    logo_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +96,9 @@ class MediaMetadata:
         synopsis: Plot overview.
         poster_url: URL to poster image.
         backdrop_url: URL to backdrop image.
+        logo_url: URL to title logo image (transparent PNG, no
+            background) used by hero/detail UIs to render the title as
+            a graphic. Optional — only some titles have logos in TMDB.
         genres: List of genre names.
         tmdb_id: TMDB numeric ID.
         imdb_id: IMDb ID (tt1234567 format).
@@ -109,6 +116,7 @@ class MediaMetadata:
     synopsis: str | None = None
     poster_url: str | None = None
     backdrop_url: str | None = None
+    logo_url: str | None = None
     genres: list[str] = field(default_factory=list)
     tmdb_id: int | None = None
     imdb_id: str | None = None
