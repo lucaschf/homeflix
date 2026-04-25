@@ -55,6 +55,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     # Images
     poster_path: ImageUrl | None = None
     backdrop_path: ImageUrl | None = None
+    scrub_preview_path: ImageUrl | None = None
 
     # Categorization
     genres: list[Genre] = Field(default_factory=list)

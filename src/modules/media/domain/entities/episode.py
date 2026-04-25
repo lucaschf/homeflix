@@ -57,6 +57,7 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
     # File variants
     files: list[MediaFile] = Field(default_factory=list)
     thumbnail_path: ImageUrl | None = None
+    scrub_preview_path: ImageUrl | None = None
 
     # Metadata
     air_date: AirDate | None = None
