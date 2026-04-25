@@ -90,7 +90,7 @@ class MovieMapper:
         return model
 
     @staticmethod
-    def to_entity(model: MovieModel) -> Movie:
+    def to_entity(model: MovieModel, *, include_files: bool = True) -> Movie:
         """Convert MovieModel to Movie entity.
 
         Uses the file_variants relationship if loaded, otherwise
@@ -98,6 +98,13 @@ class MovieMapper:
 
         Args:
             model: The SQLAlchemy MovieModel.
+            include_files: When ``False``, skip the file_variants
+                relationship entirely and return an entity with
+                ``files=[]``. Used by the search path which only
+                reads root metadata (title, year, poster, ...) and
+                doesn't need the variants — touching ``file_variants``
+                on an unloaded relationship would trigger an async
+                lazy-load outside the session greenlet.
 
         Returns:
             Domain Movie entity with reconstructed value objects.
@@ -107,19 +114,20 @@ class MovieMapper:
             genre_list = [Genre(g.strip()) for g in model.genres.split(",") if g.strip()]
 
         files: list[MediaFile] = []
-        if model.file_variants:
-            files = [
-                MediaFileMapper.to_entity(fv) for fv in model.file_variants if not fv.is_deleted
-            ]
-        elif model.file_path:
-            files = [
-                MediaFile(
-                    file_path=FilePath(model.file_path),
-                    file_size=model.file_size,
-                    resolution=Resolution(model.resolution),
-                    is_primary=True,
-                )
-            ]
+        if include_files:
+            if model.file_variants:
+                files = [
+                    MediaFileMapper.to_entity(fv) for fv in model.file_variants if not fv.is_deleted
+                ]
+            elif model.file_path:
+                files = [
+                    MediaFile(
+                        file_path=FilePath(model.file_path),
+                        file_size=model.file_size,
+                        resolution=Resolution(model.resolution),
+                        is_primary=True,
+                    )
+                ]
 
         return Movie(
             id=MovieId(model.external_id),

@@ -397,14 +397,16 @@ class SQLAlchemyMovieRepository(MovieRepository):
 
         rowid_to_rank = {row[0]: row[1] for row in fts_rows}
 
-        # Step 2: Load full ORM models for the matched rowids
-        stmt = (
-            select(MovieModel)
-            .where(
-                MovieModel.id.in_(rowid_to_rank.keys()),
-                MovieModel.deleted_at.is_(None),
-            )
-            .options(selectinload(MovieModel.file_variants))
+        # Step 2: Load only the root MovieModel rows. ``SearchCatalogUseCase``
+        # builds ``SearchItemOutput`` from root columns + ``localized`` JSON
+        # only — it never touches ``movie.files``. Skipping ``file_variants``
+        # here avoids a fan-out of one extra query plus N rows of file
+        # metadata per hit, which on a 30-result search with rich
+        # multi-resolution variants meant thousands of rows fetched and
+        # immediately discarded.
+        stmt = select(MovieModel).where(
+            MovieModel.id.in_(rowid_to_rank.keys()),
+            MovieModel.deleted_at.is_(None),
         )
         if genre:
             delimited = "," + MovieModel.genres + ","
@@ -417,9 +419,11 @@ class SQLAlchemyMovieRepository(MovieRepository):
         result = await self._session.execute(stmt)
         models = result.scalars().all()
 
-        # Step 3: Map to entities and pair with rank, sorted by rank
+        # Step 3: Map to shallow entities (files=[]) and pair with rank.
         hits = [
-            (MovieMapper.to_entity(m), rowid_to_rank[m.id]) for m in models if m.id in rowid_to_rank
+            (MovieMapper.to_entity(m, include_files=False), rowid_to_rank[m.id])
+            for m in models
+            if m.id in rowid_to_rank
         ]
         hits.sort(key=lambda h: h[1])
         return hits[:limit]

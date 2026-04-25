@@ -1,5 +1,7 @@
 """Unit tests for SeriesMapper, SeasonMapper, and EpisodeMapper."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 from src.modules.media.domain.entities import Episode, Season, Series
@@ -19,6 +21,7 @@ from src.modules.media.infrastructure.persistence.mappers import (
     SeasonMapper,
     SeriesMapper,
 )
+from src.modules.media.infrastructure.persistence.models import SeriesModel
 
 
 def _create_episode(
@@ -136,3 +139,29 @@ class TestSeriesMapper:
         assert model.external_id == str(series_id)
         assert model.title == "Test Series"
         assert model.start_year == 2020
+
+    def test_to_entity_shallow_returns_empty_seasons(self) -> None:
+        """``include_seasons=False`` skips the seasons relationship.
+
+        The search path uses this so it never triggers a lazy-load
+        of seasons / episodes / file_variants on the way to building
+        a ``SearchItemOutput`` (which only reads root fields and the
+        ``localized`` JSON). Pinning this contract keeps a future
+        refactor from silently re-enabling the heavy fan-out.
+        """
+        series_id = SeriesId.generate()
+        now = datetime.now(UTC)
+        model = SeriesModel(
+            external_id=str(series_id),
+            title="Shallow Series",
+            start_year=2020,
+            created_at=now,
+            updated_at=now,
+        )
+
+        entity = SeriesMapper.to_entity(model, include_seasons=False)
+
+        assert entity.id == series_id
+        assert entity.title.value == "Shallow Series"
+        assert entity.start_year.value == 2020
+        assert entity.seasons == []
