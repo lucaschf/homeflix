@@ -11,6 +11,7 @@ from src.modules.media.application.ports import MediaMetadata, MetadataProvider
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
+    CastMember,
     ContentRating,
     Duration,
     Genre,
@@ -197,7 +198,9 @@ def _apply_credits(
 ) -> None:
     """Apply cast/director/writer credits from metadata if not already present."""
     if metadata.cast and not movie.cast:
-        updates["cast"] = [p.name for p in metadata.cast]
+        updates["cast"] = [
+            CastMember(name=p.name, profile_path=p.profile_url, role=p.role) for p in metadata.cast
+        ]
     if metadata.directors and not movie.directors:
         updates["directors"] = [p.name for p in metadata.directors]
     if metadata.writers and not movie.writers:

@@ -10,6 +10,7 @@ from src.building_blocks.domain import AggregateRoot
 from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixin
 from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.value_objects import (
+    CastMember,
     ContentRating,
     Duration,
     FilePath,
@@ -65,7 +66,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     files: list[MediaFile] = Field(default_factory=list)
 
     # Credits
-    cast: list[str] = Field(default_factory=list)
+    cast: list[CastMember] = Field(default_factory=list)
     directors: list[str] = Field(default_factory=list)
     writers: list[str] = Field(default_factory=list)
 

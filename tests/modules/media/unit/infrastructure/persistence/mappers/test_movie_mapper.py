@@ -113,3 +113,60 @@ class TestMovieMapper:
 
         assert len(entity.files) == 1
         assert entity.files[0].file_path.value == "/movies/test.mkv"
+
+    def test_to_entity_reads_legacy_cast_string_list(self) -> None:
+        """Legacy rows stored ``cast`` as ``["Name1", "Name2"]``.
+
+        After the cast-with-photos change the column holds dicts, but
+        existing data must still load — entries become ``CastMember``
+        with ``profile_path``/``role`` set to ``None``. The next save
+        rewrites the row in the new shape.
+        """
+        movie_id = MovieId.generate()
+        now = datetime.now(UTC)
+        model = MovieModel(
+            external_id=str(movie_id),
+            title="Test Movie",
+            year=2024,
+            duration=7200,
+            cast='["Leonardo DiCaprio", "Joseph Gordon-Levitt"]',
+            created_at=now,
+            updated_at=now,
+        )
+
+        entity = MovieMapper.to_entity(model, include_files=False)
+
+        assert len(entity.cast) == 2
+        assert entity.cast[0].name == "Leonardo DiCaprio"
+        assert entity.cast[0].profile_path is None
+        assert entity.cast[0].role is None
+        assert entity.cast[1].name == "Joseph Gordon-Levitt"
+
+    def test_to_entity_reads_new_cast_dict_shape(self) -> None:
+        """New rows store ``cast`` as ``[{"name", "profile_path", "role"}]``.
+
+        Pin both shapes so a future refactor that drops one of the
+        branches in ``_deserialize_cast`` flips a test red.
+        """
+        movie_id = MovieId.generate()
+        now = datetime.now(UTC)
+        model = MovieModel(
+            external_id=str(movie_id),
+            title="Test Movie",
+            year=2024,
+            duration=7200,
+            cast=(
+                '[{"name": "Leonardo DiCaprio", "profile_path": '
+                '"https://image.tmdb.org/t/p/original/leo.jpg", "role": "Cobb"}]'
+            ),
+            created_at=now,
+            updated_at=now,
+        )
+
+        entity = MovieMapper.to_entity(model, include_files=False)
+
+        assert len(entity.cast) == 1
+        member = entity.cast[0]
+        assert member.name == "Leonardo DiCaprio"
+        assert member.profile_path == "https://image.tmdb.org/t/p/original/leo.jpg"
+        assert member.role == "Cobb"

@@ -36,6 +36,26 @@ class DeleteMovieInput:
 
 
 @dataclass(frozen=True)
+class CastMemberOutput:
+    """Cast entry exposed on the API.
+
+    Mirrors the domain ``CastMember`` shape so the detail UI can
+    render an avatar (``profile_path``) + name + role per actor.
+
+    Attributes:
+        name: Actor's display name.
+        profile_path: Full URL to the TMDB profile photo, or ``None``
+            when TMDB has no photo for this person — the UI falls
+            back to an initials avatar.
+        role: Character name played, or ``None`` when not provided.
+    """
+
+    name: str
+    profile_path: str | None
+    role: str | None
+
+
+@dataclass(frozen=True)
 class MovieOutput:
     """Output representation of a Movie.
 
@@ -80,7 +100,7 @@ class MovieOutput:
     logo_path: str | None
     scrub_preview_path: str | None
     genres: list[str]
-    cast: list[str]
+    cast: list[CastMemberOutput]
     directors: list[str]
     writers: list[str]
     content_rating: str | None
