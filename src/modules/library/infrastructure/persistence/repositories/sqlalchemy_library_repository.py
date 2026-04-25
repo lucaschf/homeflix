@@ -58,9 +58,11 @@ class SqlAlchemyLibraryRepository(LibraryRepository):
             await self._session.flush()
 
         # Transaction commit is the Unit of Work's responsibility.
-        assert library.id is not None
+        if library.id is None:
+            raise RuntimeError("Library id was not assigned before save")
         saved = await self.find_by_id(library.id)
-        assert saved is not None
+        if saved is None:
+            raise RuntimeError(f"Library {library.id} disappeared between flush and reload")
         return saved
 
     async def find_by_id(self, library_id: LibraryId) -> Library | None:

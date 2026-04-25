@@ -361,7 +361,8 @@ class ScanMediaDirectoriesUseCase:
         """Process a group of files for a single episode."""
         season = series.get_season(season_num)
         if not season:
-            assert series.id is not None
+            if series.id is None:
+                raise RuntimeError("Series id must be assigned before creating seasons")
             season = Season(series_id=series.id, season_number=SeasonNumber(season_num))
             series = series.with_season(season)
 
@@ -387,7 +388,8 @@ class ScanMediaDirectoriesUseCase:
     ) -> Episode:
         """Create a new Episode from scanned files."""
         first = ep_files[0]
-        assert series.id is not None
+        if series.id is None:
+            raise RuntimeError("Series id must be assigned before creating episodes")
         ep_title = first.episode_title or f"Episode {episode_num}"
         episode = Episode(
             series_id=series.id,

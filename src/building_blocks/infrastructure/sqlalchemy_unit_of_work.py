@@ -49,25 +49,38 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        assert self._session is not None
+        session = self._require_session()
         try:
             if exc_type is None:
-                await self._session.commit()
+                await session.commit()
             else:
-                await self._session.rollback()
+                await session.rollback()
         finally:
-            await self._session.close()
+            await session.close()
             self._session = None
 
     async def commit(self) -> None:
         """Commit the active transaction."""
-        assert self._session is not None, "UnitOfWork not started; use `async with`."
-        await self._session.commit()
+        await self._require_session().commit()
 
     async def rollback(self) -> None:
         """Roll back the active transaction."""
-        assert self._session is not None, "UnitOfWork not started; use `async with`."
-        await self._session.rollback()
+        await self._require_session().rollback()
+
+    def _require_session(self) -> AsyncSession:
+        """Return the active session or raise ``RuntimeError`` if not started.
+
+        Replaces the previous ``assert`` guards: ``assert`` would be
+        stripped under ``python -O``, leaving an ``AttributeError`` on
+        the next call instead of a clear "you forgot ``async with``"
+        message. ``RuntimeError`` is unconditional and explicit.
+        """
+        if self._session is None:
+            raise RuntimeError(
+                f"{type(self).__name__} not started; use `async with` before "
+                "calling commit/rollback or accessing repositories."
+            )
+        return self._session
 
     def _build_repositories(self, session: AsyncSession) -> None:
         """Attach bounded-context repositories to ``self`` for this transaction.

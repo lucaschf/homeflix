@@ -117,7 +117,10 @@ async def hls_file(
             media_type=output.media_type,
             headers={"Cache-Control": "no-cache"},
         )
-    assert output.path is not None
+    if output.path is None:
+        raise RuntimeError(
+            f"ServeHlsFile returned non-playlist output without a path (kind={output.kind!r})"
+        )
     return FileResponse(str(output.path), media_type=output.media_type)
 
 

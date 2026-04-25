@@ -221,7 +221,8 @@ class ThumbnailBackfillJob:
             await uow.movies.save(movie.with_updates(scrub_preview_path=path_value))
 
     async def _persist_episode(self, episode: Episode, result: ThumbnailResult) -> None:
-        assert episode.id is not None
+        if episode.id is None:
+            raise RuntimeError("Episode loaded from repository has no id")
         async with self._media_uow_factory() as uow:
             await uow.series.update_episode_scrub_preview_path(
                 episode.id,
