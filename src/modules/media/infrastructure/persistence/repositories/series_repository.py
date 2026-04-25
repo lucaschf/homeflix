@@ -657,13 +657,17 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         rowid_to_rank = {row[0]: row[1] for row in fts_rows}
 
-        stmt = (
-            select(SeriesModel)
-            .where(
-                SeriesModel.id.in_(rowid_to_rank.keys()),
-                SeriesModel.deleted_at.is_(None),
-            )
-            .options(selectinload(SeriesModel.seasons).selectinload(SeasonModel.episodes))
+        # Load only the root ``SeriesModel`` rows. ``SearchCatalogUseCase``
+        # builds ``SearchItemOutput`` from root columns + ``localized`` JSON
+        # only — it never touches ``series.seasons``. Skipping the
+        # season → episode → file_variants chain avoids fanning out into
+        # potentially thousands of rows per search (e.g. a 10-season,
+        # 22-episode series with multi-resolution variants) just to be
+        # discarded by the use case. Also keeps ``EpisodeMapper`` from
+        # lazy-loading ``file_variants`` outside the session greenlet.
+        stmt = select(SeriesModel).where(
+            SeriesModel.id.in_(rowid_to_rank.keys()),
+            SeriesModel.deleted_at.is_(None),
         )
         if genre:
             delimited = "," + SeriesModel.genres + ","
@@ -677,7 +681,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         models = result.scalars().unique().all()
 
         hits = [
-            (SeriesMapper.to_entity(m), rowid_to_rank[m.id])
+            (SeriesMapper.to_entity(m, include_seasons=False), rowid_to_rank[m.id])
             for m in models
             if m.id in rowid_to_rank
         ]
