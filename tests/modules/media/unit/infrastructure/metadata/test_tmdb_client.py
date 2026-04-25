@@ -643,14 +643,28 @@ class TestGetSeriesLocalized:
 
 @pytest.mark.unit
 class TestGetMovieRecommendations:
-    """``get_movie_recommendations`` — TMDB-backed, with ``/similar`` fallback."""
+    """``get_movie_recommendations`` — collection + ML / heuristic merge.
+
+    Call sequence in production is:
+
+    1. ``/movie/{id}`` to read ``belongs_to_collection`` (always).
+    2. ``/collection/{id}`` for the franchise siblings (only when
+       ``belongs_to_collection`` is set).
+    3. ``/movie/{id}/recommendations`` for ML-based recs.
+    4. ``/movie/{id}/similar`` only when recommendations is empty.
+
+    Tests provide a mock per call in that order.
+    """
 
     @pytest.mark.asyncio
     async def test_returns_recommended_ids_in_order(self) -> None:
         client = _make_client(
-            get_responses=_build_response(
-                json_data={"results": [{"id": 27205}, {"id": 1422}, {"id": 524434}]},
-            ),
+            get_responses=[
+                _build_response(json_data={}),  # /movie/{id} — no collection
+                _build_response(  # /recommendations
+                    json_data={"results": [{"id": 27205}, {"id": 1422}, {"id": 524434}]},
+                ),
+            ],
         )
 
         ids = await client.get_movie_recommendations(155)
@@ -659,13 +673,15 @@ class TestGetMovieRecommendations:
 
     @pytest.mark.asyncio
     async def test_falls_back_to_similar_when_recommendations_empty(self) -> None:
-        # Recommendations is sparse for less popular movies; ``/similar``
-        # is heuristic and almost always populated. The fallback keeps
-        # the carousel from going blank when ML signal is missing.
+        # ``/recommendations`` is sparse for less popular movies;
+        # ``/similar`` is heuristic and almost always populated.
         client = _make_client(
             get_responses=[
+                _build_response(json_data={}),  # /movie/{id} — no collection
                 _build_response(json_data={"results": []}),  # /recommendations
-                _build_response(json_data={"results": [{"id": 99}, {"id": 100}]}),  # /similar
+                _build_response(  # /similar
+                    json_data={"results": [{"id": 99}, {"id": 100}]},
+                ),
             ],
         )
 
@@ -674,9 +690,10 @@ class TestGetMovieRecommendations:
         assert ids == [99, 100]
 
     @pytest.mark.asyncio
-    async def test_returns_empty_when_both_endpoints_empty(self) -> None:
+    async def test_returns_empty_when_all_sources_empty(self) -> None:
         client = _make_client(
             get_responses=[
+                _build_response(json_data={}),  # /movie/{id}
                 _build_response(json_data={"results": []}),  # /recommendations
                 _build_response(json_data={"results": []}),  # /similar
             ],
@@ -690,8 +707,9 @@ class TestGetMovieRecommendations:
     async def test_returns_empty_on_http_error(self) -> None:
         client = _make_client(
             get_responses=[
-                _build_response(status_code=500),  # /recommendations errors
-                _build_response(status_code=500),  # /similar also errors
+                _build_response(status_code=500),  # /movie/{id}
+                _build_response(status_code=500),  # /recommendations
+                _build_response(status_code=500),  # /similar
             ],
         )
 
@@ -703,21 +721,101 @@ class TestGetMovieRecommendations:
     async def test_skips_non_int_ids_in_payload(self) -> None:
         # Defensive: a malformed TMDB row shouldn't crash the parser.
         client = _make_client(
-            get_responses=_build_response(
-                json_data={
-                    "results": [
-                        {"id": 1},
-                        {"id": "not-an-int"},
-                        {"name": "no id here"},
-                        {"id": 2},
-                    ]
-                },
-            ),
+            get_responses=[
+                _build_response(json_data={}),  # /movie/{id}
+                _build_response(  # /recommendations
+                    json_data={
+                        "results": [
+                            {"id": 1},
+                            {"id": "not-an-int"},
+                            {"name": "no id here"},
+                            {"id": 2},
+                        ]
+                    },
+                ),
+            ],
         )
 
         ids = await client.get_movie_recommendations(155)
 
         assert ids == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_includes_collection_siblings_first(self) -> None:
+        # Creepshow-style: TMDB's ML rarely surfaces sequels for
+        # older titles, but the franchise's collection always lists
+        # them. Collection ids come first in the merged result and
+        # the input movie itself is skipped.
+        client = _make_client(
+            get_responses=[
+                _build_response(  # /movie/12552
+                    json_data={
+                        "belongs_to_collection": {
+                            "id": 91349,
+                            "name": "Creepshow Collection",
+                        },
+                    },
+                ),
+                _build_response(  # /collection/91349
+                    json_data={
+                        "parts": [
+                            {"id": 12552},  # input movie itself, skipped
+                            {"id": 12551},  # Creepshow 2
+                            {"id": 50122},  # Creepshow 3
+                        ],
+                    },
+                ),
+                _build_response(  # /recommendations
+                    json_data={"results": [{"id": 999}]},
+                ),
+            ],
+        )
+
+        ids = await client.get_movie_recommendations(12552)
+
+        assert ids == [12551, 50122, 999]
+
+    @pytest.mark.asyncio
+    async def test_dedupes_overlap_between_collection_and_recommendations(self) -> None:
+        # Same id appearing in both sources renders once at the
+        # collection's position (highest relevance).
+        client = _make_client(
+            get_responses=[
+                _build_response(  # /movie/{id}
+                    json_data={"belongs_to_collection": {"id": 1}},
+                ),
+                _build_response(  # /collection/1
+                    json_data={"parts": [{"id": 100}, {"id": 200}]},
+                ),
+                _build_response(  # /recommendations
+                    json_data={"results": [{"id": 200}, {"id": 300}]},
+                ),
+            ],
+        )
+
+        ids = await client.get_movie_recommendations(50)
+
+        assert ids == [100, 200, 300]
+
+    @pytest.mark.asyncio
+    async def test_collection_lookup_failure_falls_through_to_recommendations(self) -> None:
+        # The collection endpoint flaking shouldn't sink the rest
+        # of the lookup — recommendations still come back.
+        client = _make_client(
+            get_responses=[
+                _build_response(  # /movie/{id}
+                    json_data={"belongs_to_collection": {"id": 1}},
+                ),
+                _build_response(status_code=500),  # /collection/1 fails
+                _build_response(  # /recommendations still works
+                    json_data={"results": [{"id": 999}]},
+                ),
+            ],
+        )
+
+        ids = await client.get_movie_recommendations(50)
+
+        assert ids == [999]
 
 
 @pytest.mark.unit
