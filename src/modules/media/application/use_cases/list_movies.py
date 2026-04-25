@@ -6,6 +6,7 @@ from src.modules.media.application.dtos.movie_dtos import (
     MovieSummaryOutput,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.use_cases._movie_summary_helpers import to_movie_summary
 from src.modules.media.domain.entities import Movie
 
 
@@ -62,29 +63,8 @@ class ListMoviesUseCase:
 
     @staticmethod
     def _to_summary(movie: Movie, lang: str = "en") -> MovieSummaryOutput:
-        """Convert Movie entity to summary output.
-
-        Args:
-            movie: The Movie entity to convert.
-            lang: Language code for localized fields.
-
-        Returns:
-            MovieSummaryOutput with essential fields.
-        """
-        best = movie.best_file
-        return MovieSummaryOutput(
-            id=str(movie.id),
-            title=movie.get_title(lang),
-            year=movie.year.value,
-            duration_formatted=movie.duration.format_hms(),
-            synopsis=movie.get_synopsis(lang),
-            poster_path=movie.poster_path.value if movie.poster_path else None,
-            backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
-            resolution=best.resolution.value if best else None,
-            variant_count=len(movie.files),
-            available_resolutions=[r.value for r in movie.available_resolutions],
-            genres=movie.get_genres(lang),
-        )
+        """Convert Movie entity to summary output."""
+        return to_movie_summary(movie, lang)
 
 
 __all__ = ["ListMoviesUseCase"]

@@ -182,6 +182,22 @@ class MetadataProvider(ABC):
         """
         ...
 
+    @abstractmethod
+    async def get_movie_recommendations(self, tmdb_id: int) -> list[int]:
+        """Return TMDB ids of movies recommended for ``tmdb_id``.
+
+        Order matters: the first item is the most relevant recommendation
+        according to the provider; callers preserve this order so the UI
+        renders by descending relevance. Returns an empty list when the
+        provider has no recommendations or the call fails — recommendation
+        rendering is best-effort polish, never load-bearing.
+
+        The returned ids are the *external provider* ids (TMDB person /
+        movie ids); callers cross-reference them with their own catalog
+        to filter to titles that actually exist locally.
+        """
+        ...
+
 
 __all__ = [
     "CreditPerson",

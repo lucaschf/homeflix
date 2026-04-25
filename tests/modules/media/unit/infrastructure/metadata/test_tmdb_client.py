@@ -642,6 +642,85 @@ class TestGetSeriesLocalized:
 
 
 @pytest.mark.unit
+class TestGetMovieRecommendations:
+    """``get_movie_recommendations`` — TMDB-backed, with ``/similar`` fallback."""
+
+    @pytest.mark.asyncio
+    async def test_returns_recommended_ids_in_order(self) -> None:
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={"results": [{"id": 27205}, {"id": 1422}, {"id": 524434}]},
+            ),
+        )
+
+        ids = await client.get_movie_recommendations(155)
+
+        assert ids == [27205, 1422, 524434]
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_similar_when_recommendations_empty(self) -> None:
+        # Recommendations is sparse for less popular movies; ``/similar``
+        # is heuristic and almost always populated. The fallback keeps
+        # the carousel from going blank when ML signal is missing.
+        client = _make_client(
+            get_responses=[
+                _build_response(json_data={"results": []}),  # /recommendations
+                _build_response(json_data={"results": [{"id": 99}, {"id": 100}]}),  # /similar
+            ],
+        )
+
+        ids = await client.get_movie_recommendations(42)
+
+        assert ids == [99, 100]
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_both_endpoints_empty(self) -> None:
+        client = _make_client(
+            get_responses=[
+                _build_response(json_data={"results": []}),  # /recommendations
+                _build_response(json_data={"results": []}),  # /similar
+            ],
+        )
+
+        ids = await client.get_movie_recommendations(42)
+
+        assert ids == []
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_on_http_error(self) -> None:
+        client = _make_client(
+            get_responses=[
+                _build_response(status_code=500),  # /recommendations errors
+                _build_response(status_code=500),  # /similar also errors
+            ],
+        )
+
+        ids = await client.get_movie_recommendations(42)
+
+        assert ids == []
+
+    @pytest.mark.asyncio
+    async def test_skips_non_int_ids_in_payload(self) -> None:
+        # Defensive: a malformed TMDB row shouldn't crash the parser.
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "results": [
+                        {"id": 1},
+                        {"id": "not-an-int"},
+                        {"name": "no id here"},
+                        {"id": 2},
+                    ]
+                },
+            ),
+        )
+
+        ids = await client.get_movie_recommendations(155)
+
+        assert ids == [1, 2]
+
+
+@pytest.mark.unit
 class TestPickBestLogoUrl:
     """Priority order for the ``_pick_best_logo_url`` parser.
 

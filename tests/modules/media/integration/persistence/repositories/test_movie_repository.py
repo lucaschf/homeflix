@@ -353,6 +353,66 @@ class TestSQLAlchemyMovieRepositoryFindByIds:
 
 
 @pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryFindByTmdbIds:
+    """Tests for ``find_by_tmdb_ids`` — used by ``GetRelatedMovies``."""
+
+    async def test_returns_empty_dict_for_empty_input(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        assert await repo.find_by_tmdb_ids([]) == {}
+
+    async def test_returns_mapping_by_tmdb_id(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        a = _create_movie(title="A", file_path="/movies/a.mkv", tmdb_id=TmdbId(100))
+        b = _create_movie(title="B", file_path="/movies/b.mkv", tmdb_id=TmdbId(200))
+        await repo.save(a)
+        await repo.save(b)
+
+        result = await repo.find_by_tmdb_ids([100, 200])
+
+        assert set(result.keys()) == {100, 200}
+        assert result[100].title.value == "A"
+        assert result[200].title.value == "B"
+
+    async def test_skips_ids_not_in_catalog(self, db_session: AsyncSession) -> None:
+        # Mirrors how the real flow works: TMDB recommendations include
+        # titles the user doesn't have; the use case relies on missing
+        # ids simply not appearing in the result.
+        repo = SQLAlchemyMovieRepository(db_session)
+        present = _create_movie(
+            title="Present",
+            file_path="/movies/p.mkv",
+            tmdb_id=TmdbId(42),
+        )
+        await repo.save(present)
+
+        result = await repo.find_by_tmdb_ids([42, 9999])
+
+        assert set(result.keys()) == {42}
+
+    async def test_excludes_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _create_movie(
+            title="Trashed",
+            file_path="/movies/trashed.mkv",
+            tmdb_id=TmdbId(7),
+        )
+        await repo.save(movie)
+        await repo.delete(_id_of(movie))
+
+        assert await repo.find_by_tmdb_ids([7]) == {}
+
+    async def test_skips_movies_with_null_tmdb_id(self, db_session: AsyncSession) -> None:
+        # Defensive: the SQL filter is ``tmdb_id IN (...)`` but movies
+        # without a ``tmdb_id`` shouldn't appear under any key, even
+        # if a ``None`` somehow leaks through.
+        repo = SQLAlchemyMovieRepository(db_session)
+        no_tmdb = _create_movie(title="Manual", file_path="/movies/manual.mkv")
+        await repo.save(no_tmdb)
+
+        assert await repo.find_by_tmdb_ids([1, 2, 3]) == {}
+
+
+@pytest.mark.integration
 class TestSQLAlchemyMovieRepositorySaveRestore:
     """Tests for save restoring soft-deleted records."""
 

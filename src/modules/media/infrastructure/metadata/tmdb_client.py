@@ -167,6 +167,55 @@ class TmdbClient(MetadataProvider):
         """Fetch series details by TMDB ID."""
         return await self._fetch_series_details(tmdb_id)
 
+    async def get_movie_recommendations(self, tmdb_id: int) -> list[int]:
+        """Return TMDB ids of movies recommended for ``tmdb_id``.
+
+        TMDB exposes two related-content endpoints for movies:
+
+        - ``/movie/{id}/recommendations`` — ML-based, often empty for
+          obscure titles.
+        - ``/movie/{id}/similar`` — heuristic (genre / keyword
+          overlap), almost always populated.
+
+        We try ``recommendations`` first; if it returns nothing
+        useful, fall back to ``similar`` so the "you might also like"
+        section never goes blank just because TMDB hasn't built up
+        signal for that title yet.
+
+        Network failures and unexpected payload shapes degrade to an
+        empty list — recommendation rendering is best-effort polish,
+        never load-bearing.
+        """
+        ids = await self._fetch_related_movie_ids(tmdb_id, "recommendations")
+        if not ids:
+            ids = await self._fetch_related_movie_ids(tmdb_id, "similar")
+        return ids
+
+    async def _fetch_related_movie_ids(self, tmdb_id: int, endpoint: str) -> list[int]:
+        """Hit a single ``/movie/{id}/<endpoint>`` and extract numeric ids.
+
+        ``endpoint`` is ``"recommendations"`` or ``"similar"``; both
+        paginate but page 1 already carries enough candidates for the
+        UI's ~10-item carousel and a second request would just burn
+        latency on results we'd discard.
+        """
+        try:
+            resp = await self._client.get(
+                f"{self._base_url}/movie/{tmdb_id}/{endpoint}",
+                params=self._params(),
+            )
+        except httpx.HTTPError:
+            return []
+        if resp.status_code != 200:
+            return []
+        results = resp.json().get("results") or []
+        ids: list[int] = []
+        for item in results:
+            raw = item.get("id") if isinstance(item, dict) else None
+            if isinstance(raw, int):
+                ids.append(raw)
+        return ids
+
     async def get_series_localized(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch series details in English with pt-BR localization.
 

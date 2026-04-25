@@ -23,6 +23,10 @@ from src.modules.media.application.use_cases.add_file_variant import AddFileVari
 from src.modules.media.application.use_cases.delete_movie import DeleteMovieUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
+from src.modules.media.application.use_cases.get_related_movies import (
+    GetRelatedMoviesInput,
+    GetRelatedMoviesUseCase,
+)
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
@@ -95,6 +99,29 @@ async def get_movie(
     """Get a movie by ID."""
     result = await use_case.execute(GetMovieByIdInput(movie_id=movie_id, lang=lang))
     return api_single("movie", _dataclass_to_dict(result))
+
+
+@router.get("/{movie_id}/related")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def get_related_movies(
+    movie_id: str,
+    lang: str = "en",
+    limit: int = 12,
+    use_case: GetRelatedMoviesUseCase = Depends(
+        Provide[ApplicationContainer.media.get_related_movies],
+    ),
+) -> dict[str, Any]:
+    """Return movies in the local catalog that TMDB recommends for ``movie_id``.
+
+    Best-effort polish for the "you might also like" carousel: the
+    response is an empty list whenever the movie has no TMDB id, the
+    provider returns nothing, or no recommendation overlaps with the
+    local catalog. The route never raises.
+    """
+    items = await use_case.execute(
+        GetRelatedMoviesInput(movie_id=movie_id, lang=lang, limit=max(1, min(limit, 30))),
+    )
+    return api_list([_dataclass_to_dict(item) for item in items])
 
 
 @router.delete("/{movie_id}", status_code=204)  # type: ignore[misc]

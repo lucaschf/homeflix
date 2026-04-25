@@ -232,6 +232,27 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_by_tmdb_ids(self, tmdb_ids: Sequence[int]) -> dict[int, Movie]:
+        """Find movies whose ``tmdb_id`` is in ``tmdb_ids``.
+
+        Used by the "you might also like" path: ``GetRelatedMovies``
+        asks TMDB for related ids, then this method maps the subset
+        present in the local catalog. Returning a dict keyed by
+        ``tmdb_id`` lets the caller preserve the original TMDB
+        ordering (which is by relevance) without paying for an extra
+        traversal — the caller iterates ``tmdb_ids`` and looks each
+        up in the dict.
+
+        Soft-deleted rows are excluded.
+
+        Returns:
+            Dict mapping ``tmdb_id`` int to ``Movie`` entity. Keys
+            present in ``tmdb_ids`` but absent in the catalog simply
+            don't appear in the result — no ``KeyError`` semantics.
+        """
+        ...
+
+    @abstractmethod
     async def find_by_file_path(self, file_path: FilePath) -> Movie | None:
         """Find a movie by its file path.
 

@@ -25,6 +25,7 @@ from src.modules.media.application.use_cases.get_featured_media import GetFeatur
 from src.modules.media.application.use_cases.get_file_tracks import GetFileTracksUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
+from src.modules.media.application.use_cases.get_related_movies import GetRelatedMoviesUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
@@ -259,6 +260,12 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         EnrichMovieMetadataUseCase,
         uow_factory=media_unit_of_work_factory,
         primary_provider=tmdb_client,
+    )
+
+    get_related_movies = providers.Factory(
+        GetRelatedMoviesUseCase,
+        uow_factory=media_unit_of_work_factory,
+        metadata_provider=tmdb_client,
     )
 
     enrich_series_metadata = providers.Factory(
