@@ -46,6 +46,9 @@ from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import
 )
 from src.modules.media.infrastructure.streaming import HlsService, MediaProbeService
 from src.modules.media.infrastructure.streaming.file_streamer import LocalFileStreamer
+from src.modules.media.infrastructure.streaming.thumbnail_service import (
+    ThumbnailGenerationService,
+)
 
 
 class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
@@ -75,6 +78,10 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # Must be wired from parent container (Settings.hls_cache_directory / hls_cache_max_size_mb)
     hls_cache_directory = providers.Dependency(default="./hls_cache")
     hls_cache_max_size_mb = providers.Dependency(default=5120)
+
+    # Optional global cap on ffmpeg worker threads. ``None`` keeps the
+    # auto-default (all cores). Wired from ``Settings.ffmpeg_threads``.
+    ffmpeg_threads = providers.Dependency(default=None)
 
     # =========================================================================
     # Unit of Work
@@ -179,6 +186,16 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         probe_service=media_probe_service,
         enable_eviction=True,
         max_cache_size_mb=hls_cache_max_size_mb,
+        ffmpeg_threads=ffmpeg_threads,
+    )
+
+    # Singleton because ``ThumbnailGenerationService`` is stateless apart
+    # from the configured thread cap; sharing one instance across the
+    # eager fire-and-forget path (``stream_routes``) and the periodic
+    # ``ThumbnailBackfillJob`` keeps configuration in one place.
+    thumbnail_generation_service = providers.Singleton(
+        ThumbnailGenerationService,
+        ffmpeg_threads=ffmpeg_threads,
     )
 
     file_streamer = providers.Factory(LocalFileStreamer)

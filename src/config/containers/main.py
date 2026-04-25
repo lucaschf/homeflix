@@ -83,6 +83,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         tmdb_api_key=config.provided.tmdb_api_key,
         hls_cache_directory=config.provided.hls_cache_directory,
         hls_cache_max_size_mb=config.provided.hls_cache_max_size_mb,
+        ffmpeg_threads=config.provided.ffmpeg_threads,
     )
 
     library = providers.Container(
@@ -128,6 +129,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     thumbnail_backfill_job = providers.Singleton(
         ThumbnailBackfillJob,
         media_uow_factory=media.media_unit_of_work_factory,
+        thumbnail_service=media.thumbnail_generation_service,
         batch_size=config.provided.thumbnail_backfill_batch_size,
         sprite_subdir=config.provided.thumbnail_backfill_subdir,
     )

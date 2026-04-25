@@ -153,6 +153,19 @@ class Settings(BaseSettings):  # type: ignore[misc]
         "folder) where backfilled sprite + VTT files are written.",
     )
 
+    ffmpeg_threads: int | None = Field(
+        default=None,
+        ge=1,
+        description="Maximum worker threads ffmpeg may use per invocation "
+        "(applied as ``-threads N`` on every ffmpeg call). ``None`` (the "
+        "default) leaves ffmpeg in 'auto' mode, which uses every logical "
+        "core. Set this to roughly ``cpu_count // 2`` to cap transcoding "
+        "to ~50%% of the host. Caps parallelism, not absolute CPU — there "
+        "is no portable hard cap; use cgroups or equivalent if you need "
+        "one. Applies to HLS transcoding, subtitle extraction, and "
+        "scrub-preview sprite generation.",
+    )
+
     # =========================================================================
     # Internationalization
     # =========================================================================
