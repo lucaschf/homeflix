@@ -231,17 +231,21 @@ async def episode_tracks(
 def _scrub_preview_files(scrub_preview_path: str | None) -> tuple[Path, Path]:
     """Return (vtt_path, sprite_path) for a stored scrub-preview path, or 404.
 
-    A ``None`` value means the backfill job has not produced a sprite
-    for this media yet; the player gracefully degrades to no preview.
-    A missing file on disk means the backfill ran successfully at some
-    point but the sprite was deleted out of band — also a 404.
+    Validates both files in one place so the VTT route fails fast when
+    the sprite is missing instead of returning cues whose ``sprite.jpg``
+    references would 404 individually. ``None`` means the backfill job
+    has not produced this preview yet; a missing file on disk means it
+    ran at some point but was deleted out of band — both collapse to a
+    404 the player handles by simply not showing previews.
     """
     if not scrub_preview_path:
         raise HTTPException(status_code=404, detail="Scrub preview not generated yet")
     vtt_path = Path(scrub_preview_path)
     sprite_path = vtt_path.with_name("sprite.jpg")
     if not vtt_path.is_file():
-        raise HTTPException(status_code=404, detail="Scrub preview missing on disk")
+        raise HTTPException(status_code=404, detail="Scrub preview VTT missing on disk")
+    if not sprite_path.is_file():
+        raise HTTPException(status_code=404, detail="Scrub preview sprite missing on disk")
     return vtt_path, sprite_path
 
 
@@ -270,8 +274,6 @@ async def movie_scrub_preview_sprite(
     """Serve the persisted scrub-preview sprite JPEG for a movie."""
     movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
     _, sprite_path = _scrub_preview_files(movie.scrub_preview_path)
-    if not sprite_path.is_file():
-        raise HTTPException(status_code=404, detail="Scrub preview sprite missing on disk")
     return FileResponse(str(sprite_path), media_type="image/jpeg")
 
 
@@ -308,8 +310,6 @@ async def episode_scrub_preview_sprite(
     if episode is None:
         raise HTTPException(status_code=404, detail="Episode not found")
     _, sprite_path = _scrub_preview_files(episode.scrub_preview_path)
-    if not sprite_path.is_file():
-        raise HTTPException(status_code=404, detail="Scrub preview sprite missing on disk")
     return FileResponse(str(sprite_path), media_type="image/jpeg")
 
 

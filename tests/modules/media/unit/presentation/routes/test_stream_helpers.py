@@ -41,14 +41,28 @@ class TestScrubPreviewFiles:
         with pytest.raises(HTTPException) as exc:
             _scrub_preview_files(str(ghost_path))
         assert exc.value.status_code == 404
-        assert "missing on disk" in exc.value.detail
+        assert "VTT missing" in exc.value.detail
 
-    def test_returns_paired_paths_when_vtt_exists(self, tmp_path: Path) -> None:
+    def test_raises_404_when_sprite_missing_on_disk(self, tmp_path: Path) -> None:
+        # Inconsistent state: VTT survived but the sprite was deleted
+        # out of band. The cues would point at a dead URL, so fail
+        # fast on the VTT request rather than serve broken previews.
         vtt_path = tmp_path / "sprite.vtt"
         vtt_path.write_text("WEBVTT\n", encoding="utf-8")
+
+        with pytest.raises(HTTPException) as exc:
+            _scrub_preview_files(str(vtt_path))
+        assert exc.value.status_code == 404
+        assert "sprite missing" in exc.value.detail
+
+    def test_returns_paired_paths_when_both_exist(self, tmp_path: Path) -> None:
+        vtt_path = tmp_path / "sprite.vtt"
+        sprite_path = tmp_path / "sprite.jpg"
+        vtt_path.write_text("WEBVTT\n", encoding="utf-8")
+        sprite_path.write_bytes(b"\xff\xd8\xff")  # JPEG magic, content irrelevant
 
         returned_vtt, returned_sprite = _scrub_preview_files(str(vtt_path))
 
         assert returned_vtt == vtt_path
         # Sprite is derived from the VTT — same directory, ``sprite.jpg`` filename.
-        assert returned_sprite == vtt_path.with_name("sprite.jpg")
+        assert returned_sprite == sprite_path
