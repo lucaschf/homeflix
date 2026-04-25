@@ -42,7 +42,10 @@ from typing import Any
 
 from src.modules.media.application.ports.hls_playlist_port import HlsPlaylistPort
 from src.modules.media.application.ports.media_probe_port import ProbeResult
-from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
+from src.modules.media.infrastructure.streaming._subprocess import (
+    SUBPROCESS_TEXT_KWARGS,
+    with_ffmpeg_threads,
+)
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
 from src.shared_kernel.value_objects.tracks import SubtitleTrack
 
@@ -87,6 +90,10 @@ class HlsService(HlsPlaylistPort):
         enable_eviction: Whether to start the background eviction daemon.
             Defaults to False so unit tests don't leak threads — production
             code should pass True via the DI container.
+        ffmpeg_threads: Maximum worker threads each ffmpeg invocation may
+            use. ``None`` keeps ffmpeg's default (all cores). Applied via
+            ``-threads N`` on every transcoding and subtitle-extraction
+            command.
     """
 
     def __init__(
@@ -96,11 +103,13 @@ class HlsService(HlsPlaylistPort):
         idle_timeout: float = _DEFAULT_IDLE_TIMEOUT,
         enable_eviction: bool = False,
         max_cache_size_mb: int = 5120,
+        ffmpeg_threads: int | None = None,
     ) -> None:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._probe = probe_service or MediaProbeService()
         self._max_cache_bytes = max_cache_size_mb * 1024 * 1024
+        self._ffmpeg_threads = ffmpeg_threads
         self._processes: dict[str, list[subprocess.Popen[bytes]]] = {}
         # path_hash → monotonic timestamp of the most recent activity
         # (playlist request OR segment fetch). The eviction loop reads
@@ -506,7 +515,10 @@ class HlsService(HlsPlaylistPort):
             # 1. Main: video + default audio (always first in list)
             video_dir = output_dir / _VIDEO_DIR
             video_dir.mkdir()
-            cmd = self._build_video_cmd(safe_path, video_dir, probe_result)
+            cmd = with_ffmpeg_threads(
+                self._build_video_cmd(safe_path, video_dir, probe_result),
+                self._ffmpeg_threads,
+            )
             _logger.info("Starting video HLS for %s", safe_path)
             procs.append(self._spawn_ffmpeg(cmd))
 
@@ -517,7 +529,10 @@ class HlsService(HlsPlaylistPort):
                     continue
                 audio_dir = output_dir / f"audio_{track.index}"
                 audio_dir.mkdir()
-                cmd = self._build_audio_cmd(safe_path, audio_dir, track.index)
+                cmd = with_ffmpeg_threads(
+                    self._build_audio_cmd(safe_path, audio_dir, track.index),
+                    self._ffmpeg_threads,
+                )
                 _logger.info(
                     "Starting audio HLS for track %d (%s) of %s",
                     track.index,
@@ -730,17 +745,20 @@ class HlsService(HlsPlaylistPort):
                 log_label = f"external subtitle {input_arg}"
                 try:
                     subprocess.run(
-                        [
-                            "ffmpeg",
-                            "-i",
-                            input_arg,
-                            "-c:s",
-                            "webvtt",
-                            "-loglevel",
-                            "error",
-                            "-y",
-                            str(vtt_path),
-                        ],
+                        with_ffmpeg_threads(
+                            [
+                                "ffmpeg",
+                                "-i",
+                                input_arg,
+                                "-c:s",
+                                "webvtt",
+                                "-loglevel",
+                                "error",
+                                "-y",
+                                str(vtt_path),
+                            ],
+                            self._ffmpeg_threads,
+                        ),
                         **SUBPROCESS_TEXT_KWARGS,
                         check=False,
                         timeout=120,
@@ -752,19 +770,22 @@ class HlsService(HlsPlaylistPort):
                 log_label = f"subtitle track {track.index}"
                 try:
                     subprocess.run(
-                        [
-                            "ffmpeg",
-                            "-i",
-                            file_path,
-                            "-map",
-                            f"0:s:{track.index}",
-                            "-c:s",
-                            "webvtt",
-                            "-loglevel",
-                            "error",
-                            "-y",
-                            str(vtt_path),
-                        ],
+                        with_ffmpeg_threads(
+                            [
+                                "ffmpeg",
+                                "-i",
+                                file_path,
+                                "-map",
+                                f"0:s:{track.index}",
+                                "-c:s",
+                                "webvtt",
+                                "-loglevel",
+                                "error",
+                                "-y",
+                                str(vtt_path),
+                            ],
+                            self._ffmpeg_threads,
+                        ),
                         **SUBPROCESS_TEXT_KWARGS,
                         check=False,
                         timeout=120,

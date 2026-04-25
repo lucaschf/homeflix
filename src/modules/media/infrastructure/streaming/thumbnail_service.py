@@ -24,7 +24,10 @@ from src.modules.media.application.streaming.thumbnail_vtt import (
     build_vtt,
     compute_layout,
 )
-from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
+from src.modules.media.infrastructure.streaming._subprocess import (
+    SUBPROCESS_TEXT_KWARGS,
+    with_ffmpeg_threads,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -69,7 +72,15 @@ class ThumbnailGenerationService:
     the event loop must dispatch the call themselves — typically via a
     daemon thread (HLS background generation) or ``asyncio.to_thread``
     (the periodic backfill job).
+
+    Args:
+        ffmpeg_threads: Maximum worker threads ffmpeg may use during
+            sprite rendering. ``None`` keeps ffmpeg's default. Applied
+            via ``-threads N`` on the render command.
     """
+
+    def __init__(self, ffmpeg_threads: int | None = None) -> None:
+        self._ffmpeg_threads = ffmpeg_threads
 
     def generate(
         self,
@@ -116,7 +127,9 @@ class ThumbnailGenerationService:
         sprite_path = output_dir / SPRITE_FILENAME
         vtt_path = output_dir / VTT_FILENAME
 
-        if not self._render_sprite(file_path, sprite_path, layout, interval_seconds):
+        if not self._render_sprite(
+            file_path, sprite_path, layout, interval_seconds, self._ffmpeg_threads
+        ):
             return None
 
         try:
@@ -143,6 +156,7 @@ class ThumbnailGenerationService:
         sprite_path: Path,
         layout: SpriteLayout,
         interval_seconds: int,
+        max_threads: int | None,
     ) -> bool:
         """Run ffmpeg to render the sprite JPEG. Returns ``False`` on any failure."""
         filter_expr = (
@@ -153,23 +167,26 @@ class ThumbnailGenerationService:
         )
         try:
             result = subprocess.run(
-                [
-                    "ffmpeg",
-                    "-i",
-                    file_path,
-                    "-vf",
-                    filter_expr,
-                    "-frames:v",
-                    "1",
-                    "-q:v",
-                    str(_THUMBNAIL_JPEG_QUALITY),
-                    "-an",
-                    "-sn",
-                    "-loglevel",
-                    "error",
-                    "-y",
-                    str(sprite_path),
-                ],
+                with_ffmpeg_threads(
+                    [
+                        "ffmpeg",
+                        "-i",
+                        file_path,
+                        "-vf",
+                        filter_expr,
+                        "-frames:v",
+                        "1",
+                        "-q:v",
+                        str(_THUMBNAIL_JPEG_QUALITY),
+                        "-an",
+                        "-sn",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        str(sprite_path),
+                    ],
+                    max_threads,
+                ),
                 **SUBPROCESS_TEXT_KWARGS,
                 check=False,
                 timeout=_THUMBNAIL_TIMEOUT,

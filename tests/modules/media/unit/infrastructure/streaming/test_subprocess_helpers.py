@@ -6,7 +6,10 @@ from src.modules.media.application.streaming.playlist_rewriter import (
     media_type_for,
     rewrite_m3u8,
 )
-from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
+from src.modules.media.infrastructure.streaming._subprocess import (
+    SUBPROCESS_TEXT_KWARGS,
+    with_ffmpeg_threads,
+)
 
 
 @pytest.mark.unit
@@ -28,6 +31,37 @@ class TestSubprocessTextKwargs:
     def test_should_be_immutable(self) -> None:
         with pytest.raises(TypeError):
             SUBPROCESS_TEXT_KWARGS["capture_output"] = False  # type: ignore[index]
+
+
+@pytest.mark.unit
+class TestWithFfmpegThreads:
+    """Tests for the ``-threads N`` injection helper."""
+
+    def test_returns_input_unchanged_when_cap_is_none(self) -> None:
+        # Identity (not just equality) so callers can wrap unconditionally
+        # without paying for a list copy on the no-cap path.
+        cmd = ["ffmpeg", "-i", "in.mkv", "out.m3u8"]
+        assert with_ffmpeg_threads(cmd, None) is cmd
+
+    def test_inserts_threads_flag_after_ffmpeg(self) -> None:
+        result = with_ffmpeg_threads(["ffmpeg", "-i", "in.mkv", "out.m3u8"], 4)
+        assert result == ["ffmpeg", "-threads", "4", "-i", "in.mkv", "out.m3u8"]
+
+    def test_does_not_mutate_input_list(self) -> None:
+        cmd = ["ffmpeg", "-i", "in.mkv"]
+        with_ffmpeg_threads(cmd, 4)
+        assert cmd == ["ffmpeg", "-i", "in.mkv"]
+
+    def test_returns_input_unchanged_for_non_ffmpeg_command(self) -> None:
+        # Defensive: if a caller ever passes an ffprobe (or anything else)
+        # invocation through this helper, leave it alone instead of
+        # silently injecting a flag that program does not recognize.
+        cmd = ["ffprobe", "-show_entries", "format=duration", "in.mkv"]
+        assert with_ffmpeg_threads(cmd, 4) is cmd
+
+    def test_returns_input_unchanged_for_empty_list(self) -> None:
+        cmd: list[str] = []
+        assert with_ffmpeg_threads(cmd, 4) is cmd
 
 
 @pytest.mark.unit
