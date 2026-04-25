@@ -70,6 +70,9 @@ class EpisodeMapper:
             file_size=primary.file_size if primary else None,
             resolution=primary.resolution.value if primary else None,
             thumbnail_path=entity.thumbnail_path.value if entity.thumbnail_path else None,
+            scrub_preview_path=entity.scrub_preview_path.value
+            if entity.scrub_preview_path
+            else None,
             air_date=entity.air_date.value if entity.air_date else None,
         )
 
@@ -116,6 +119,9 @@ class EpisodeMapper:
             duration=Duration(model.duration),
             files=files,
             thumbnail_path=ImageUrl(model.thumbnail_path) if model.thumbnail_path else None,
+            scrub_preview_path=ImageUrl(model.scrub_preview_path)
+            if model.scrub_preview_path
+            else None,
             air_date=AirDate(model.air_date) if model.air_date else None,
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -144,6 +150,9 @@ class EpisodeMapper:
         model.file_size = primary.file_size if primary else None
         model.resolution = primary.resolution.value if primary else None
         model.thumbnail_path = entity.thumbnail_path.value if entity.thumbnail_path else None
+        model.scrub_preview_path = (
+            entity.scrub_preview_path.value if entity.scrub_preview_path else None
+        )
         model.air_date = entity.air_date.value if entity.air_date else None
 
         _sync_episode_file_variants(model.file_variants, entity.files)

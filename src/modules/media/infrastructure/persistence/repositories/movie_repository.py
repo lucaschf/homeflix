@@ -307,6 +307,27 @@ class SQLAlchemyMovieRepository(MovieRepository):
 
         return None if model is None else MovieMapper.to_entity(model)
 
+    async def find_missing_scrub_preview(self, limit: int) -> Sequence[Movie]:
+        """Return up to ``limit`` movies whose ``scrub_preview_path`` is null.
+
+        Sorted by ``id ASC`` so repeated runs make steady forward
+        progress through the catalog instead of churning on the same
+        head of the list. ``file_variants`` is eager-loaded because the
+        backfill caller needs ``primary_file.file_path``.
+        """
+        stmt = (
+            select(MovieModel)
+            .where(
+                MovieModel.deleted_at.is_(None),
+                MovieModel.scrub_preview_path.is_(None),
+            )
+            .options(selectinload(MovieModel.file_variants))
+            .order_by(MovieModel.id.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [MovieMapper.to_entity(model) for model in result.scalars().all()]
+
     async def count_under_paths(self, paths: Sequence[str]) -> int:
         r"""Count non-deleted movies whose ``file_path`` is under any of ``paths``.
 

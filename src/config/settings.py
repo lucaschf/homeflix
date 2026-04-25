@@ -130,6 +130,29 @@ class Settings(BaseSettings):  # type: ignore[misc]
         "database to sync cron jobs with configured schedules.",
     )
 
+    thumbnail_backfill_enabled: bool = Field(
+        default=True,
+        description="Enable the periodic job that fills in scrub-preview "
+        "thumbnails for movies and episodes that don't have one yet.",
+    )
+    thumbnail_backfill_batch_size: int = Field(
+        default=10,
+        ge=1,
+        description="Maximum number of media items processed per backfill "
+        "tick. Lower values reduce CPU spikes; higher values catch up "
+        "faster on a large catalog.",
+    )
+    thumbnail_backfill_interval_minutes: int = Field(
+        default=20,
+        ge=1,
+        description="How often the thumbnail backfill job runs.",
+    )
+    thumbnail_backfill_subdir: str = Field(
+        default=".homeflix/thumbnails",
+        description="Subdirectory (relative to each media file's parent "
+        "folder) where backfilled sprite + VTT files are written.",
+    )
+
     # =========================================================================
     # Internationalization
     # =========================================================================

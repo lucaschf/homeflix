@@ -75,6 +75,7 @@ class EpisodeModel(Base):
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # bytes
     resolution: Mapped[str | None] = mapped_column(String(20), nullable=True)
     thumbnail_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    scrub_preview_path: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
     # Metadata
     air_date: Mapped[date | None] = mapped_column(Date, nullable=True)

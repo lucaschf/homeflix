@@ -63,6 +63,9 @@ class MovieMapper:
             synopsis=entity.synopsis,
             poster_path=entity.poster_path.value if entity.poster_path else None,
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
+            scrub_preview_path=entity.scrub_preview_path.value
+            if entity.scrub_preview_path
+            else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
             cast=json.dumps(entity.cast, ensure_ascii=False) if entity.cast else None,
             directors=json.dumps(entity.directors, ensure_ascii=False)
@@ -127,6 +130,9 @@ class MovieMapper:
             synopsis=model.synopsis,
             poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
             backdrop_path=ImageUrl(model.backdrop_path) if model.backdrop_path else None,
+            scrub_preview_path=ImageUrl(model.scrub_preview_path)
+            if model.scrub_preview_path
+            else None,
             genres=genre_list,
             cast=json.loads(model.cast) if model.cast else [],
             directors=json.loads(model.directors) if model.directors else [],
@@ -163,6 +169,9 @@ class MovieMapper:
         model.synopsis = entity.synopsis
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
+        model.scrub_preview_path = (
+            entity.scrub_preview_path.value if entity.scrub_preview_path else None
+        )
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
         model.cast = json.dumps(entity.cast, ensure_ascii=False) if entity.cast else None
         model.directors = (

@@ -24,6 +24,8 @@ from src.modules.media.application.use_cases.scan_media_directories import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from src.building_blocks.application.event_bus import EventBus
     from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
     from src.modules.media.application.ports import (
@@ -94,6 +96,42 @@ class LibraryScanScheduler:
         if self._scheduler.running:
             self._scheduler.shutdown(wait=True)
             _logger.info("[scheduler] Stopped")
+
+    def add_interval_job(
+        self,
+        func: Callable[[], Awaitable[None]],
+        minutes: int,
+        job_id: str,
+    ) -> None:
+        """Register an extra recurring async job alongside library scans.
+
+        Lets infrastructure-level routines (thumbnail backfill today;
+        future periodic enrichment) share this scheduler instead of
+        each spinning up their own ``AsyncIOScheduler``. Always uses
+        ``max_instances=1`` and ``coalesce=True`` so a slow tick does
+        not stack up overlapping runs.
+
+        Args:
+            func: Zero-argument coroutine factory invoked on each tick.
+            minutes: Interval between successive runs.
+            job_id: Stable identifier; passing the same id replaces the
+                previous registration so a config reload does not leave
+                stale jobs around.
+        """
+        self._scheduler.add_job(
+            func,
+            trigger="interval",
+            minutes=minutes,
+            id=job_id,
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        _logger.info(
+            "[scheduler] Registered interval job",
+            job_id=job_id,
+            minutes=minutes,
+        )
 
     async def _reconcile(self) -> None:
         """Sync APScheduler jobs with the current ``Library`` rows.

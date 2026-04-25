@@ -190,6 +190,9 @@ class GetSeriesByIdUseCase:
             resolution=primary.resolution.value if primary else None,
             files=[to_media_file_output(f) for f in episode.files],
             thumbnail_path=episode.thumbnail_path.value if episode.thumbnail_path else None,
+            scrub_preview_path=episode.scrub_preview_path.value
+            if episode.scrub_preview_path
+            else None,
             air_date=episode.air_date.value.isoformat() if episode.air_date else None,
             progress_percentage=progress.percentage if progress else None,
             position_seconds=progress.position_seconds if progress else None,

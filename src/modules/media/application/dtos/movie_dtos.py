@@ -52,6 +52,8 @@ class MovieOutput:
         synopsis: Movie synopsis (optional).
         poster_path: Path to poster image (optional).
         backdrop_path: Path to backdrop image (optional).
+        scrub_preview_path: Absolute filesystem path to the scrub-preview
+            VTT, or ``None`` until the backfill job generates it.
         genres: List of genre strings.
         file_path: Path to video file (None if no primary file).
         file_size: File size in bytes (None if no primary file).
@@ -71,6 +73,7 @@ class MovieOutput:
     synopsis: str | None
     poster_path: str | None
     backdrop_path: str | None
+    scrub_preview_path: str | None
     genres: list[str]
     cast: list[str]
     directors: list[str]

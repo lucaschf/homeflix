@@ -26,6 +26,8 @@ class EpisodeOutput:
         file_size: File size in bytes (None if no primary file).
         resolution: Video resolution (None if no primary file).
         thumbnail_path: Path to thumbnail (optional).
+        scrub_preview_path: Absolute filesystem path to the scrub-preview
+            VTT, or ``None`` until the backfill job generates it.
         air_date: Original air date (optional, ISO format).
     """
 
@@ -40,6 +42,7 @@ class EpisodeOutput:
     resolution: str | None
     files: list[MediaFileOutput]
     thumbnail_path: str | None
+    scrub_preview_path: str | None
     air_date: str | None
     progress_percentage: float | None = None
     position_seconds: int | None = None
