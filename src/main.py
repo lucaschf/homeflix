@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Subscribe domain event handlers
     _subscribe_event_handlers(container)
 
-    # Start background scheduler (library scans).
+    # Start background scheduler (library scans + thumbnail backfill).
     # The provider depends on the session_factory Resource, so it
     # resolves asynchronously — must be awaited. Always pin a slot on
     # app.state so the shutdown handler can do a single truthy check.
@@ -101,6 +101,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.scheduler_enabled:
         scheduler = await container.library_scan_scheduler()
         await scheduler.start()
+        if settings.thumbnail_backfill_enabled:
+            backfill_job = await container.thumbnail_backfill_job()
+            scheduler.add_interval_job(
+                backfill_job.run,
+                minutes=settings.thumbnail_backfill_interval_minutes,
+                job_id="homeflix:thumbnail-backfill",
+            )
         app.state.scheduler = scheduler
 
     logger.info("Application ready")

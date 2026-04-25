@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from src.building_blocks.application.pagination import PaginatedResult
+from src.modules.media.domain.entities.episode import Episode
 from src.modules.media.domain.entities.series import Series
 from src.modules.media.domain.repositories.movie_repository import GenreRow
 from src.modules.media.domain.value_objects import EpisodeId, FilePath, Genre, SeriesId, Title
@@ -201,6 +202,63 @@ class SeriesRepository(ABC):
 
         Returns:
             The Series if found, None otherwise.
+        """
+        ...
+
+    @abstractmethod
+    async def find_episode_by_id(self, episode_id: EpisodeId) -> Episode | None:
+        """Return a single episode by external id, detached from its series.
+
+        Used by orchestration code (eager scrub-preview generation) that
+        needs to act on one episode without loading its parent ``Series``
+        and all sibling episodes.
+
+        Args:
+            episode_id: External id of the episode (epi_xxx).
+
+        Returns:
+            The detached ``Episode`` if it exists and is not soft-deleted,
+            otherwise ``None``.
+        """
+        ...
+
+    @abstractmethod
+    async def find_episodes_missing_scrub_preview(self, limit: int) -> Sequence[Episode]:
+        """Return up to ``limit`` episodes that have no scrub-preview thumbnails yet.
+
+        Returned ``Episode`` aggregates are detached from their parent
+        ``Series``; the backfill job only needs the file path and id to
+        do its work and this avoids loading a full series hierarchy per
+        episode. Soft-deleted episodes are excluded.
+
+        Args:
+            limit: Maximum number of episodes to return.
+
+        Returns:
+            Sequence of episodes whose ``scrub_preview_path`` is null.
+        """
+        ...
+
+    @abstractmethod
+    async def update_episode_scrub_preview_path(
+        self,
+        episode_id: EpisodeId,
+        path: str | None,
+    ) -> bool:
+        """Persist the scrub-preview path for a single episode.
+
+        Provided alongside ``find_episodes_missing_scrub_preview`` so
+        the backfill job can mark items processed without round-tripping
+        the entire ``Series`` aggregate — that round-trip would dominate
+        runtime on series with many episodes.
+
+        Args:
+            episode_id: External id of the episode to update.
+            path: Absolute path to the sprite VTT, or ``None`` to clear.
+
+        Returns:
+            ``True`` if a row was updated, ``False`` if no episode with
+            that id exists.
         """
         ...
 

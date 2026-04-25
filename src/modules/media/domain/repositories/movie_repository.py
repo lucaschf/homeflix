@@ -244,6 +244,25 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_missing_scrub_preview(self, limit: int) -> Sequence[Movie]:
+        """Return up to ``limit`` movies that have no scrub-preview thumbnails yet.
+
+        Used by the periodic backfill job to throttle work — every tick
+        picks at most ``limit`` movies and generates their sprites,
+        which keeps CPU bounded on large catalogs. Soft-deleted rows
+        are excluded; movies without a primary file are included so the
+        caller can decide to skip them.
+
+        Args:
+            limit: Maximum number of movies to return. Caller controls
+                CPU/IO budget by tuning this with the run interval.
+
+        Returns:
+            Sequence of movies whose ``scrub_preview_path`` is null.
+        """
+        ...
+
+    @abstractmethod
     async def count_under_paths(self, paths: Sequence[str]) -> int:
         """Count non-deleted movies whose file_path sits under any of ``paths``.
 

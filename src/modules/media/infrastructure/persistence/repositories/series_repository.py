@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import distinct, func, or_, select, text
+from sqlalchemy import distinct, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -388,6 +388,64 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         # Load the full series
         return await self.find_by_id(SeriesId(episode_model.series_external_id))
+
+    async def find_episode_by_id(self, episode_id: EpisodeId) -> Episode | None:
+        """Return a single episode by external id, detached from its series."""
+        stmt = (
+            select(EpisodeModel)
+            .where(
+                EpisodeModel.external_id == str(episode_id),
+                EpisodeModel.deleted_at.is_(None),
+            )
+            .options(selectinload(EpisodeModel.file_variants))
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return None if model is None else EpisodeMapper.to_entity(model)
+
+    async def find_episodes_missing_scrub_preview(self, limit: int) -> Sequence[Episode]:
+        """Return up to ``limit`` episodes whose ``scrub_preview_path`` is null.
+
+        Returns detached ``Episode`` entities (no parent ``Series``
+        loaded) — the backfill job only needs the file path and id.
+        ``file_variants`` is eager-loaded so the resulting entity
+        exposes ``primary_file.file_path`` without a lazy round-trip.
+        """
+        stmt = (
+            select(EpisodeModel)
+            .where(
+                EpisodeModel.deleted_at.is_(None),
+                EpisodeModel.scrub_preview_path.is_(None),
+            )
+            .options(selectinload(EpisodeModel.file_variants))
+            .order_by(EpisodeModel.id.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [EpisodeMapper.to_entity(model) for model in result.scalars().all()]
+
+    async def update_episode_scrub_preview_path(
+        self,
+        episode_id: EpisodeId,
+        path: str | None,
+    ) -> bool:
+        """Update only the ``scrub_preview_path`` column of an episode row.
+
+        Direct UPDATE on the episodes table — far cheaper than loading
+        the full ``Series`` aggregate just to mutate one column on one
+        child. Soft-deleted rows are excluded so a backfill job that
+        races a delete cannot resurrect a tombstoned episode.
+        """
+        stmt = (
+            update(EpisodeModel)
+            .where(
+                EpisodeModel.external_id == str(episode_id),
+                EpisodeModel.deleted_at.is_(None),
+            )
+            .values(scrub_preview_path=path)
+        )
+        result = await self._session.execute(stmt)
+        return bool(result.rowcount)
 
     async def count_under_paths(self, paths: Sequence[str]) -> int:
         """Count distinct series with at least one episode under ``paths``.
