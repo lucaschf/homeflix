@@ -49,59 +49,49 @@ class TmdbClient(MetadataProvider):
     def _image_url(self, path: str | None) -> str | None:
         return f"{_TMDB_IMAGE_BASE}{path}" if path else None
 
-    async def _fetch_best_logo_url(
+    @staticmethod
+    def _logo_rank(logo: dict[str, object], target: str, target_base: str) -> int:
+        """Score a TMDB logo entry for language preference (lower = better).
+
+        Priority:
+            0. exact language match (``pt-BR`` for a pt-BR request)
+            1. base language match (``pt`` covers ``pt-BR`` / ``pt-PT``)
+            2. English (``en``)
+            3. language-neutral (``iso_639_1 is None``)
+            4. anything else — last-resort fallback
+        """
+        iso = logo.get("iso_639_1")
+        if iso is None:
+            return 3
+        if not isinstance(iso, str):
+            return 4
+        iso_lower = iso.lower()
+        if iso_lower == target:
+            return 0
+        if iso_lower.split("-", 1)[0] == target_base:
+            return 1
+        if iso_lower == "en":
+            return 2
+        return 4
+
+    def _pick_best_logo_url(
         self,
-        kind: str,
-        tmdb_id: int,
+        logos: list[dict[str, object]] | None,
         language: str,
     ) -> str | None:
-        """Return the URL of the best title logo for a TMDB id, or ``None``.
+        """Pick the best-language logo URL from a TMDB ``logos`` payload.
 
-        Hits ``/{kind}/{id}/images`` (``kind`` is ``"movie"`` or
-        ``"tv"``) requesting logos in ``language``, English, and
-        language-neutral entries (``include_image_language=lang,en,null``).
-        Picks the first match in that priority order:
-
-        1. exact ``language`` (e.g. ``pt-BR`` for a localized hero)
-        2. base language match (``pt`` matches ``pt-BR`` / ``pt-PT``)
-        3. ``en``
-        4. language-neutral (``iso_639_1 == None``)
-        5. first logo of any kind, last resort
-
-        Network failures and missing logo arrays degrade to ``None``;
-        the title-logo feature is best-effort polish, never load-bearing.
+        Pure function — no HTTP. Caller already has the logo list from
+        ``data["images"]["logos"]`` on a details response that included
+        ``images`` in ``append_to_response``. Returns ``None`` when the
+        list is empty / missing or the best entry has no ``file_path``.
         """
-        try:
-            resp = await self._client.get(
-                f"{self._base_url}/{kind}/{tmdb_id}/images",
-                params=self._params(include_image_language=f"{language},en,null"),
-            )
-        except httpx.HTTPError:
-            return None
-        if resp.status_code != 200:
-            return None
-        logos = resp.json().get("logos") or []
         if not logos:
             return None
-
         target = language.lower()
         target_base = target.split("-", 1)[0]
-        by_priority: list[list[dict[str, object]]] = [[], [], [], [], list(logos)]
-        for logo in logos:
-            iso = logo.get("iso_639_1")
-            iso_lower = iso.lower() if isinstance(iso, str) else None
-            if iso_lower == target:
-                by_priority[0].append(logo)
-            elif iso_lower and iso_lower.split("-", 1)[0] == target_base:
-                by_priority[1].append(logo)
-            elif iso_lower == "en":
-                by_priority[2].append(logo)
-            elif iso is None:
-                by_priority[3].append(logo)
-        for bucket in by_priority:
-            if bucket:
-                return self._image_url(bucket[0].get("file_path"))
-        return None
+        best = min(logos, key=lambda logo: self._logo_rank(logo, target, target_base))
+        return self._image_url(best.get("file_path"))
 
     async def search_movie(self, title: str, year: int | None = None) -> MediaMetadata | None:
         """Search TMDB for a movie and return metadata for the best match."""
@@ -138,30 +128,35 @@ class TmdbClient(MetadataProvider):
         return await self._fetch_movie_details(tmdb_id)
 
     async def get_movie_localized(self, tmdb_id: int) -> MediaMetadata | None:
-        """Fetch movie details in English with pt-BR localization."""
+        """Fetch movie details in English with pt-BR localization.
+
+        The pt-BR details call also appends ``images`` filtered to
+        pt-BR / en / language-neutral, so the localized logo comes
+        back in the same round-trip. ``Movie.get_logo_path(lang)``
+        picks the localized one when present and falls back to the
+        global (en) otherwise — same shape as title/synopsis.
+        """
         en_meta = await self._fetch_movie_details(tmdb_id, language="en-US")
         if not en_meta:
             return None
 
         pt_resp = await self._client.get(
             f"{self._base_url}/movie/{tmdb_id}",
-            params=self._params(language="pt-BR"),
+            params=self._params(
+                language="pt-BR",
+                append_to_response="images",
+                include_image_language="pt-BR,en,null",
+            ),
         )
         if pt_resp.status_code != 200:
             return en_meta
 
         pt_data = pt_resp.json()
-        # Re-fetch the logo with pt-BR preference and store it on
-        # ``LocalizedFields.logo_url`` rather than overwriting the
-        # global ``logo_url``. ``Movie.get_logo_path(lang)`` picks the
-        # localized one when present and falls back to the global (en)
-        # otherwise — same shape as title/synopsis localization.
-        pt_logo_url = await self._fetch_best_logo_url("movie", tmdb_id, "pt-BR")
         pt_fields = LocalizedFields(
             title=pt_data.get("title"),
             synopsis=pt_data.get("overview"),
             genres=[g["name"] for g in pt_data.get("genres", [])],
-            logo_url=pt_logo_url,
+            logo_url=self._pick_best_logo_url(pt_data.get("images", {}).get("logos"), "pt-BR"),
         )
 
         from dataclasses import replace
@@ -173,28 +168,34 @@ class TmdbClient(MetadataProvider):
         return await self._fetch_series_details(tmdb_id)
 
     async def get_series_localized(self, tmdb_id: int) -> MediaMetadata | None:
-        """Fetch series details in English with pt-BR localization."""
+        """Fetch series details in English with pt-BR localization.
+
+        Same one-round-trip-per-language pattern as
+        ``get_movie_localized`` — the pt-BR details call appends
+        ``images`` so the localized logo comes back without an extra
+        HTTP fetch.
+        """
         en_meta = await self._fetch_series_details(tmdb_id)
         if not en_meta:
             return None
 
         pt_resp = await self._client.get(
             f"{self._base_url}/tv/{tmdb_id}",
-            params=self._params(language="pt-BR"),
+            params=self._params(
+                language="pt-BR",
+                append_to_response="images",
+                include_image_language="pt-BR,en,null",
+            ),
         )
         if pt_resp.status_code != 200:
             return en_meta
 
         pt_data = pt_resp.json()
-        # Localized logo lives on ``LocalizedFields.logo_url`` (see
-        # ``get_movie_localized`` for the rationale). The default
-        # ``logo_url`` on ``en_meta`` stays untouched.
-        pt_logo_url = await self._fetch_best_logo_url("tv", tmdb_id, "pt-BR")
         pt_fields = LocalizedFields(
             title=pt_data.get("name"),
             synopsis=pt_data.get("overview"),
             genres=[g["name"] for g in pt_data.get("genres", [])],
-            logo_url=pt_logo_url,
+            logo_url=self._pick_best_logo_url(pt_data.get("images", {}).get("logos"), "pt-BR"),
         )
 
         from dataclasses import replace
@@ -204,11 +205,20 @@ class TmdbClient(MetadataProvider):
     async def _fetch_movie_details(
         self, tmdb_id: int, language: str = "en-US"
     ) -> MediaMetadata | None:
-        """Fetch full movie details from TMDB."""
+        """Fetch full movie details from TMDB.
+
+        ``images`` is appended to the response (with
+        ``include_image_language`` filtered to the requested language,
+        English, and language-neutral) so the title logo comes back
+        in the same round-trip — saves a separate HTTP call per
+        details fetch.
+        """
         resp = await self._client.get(
             f"{self._base_url}/movie/{tmdb_id}",
             params=self._params(
-                append_to_response="credits,release_dates,videos", language=language
+                append_to_response="credits,release_dates,videos,images",
+                language=language,
+                include_image_language=f"{language},en,null",
             ),
         )
         if resp.status_code == 404:
@@ -226,7 +236,7 @@ class TmdbClient(MetadataProvider):
         content_rating = self._parse_content_rating(data.get("release_dates", {}))
         trailer_url = self._parse_trailer(data.get("videos", {}))
 
-        logo_url = await self._fetch_best_logo_url("movie", data["id"], language)
+        logo_url = self._pick_best_logo_url(data.get("images", {}).get("logos"), language)
         return MediaMetadata(
             title=data.get("title", ""),
             original_title=data.get("original_title"),
@@ -247,10 +257,19 @@ class TmdbClient(MetadataProvider):
         )
 
     async def _fetch_series_details(self, tmdb_id: int) -> MediaMetadata | None:
-        """Fetch full series details including seasons and episodes."""
+        """Fetch full series details including seasons and episodes.
+
+        Same trick as ``_fetch_movie_details``: ``images`` is appended
+        so the title logo comes back in this round-trip; default
+        language is English since the bulk of the series-details flow
+        is English-first (the localized variant overrides on top).
+        """
         resp = await self._client.get(
             f"{self._base_url}/tv/{tmdb_id}",
-            params=self._params(append_to_response="external_ids,content_ratings,videos"),
+            params=self._params(
+                append_to_response="external_ids,content_ratings,videos,images",
+                include_image_language="en,null",
+            ),
         )
         if resp.status_code == 404:
             return None
@@ -277,7 +296,7 @@ class TmdbClient(MetadataProvider):
             data.get("content_ratings", {}),
         )
 
-        logo_url = await self._fetch_best_logo_url("tv", data["id"], "en")
+        logo_url = self._pick_best_logo_url(data.get("images", {}).get("logos"), "en")
         return MediaMetadata(
             title=data.get("name", ""),
             original_title=data.get("original_name"),
