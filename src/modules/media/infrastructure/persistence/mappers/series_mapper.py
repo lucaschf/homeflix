@@ -269,6 +269,7 @@ class SeriesMapper:
             synopsis=entity.synopsis,
             poster_path=entity.poster_path.value if entity.poster_path else None,
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
+            logo_path=entity.logo_path.value if entity.logo_path else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
             content_rating=entity.content_rating.value if entity.content_rating else None,
             trailer_url=entity.trailer_url,
@@ -307,6 +308,7 @@ class SeriesMapper:
             synopsis=model.synopsis,
             poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
             backdrop_path=ImageUrl(model.backdrop_path) if model.backdrop_path else None,
+            logo_path=ImageUrl(model.logo_path) if model.logo_path else None,
             genres=genre_list,
             content_rating=ContentRating(model.content_rating) if model.content_rating else None,
             trailer_url=model.trailer_url,
@@ -336,6 +338,7 @@ class SeriesMapper:
         model.synopsis = entity.synopsis
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
+        model.logo_path = entity.logo_path.value if entity.logo_path else None
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
         model.content_rating = entity.content_rating.value if entity.content_rating else None
         model.trailer_url = entity.trailer_url

@@ -179,6 +179,8 @@ def _apply_movie_metadata(movie: Movie, metadata: MediaMetadata) -> Movie:
         updates["poster_path"] = ImageUrl(metadata.poster_url)
     if metadata.backdrop_url and not movie.backdrop_path:
         updates["backdrop_path"] = ImageUrl(metadata.backdrop_url)
+    if metadata.logo_url and not movie.logo_path:
+        updates["logo_path"] = ImageUrl(metadata.logo_url)
 
     _apply_credits(updates, movie, metadata)
 

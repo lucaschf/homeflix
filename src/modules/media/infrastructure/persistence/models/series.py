@@ -41,6 +41,7 @@ class SeriesModel(Base):
     # Images
     poster_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     backdrop_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    logo_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     # Categorization
     genres: Mapped[str | None] = mapped_column(String(500), nullable=True)

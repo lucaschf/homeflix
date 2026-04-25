@@ -91,6 +91,10 @@ class SeriesOutput:
         synopsis: Series synopsis (optional).
         poster_path: Path to poster (optional).
         backdrop_path: Path to backdrop (optional).
+        logo_path: URL of the title-logo image (transparent PNG)
+            populated from TMDB during enrich, ``None`` if not
+            available. Used by the hero/detail UI to render the title
+            as a graphic.
         genres: List of genre strings.
         tmdb_id: TMDB external ID (optional).
         imdb_id: IMDB external ID (optional).
@@ -110,6 +114,7 @@ class SeriesOutput:
     synopsis: str | None
     poster_path: str | None
     backdrop_path: str | None
+    logo_path: str | None
     genres: list[str]
     content_rating: str | None
     trailer_url: str | None

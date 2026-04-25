@@ -106,6 +106,7 @@ class GetSeriesByIdUseCase:
             synopsis=series.get_synopsis(lang),
             poster_path=series.poster_path.value if series.poster_path else None,
             backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
+            logo_path=series.logo_path.value if series.logo_path else None,
             genres=series.get_genres(lang),
             content_rating=series.content_rating.value if series.content_rating else None,
             trailer_url=series.trailer_url,

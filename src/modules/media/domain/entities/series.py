@@ -52,6 +52,7 @@ class Series(AggregateRoot[SeriesId]):
     # Images
     poster_path: ImageUrl | None = None
     backdrop_path: ImageUrl | None = None
+    logo_path: ImageUrl | None = None
 
     # Categorization
     genres: list[Genre] = Field(default_factory=list)

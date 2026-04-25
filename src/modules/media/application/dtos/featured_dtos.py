@@ -33,6 +33,9 @@ class FeaturedItemOutput:
         duration_formatted: Duration string (movies only).
         genres: List of genre strings.
         backdrop_path: Path to backdrop image.
+        logo_path: URL of the title-logo image (transparent PNG)
+            populated from TMDB during enrich. Optional — only some
+            titles have a logo on TMDB.
     """
 
     id: str
@@ -43,5 +46,6 @@ class FeaturedItemOutput:
     duration_formatted: str | None
     genres: list[str]
     backdrop_path: str | None
+    logo_path: str | None
     content_rating: str | None
     trailer_url: str | None
