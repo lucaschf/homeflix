@@ -527,9 +527,11 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         # Reload and return (series.id is guaranteed to exist after _ensure_ids).
         # Transaction commit is the Unit of Work's responsibility.
-        assert series.id is not None
+        if series.id is None:
+            raise RuntimeError("Series id must be assigned before reload")
         result = await self.find_by_id(series.id)
-        assert result is not None
+        if result is None:
+            raise RuntimeError(f"Series {series.id} disappeared between flush and reload")
         return result
 
     async def _update_series(
@@ -581,9 +583,11 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         # Reload and return (series.id is guaranteed to exist).
         # Transaction commit is the Unit of Work's responsibility.
-        assert series.id is not None
+        if series.id is None:
+            raise RuntimeError("Series id must be assigned before reload")
         result = await self.find_by_id(series.id)
-        assert result is not None
+        if result is None:
+            raise RuntimeError(f"Series {series.id} disappeared between flush and reload")
         return result
 
     async def _update_season_episodes(

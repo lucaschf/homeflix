@@ -103,9 +103,11 @@ class SQLAlchemyMovieRepository(MovieRepository):
 
         # Reload with relationships to return a complete entity.
         # Transaction commit is the Unit of Work's responsibility.
-        assert movie.id is not None
+        if movie.id is None:
+            raise RuntimeError("Movie id must be assigned before reload")
         result_entity = await self.find_by_id(movie.id)
-        assert result_entity is not None
+        if result_entity is None:
+            raise RuntimeError(f"Movie {movie.id} disappeared between flush and reload")
         return result_entity
 
     async def delete(self, movie_id: MovieId) -> bool:

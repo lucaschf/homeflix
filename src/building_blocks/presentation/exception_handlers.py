@@ -10,7 +10,7 @@ serialize a category of errors. The envelope format comes from
 ``CoreException.to_dict()`` so the contract stays in one place.
 """
 
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -50,8 +50,13 @@ async def core_exception_handler(request: Request, exc: Exception) -> JSONRespon
     Logging level is chosen from ``exc.severity`` so a 4xx doesn't look
     like a 5xx in the logs. The payload uses ``CoreException.to_dict()``
     — no sensitive ``_internal`` block is ever serialized.
+
+    The ``Exception`` parameter type matches FastAPI's handler protocol;
+    registration in ``register_exception_handlers`` guarantees this
+    handler only receives ``CoreException`` instances, so we narrow via
+    ``cast`` instead of a runtime check.
     """
-    assert isinstance(exc, CoreException)  # narrow type for handler signature
+    exc = cast(CoreException, exc)
     logger = get_logger().bind(
         exception_id=exc.exception_id,
         code=exc.code,
@@ -68,7 +73,7 @@ async def request_validation_exception_handler(
     exc: Exception,
 ) -> JSONResponse:
     """Format FastAPI/Pydantic request validation errors in v3 shape."""
-    assert isinstance(exc, RequestValidationError)
+    exc = cast(RequestValidationError, exc)
     errors = [
         {
             "field": ".".join(str(loc) for loc in err.get("loc", ())[1:]),
@@ -100,7 +105,7 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
     mismatches or ``Response(404)`` shortcuts). Wrap them so clients
     see the same shape as typed exceptions.
     """
-    assert isinstance(exc, StarletteHTTPException)
+    exc = cast(StarletteHTTPException, exc)
     error_type = _STATUS_TO_ERROR_TYPE.get(exc.status_code, "api_error")
 
     detail = exc.detail
