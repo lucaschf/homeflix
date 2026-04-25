@@ -663,7 +663,11 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 SeriesModel.id.in_(rowid_to_rank.keys()),
                 SeriesModel.deleted_at.is_(None),
             )
-            .options(selectinload(SeriesModel.seasons).selectinload(SeasonModel.episodes))
+            .options(
+                selectinload(SeriesModel.seasons)
+                .selectinload(SeasonModel.episodes)
+                .selectinload(EpisodeModel.file_variants),
+            )
         )
         if genre:
             delimited = "," + SeriesModel.genres + ","
