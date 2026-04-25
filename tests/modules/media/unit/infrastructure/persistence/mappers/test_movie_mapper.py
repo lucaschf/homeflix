@@ -170,3 +170,56 @@ class TestMovieMapper:
         assert member.name == "Leonardo DiCaprio"
         assert member.profile_path == "https://image.tmdb.org/t/p/original/leo.jpg"
         assert member.role == "Cobb"
+
+    def test_to_entity_collapses_non_list_cast_payload_to_empty(self) -> None:
+        """Malformed cast JSON (single object instead of list) → empty cast.
+
+        Defends against a future migration or manual DB edit that
+        writes the wrong shape; without the guard, ``for item in items``
+        would iterate dict keys and silently produce ``CastMember``s
+        named ``"name"``, ``"profile_path"`` etc.
+        """
+        movie_id = MovieId.generate()
+        now = datetime.now(UTC)
+        model = MovieModel(
+            external_id=str(movie_id),
+            title="Test Movie",
+            year=2024,
+            duration=7200,
+            cast='{"name": "Leonardo DiCaprio"}',  # not a list
+            created_at=now,
+            updated_at=now,
+        )
+
+        entity = MovieMapper.to_entity(model, include_files=False)
+
+        assert entity.cast == []
+
+    def test_to_entity_skips_cast_dicts_without_name(self) -> None:
+        """Cast entries with empty / missing ``name`` are skipped.
+
+        Keeps the UI from rendering placeholder cards (initials ``?``,
+        blank label) when the upstream provider drifts and stops
+        sending names.
+        """
+        movie_id = MovieId.generate()
+        now = datetime.now(UTC)
+        model = MovieModel(
+            external_id=str(movie_id),
+            title="Test Movie",
+            year=2024,
+            duration=7200,
+            cast=(
+                '[{"name": "Leonardo DiCaprio"}, '
+                '{"name": ""}, '
+                '{"profile_path": "/foo.jpg"}, '
+                '{"name": "   "}]'
+            ),
+            created_at=now,
+            updated_at=now,
+        )
+
+        entity = MovieMapper.to_entity(model, include_files=False)
+
+        assert len(entity.cast) == 1
+        assert entity.cast[0].name == "Leonardo DiCaprio"

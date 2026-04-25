@@ -44,18 +44,31 @@ def _deserialize_cast(raw: str | None) -> list[CastMember]:
     so rows enriched before this feature still load — entries without
     photo/role just render as initials avatars on the UI side. The
     next save migrates the row to the new shape implicitly.
+
+    Tolerant of malformed payloads at the storage boundary: a JSON
+    value that is not a list (drift from a future migration, manual
+    DB edit) collapses to an empty cast rather than iterating dict
+    keys as if they were entries; dict entries with no usable
+    ``name`` are skipped so the UI never renders empty cards.
     """
     if not raw:
         return []
     items = json.loads(raw)
+    if not isinstance(items, list):
+        return []
     members: list[CastMember] = []
     for item in items:
         if isinstance(item, str):
-            members.append(CastMember(name=item))
+            name = item.strip()
+            if name:
+                members.append(CastMember(name=name))
         elif isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
             members.append(
                 CastMember(
-                    name=str(item.get("name", "")),
+                    name=name,
                     profile_path=item.get("profile_path") or None,
                     role=item.get("role") or None,
                 )
