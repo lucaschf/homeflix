@@ -148,6 +148,8 @@ def _apply_localized(
             loc_entry["synopsis"] = fields.synopsis
         if fields.genres:
             loc_entry["genres"] = fields.genres
+        if fields.logo_url:
+            loc_entry["logo_path"] = fields.logo_url
         if loc_entry:
             localized[lang] = loc_entry
     if localized:

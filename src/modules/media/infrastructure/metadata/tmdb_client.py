@@ -151,24 +151,22 @@ class TmdbClient(MetadataProvider):
             return en_meta
 
         pt_data = pt_resp.json()
+        # Re-fetch the logo with pt-BR preference and store it on
+        # ``LocalizedFields.logo_url`` rather than overwriting the
+        # global ``logo_url``. ``Movie.get_logo_path(lang)`` picks the
+        # localized one when present and falls back to the global (en)
+        # otherwise — same shape as title/synopsis localization.
+        pt_logo_url = await self._fetch_best_logo_url("movie", tmdb_id, "pt-BR")
         pt_fields = LocalizedFields(
             title=pt_data.get("title"),
             synopsis=pt_data.get("overview"),
             genres=[g["name"] for g in pt_data.get("genres", [])],
+            logo_url=pt_logo_url,
         )
-
-        # Re-fetch the logo with pt-BR preference so the hero shows the
-        # localized graphic when one exists (else falls back to en or
-        # language-neutral, same as the default fetch).
-        pt_logo_url = await self._fetch_best_logo_url("movie", tmdb_id, "pt-BR")
 
         from dataclasses import replace
 
-        return replace(
-            en_meta,
-            localized={"pt-BR": pt_fields},
-            logo_url=pt_logo_url or en_meta.logo_url,
-        )
+        return replace(en_meta, localized={"pt-BR": pt_fields})
 
     async def get_series_by_id(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch series details by TMDB ID."""
@@ -188,23 +186,20 @@ class TmdbClient(MetadataProvider):
             return en_meta
 
         pt_data = pt_resp.json()
+        # Localized logo lives on ``LocalizedFields.logo_url`` (see
+        # ``get_movie_localized`` for the rationale). The default
+        # ``logo_url`` on ``en_meta`` stays untouched.
+        pt_logo_url = await self._fetch_best_logo_url("tv", tmdb_id, "pt-BR")
         pt_fields = LocalizedFields(
             title=pt_data.get("name"),
             synopsis=pt_data.get("overview"),
             genres=[g["name"] for g in pt_data.get("genres", [])],
+            logo_url=pt_logo_url,
         )
-
-        # Re-fetch the logo with pt-BR preference (see get_movie_localized
-        # for the rationale).
-        pt_logo_url = await self._fetch_best_logo_url("tv", tmdb_id, "pt-BR")
 
         from dataclasses import replace
 
-        return replace(
-            en_meta,
-            localized={"pt-BR": pt_fields},
-            logo_url=pt_logo_url or en_meta.logo_url,
-        )
+        return replace(en_meta, localized={"pt-BR": pt_fields})
 
     async def _fetch_movie_details(
         self, tmdb_id: int, language: str = "en-US"

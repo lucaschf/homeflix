@@ -67,7 +67,7 @@ class GetFeaturedMediaUseCase:
             duration_formatted=movie.duration.format_hms(),
             genres=movie.get_genres(lang),
             backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
-            logo_path=movie.logo_path.value if movie.logo_path else None,
+            logo_path=movie.get_logo_path(lang),
             content_rating=movie.content_rating.value if movie.content_rating else None,
             trailer_url=movie.trailer_url,
         )
@@ -84,7 +84,7 @@ class GetFeaturedMediaUseCase:
             duration_formatted=None,
             genres=series.get_genres(lang),
             backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
-            logo_path=series.logo_path.value if series.logo_path else None,
+            logo_path=series.get_logo_path(lang),
             content_rating=series.content_rating.value if series.content_rating else None,
             trailer_url=series.trailer_url,
         )

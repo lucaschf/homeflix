@@ -72,11 +72,15 @@ class LocalizedFields:
         title: Localized title.
         synopsis: Localized plot overview.
         genres: Localized genre names.
+        logo_url: Localized title-logo URL (transparent PNG). When
+            present, the entity's ``get_logo_path(lang)`` accessor
+            returns this in preference to the global ``logo_path``.
     """
 
     title: str | None = None
     synopsis: str | None = None
     genres: list[str] = field(default_factory=list)
+    logo_url: str | None = None
 
 
 @dataclass(frozen=True)

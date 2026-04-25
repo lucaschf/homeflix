@@ -206,20 +206,30 @@ def _apply_credits(
         updates["content_rating"] = ContentRating(metadata.content_rating)
     if metadata.trailer_url and not movie.trailer_url:
         updates["trailer_url"] = metadata.trailer_url
-    if metadata.localized:
-        localized: dict[str, dict[str, object]] = {}
-        for lang, fields in metadata.localized.items():
-            loc_entry: dict[str, object] = {}
-            if fields.title:
-                loc_entry["title"] = fields.title
-            if fields.synopsis:
-                loc_entry["synopsis"] = fields.synopsis
-            if fields.genres:
-                loc_entry["genres"] = fields.genres
-            if loc_entry:
-                localized[lang] = loc_entry
-        if localized:
-            updates["localized"] = {**movie.localized, **localized}
+    _apply_localized(updates, movie.localized, metadata)
+
+
+def _apply_localized(
+    updates: dict[str, object],
+    existing: dict[str, dict[str, object]],
+    metadata: MediaMetadata,
+) -> None:
+    """Merge per-language overrides from metadata into ``updates``."""
+    if not metadata.localized:
+        return
+    localized: dict[str, dict[str, object]] = {}
+    for lang, fields in metadata.localized.items():
+        candidates = {
+            "title": fields.title,
+            "synopsis": fields.synopsis,
+            "genres": fields.genres or None,
+            "logo_path": fields.logo_url,
+        }
+        loc_entry: dict[str, object] = {k: v for k, v in candidates.items() if v}
+        if loc_entry:
+            localized[lang] = loc_entry
+    if localized:
+        updates["localized"] = {**existing, **localized}
 
 
 __all__ = ["EnrichMovieMetadataUseCase"]

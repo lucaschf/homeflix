@@ -74,7 +74,7 @@ class GetMovieByIdUseCase:
             synopsis=movie.get_synopsis(lang),
             poster_path=movie.poster_path.value if movie.poster_path else None,
             backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
-            logo_path=movie.logo_path.value if movie.logo_path else None,
+            logo_path=movie.get_logo_path(lang),
             scrub_preview_path=movie.scrub_preview_path.value if movie.scrub_preview_path else None,
             genres=movie.get_genres(lang),
             cast=movie.cast,
