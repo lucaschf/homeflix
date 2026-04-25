@@ -264,7 +264,13 @@ class TestApplyMetadataFields:
         metadata = MediaMetadata(
             title="Inception",
             tmdb_id=27205,
-            cast=[CreditPerson(name="Leonardo DiCaprio")],
+            cast=[
+                CreditPerson(
+                    name="Leonardo DiCaprio",
+                    role="Cobb",
+                    profile_url="https://image.tmdb.org/t/p/original/leo.jpg",
+                ),
+            ],
             directors=[CreditPerson(name="Christopher Nolan")],
             writers=[CreditPerson(name="Christopher Nolan")],
             content_rating="PG-13",
@@ -277,7 +283,13 @@ class TestApplyMetadataFields:
         await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         saved = mocks.movies.save.call_args[0][0]
-        assert saved.cast == ["Leonardo DiCaprio"]
+        # Cast carries name + profile_path + role through the enrich
+        # pipeline now — name-only data in tests would mask the
+        # CreditPerson → CastMember plumbing the detail UI relies on.
+        assert len(saved.cast) == 1
+        assert saved.cast[0].name == "Leonardo DiCaprio"
+        assert saved.cast[0].profile_path == "https://image.tmdb.org/t/p/original/leo.jpg"
+        assert saved.cast[0].role == "Cobb"
         assert saved.directors == ["Christopher Nolan"]
         assert saved.writers == ["Christopher Nolan"]
         assert saved.content_rating == ContentRating("PG-13")

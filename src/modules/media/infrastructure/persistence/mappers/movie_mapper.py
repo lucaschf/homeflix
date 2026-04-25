@@ -4,6 +4,7 @@ import json
 
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
+    CastMember,
     ContentRating,
     Duration,
     FilePath,
@@ -21,6 +22,58 @@ from src.modules.media.infrastructure.persistence.mappers.media_file_mapper impo
     MediaFileMapper,
 )
 from src.modules.media.infrastructure.persistence.models import MediaFileModel, MovieModel
+
+
+def _serialize_cast(cast: list[CastMember]) -> str | None:
+    """Serialize the cast list to the JSON shape stored on disk.
+
+    New shape: ``[{"name": "...", "profile_path": "...", "role": "..."}, ...]``.
+    Always written this way; legacy ``["Name1", "Name2"]`` data is only
+    *read* by ``_deserialize_cast`` and gets converted on the next save.
+    """
+    if not cast:
+        return None
+    payload = [{"name": m.name, "profile_path": m.profile_path, "role": m.role} for m in cast]
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _deserialize_cast(raw: str | None) -> list[CastMember]:
+    """Reconstruct the cast list from the JSON column.
+
+    Accepts both the new dict shape and the legacy ``list[str]`` shape
+    so rows enriched before this feature still load — entries without
+    photo/role just render as initials avatars on the UI side. The
+    next save migrates the row to the new shape implicitly.
+
+    Tolerant of malformed payloads at the storage boundary: a JSON
+    value that is not a list (drift from a future migration, manual
+    DB edit) collapses to an empty cast rather than iterating dict
+    keys as if they were entries; dict entries with no usable
+    ``name`` are skipped so the UI never renders empty cards.
+    """
+    if not raw:
+        return []
+    items = json.loads(raw)
+    if not isinstance(items, list):
+        return []
+    members: list[CastMember] = []
+    for item in items:
+        if isinstance(item, str):
+            name = item.strip()
+            if name:
+                members.append(CastMember(name=name))
+        elif isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            members.append(
+                CastMember(
+                    name=name,
+                    profile_path=item.get("profile_path") or None,
+                    role=item.get("role") or None,
+                )
+            )
+    return members
 
 
 class MovieMapper:
@@ -68,7 +121,7 @@ class MovieMapper:
             if entity.scrub_preview_path
             else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
-            cast=json.dumps(entity.cast, ensure_ascii=False) if entity.cast else None,
+            cast=_serialize_cast(entity.cast),
             directors=json.dumps(entity.directors, ensure_ascii=False)
             if entity.directors
             else None,
@@ -144,7 +197,7 @@ class MovieMapper:
             if model.scrub_preview_path
             else None,
             genres=genre_list,
-            cast=json.loads(model.cast) if model.cast else [],
+            cast=_deserialize_cast(model.cast),
             directors=json.loads(model.directors) if model.directors else [],
             writers=json.loads(model.writers) if model.writers else [],
             content_rating=ContentRating(model.content_rating) if model.content_rating else None,
@@ -184,7 +237,7 @@ class MovieMapper:
             entity.scrub_preview_path.value if entity.scrub_preview_path else None
         )
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
-        model.cast = json.dumps(entity.cast, ensure_ascii=False) if entity.cast else None
+        model.cast = _serialize_cast(entity.cast)
         model.directors = (
             json.dumps(entity.directors, ensure_ascii=False) if entity.directors else None
         )

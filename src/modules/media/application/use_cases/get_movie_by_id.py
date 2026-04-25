@@ -1,7 +1,11 @@
 """GetMovieByIdUseCase - Retrieve a single movie by ID."""
 
 from src.building_blocks.application.errors import ResourceNotFoundException
-from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput, MovieOutput
+from src.modules.media.application.dtos.movie_dtos import (
+    CastMemberOutput,
+    GetMovieByIdInput,
+    MovieOutput,
+)
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._media_file_helpers import (
     to_media_file_output,
@@ -77,7 +81,10 @@ class GetMovieByIdUseCase:
             logo_path=movie.get_logo_path(lang),
             scrub_preview_path=movie.scrub_preview_path.value if movie.scrub_preview_path else None,
             genres=movie.get_genres(lang),
-            cast=movie.cast,
+            cast=[
+                CastMemberOutput(name=m.name, profile_path=m.profile_path, role=m.role)
+                for m in movie.cast
+            ],
             directors=movie.directors,
             writers=movie.writers,
             content_rating=movie.content_rating.value if movie.content_rating else None,

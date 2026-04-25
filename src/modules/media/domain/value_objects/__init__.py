@@ -1,6 +1,7 @@
 """Media domain value objects."""
 
 from src.modules.media.domain.value_objects.air_date import AirDate
+from src.modules.media.domain.value_objects.cast_member import CastMember
 from src.modules.media.domain.value_objects.content_rating import ContentRating
 from src.modules.media.domain.value_objects.duration import Duration
 from src.modules.media.domain.value_objects.episode_number import EpisodeNumber
@@ -29,6 +30,7 @@ from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 __all__ = [
     "AirDate",
     "AudioTrack",
+    "CastMember",
     "ContentRating",
     "Duration",
     "EpisodeId",
