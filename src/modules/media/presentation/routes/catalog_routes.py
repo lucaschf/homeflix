@@ -16,6 +16,10 @@ from src.modules.media.application.dtos.catalog_dtos import (
 )
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
+from src.modules.media.application.use_cases.list_movies_by_actor import (
+    ListMoviesByActorInput,
+    ListMoviesByActorUseCase,
+)
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["Catalog"])
 
@@ -106,6 +110,58 @@ async def list_by_genre(
     )
     return api_list(
         [asdict(item) for item in result.items],
+        pagination=Pagination(has_more=result.has_more, next_cursor=result.next_cursor),
+    )
+
+
+@router.get("/by-actor")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def list_by_actor(
+    name: str,
+    cursor: str | None = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+    lang: str = "en",
+    use_case: ListMoviesByActorUseCase = Depends(
+        Provide[ApplicationContainer.media.list_movies_by_actor],
+    ),
+) -> dict[str, Any]:
+    """Paginated listing of movies whose cast contains ``name``.
+
+    Match is by exact display name. The local catalog has no actor
+    id (TMDB person ids aren't persisted yet), so the route takes a
+    name in the query string and resolves it server-side. Two real
+    people who share a display name would collide — acceptable for a
+    personal-library scale catalog and reversible without breaking
+    the URL once a TMDB person id is persisted.
+
+    Series cast isn't part of the domain yet, so this route is
+    movies-only. When series cast lands, the use case can be
+    promoted to a dual-stream merge (mirroring ``ListByGenreUseCase``)
+    and the response shape will gain a ``type`` discriminator
+    without changing the URL.
+
+    Query params:
+        name: Exact display name of the cast member (e.g.,
+            ``Sigourney Weaver``). Required.
+        cursor: Opaque token returned by the previous page's
+            ``metadata.pagination.next_cursor``. Omit on the first
+            request. Invalid / tampered cursors silently start over
+            from the beginning.
+        limit: Page size, clamped to ``[1, MAX_PAGE_SIZE]``.
+        lang: Language code for localized titles, synopses, and
+            genre names returned in each item.
+    """
+    clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
+    result = await use_case.execute(
+        ListMoviesByActorInput(
+            actor_name=name,
+            cursor=cursor,
+            limit=clamped_limit,
+            lang=lang,
+        )
+    )
+    return api_list(
+        [asdict(movie) for movie in result.movies],
         pagination=Pagination(has_more=result.has_more, next_cursor=result.next_cursor),
     )
 

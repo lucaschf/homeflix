@@ -30,6 +30,7 @@ from src.modules.media.application.use_cases.get_series_by_id import GetSeriesBy
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
+from src.modules.media.application.use_cases.list_movies_by_actor import ListMoviesByActorUseCase
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
 from src.modules.media.application.use_cases.scan_media_directories import (
@@ -139,6 +140,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     list_by_genre = providers.Factory(
         ListByGenreUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
+    list_movies_by_actor = providers.Factory(
+        ListMoviesByActorUseCase,
         uow_factory=media_unit_of_work_factory,
     )
 
