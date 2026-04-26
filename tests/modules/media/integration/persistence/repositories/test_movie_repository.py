@@ -17,6 +17,7 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
+from src.modules.media.domain.value_objects.cast_member import CastMember
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemyMovieRepository
 
 
@@ -736,6 +737,153 @@ class TestSQLAlchemyMovieRepositoryListPaginatedByGenre:
 
         assert len(page.items) == 1
         assert page.items[0].title.value == "B"
+
+
+@pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryListPaginatedByCastMember:
+    """Integration tests for the title-sorted, cast-filtered listing."""
+
+    async def test_should_filter_to_movies_with_the_actor(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        weaver = [CastMember(name="Sigourney Weaver")]
+        other = [CastMember(name="Tom Hanks")]
+        await repo.save(
+            _create_movie(title="Alien", file_path="/m/alien.mkv").with_updates(cast=weaver)
+        )
+        await repo.save(
+            _create_movie(title="Forrest Gump", file_path="/m/fg.mkv").with_updates(cast=other)
+        )
+
+        page = await repo.list_paginated_by_cast_member(
+            actor_name="Sigourney Weaver", cursor=None, limit=10
+        )
+
+        assert len(page.items) == 1
+        assert page.items[0].title.value == "Alien"
+
+    async def test_should_match_by_exact_name_not_substring(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        # "Tom Hanks" must NOT match "Tom Hanks Jr." — the closing
+        # quote of the JSON-encoded needle prevents prefix matches.
+        await repo.save(
+            _create_movie(title="Other", file_path="/m/o.mkv").with_updates(
+                cast=[CastMember(name="Tom Hanks Jr.")]
+            )
+        )
+        await repo.save(
+            _create_movie(title="Forrest Gump", file_path="/m/fg.mkv").with_updates(
+                cast=[CastMember(name="Tom Hanks")]
+            )
+        )
+
+        page = await repo.list_paginated_by_cast_member(
+            actor_name="Tom Hanks", cursor=None, limit=10
+        )
+
+        assert len(page.items) == 1
+        assert page.items[0].title.value == "Forrest Gump"
+
+    async def test_should_handle_special_characters_in_name(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        # Apostrophe + accents must round-trip through JSON encoding
+        # and the LIKE filter correctly.
+        await repo.save(
+            _create_movie(title="Hidden Figures", file_path="/m/hf.mkv").with_updates(
+                cast=[CastMember(name="Taraji P. Henson")]
+            )
+        )
+        await repo.save(
+            _create_movie(title="Cast Away", file_path="/m/ca.mkv").with_updates(
+                cast=[CastMember(name="Wilson O'Brien")]
+            )
+        )
+
+        page = await repo.list_paginated_by_cast_member(
+            actor_name="Wilson O'Brien", cursor=None, limit=10
+        )
+
+        assert len(page.items) == 1
+        assert page.items[0].title.value == "Cast Away"
+
+    async def test_should_sort_alphabetically_case_insensitive(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        weaver = [CastMember(name="Sigourney Weaver")]
+        for title in ["zebra", "Apple", "mango", "Banana"]:
+            await repo.save(
+                _create_movie(title=title, file_path=f"/m/{title.lower()}.mkv").with_updates(
+                    cast=weaver
+                )
+            )
+
+        page = await repo.list_paginated_by_cast_member(
+            actor_name="Sigourney Weaver", cursor=None, limit=10
+        )
+
+        titles = [m.title.value for m in page.items]
+        assert titles == ["Apple", "Banana", "mango", "zebra"]
+
+    async def test_should_walk_pages_via_cursor(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        weaver = [CastMember(name="Sigourney Weaver")]
+        for title in ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"]:
+            await repo.save(
+                _create_movie(title=title, file_path=f"/m/{title}.mkv").with_updates(cast=weaver)
+            )
+
+        page1 = await repo.list_paginated_by_cast_member(
+            actor_name="Sigourney Weaver", cursor=None, limit=2
+        )
+        page2 = await repo.list_paginated_by_cast_member(
+            actor_name="Sigourney Weaver",
+            cursor=page1.pagination.next_cursor,
+            limit=2,
+        )
+        page3 = await repo.list_paginated_by_cast_member(
+            actor_name="Sigourney Weaver",
+            cursor=page2.pagination.next_cursor,
+            limit=2,
+        )
+
+        all_titles = (
+            [m.title.value for m in page1.items]
+            + [m.title.value for m in page2.items]
+            + [m.title.value for m in page3.items]
+        )
+        assert all_titles == ["Alpha", "Beta", "Delta", "Epsilon", "Gamma"]
+        assert page3.pagination.has_more is False
+
+    async def test_should_exclude_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        weaver = [CastMember(name="Sigourney Weaver")]
+        m1 = _create_movie(title="A", file_path="/m/a.mkv").with_updates(cast=weaver)
+        m2 = _create_movie(title="B", file_path="/m/b.mkv").with_updates(cast=weaver)
+        await repo.save(m1)
+        await repo.save(m2)
+        await repo.delete(_id_of(m1))
+
+        page = await repo.list_paginated_by_cast_member(
+            actor_name="Sigourney Weaver", cursor=None, limit=10
+        )
+
+        assert len(page.items) == 1
+        assert page.items[0].title.value == "B"
+
+    async def test_should_return_empty_when_no_match(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(
+            _create_movie(title="A", file_path="/m/a.mkv").with_updates(
+                cast=[CastMember(name="Someone Else")]
+            )
+        )
+
+        page = await repo.list_paginated_by_cast_member(
+            actor_name="Nobody Famous", cursor=None, limit=10
+        )
+
+        assert page.items == []
+        assert page.pagination.has_more is False
 
 
 @pytest.mark.integration

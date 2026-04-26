@@ -177,6 +177,42 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def list_paginated_by_cast_member(
+        self,
+        actor_name: str,
+        cursor: str | None,
+        limit: int,
+    ) -> PaginatedResult[Movie]:
+        """List movies whose cast includes a member named ``actor_name``.
+
+        Sorted by ``(LOWER(title) ASC, id ASC)`` so the actor-page
+        carousel renders alphabetically. The cursor is a
+        ``(title, id)`` composite (see ``encode_title_cursor``) — same
+        contract as ``list_paginated_by_genre``.
+
+        Match is by exact name. The local catalog has no actor id
+        (TMDB person ids aren't persisted yet, see CLAUDE.md
+        roadmap), so two real people who share the same display name
+        would collide. Acceptable trade-off for a personal-library
+        scale catalog; can be tightened to a tmdb_person_id match
+        without breaking the API surface (the route still receives a
+        name and resolves to id internally).
+
+        Args:
+            actor_name: Exact display name of the cast member.
+            cursor: Opaque title cursor from the previous page, or
+                ``None`` for the first page. Invalid cursors silently
+                fall back to the first page.
+            limit: Page size. Implementations fetch ``limit + 1`` rows
+                to detect ``has_more`` cheaply.
+
+        Returns:
+            ``PaginatedResult`` with the page items and pagination
+            metadata. ``total_count`` is always ``None`` here.
+        """
+        ...
+
+    @abstractmethod
     async def search(
         self,
         query: str,

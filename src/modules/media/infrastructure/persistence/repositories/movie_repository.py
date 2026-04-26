@@ -1,8 +1,9 @@
 """SQLAlchemy implementation of MovieRepository."""
 
+import json
 from collections.abc import Sequence
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -10,7 +11,9 @@ from src.building_blocks.application.pagination import (
     PaginatedResult,
     Pagination,
     decode_cursor,
+    decode_title_cursor,
     encode_cursor,
+    encode_title_cursor,
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
@@ -233,6 +236,84 @@ class SQLAlchemyMovieRepository(MovieRepository):
             genre=genre,
             cursor=cursor,
             limit=limit,
+        )
+
+    async def list_paginated_by_cast_member(
+        self,
+        actor_name: str,
+        cursor: str | None,
+        limit: int,
+    ) -> PaginatedResult[Movie]:
+        """List movies whose ``cast`` JSON contains an entry for ``actor_name``.
+
+        Filters with a SQL LIKE against the JSON-serialized ``cast``
+        text column. ``_serialize_cast`` writes entries with ``json.dumps``
+        and default separators, so ``"name": "<name>"`` (with a space
+        after the colon) appears verbatim in storage — the needle
+        builder mirrors that format. Matching by JSON-encoded form
+        rather than by raw substring keeps a name from false-positive
+        matching against a ``role`` or ``profile_path`` field that
+        happened to contain the same text.
+
+        Pagination matches ``list_paginated_by_genre`` (title cursor,
+        ``LOWER(title), id`` order, fetch ``limit + 1`` for ``has_more``)
+        so the actor page can reuse the same cursor-handling
+        conventions as the genre page.
+        """
+        decoded = decode_title_cursor(cursor)
+
+        # JSON-encode the actor name so special characters (``"``, ``\``,
+        # accented letters under ``ensure_ascii=False``) match the form
+        # the row was serialized with. Outer quotes are preserved so
+        # the needle below matches whole-string equality, not a prefix.
+        name_json = json.dumps(actor_name, ensure_ascii=False)
+        needle = f'"name": {name_json}'
+        # Escape SQL LIKE wildcards (``%`` and ``_``) plus the escape
+        # char itself so an actor whose name contains those characters
+        # doesn't widen the match. A trailing-only ``%`` would let
+        # ``"Jane Doe"`` match ``"Jane Doe Jr."`` since both names
+        # share the same prefix; the ``%...%`` wrap below already
+        # prevents that because the needle includes the closing quote
+        # of ``name_json``.
+        needle_escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+        title_lower = func.lower(MovieModel.title)
+
+        stmt = (
+            select(MovieModel)
+            .where(
+                MovieModel.deleted_at.is_(None),
+                MovieModel.cast.is_not(None),
+                MovieModel.cast.like(f"%{needle_escaped}%", escape="\\"),
+            )
+            .options(selectinload(MovieModel.file_variants))
+        )
+
+        if decoded is not None:
+            stmt = stmt.where(
+                or_(
+                    title_lower > decoded.title,
+                    and_(title_lower == decoded.title, MovieModel.id > decoded.id),
+                )
+            )
+
+        stmt = stmt.order_by(title_lower.asc(), MovieModel.id.asc()).limit(limit + 1)
+
+        result = await self._session.execute(stmt)
+        rows = list(result.scalars().all())
+
+        has_more = len(rows) > limit
+        if has_more:
+            rows = rows[:limit]
+
+        next_cursor: str | None = None
+        if has_more and rows:
+            next_cursor = encode_title_cursor(rows[-1].title, rows[-1].id)
+
+        return PaginatedResult(
+            items=[MovieMapper.to_entity(m) for m in rows],
+            pagination=Pagination(next_cursor=next_cursor, has_more=has_more),
+            total_count=None,
         )
 
     async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Movie]:
