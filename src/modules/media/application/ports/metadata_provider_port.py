@@ -218,7 +218,11 @@ class MetadataProvider(ABC):
         ...
 
     @abstractmethod
-    async def get_person(self, tmdb_id: int) -> PersonMetadata | None:
+    async def get_person(
+        self,
+        tmdb_id: int,
+        language: str = "en-US",
+    ) -> PersonMetadata | None:
         """Fetch biographical metadata for a person by id.
 
         Used by the actor page to render bio + birth date + known
@@ -229,6 +233,12 @@ class MetadataProvider(ABC):
 
         Args:
             tmdb_id: TMDB person id captured during movie enrichment.
+            language: BCP-47 tag (e.g. ``"pt-BR"``, ``"en-US"``) for
+                the localized bio. TMDB's coverage of non-English
+                bios is uneven — implementations should fall back to
+                English when the requested language returns an empty
+                biography so the actor page never shows a blank
+                section just because the translation is missing.
 
         Returns:
             ``PersonMetadata`` for the person, or ``None`` when the

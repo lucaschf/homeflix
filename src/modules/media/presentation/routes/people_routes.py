@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api/v1/people", tags=["People"])
 @inject  # type: ignore[misc]
 async def get_person(
     tmdb_id: int,
+    lang: str = "en-US",
     use_case: GetPersonBioUseCase = Depends(
         Provide[ApplicationContainer.media.get_person_bio],
     ),
@@ -31,11 +32,17 @@ async def get_person(
     path param is captured during movie enrichment and forwarded by
     the cast card via ``location.state``.
 
+    Query params:
+        lang: BCP-47 language tag (default ``en-US``). When the
+            requested language has no biography on TMDB the use case
+            falls back to English bio while keeping the rest of the
+            payload localized.
+
     Returns 404 when the provider has no record for the id (deleted
     person, propagated 404, network error). The actor page degrades
     gracefully on 404 and keeps a name-only header.
     """
-    result = await use_case.execute(GetPersonBioInput(tmdb_id=tmdb_id))
+    result = await use_case.execute(GetPersonBioInput(tmdb_id=tmdb_id, lang=lang))
     if result is None:
         raise HTTPException(status_code=404, detail="Person not found")
     return api_single("person", asdict(result))

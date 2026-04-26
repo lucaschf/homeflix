@@ -53,7 +53,17 @@ class TestGetPersonBioUseCase:
         assert result.biography == "American actor."
         assert result.birthday == "1974-11-11"
         assert result.known_for_department == "Acting"
-        provider.get_person.assert_awaited_once_with(6193)
+        provider.get_person.assert_awaited_once_with(6193, language="en-US")
+
+    @pytest.mark.asyncio
+    async def test_should_forward_lang_to_provider(self) -> None:
+        provider = AsyncMock()
+        provider.get_person.return_value = _person()
+        use_case = GetPersonBioUseCase(metadata_provider=provider)
+
+        await use_case.execute(GetPersonBioInput(tmdb_id=6193, lang="pt-BR"))
+
+        provider.get_person.assert_awaited_once_with(6193, language="pt-BR")
 
     @pytest.mark.asyncio
     async def test_should_return_none_when_provider_returns_none(self) -> None:
@@ -75,4 +85,4 @@ class TestGetPersonBioUseCase:
 
         await use_case.execute(GetPersonBioInput(tmdb_id=12345))
 
-        provider.get_person.assert_awaited_once_with(12345)
+        provider.get_person.assert_awaited_once_with(12345, language="en-US")

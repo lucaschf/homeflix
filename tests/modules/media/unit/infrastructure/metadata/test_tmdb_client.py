@@ -644,6 +644,85 @@ class TestGetPerson:
         assert result.known_for_department is None
         assert result.profile_path is None
 
+    @pytest.mark.asyncio
+    async def test_should_fall_back_to_english_when_localized_bio_is_empty(self) -> None:
+        # TMDB has the pt-BR payload but didn't author the bio in pt;
+        # the client should fetch English and use only that bio,
+        # keeping the rest of the localized fields.
+        client = _make_client(
+            get_responses=[
+                _build_response(
+                    json_data={
+                        "id": 6193,
+                        "name": "Leonardo DiCaprio",
+                        "biography": "",
+                        "birthday": "1974-11-11",
+                        "place_of_birth": "Los Angeles, Califórnia, EUA",
+                        "known_for_department": "Acting",
+                        "profile_path": "/leo.jpg",
+                    },
+                ),
+                _build_response(
+                    json_data={
+                        "id": 6193,
+                        "name": "Leonardo DiCaprio",
+                        "biography": "American actor born in 1974.",
+                        "birthday": "1974-11-11",
+                        "place_of_birth": "Los Angeles, California, USA",
+                        "known_for_department": "Acting",
+                        "profile_path": "/leo.jpg",
+                    },
+                ),
+            ]
+        )
+
+        result = await client.get_person(6193, language="pt-BR")
+
+        assert result is not None
+        assert result.biography == "American actor born in 1974."
+        # Localized fields kept — only the empty bio was replaced.
+        assert result.place_of_birth == "Los Angeles, Califórnia, EUA"
+
+    @pytest.mark.asyncio
+    async def test_should_not_fall_back_when_english_request_returned_empty(self) -> None:
+        # English already returned empty — no second call needed; the
+        # ``_is_english`` short-circuit avoids burning an HTTP request
+        # on a guaranteed no-op.
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "id": 6193,
+                    "name": "Leonardo DiCaprio",
+                    "biography": "",
+                    "birthday": "1974-11-11",
+                },
+            )
+        )
+
+        result = await client.get_person(6193, language="en-US")
+
+        assert result is not None
+        assert result.biography == ""
+
+    @pytest.mark.asyncio
+    async def test_should_keep_localized_bio_when_present(self) -> None:
+        # When the localized fetch already has a bio, no fallback fires
+        # — saves an HTTP round-trip when TMDB has translations.
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "id": 6193,
+                    "name": "Leonardo DiCaprio",
+                    "biography": "Ator americano nascido em 1974.",
+                },
+            )
+        )
+
+        result = await client.get_person(6193, language="pt-BR")
+
+        assert result is not None
+        assert result.biography == "Ator americano nascido em 1974."
+
 
 @pytest.mark.unit
 class TestGetMovieLocalized:

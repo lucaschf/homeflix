@@ -13,9 +13,15 @@ class GetPersonBioInput:
         tmdb_id: TMDB person id captured during movie enrichment.
             Provided by the frontend from ``CastMember.tmdb_id``;
             invalid / unknown ids return ``None`` from the use case.
+        lang: BCP-47 language tag (e.g. ``"pt-BR"``, ``"en-US"``)
+            forwarded to the metadata provider for localized
+            biography. The provider falls back to English when the
+            requested language has no bio text — see
+            ``MetadataProvider.get_person``.
     """
 
     tmdb_id: int
+    lang: str = "en-US"
 
 
 @dataclass(frozen=True)
@@ -72,7 +78,10 @@ class GetPersonBioUseCase:
             ``None`` when the provider has no record (404, network
             error, etc.) — caller renders a graceful fallback.
         """
-        metadata = await self._metadata_provider.get_person(input_dto.tmdb_id)
+        metadata = await self._metadata_provider.get_person(
+            input_dto.tmdb_id,
+            language=input_dto.lang,
+        )
         if metadata is None:
             return None
         return PersonBioOutput(

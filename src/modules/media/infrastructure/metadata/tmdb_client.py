@@ -27,6 +27,15 @@ def _safe_int(value: object, default: int) -> int:
 _TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/original"
 
 
+def _is_english(language: str) -> bool:
+    """Return ``True`` for any English BCP-47 tag (``en``, ``en-US``, ``en-GB``).
+
+    Used by ``get_person`` to decide whether the requested-language
+    fetch already gave us the English bio (no fallback needed).
+    """
+    return language.lower().split("-", 1)[0] == "en"
+
+
 class TmdbClient(MetadataProvider):
     """The Movie Database (TMDB) API client.
 
@@ -278,19 +287,45 @@ class TmdbClient(MetadataProvider):
                 ids.append(raw)
         return ids
 
-    async def get_person(self, tmdb_id: int) -> PersonMetadata | None:
+    async def get_person(
+        self,
+        tmdb_id: int,
+        language: str = "en-US",
+    ) -> PersonMetadata | None:
         """Fetch biographical metadata for a person from TMDB.
 
-        Hits ``/person/{id}`` (default English locale — TMDB person
-        bios are typically only authored in English so a localized
-        request would just return the same payload). Network failures
-        and unexpected payloads degrade to ``None`` so the actor page
-        falls back to a name-only header instead of erroring out.
+        Hits ``/person/{id}?language=<lang>`` and falls back to
+        ``en-US`` for the biography text alone when TMDB returns a
+        blank one in the requested language. The fallback is
+        bio-only because TMDB authors translations field-by-field —
+        a missing Portuguese ``biography`` doesn't mean ``birthday``
+        / ``place_of_birth`` are also missing in pt-BR (they often
+        aren't), so blowing the whole payload away would lose
+        translations the user actually has.
+
+        Network failures and unexpected payloads degrade to ``None``
+        so the actor page falls back to a name-only header instead
+        of erroring out.
         """
+        meta = await self._fetch_person(tmdb_id, language)
+        if meta is None or meta.biography or _is_english(language):
+            return meta
+        # Bio came back empty in a non-English locale — try English
+        # so the panel isn't blank when TMDB only authored the bio
+        # for one language.
+        en_meta = await self._fetch_person(tmdb_id, "en-US")
+        if en_meta is None or not en_meta.biography:
+            return meta
+        from dataclasses import replace
+
+        return replace(meta, biography=en_meta.biography)
+
+    async def _fetch_person(self, tmdb_id: int, language: str) -> PersonMetadata | None:
+        """Single ``/person/{id}`` round-trip in ``language``."""
         try:
             resp = await self._client.get(
                 f"{self._base_url}/person/{tmdb_id}",
-                params=self._params(),
+                params=self._params(language=language),
             )
         except httpx.HTTPError:
             return None
