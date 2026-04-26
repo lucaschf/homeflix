@@ -8,6 +8,7 @@ from src.modules.media.application.ports import (
     LocalizedFields,
     MediaMetadata,
     MetadataProvider,
+    PersonMetadata,
     SeasonMetadata,
 )
 from src.modules.media.domain.value_objects import ContentRating
@@ -276,6 +277,52 @@ class TmdbClient(MetadataProvider):
             if isinstance(raw, int):
                 ids.append(raw)
         return ids
+
+    async def get_person(self, tmdb_id: int) -> PersonMetadata | None:
+        """Fetch biographical metadata for a person from TMDB.
+
+        Hits ``/person/{id}`` (default English locale — TMDB person
+        bios are typically only authored in English so a localized
+        request would just return the same payload). Network failures
+        and unexpected payloads degrade to ``None`` so the actor page
+        falls back to a name-only header instead of erroring out.
+        """
+        try:
+            resp = await self._client.get(
+                f"{self._base_url}/person/{tmdb_id}",
+                params=self._params(),
+            )
+        except httpx.HTTPError:
+            return None
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        if not isinstance(data, dict):
+            return None
+        # ``id`` and ``name`` are required for the UI to render
+        # anything useful; everything else is optional polish.
+        raw_id = data.get("id")
+        if not isinstance(raw_id, int):
+            return None
+        name = str(data.get("name", "")).strip()
+        if not name:
+            return None
+        return PersonMetadata(
+            tmdb_id=raw_id,
+            name=name,
+            biography=str(data.get("biography") or ""),
+            birthday=str(data.get("birthday")) if data.get("birthday") else None,
+            deathday=str(data.get("deathday")) if data.get("deathday") else None,
+            place_of_birth=(
+                str(data.get("place_of_birth")) if data.get("place_of_birth") else None
+            ),
+            known_for_department=(
+                str(data.get("known_for_department")) if data.get("known_for_department") else None
+            ),
+            profile_path=self._image_url(
+                str(data.get("profile_path")) if data.get("profile_path") else None
+            ),
+        )
 
     async def get_series_localized(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch series details in English with pt-BR localization.

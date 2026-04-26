@@ -65,6 +65,41 @@ class CreditPerson:
 
 
 @dataclass(frozen=True)
+class PersonMetadata:
+    """Biographical metadata for a single person fetched by id.
+
+    Returned by ``MetadataProvider.get_person`` and surfaced by the
+    actor page. Fields are deliberately a strict subset of TMDB's
+    ``/person/{id}`` payload — only the ones the UI renders today —
+    so adding fields later is additive at every layer.
+
+    Attributes:
+        tmdb_id: TMDB person ID.
+        name: Display name.
+        biography: Long-form biography text. Empty string when TMDB
+            has no bio for this person; the UI hides the section then.
+        birthday: ISO date (``YYYY-MM-DD``) or ``None`` when unknown /
+            withheld.
+        deathday: ISO date or ``None`` when alive / unknown.
+        place_of_birth: Free-form string (e.g. ``"Los Angeles, California, USA"``)
+            or ``None``.
+        known_for_department: Primary department on TMDB
+            (``"Acting"``, ``"Directing"``, etc.). ``None`` when not
+            categorized.
+        profile_path: Full URL to the profile image, or ``None``.
+    """
+
+    tmdb_id: int
+    name: str
+    biography: str = ""
+    birthday: str | None = None
+    deathday: str | None = None
+    place_of_birth: str | None = None
+    known_for_department: str | None = None
+    profile_path: str | None = None
+
+
+@dataclass(frozen=True)
 class LocalizedFields:
     """Localized metadata fields for a specific language.
 
@@ -183,6 +218,25 @@ class MetadataProvider(ABC):
         ...
 
     @abstractmethod
+    async def get_person(self, tmdb_id: int) -> PersonMetadata | None:
+        """Fetch biographical metadata for a person by id.
+
+        Used by the actor page to render bio + birth date + known
+        department alongside the catalog filmography. Returns ``None``
+        when the provider has nothing for ``tmdb_id`` (deleted person,
+        404, network error) — the actor page degrades gracefully and
+        falls back to a name-only header.
+
+        Args:
+            tmdb_id: TMDB person id captured during movie enrichment.
+
+        Returns:
+            ``PersonMetadata`` for the person, or ``None`` when the
+            provider has no record / the call failed.
+        """
+        ...
+
+    @abstractmethod
     async def get_movie_recommendations(self, tmdb_id: int) -> list[int]:
         """Return TMDB ids of movies recommended for ``tmdb_id``.
 
@@ -202,6 +256,7 @@ class MetadataProvider(ABC):
 __all__ = [
     "CreditPerson",
     "EpisodeMetadata",
+    "PersonMetadata",
     "MediaMetadata",
     "MetadataProvider",
     "SeasonMetadata",

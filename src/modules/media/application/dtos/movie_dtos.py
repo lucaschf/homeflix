@@ -40,7 +40,8 @@ class CastMemberOutput:
     """Cast entry exposed on the API.
 
     Mirrors the domain ``CastMember`` shape so the detail UI can
-    render an avatar (``profile_path``) + name + role per actor.
+    render an avatar (``profile_path``) + name + role per actor and
+    deep-link to the actor's bio page via ``tmdb_id``.
 
     Attributes:
         name: Actor's display name.
@@ -48,11 +49,16 @@ class CastMemberOutput:
             when TMDB has no photo for this person — the UI falls
             back to an initials avatar.
         role: Character name played, or ``None`` when not provided.
+        tmdb_id: TMDB person id, or ``None`` for rows enriched before
+            the id was captured. The actor page uses this to fetch
+            biography and birth date from ``/people/{id}``; absence
+            degrades to a name-only header.
     """
 
     name: str
     profile_path: str | None
     role: str | None
+    tmdb_id: int | None
 
 
 @dataclass(frozen=True)

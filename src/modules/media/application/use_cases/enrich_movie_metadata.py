@@ -199,7 +199,13 @@ def _apply_credits(
     """Apply cast/director/writer credits from metadata if not already present."""
     if metadata.cast and not movie.cast:
         updates["cast"] = [
-            CastMember(name=p.name, profile_path=p.profile_url, role=p.role) for p in metadata.cast
+            CastMember(
+                name=p.name,
+                profile_path=p.profile_url,
+                role=p.role,
+                tmdb_id=p.tmdb_id,
+            )
+            for p in metadata.cast
         ]
     if metadata.directors and not movie.directors:
         updates["directors"] = [p.name for p in metadata.directors]

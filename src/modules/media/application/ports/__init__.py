@@ -17,6 +17,7 @@ from src.modules.media.application.ports.metadata_provider_port import (
     LocalizedFields,
     MediaMetadata,
     MetadataProvider,
+    PersonMetadata,
     SeasonMetadata,
 )
 from src.modules.media.application.ports.progress_lookup_port import (
@@ -38,6 +39,7 @@ __all__ = [
     "MediaProbePort",
     "MediaType",
     "MetadataProvider",
+    "PersonMetadata",
     "ProbeResult",
     "ProgressLookupPort",
     "ProgressSummary",

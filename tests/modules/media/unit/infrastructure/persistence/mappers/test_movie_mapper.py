@@ -195,6 +195,80 @@ class TestMovieMapper:
 
         assert entity.cast == []
 
+    def test_to_entity_reads_cast_dict_with_tmdb_id(self) -> None:
+        """Current cast shape carries ``tmdb_id`` from TMDB enrichment.
+
+        Pinned so the mapper's default-None fallback (for older
+        rows enriched before ``tmdb_id`` was captured) doesn't
+        silently swallow the id when it IS present.
+        """
+        movie_id = MovieId.generate()
+        now = datetime.now(UTC)
+        model = MovieModel(
+            external_id=str(movie_id),
+            title="Test Movie",
+            year=2024,
+            duration=7200,
+            cast=(
+                '[{"name": "Leonardo DiCaprio", "profile_path": null, '
+                '"role": "Cobb", "tmdb_id": 6193}]'
+            ),
+            created_at=now,
+            updated_at=now,
+        )
+
+        entity = MovieMapper.to_entity(model, include_files=False)
+
+        assert len(entity.cast) == 1
+        assert entity.cast[0].tmdb_id == 6193
+
+    def test_to_entity_defaults_tmdb_id_to_none_for_pre_id_dict_shape(self) -> None:
+        """Rows enriched before ``tmdb_id`` capture must still load.
+
+        The dict shape without ``tmdb_id`` is the second-generation
+        cast format (``name`` + ``profile_path`` + ``role``); existing
+        libraries holding it should keep working with the actor page
+        falling back to a name-only header.
+        """
+        movie_id = MovieId.generate()
+        now = datetime.now(UTC)
+        model = MovieModel(
+            external_id=str(movie_id),
+            title="Test Movie",
+            year=2024,
+            duration=7200,
+            cast='[{"name": "Leonardo DiCaprio", "profile_path": null, "role": "Cobb"}]',
+            created_at=now,
+            updated_at=now,
+        )
+
+        entity = MovieMapper.to_entity(model, include_files=False)
+
+        assert entity.cast[0].tmdb_id is None
+
+    def test_to_entity_drops_non_int_tmdb_id_silently(self) -> None:
+        """A string / float / null ``tmdb_id`` collapses to ``None``.
+
+        Defends against a malformed import or a future provider drift
+        that sends ``"6193"`` instead of ``6193``; without the guard
+        the VO type-check would fail at construction time.
+        """
+        movie_id = MovieId.generate()
+        now = datetime.now(UTC)
+        model = MovieModel(
+            external_id=str(movie_id),
+            title="Test Movie",
+            year=2024,
+            duration=7200,
+            cast='[{"name": "Leonardo DiCaprio", "tmdb_id": "6193"}]',
+            created_at=now,
+            updated_at=now,
+        )
+
+        entity = MovieMapper.to_entity(model, include_files=False)
+
+        assert entity.cast[0].tmdb_id is None
+
     def test_to_entity_skips_cast_dicts_without_name(self) -> None:
         """Cast entries with empty / missing ``name`` are skipped.
 

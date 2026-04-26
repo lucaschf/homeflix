@@ -27,29 +27,44 @@ from src.modules.media.infrastructure.persistence.models import MediaFileModel, 
 def _serialize_cast(cast: list[CastMember]) -> str | None:
     """Serialize the cast list to the JSON shape stored on disk.
 
-    New shape: ``[{"name": "...", "profile_path": "...", "role": "..."}, ...]``.
-    Always written this way; legacy ``["Name1", "Name2"]`` data is only
-    *read* by ``_deserialize_cast`` and gets converted on the next save.
+    Current shape:
+    ``[{"name": "...", "profile_path": "...", "role": "...", "tmdb_id": 123}, ...]``.
+
+    Always written this way; older shapes (``["Name1", "Name2"]`` and
+    the dict shape without ``tmdb_id``) are only *read* by
+    ``_deserialize_cast`` and get converted on the next save.
     """
     if not cast:
         return None
-    payload = [{"name": m.name, "profile_path": m.profile_path, "role": m.role} for m in cast]
+    payload = [
+        {
+            "name": m.name,
+            "profile_path": m.profile_path,
+            "role": m.role,
+            "tmdb_id": m.tmdb_id,
+        }
+        for m in cast
+    ]
     return json.dumps(payload, ensure_ascii=False)
 
 
 def _deserialize_cast(raw: str | None) -> list[CastMember]:
     """Reconstruct the cast list from the JSON column.
 
-    Accepts both the new dict shape and the legacy ``list[str]`` shape
-    so rows enriched before this feature still load — entries without
-    photo/role just render as initials avatars on the UI side. The
-    next save migrates the row to the new shape implicitly.
+    Accepts every historic shape so rows enriched at any point still
+    load: legacy ``list[str]`` (initials-only fallback), the dict
+    shape without ``tmdb_id`` (no bio link on the actor page —
+    degrades to a name-only flow), and the current dict shape with
+    ``tmdb_id``. The next save migrates the row to the current shape
+    implicitly.
 
     Tolerant of malformed payloads at the storage boundary: a JSON
     value that is not a list (drift from a future migration, manual
     DB edit) collapses to an empty cast rather than iterating dict
     keys as if they were entries; dict entries with no usable
-    ``name`` are skipped so the UI never renders empty cards.
+    ``name`` are skipped so the UI never renders empty cards. A
+    non-int ``tmdb_id`` (string, float, malformed import) is dropped
+    silently rather than raising.
     """
     if not raw:
         return []
@@ -66,11 +81,14 @@ def _deserialize_cast(raw: str | None) -> list[CastMember]:
             name = str(item.get("name") or "").strip()
             if not name:
                 continue
+            raw_tmdb_id = item.get("tmdb_id")
+            tmdb_id = raw_tmdb_id if isinstance(raw_tmdb_id, int) else None
             members.append(
                 CastMember(
                     name=name,
                     profile_path=item.get("profile_path") or None,
                     role=item.get("role") or None,
+                    tmdb_id=tmdb_id,
                 )
             )
     return members
