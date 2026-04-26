@@ -26,6 +26,7 @@ from src.modules.media.presentation.routes import (
     enrichment_router,
     featured_router,
     movie_router,
+    people_router,
     scan_router,
     search_router,
     series_router,
@@ -75,6 +76,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "src.modules.media.presentation.routes.enrichment_routes",
             "src.modules.media.presentation.routes.featured_routes",
             "src.modules.media.presentation.routes.movie_routes",
+            "src.modules.media.presentation.routes.people_routes",
             "src.modules.media.presentation.routes.scan_routes",
             "src.modules.media.presentation.routes.series_routes",
             "src.modules.media.presentation.routes.stream_routes",
@@ -184,6 +186,7 @@ def create_app() -> FastAPI:
     app.include_router(enrichment_router)
     app.include_router(featured_router)
     app.include_router(movie_router)
+    app.include_router(people_router)
     app.include_router(scan_router)
     app.include_router(series_router)
     app.include_router(stream_router)

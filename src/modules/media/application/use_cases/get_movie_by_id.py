@@ -82,7 +82,12 @@ class GetMovieByIdUseCase:
             scrub_preview_path=movie.scrub_preview_path.value if movie.scrub_preview_path else None,
             genres=movie.get_genres(lang),
             cast=[
-                CastMemberOutput(name=m.name, profile_path=m.profile_path, role=m.role)
+                CastMemberOutput(
+                    name=m.name,
+                    profile_path=m.profile_path,
+                    role=m.role,
+                    tmdb_id=m.tmdb_id,
+                )
                 for m in movie.cast
             ],
             directors=movie.directors,

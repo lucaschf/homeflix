@@ -18,6 +18,7 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import ContentRating, TmdbId
+from src.modules.media.domain.value_objects.cast_member import CastMember
 from tests.modules.media.unit.conftest import MediaUoWMocks, make_media_uow_mock
 
 
@@ -199,6 +200,90 @@ class TestEnrichMovieMetadata:
         result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         assert result.enriched is True
+
+
+@pytest.mark.unit
+class TestEnrichMovieMetadataForce:
+    """``force=True`` must bypass the ``not movie.<field>`` guards.
+
+    Motivating use case: backfill ``tmdb_id`` on cast members of
+    movies enriched before the id was captured. Without the force
+    bypass on ``_apply_credits`` the cast field stays untouched and
+    the actor page never gets bio links.
+    """
+
+    @pytest.mark.asyncio
+    async def test_should_overwrite_existing_cast_with_tmdb_id(self) -> None:
+        # Old enrichment shape: cast present but ``tmdb_id`` is None
+        # because the row was saved before we captured the id.
+        movie = _make_movie().with_updates(
+            tmdb_id=TmdbId(27205),
+            cast=[CastMember(name="Leonardo DiCaprio", tmdb_id=None)],
+        )
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.get_movie_by_id.return_value = MediaMetadata(
+            title="Inception",
+            tmdb_id=27205,
+            cast=[
+                CreditPerson(
+                    name="Leonardo DiCaprio",
+                    role="Cobb",
+                    profile_url="https://image.tmdb.org/t/p/original/leo.jpg",
+                    tmdb_id=6193,
+                ),
+            ],
+        )
+
+        captured: dict[str, Movie] = {}
+
+        async def _capture(m: Movie) -> Movie:
+            captured["saved"] = m
+            return m
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        mocks.movies.save.side_effect = _capture
+
+        result = await use_case.execute(
+            EnrichMediaInput(media_id=str(movie.id), force=True),
+        )
+
+        assert result.enriched is True
+        saved = captured["saved"]
+        assert len(saved.cast) == 1
+        assert saved.cast[0].name == "Leonardo DiCaprio"
+        assert saved.cast[0].tmdb_id == 6193
+        assert saved.cast[0].role == "Cobb"
+
+    @pytest.mark.asyncio
+    async def test_should_preserve_existing_cast_when_not_forced(self) -> None:
+        # Counterpart to the above — without ``force``, the existing
+        # cast (without ``tmdb_id``) must NOT be touched even if the
+        # provider returns a richer payload.
+        original_cast = [CastMember(name="Leonardo DiCaprio", tmdb_id=None)]
+        movie = _make_movie().with_updates(cast=original_cast)
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = MediaMetadata(
+            title="Inception",
+            tmdb_id=27205,
+            cast=[
+                CreditPerson(name="Leonardo DiCaprio", tmdb_id=6193),
+            ],
+        )
+
+        captured: dict[str, Movie] = {}
+
+        async def _capture(m: Movie) -> Movie:
+            captured["saved"] = m
+            return m
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        mocks.movies.save.side_effect = _capture
+
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        # ``tmdb_id`` stays None because the guard skipped the cast
+        # update — the existing list wins.
+        assert captured["saved"].cast[0].tmdb_id is None
 
 
 @pytest.mark.unit

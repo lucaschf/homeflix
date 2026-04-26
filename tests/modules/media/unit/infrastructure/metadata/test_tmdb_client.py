@@ -549,6 +549,182 @@ class TestGetSeriesById:
 
 
 @pytest.mark.unit
+class TestGetPerson:
+    """Tests for ``get_person`` (TMDB ``/person/{id}``)."""
+
+    @pytest.mark.asyncio
+    async def test_should_parse_person_payload(self) -> None:
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "id": 6193,
+                    "name": "Leonardo DiCaprio",
+                    "biography": "American actor born in 1974.",
+                    "birthday": "1974-11-11",
+                    "deathday": None,
+                    "place_of_birth": "Los Angeles, California, USA",
+                    "known_for_department": "Acting",
+                    "profile_path": "/leo.jpg",
+                }
+            )
+        )
+
+        result = await client.get_person(6193)
+
+        assert result is not None
+        assert result.tmdb_id == 6193
+        assert result.name == "Leonardo DiCaprio"
+        assert result.biography == "American actor born in 1974."
+        assert result.birthday == "1974-11-11"
+        assert result.deathday is None
+        assert result.place_of_birth == "Los Angeles, California, USA"
+        assert result.known_for_department == "Acting"
+        # ``profile_path`` is rewritten to a CDN URL by ``_image_url``.
+        assert result.profile_path == "https://image.tmdb.org/t/p/original/leo.jpg"
+
+    @pytest.mark.asyncio
+    async def test_should_return_none_on_404(self) -> None:
+        client = _make_client(get_responses=_build_response(status_code=404))
+
+        result = await client.get_person(99999999)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_should_return_none_on_network_error(self) -> None:
+        # ``HTTPError`` (e.g. timeout, connection reset) collapses to
+        # ``None`` so the actor page degrades to a name-only header
+        # instead of erroring out.
+        client = TmdbClient(api_key="test-key")
+        mock_http = MagicMock()
+        mock_http.get = AsyncMock(side_effect=httpx.RequestError("boom"))
+        client._client = mock_http
+
+        result = await client.get_person(6193)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_should_return_none_when_payload_missing_id(self) -> None:
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={"name": "Leonardo DiCaprio"},  # no id
+            )
+        )
+
+        result = await client.get_person(6193)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_should_collapse_empty_strings_to_none(self) -> None:
+        # TMDB returns ``""`` for unknown places of birth on some rows;
+        # the parser flattens those to ``None`` so the UI's
+        # ``value && <render>`` guards do the right thing.
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "id": 6193,
+                    "name": "Leonardo DiCaprio",
+                    "biography": "",
+                    "birthday": "",
+                    "place_of_birth": "",
+                    "known_for_department": "",
+                    "profile_path": "",
+                }
+            )
+        )
+
+        result = await client.get_person(6193)
+
+        assert result is not None
+        assert result.biography == ""
+        assert result.birthday is None
+        assert result.place_of_birth is None
+        assert result.known_for_department is None
+        assert result.profile_path is None
+
+    @pytest.mark.asyncio
+    async def test_should_fall_back_to_english_when_localized_bio_is_empty(self) -> None:
+        # TMDB has the pt-BR payload but didn't author the bio in pt;
+        # the client should fetch English and use only that bio,
+        # keeping the rest of the localized fields.
+        client = _make_client(
+            get_responses=[
+                _build_response(
+                    json_data={
+                        "id": 6193,
+                        "name": "Leonardo DiCaprio",
+                        "biography": "",
+                        "birthday": "1974-11-11",
+                        "place_of_birth": "Los Angeles, Califórnia, EUA",
+                        "known_for_department": "Acting",
+                        "profile_path": "/leo.jpg",
+                    },
+                ),
+                _build_response(
+                    json_data={
+                        "id": 6193,
+                        "name": "Leonardo DiCaprio",
+                        "biography": "American actor born in 1974.",
+                        "birthday": "1974-11-11",
+                        "place_of_birth": "Los Angeles, California, USA",
+                        "known_for_department": "Acting",
+                        "profile_path": "/leo.jpg",
+                    },
+                ),
+            ]
+        )
+
+        result = await client.get_person(6193, language="pt-BR")
+
+        assert result is not None
+        assert result.biography == "American actor born in 1974."
+        # Localized fields kept — only the empty bio was replaced.
+        assert result.place_of_birth == "Los Angeles, Califórnia, EUA"
+
+    @pytest.mark.asyncio
+    async def test_should_not_fall_back_when_english_request_returned_empty(self) -> None:
+        # English already returned empty — no second call needed; the
+        # ``_is_english`` short-circuit avoids burning an HTTP request
+        # on a guaranteed no-op.
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "id": 6193,
+                    "name": "Leonardo DiCaprio",
+                    "biography": "",
+                    "birthday": "1974-11-11",
+                },
+            )
+        )
+
+        result = await client.get_person(6193, language="en-US")
+
+        assert result is not None
+        assert result.biography == ""
+
+    @pytest.mark.asyncio
+    async def test_should_keep_localized_bio_when_present(self) -> None:
+        # When the localized fetch already has a bio, no fallback fires
+        # — saves an HTTP round-trip when TMDB has translations.
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "id": 6193,
+                    "name": "Leonardo DiCaprio",
+                    "biography": "Ator americano nascido em 1974.",
+                },
+            )
+        )
+
+        result = await client.get_person(6193, language="pt-BR")
+
+        assert result is not None
+        assert result.biography == "Ator americano nascido em 1974."
+
+
+@pytest.mark.unit
 class TestGetMovieLocalized:
     """Tests for get_movie_localized."""
 
