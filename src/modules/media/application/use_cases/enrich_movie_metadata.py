@@ -80,7 +80,7 @@ class EnrichMovieMetadataUseCase:
                 if localized_meta is not None:
                     metadata = localized_meta
 
-            movie = _apply_movie_metadata(movie, metadata)
+            movie = _apply_movie_metadata(movie, metadata, force=input_dto.force)
             await uow.movies.save(movie)
 
         return EnrichMediaOutput(media_id=input_dto.media_id, enriched=True, provider=provider_name)
@@ -156,13 +156,26 @@ def _clean_title(title: str) -> str:
     return result
 
 
-def _apply_movie_metadata(movie: Movie, metadata: MediaMetadata) -> Movie:
-    """Apply metadata fields to a movie entity."""
+def _apply_movie_metadata(
+    movie: Movie,
+    metadata: MediaMetadata,
+    *,
+    force: bool = False,
+) -> Movie:
+    """Apply metadata fields to a movie entity.
+
+    Each field has a "fill if empty" guard by default so re-enrichment
+    doesn't clobber user customizations (a synopsis the user edited,
+    a poster they picked manually, etc.). When ``force=True`` every
+    guard is bypassed and TMDB's payload wins — used by the bulk
+    enrich's "force update" toggle to backfill new fields (like the
+    cast member ``tmdb_id``) on rows that were already enriched.
+    """
     updates: dict[str, object] = {}
 
     if metadata.title:
         updates["title"] = Title(metadata.title)
-    if metadata.synopsis and not movie.synopsis:
+    if metadata.synopsis and (force or not movie.synopsis):
         updates["synopsis"] = metadata.synopsis
     if metadata.tmdb_id:
         updates["tmdb_id"] = TmdbId(metadata.tmdb_id)
@@ -170,20 +183,20 @@ def _apply_movie_metadata(movie: Movie, metadata: MediaMetadata) -> Movie:
         updates["imdb_id"] = ImdbId(metadata.imdb_id)
     if metadata.original_title:
         updates["original_title"] = Title(metadata.original_title)
-    if metadata.duration_seconds and movie.duration.value == 0:
+    if metadata.duration_seconds and (force or movie.duration.value == 0):
         updates["duration"] = Duration(metadata.duration_seconds)
     if metadata.year:
         updates["year"] = Year(metadata.year)
-    if metadata.genres and not movie.genres:
+    if metadata.genres and (force or not movie.genres):
         updates["genres"] = [Genre(g) for g in metadata.genres]
-    if metadata.poster_url and not movie.poster_path:
+    if metadata.poster_url and (force or not movie.poster_path):
         updates["poster_path"] = ImageUrl(metadata.poster_url)
-    if metadata.backdrop_url and not movie.backdrop_path:
+    if metadata.backdrop_url and (force or not movie.backdrop_path):
         updates["backdrop_path"] = ImageUrl(metadata.backdrop_url)
-    if metadata.logo_url and not movie.logo_path:
+    if metadata.logo_url and (force or not movie.logo_path):
         updates["logo_path"] = ImageUrl(metadata.logo_url)
 
-    _apply_credits(updates, movie, metadata)
+    _apply_credits(updates, movie, metadata, force=force)
 
     if updates:
         movie = movie.with_updates(**updates)
@@ -195,9 +208,17 @@ def _apply_credits(
     updates: dict[str, object],
     movie: Movie,
     metadata: MediaMetadata,
+    *,
+    force: bool = False,
 ) -> None:
-    """Apply cast/director/writer credits from metadata if not already present."""
-    if metadata.cast and not movie.cast:
+    """Apply cast/director/writer credits.
+
+    Each field defaults to a "fill if empty" guard; ``force=True``
+    bypasses the guard so a refresh repopulates credits from TMDB.
+    The motivating use case is backfilling ``tmdb_id`` on cast
+    members that were already saved before the id was captured.
+    """
+    if metadata.cast and (force or not movie.cast):
         updates["cast"] = [
             CastMember(
                 name=p.name,
@@ -207,13 +228,13 @@ def _apply_credits(
             )
             for p in metadata.cast
         ]
-    if metadata.directors and not movie.directors:
+    if metadata.directors and (force or not movie.directors):
         updates["directors"] = [p.name for p in metadata.directors]
-    if metadata.writers and not movie.writers:
+    if metadata.writers and (force or not movie.writers):
         updates["writers"] = [p.name for p in metadata.writers]
-    if metadata.content_rating and not movie.content_rating:
+    if metadata.content_rating and (force or not movie.content_rating):
         updates["content_rating"] = ContentRating(metadata.content_rating)
-    if metadata.trailer_url and not movie.trailer_url:
+    if metadata.trailer_url and (force or not movie.trailer_url):
         updates["trailer_url"] = metadata.trailer_url
     _apply_localized(updates, movie.localized, metadata)
 
