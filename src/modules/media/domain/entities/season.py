@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime  # noqa: TCH003 — needed at runtime by Pydantic
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 from pydantic import Field, field_validator
 
@@ -160,12 +160,20 @@ class Season(DomainEntity[SeasonId]):
             intro_detection_error=None,
         )
 
+    _DETECTION_ERROR_MAX_LEN: ClassVar[int] = 2000
+
     def with_detection_failed(self, error: str, attempted_at: datetime | None = None) -> Self:
         """Mark detection as FAILED with a diagnostic message.
 
+        The error message is truncated to ``_DETECTION_ERROR_MAX_LEN``
+        characters before persistence. Truncation is explicit (not via
+        Pydantic field validation) so that very long ffmpeg/fpcalc
+        stderr dumps don't raise a ``ValidationError`` while we are
+        already trying to record a failure.
+
         Args:
-            error: Short diagnostic message (truncated to 2000 chars by
-                the field constraint).
+            error: Diagnostic message. Truncated if longer than
+                ``_DETECTION_ERROR_MAX_LEN`` chars.
             attempted_at: When the detection ran. Defaults to ``utc_now()``.
 
         Returns:
@@ -174,7 +182,7 @@ class Season(DomainEntity[SeasonId]):
         return self.with_updates(
             intro_detection_state=IntroDetectionState.FAILED,
             intro_detection_attempted_at=attempted_at or utc_now(),
-            intro_detection_error=error,
+            intro_detection_error=error[: self._DETECTION_ERROR_MAX_LEN],
         )
 
     def with_detection_marked_insufficient(self, attempted_at: datetime | None = None) -> Self:
@@ -231,6 +239,14 @@ class Season(DomainEntity[SeasonId]):
 
     def _guard_transition(self, target: IntroDetectionState) -> None:
         """Block invalid intro-detection state transitions.
+
+        Only ``IN_PROGRESS`` is guarded: re-entering it would let two
+        job ticks process the same season concurrently, and entering it
+        from ``DISABLED`` would silently override an explicit opt-out.
+        All other transitions (to terminal states, to ``DISABLED``, or
+        back to ``NOT_STARTED`` via ``with_detection_reset``) are
+        intentionally free — they are operator escape hatches and the
+        job itself never bypasses ``with_detection_started``.
 
         Args:
             target: The state we want to transition to.

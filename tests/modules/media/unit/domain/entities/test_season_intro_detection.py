@@ -107,6 +107,16 @@ class TestWithDetectionFailed:
         assert failed.intro_detection_error == "ffmpeg returned non-zero"
         assert failed.intro_detection_attempted_at is not None
 
+    def test_should_truncate_oversized_error_messages(self):
+        season = _make_season().with_detection_started()
+        long_error = "x" * 5000
+
+        failed = season.with_detection_failed(long_error)
+
+        assert failed.intro_detection_state == IntroDetectionState.FAILED
+        assert failed.intro_detection_error is not None
+        assert len(failed.intro_detection_error) == Season._DETECTION_ERROR_MAX_LEN
+
 
 class TestWithDetectionMarkedInsufficient:
     """Tests for Season.with_detection_marked_insufficient."""
