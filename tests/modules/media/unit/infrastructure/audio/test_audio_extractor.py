@@ -171,6 +171,52 @@ class TestAudioExtractor:
             if result is not None:
                 result.unlink(missing_ok=True)
 
+    def test_passes_sample_rate_when_configured(self, fake_ffmpeg: MagicMock) -> None:
+        captured: dict[str, list[str]] = {}
+
+        def run_side_effect(cmd, **_kwargs):  # type: ignore[no-untyped-def]
+            Path(cmd[-1]).write_bytes(b"RIFF")
+            captured["cmd"] = cmd
+            return _completed(returncode=0)
+
+        with patch(
+            "src.modules.media.infrastructure.audio.audio_extractor.subprocess.run",
+            side_effect=run_side_effect,
+        ):
+            result = AudioExtractor(sample_rate=48_000).extract(
+                "/series/show/s01e01.mkv", duration_seconds=5
+            )
+
+        try:
+            cmd = captured["cmd"]
+            ar_index = cmd.index("-ar")
+            assert cmd[ar_index + 1] == "48000"
+        finally:
+            if result is not None:
+                result.unlink(missing_ok=True)
+
+    def test_returns_none_when_ffmpeg_exits_zero_but_writes_nothing(
+        self, fake_ffmpeg: MagicMock
+    ) -> None:
+        leftover: list[Path] = []
+
+        def run_side_effect(cmd, **_kwargs):  # type: ignore[no-untyped-def]
+            # Touch the output to simulate ffmpeg's allocate-then-bail
+            # codec edge case: the file exists but is empty.
+            output = Path(cmd[-1])
+            output.write_bytes(b"")
+            leftover.append(output)
+            return _completed(returncode=0)
+
+        with patch(
+            "src.modules.media.infrastructure.audio.audio_extractor.subprocess.run",
+            side_effect=run_side_effect,
+        ):
+            result = AudioExtractor().extract("/series/show/s01e01.mkv", duration_seconds=5)
+
+        assert result is None
+        assert not leftover[0].exists()
+
 
 @pytest.mark.unit
 class TestAudioExtractorContextManager:

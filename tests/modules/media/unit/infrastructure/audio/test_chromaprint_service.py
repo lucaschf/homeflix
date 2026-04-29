@@ -156,6 +156,35 @@ class TestChromaprintService:
 
         assert result is None
 
+    def test_returns_none_when_fingerprint_contains_non_integer_tokens(
+        self, fake_fpcalc: MagicMock
+    ) -> None:
+        # The legacy CSV branch and the modern array branch both run
+        # through int() coercion; a non-numeric token raises ValueError
+        # which the wrapper must swallow rather than propagate.
+        payload = json.dumps({"duration": 10.0, "fingerprint": ["1", "foo", "3"]})
+
+        with patch(
+            "src.modules.media.infrastructure.audio.chromaprint_service.subprocess.run",
+            return_value=_completed(stdout=payload),
+        ):
+            result = ChromaprintService().fingerprint("/tmp/audio.wav")
+
+        assert result is None
+
+    def test_returns_none_when_csv_fingerprint_has_garbage_tokens(
+        self, fake_fpcalc: MagicMock
+    ) -> None:
+        payload = json.dumps({"duration": 5.04, "fingerprint": "1,foo,3"})
+
+        with patch(
+            "src.modules.media.infrastructure.audio.chromaprint_service.subprocess.run",
+            return_value=_completed(stdout=payload),
+        ):
+            result = ChromaprintService().fingerprint("/tmp/audio.wav")
+
+        assert result is None
+
     def test_invokes_fpcalc_with_raw_and_json_flags(self, fake_fpcalc: MagicMock) -> None:
         captured: dict[str, list[str]] = {}
 

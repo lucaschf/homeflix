@@ -134,33 +134,11 @@ class AudioExtractor:
             self._ffmpeg_threads,
         )
 
-        try:
-            result = subprocess.run(
-                cmd,
-                **SUBPROCESS_TEXT_KWARGS,
-                check=False,
-                timeout=self._timeout,
-            )
-        except subprocess.TimeoutExpired:
-            _logger.warning("ffmpeg audio extraction timed out for %s", file_path)
-            output_path.unlink(missing_ok=True)
-            return None
-        except OSError:
-            _logger.exception("ffmpeg audio extraction crashed for %s", file_path)
-            output_path.unlink(missing_ok=True)
-            return None
+        if _run_ffmpeg(cmd, file_path, output_path, self._timeout):
+            return output_path
 
-        if result.returncode != 0:
-            _logger.error(
-                "ffmpeg audio extraction failed for %s (exit=%d): %s",
-                file_path,
-                result.returncode,
-                result.stderr.strip() if result.stderr else "",
-            )
-            output_path.unlink(missing_ok=True)
-            return None
-
-        return output_path
+        output_path.unlink(missing_ok=True)
+        return None
 
     @contextmanager
     def extract_temporary(self, file_path: str, duration_seconds: int) -> Iterator[Path | None]:
@@ -176,6 +154,63 @@ class AudioExtractor:
         finally:
             if output is not None:
                 output.unlink(missing_ok=True)
+
+
+def _run_ffmpeg(
+    cmd: list[str],
+    source_path: str,
+    output_path: Path,
+    timeout: int,
+) -> bool:
+    """Run ffmpeg and verify the output is a non-empty file.
+
+    Returns ``True`` only when the subprocess exited cleanly *and* the
+    output path exists with non-zero size. ffmpeg occasionally exits 0
+    while writing nothing (codec edge cases, truncated source); treating
+    that as a failure keeps downstream consumers from seeing a path that
+    points to nothing useful.
+
+    Args:
+        cmd: Full ffmpeg argv (already wrapped with the threads cap).
+        source_path: Original source file, only used for log context.
+        output_path: Path ffmpeg was told to write to.
+        timeout: subprocess timeout in seconds.
+
+    Returns:
+        ``True`` on a clean run with non-empty output; ``False``
+        otherwise (the caller is expected to unlink ``output_path``).
+    """
+    try:
+        result = subprocess.run(
+            cmd,
+            **SUBPROCESS_TEXT_KWARGS,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        _logger.warning("ffmpeg audio extraction timed out for %s", source_path)
+        return False
+    except OSError:
+        _logger.exception("ffmpeg audio extraction crashed for %s", source_path)
+        return False
+
+    if result.returncode != 0:
+        _logger.error(
+            "ffmpeg audio extraction failed for %s (exit=%d): %s",
+            source_path,
+            result.returncode,
+            result.stderr.strip() if result.stderr else "",
+        )
+        return False
+
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        _logger.error(
+            "ffmpeg exited 0 but produced no audio output for %s",
+            source_path,
+        )
+        return False
+
+    return True
 
 
 __all__ = ["AudioExtractor"]

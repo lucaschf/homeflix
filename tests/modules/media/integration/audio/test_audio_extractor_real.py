@@ -59,8 +59,10 @@ class TestAudioExtractorReal:
         _write_sine_wav(source, duration_seconds=3.0)
 
         extractor = AudioExtractor()
+        captured_path: Path | None = None
         with extractor.extract_temporary(str(source), duration_seconds=2) as wav_path:
             assert wav_path is not None
+            captured_path = wav_path
             assert wav_path.exists()
             assert wav_path.stat().st_size > 0
 
@@ -72,6 +74,12 @@ class TestAudioExtractorReal:
                 # may overshoot by a few ms because of frame boundaries.
                 duration = wav.getnframes() / wav.getframerate()
                 assert 1.5 <= duration <= 2.5
+
+        # Verify the context manager actually unlinks the temp file on a
+        # real platform — the unit test exercises the same path, but
+        # only against a mock side-effect.
+        assert captured_path is not None
+        assert not captured_path.exists()
 
     def test_returns_none_when_input_does_not_exist(self, tmp_path: Path) -> None:
         result = AudioExtractor().extract(str(tmp_path / "missing.mkv"), duration_seconds=5)
