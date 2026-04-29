@@ -252,3 +252,34 @@ class TestChromaprintIntroDetector:
 
         for marker in result.values():
             assert 0.0 <= marker.confidence <= 1.0
+
+    def test_misconfigured_alignment_window_does_not_disable_matching(
+        self, shared_intro: list[int]
+    ) -> None:
+        # alignment_window_seconds * hash_rate < 1 would round down to
+        # 0 without the floor in _pairwise_match, silently skipping
+        # every shift. The detector must still fall back to a 1-hash
+        # window so misconfiguration becomes "low quality matches" and
+        # not "matching disabled".
+        detector = ChromaprintIntroDetector(
+            alignment_window_seconds=0.05,
+            min_intro_seconds=0.1,
+        )
+        episodes = [
+            _episode(
+                intro_hashes=shared_intro,
+                intro_offset_hashes=0,
+                total_hashes=400,
+                seed=seed,
+            )
+            for seed in range(3)
+        ]
+
+        result = detector.detect(episodes)
+
+        # The 1-hash floor cannot detect a 10s intro, but we explicitly
+        # do not require correctness here — just that the loop is not
+        # short-circuited into producing an empty result for a sane
+        # input pair. As long as the floor is in place, len(result)
+        # should be 3 (some segment was identified for each episode).
+        assert len(result) == len(episodes)

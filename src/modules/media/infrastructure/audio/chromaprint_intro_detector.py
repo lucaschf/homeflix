@@ -61,7 +61,6 @@ class _PairwiseMatch:
     end_a: int  # exclusive
     start_b: int
     end_b: int  # exclusive
-    avg_distance: float
 
     @property
     def length_hashes(self) -> int:
@@ -159,7 +158,10 @@ class ChromaprintIntroDetector(IntroDetectorPort):
 
         rate = (hash_rates[fp_a.episode_id] + hash_rates[fp_b.episode_id]) / 2
         max_shift = max(1, int(self._max_alignment_shift_seconds * rate))
-        window_cap = int(self._alignment_window_seconds * rate)
+        # Floor at 1 so a misconfigured ``alignment_window_seconds`` (or
+        # an unusually low hash rate) cannot collapse the scan window
+        # to zero and silently disable matching for the pair.
+        window_cap = max(1, int(self._alignment_window_seconds * rate))
 
         best: _PairwiseMatch | None = None
         for shift in range(-max_shift, max_shift + 1):
@@ -176,7 +178,7 @@ class ChromaprintIntroDetector(IntroDetectorPort):
             distances = [
                 _popcount(a_hashes[a_start + k] ^ b_hashes[b_start + k]) for k in range(scan_len)
             ]
-            run_start, run_length, avg = self._longest_run(distances)
+            run_start, run_length = self._longest_run(distances)
             if run_length == 0:
                 continue
 
@@ -186,7 +188,6 @@ class ChromaprintIntroDetector(IntroDetectorPort):
                     end_a=a_start + run_start + run_length,
                     start_b=b_start + run_start,
                     end_b=b_start + run_start + run_length,
-                    avg_distance=avg,
                 )
 
         if best is None:
@@ -199,22 +200,22 @@ class ChromaprintIntroDetector(IntroDetectorPort):
             return None
         return best
 
-    def _longest_run(self, distances: list[int]) -> tuple[int, int, float]:
-        """Return (start, length, avg_distance) of the longest tolerant run.
+    def _longest_run(self, distances: list[int]) -> tuple[int, int]:
+        """Return (start, length) of the longest tolerant run.
 
         A "run" is a contiguous span of positions where the running
         count of "bad" hashes (distance > ``max_hash_hamming``) stays
         below ``tolerance_hashes``. The tolerance lets a few isolated
         outliers survive inside an otherwise strong match — chromaprint
         often emits one or two bit-flipped hashes per second of clean
-        audio.
+        audio. When a run terminates because tolerance was exceeded,
+        the trailing bad streak is trimmed so callers always see a
+        run that ends on a "good" position.
         """
         best_start = 0
         best_length = 0
-        best_sum = 0
         run_start = 0
         run_bad = 0
-        run_sum = 0
         run_length = 0
         for i, d in enumerate(distances):
             is_bad = d > self._max_hash_hamming
@@ -223,29 +224,24 @@ class ChromaprintIntroDetector(IntroDetectorPort):
             if run_length == 0:
                 run_start = i
                 run_bad = 0
-                run_sum = 0
             run_length = i - run_start + 1
-            run_sum += d
             if is_bad:
                 run_bad += 1
             if run_bad > self._tolerance_hashes:
-                # End this run; record it if it beat the current best
-                # without counting the trailing bad streak.
-                trim = self._tolerance_hashes
-                effective_length = run_length - trim
+                # End this run; record it if it beat the current best,
+                # trimming the trailing bad streak so the reported range
+                # ends on a "good" position.
+                effective_length = run_length - self._tolerance_hashes
                 if effective_length > best_length:
                     best_start = run_start
                     best_length = effective_length
-                    best_sum = run_sum
                 run_length = 0
                 continue
             if run_length > best_length:
                 best_start = run_start
                 best_length = run_length
-                best_sum = run_sum
 
-        avg = (best_sum / best_length) if best_length else 0.0
-        return best_start, best_length, avg
+        return best_start, best_length
 
     # ── consensus voting ──────────────────────────────────────────────
 
