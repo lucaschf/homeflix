@@ -1,6 +1,7 @@
 """SQLAlchemy implementation of SeriesRepository."""
 
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import distinct, func, or_, select, text, update
@@ -20,6 +21,8 @@ from src.modules.media.domain.value_objects import (
     EpisodeId,
     FilePath,
     Genre,
+    IntroDetectionState,
+    IntroMarker,
     SeasonId,
     SeriesId,
     Title,
@@ -443,6 +446,102 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 EpisodeModel.deleted_at.is_(None),
             )
             .values(scrub_preview_path=path)
+        )
+        result = await self._session.execute(stmt)
+        return bool(result.rowcount)
+
+    async def find_seasons_pending_intro_detection(self, limit: int) -> Sequence[Season]:
+        """Return seasons in NOT_STARTED/INSUFFICIENT_EPISODES with episodes loaded.
+
+        Episodes (and their file_variants) are eager-loaded so the
+        detection job can iterate file paths without N+1 queries.
+        Soft-deleted rows are filtered out at both levels.
+        """
+        eligible_states = (
+            IntroDetectionState.NOT_STARTED.value,
+            IntroDetectionState.INSUFFICIENT_EPISODES.value,
+        )
+        stmt = (
+            select(SeasonModel)
+            .where(
+                SeasonModel.deleted_at.is_(None),
+                SeasonModel.intro_detection_state.in_(eligible_states),
+            )
+            .options(selectinload(SeasonModel.episodes).selectinload(EpisodeModel.file_variants))
+            .order_by(SeasonModel.id.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [SeasonMapper.to_entity(model) for model in result.scalars().all()]
+
+    async def update_season_intro_detection(
+        self,
+        season_id: SeasonId,
+        state: IntroDetectionState,
+        *,
+        attempted_at: datetime | None = None,
+        error: str | None = None,
+    ) -> bool:
+        """Direct UPDATE of intro-detection columns on the seasons row.
+
+        ``attempted_at`` is left untouched when ``None`` so transient
+        transitions (e.g. claiming a season as IN_PROGRESS) do not
+        overwrite the timestamp from the previous successful run.
+        ``error`` is always written through — pass ``None`` to clear.
+        """
+        values: dict[str, Any] = {
+            "intro_detection_state": state.value,
+            "intro_detection_error": error,
+        }
+        if attempted_at is not None:
+            values["intro_detection_attempted_at"] = attempted_at
+
+        stmt = (
+            update(SeasonModel)
+            .where(
+                SeasonModel.external_id == str(season_id),
+                SeasonModel.deleted_at.is_(None),
+            )
+            .values(**values)
+        )
+        result = await self._session.execute(stmt)
+        return bool(result.rowcount)
+
+    async def update_episode_intro(
+        self,
+        episode_id: EpisodeId,
+        marker: IntroMarker | None,
+    ) -> bool:
+        """Direct UPDATE of the 5 intro columns on the episodes row.
+
+        Used by the auto-detection job and the manual-edit endpoint to
+        avoid round-tripping the parent ``Series`` aggregate. Passing
+        ``None`` clears all five columns atomically.
+        """
+        if marker is None:
+            values: dict[str, Any] = {
+                "intro_start_seconds": None,
+                "intro_end_seconds": None,
+                "intro_source": None,
+                "intro_confidence": None,
+                "intro_detected_at": None,
+            }
+        else:
+            values = {
+                "intro_start_seconds": marker.start_seconds,
+                "intro_end_seconds": marker.end_seconds,
+                "intro_source": marker.source.value,
+                "intro_confidence": marker.confidence,
+                "intro_detected_at": marker.detected_at,
+            }
+
+        stmt = (
+            update(EpisodeModel)
+            .where(
+                EpisodeModel.external_id == str(episode_id),
+                EpisodeModel.deleted_at.is_(None),
+            )
+            .values(**values)
         )
         result = await self._session.execute(stmt)
         return bool(result.rowcount)
