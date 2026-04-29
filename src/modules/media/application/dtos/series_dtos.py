@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE
 
 if TYPE_CHECKING:
+    from src.modules.media.application.dtos.intro_dtos import IntroMarkerOutput
     from src.modules.media.application.dtos.media_file_dtos import MediaFileOutput
 
 
@@ -44,6 +45,7 @@ class EpisodeOutput:
     thumbnail_path: str | None
     scrub_preview_path: str | None
     air_date: str | None
+    intro: IntroMarkerOutput | None = None
     progress_percentage: float | None = None
     position_seconds: int | None = None
     watch_status: str | None = None

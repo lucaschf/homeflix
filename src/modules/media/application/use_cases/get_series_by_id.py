@@ -9,6 +9,9 @@ from src.modules.media.application.dtos.series_dtos import (
 )
 from src.modules.media.application.ports import ProgressLookupPort, ProgressSummary
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.use_cases._intro_marker_helpers import (
+    to_intro_marker_output,
+)
 from src.modules.media.application.use_cases._media_file_helpers import (
     to_media_file_output,
 )
@@ -195,6 +198,7 @@ class GetSeriesByIdUseCase:
             if episode.scrub_preview_path
             else None,
             air_date=episode.air_date.value.isoformat() if episode.air_date else None,
+            intro=to_intro_marker_output(episode.intro),
             progress_percentage=progress.percentage if progress else None,
             position_seconds=progress.position_seconds if progress else None,
             watch_status=progress.status if progress else None,

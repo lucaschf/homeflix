@@ -8,6 +8,10 @@ from fastapi import APIRouter, Depends
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.building_blocks.presentation import Pagination, api_list, api_single
 from src.config.containers import ApplicationContainer
+from src.modules.media.application.dtos.intro_dtos import (
+    ClearEpisodeIntroInput,
+    SetEpisodeIntroInput,
+)
 from src.modules.media.application.dtos.media_file_dtos import (
     AddFileVariantInput,
     GetFileVariantsInput,
@@ -16,14 +20,17 @@ from src.modules.media.application.dtos.media_file_dtos import (
 )
 from src.modules.media.application.dtos.series_dtos import GetSeriesByIdInput, ListSeriesInput
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
+from src.modules.media.application.use_cases.clear_episode_intro import ClearEpisodeIntroUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
+from src.modules.media.application.use_cases.set_episode_intro import SetEpisodeIntroUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
 from src.modules.media.presentation.schemas import (
     AddFileVariantRequest,
     RemoveFileVariantRequest,
+    SetIntroRequest,
     SetPrimaryFileRequest,
 )
 
@@ -153,6 +160,47 @@ async def set_episode_primary_file(
         SetPrimaryFileInput(media_id=episode_id, file_path=body.file_path),
     )
     return api_list([_dataclass_to_dict(f) for f in result])
+
+
+@router.put("/episodes/{episode_id}/intro")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def set_episode_intro(
+    episode_id: str,
+    body: SetIntroRequest,
+    use_case: SetEpisodeIntroUseCase = Depends(
+        Provide[ApplicationContainer.media.set_episode_intro],
+    ),
+) -> dict[str, Any]:
+    """Set or replace the manual intro marker on an episode.
+
+    Returns the persisted marker. Validation errors (negative bounds,
+    end <= start, end > episode duration) surface as 422.
+    """
+    result = await use_case.execute(
+        SetEpisodeIntroInput(
+            episode_id=episode_id,
+            start_seconds=body.start_seconds,
+            end_seconds=body.end_seconds,
+        ),
+    )
+    return api_single("intro", _dataclass_to_dict(result))
+
+
+@router.delete("/episodes/{episode_id}/intro", status_code=204)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def clear_episode_intro(
+    episode_id: str,
+    use_case: ClearEpisodeIntroUseCase = Depends(
+        Provide[ApplicationContainer.media.clear_episode_intro],
+    ),
+) -> None:
+    """Remove the intro marker from an episode.
+
+    Idempotent — clearing an episode without a marker still returns
+    204. The episode rejoins the auto-detection queue on the next
+    job tick.
+    """
+    await use_case.execute(ClearEpisodeIntroInput(episode_id=episode_id))
 
 
 def _dataclass_to_dict(obj: Any) -> dict[str, Any]:

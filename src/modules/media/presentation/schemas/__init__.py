@@ -6,6 +6,7 @@ from src.modules.media.presentation.schemas.file_variant_schemas import (
     RemoveFileVariantRequest,
     SetPrimaryFileRequest,
 )
+from src.modules.media.presentation.schemas.intro_schemas import SetIntroRequest
 from src.modules.media.presentation.schemas.scan_schemas import ScanMediaRequest
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "EnrichRequest",
     "RemoveFileVariantRequest",
     "ScanMediaRequest",
+    "SetIntroRequest",
     "SetPrimaryFileRequest",
 ]
