@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Self
+from datetime import datetime  # noqa: TCH003 — needed at runtime by Pydantic
+from typing import TYPE_CHECKING, ClassVar, Self
 
 from pydantic import Field, field_validator
 
-from src.building_blocks.domain import DomainEntity
+from src.building_blocks.domain import DomainEntity, utc_now
 from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
     AirDate,
     EpisodeNumber,
     ImageUrl,
+    IntroDetectionState,
     SeasonId,
     SeasonNumber,
     SeriesId,
@@ -54,6 +56,12 @@ class Season(DomainEntity[SeasonId]):
 
     # Composition
     episodes: list[Episode] = Field(default_factory=list)
+
+    # Intro detection (auto-detection job state — manual markers on
+    # individual episodes are independent of this state)
+    intro_detection_state: IntroDetectionState = IntroDetectionState.NOT_STARTED
+    intro_detection_attempted_at: datetime | None = None
+    intro_detection_error: str | None = Field(default=None, max_length=2000)
 
     # noinspection PyNestedDecorators
     @field_validator("id", mode="before")
@@ -117,6 +125,153 @@ class Season(DomainEntity[SeasonId]):
             (ep for ep in self.episodes if ep.episode_number == needle),
             None,
         )
+
+    # ── intro detection state transitions ─────────────────────────────
+
+    def with_detection_started(self) -> Self:
+        """Mark detection as IN_PROGRESS.
+
+        Returns:
+            A new Season in IN_PROGRESS state with the previous error
+            cleared.
+
+        Raises:
+            BusinessRuleViolationException: If detection is already in
+                progress, or DISABLED (must be reset first).
+        """
+        self._guard_transition(IntroDetectionState.IN_PROGRESS)
+        return self.with_updates(
+            intro_detection_state=IntroDetectionState.IN_PROGRESS,
+            intro_detection_error=None,
+        )
+
+    def with_detection_completed(self, attempted_at: datetime | None = None) -> Self:
+        """Mark detection as COMPLETED.
+
+        Args:
+            attempted_at: When the detection ran. Defaults to ``utc_now()``.
+
+        Returns:
+            A new Season in COMPLETED state with the error cleared.
+        """
+        return self.with_updates(
+            intro_detection_state=IntroDetectionState.COMPLETED,
+            intro_detection_attempted_at=attempted_at or utc_now(),
+            intro_detection_error=None,
+        )
+
+    _DETECTION_ERROR_MAX_LEN: ClassVar[int] = 2000
+
+    def with_detection_failed(self, error: str, attempted_at: datetime | None = None) -> Self:
+        """Mark detection as FAILED with a diagnostic message.
+
+        The error message is truncated to ``_DETECTION_ERROR_MAX_LEN``
+        characters before persistence. Truncation is explicit (not via
+        Pydantic field validation) so that very long ffmpeg/fpcalc
+        stderr dumps don't raise a ``ValidationError`` while we are
+        already trying to record a failure.
+
+        Args:
+            error: Diagnostic message. Truncated if longer than
+                ``_DETECTION_ERROR_MAX_LEN`` chars.
+            attempted_at: When the detection ran. Defaults to ``utc_now()``.
+
+        Returns:
+            A new Season in FAILED state with the error captured.
+        """
+        return self.with_updates(
+            intro_detection_state=IntroDetectionState.FAILED,
+            intro_detection_attempted_at=attempted_at or utc_now(),
+            intro_detection_error=error[: self._DETECTION_ERROR_MAX_LEN],
+        )
+
+    def with_detection_marked_insufficient(self, attempted_at: datetime | None = None) -> Self:
+        """Mark detection as INSUFFICIENT_EPISODES.
+
+        The job uses this when the season does not have enough episodes
+        for the cross-correlation algorithm to converge. The state will
+        be retried automatically once more episodes are added (the job
+        looks for INSUFFICIENT_EPISODES seasons whose episode count has
+        grown).
+
+        Args:
+            attempted_at: When the detection ran. Defaults to ``utc_now()``.
+
+        Returns:
+            A new Season in INSUFFICIENT_EPISODES state.
+        """
+        return self.with_updates(
+            intro_detection_state=IntroDetectionState.INSUFFICIENT_EPISODES,
+            intro_detection_attempted_at=attempted_at or utc_now(),
+            intro_detection_error=None,
+        )
+
+    def with_detection_disabled(self) -> Self:
+        """Mark detection as DISABLED.
+
+        Use when fpcalc is unavailable on the host or the season is
+        explicitly opted out by configuration. Manual markers on
+        individual episodes still work.
+
+        Returns:
+            A new Season in DISABLED state.
+        """
+        return self.with_updates(
+            intro_detection_state=IntroDetectionState.DISABLED,
+            intro_detection_error=None,
+        )
+
+    def with_detection_reset(self) -> Self:
+        """Reset detection state to NOT_STARTED.
+
+        Clears the error and the attempted_at timestamp. Used when the
+        operator wants the next job tick to re-process the season from
+        scratch (e.g. after fpcalc was installed).
+
+        Returns:
+            A new Season in NOT_STARTED state.
+        """
+        return self.with_updates(
+            intro_detection_state=IntroDetectionState.NOT_STARTED,
+            intro_detection_attempted_at=None,
+            intro_detection_error=None,
+        )
+
+    def _guard_transition(self, target: IntroDetectionState) -> None:
+        """Block invalid intro-detection state transitions.
+
+        Only ``IN_PROGRESS`` is guarded: re-entering it would let two
+        job ticks process the same season concurrently, and entering it
+        from ``DISABLED`` would silently override an explicit opt-out.
+        All other transitions (to terminal states, to ``DISABLED``, or
+        back to ``NOT_STARTED`` via ``with_detection_reset``) are
+        intentionally free — they are operator escape hatches and the
+        job itself never bypasses ``with_detection_started``.
+
+        Args:
+            target: The state we want to transition to.
+
+        Raises:
+            BusinessRuleViolationException: If the transition is not allowed.
+        """
+        current = self.intro_detection_state
+
+        if target == IntroDetectionState.IN_PROGRESS:
+            if current == IntroDetectionState.IN_PROGRESS:
+                raise BusinessRuleViolationException(
+                    message="Intro detection is already in progress for this season",
+                    rule_code=MediaRuleCodes.INTRO_DETECTION_INVALID_TRANSITION,
+                    tags={"current_state": current.value, "target_state": target.value},
+                )
+            if current == IntroDetectionState.DISABLED:
+                raise BusinessRuleViolationException(
+                    message=(
+                        "Intro detection is disabled for this season — reset before "
+                        "starting a new run"
+                    ),
+                    rule_code=MediaRuleCodes.INTRO_DETECTION_INVALID_TRANSITION,
+                    tags={"current_state": current.value, "target_state": target.value},
+                )
 
 
 __all__ = ["Season"]
