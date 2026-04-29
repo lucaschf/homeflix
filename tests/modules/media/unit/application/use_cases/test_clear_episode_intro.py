@@ -72,7 +72,7 @@ class TestClearEpisodeIntroUseCase:
 
         mocks.series.update_episode_intro.assert_awaited_once_with(episode.id, None)
         event_bus.publish.assert_awaited_once()
-        published_event = event_bus.publish.await_args.args[0]
+        published_event = event_bus.publish.await_args_list[0].args[0]
         assert isinstance(published_event, IntroClearedEvent)
         assert published_event.episode_id == str(episode.id)
         assert published_event.series_id == str(episode.series_id)

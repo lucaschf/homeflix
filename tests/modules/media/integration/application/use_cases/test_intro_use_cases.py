@@ -147,7 +147,7 @@ class TestSetEpisodeIntroIntegration:
         )
 
         event_bus.publish.assert_awaited_once()
-        published = event_bus.publish.await_args.args[0]
+        published = event_bus.publish.await_args_list[0].args[0]
         assert isinstance(published, IntroManuallySetEvent)
         assert published.episode_id == str(episode_id)
 
@@ -258,7 +258,7 @@ class TestClearEpisodeIntroIntegration:
             assert found.seasons[0].episodes[0].intro is None
 
         event_bus.publish.assert_awaited_once()
-        assert isinstance(event_bus.publish.await_args.args[0], IntroClearedEvent)
+        assert isinstance(event_bus.publish.await_args_list[0].args[0], IntroClearedEvent)
 
     async def test_idempotent_when_no_marker_present(
         self,

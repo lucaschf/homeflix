@@ -7,6 +7,9 @@ from src.modules.media.application.dtos.intro_dtos import (
     SetEpisodeIntroInput,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.use_cases._intro_marker_helpers import (
+    intro_marker_to_output,
+)
 from src.modules.media.domain.events import IntroManuallySetEvent
 from src.modules.media.domain.value_objects import (
     EpisodeId,
@@ -96,13 +99,7 @@ class SetEpisodeIntroUseCase:
                 )
             )
 
-        return IntroMarkerOutput(
-            start_seconds=marker.start_seconds,
-            end_seconds=marker.end_seconds,
-            source=marker.source.value,
-            confidence=marker.confidence,
-            detected_at=marker.detected_at.isoformat(),
-        )
+        return intro_marker_to_output(marker)
 
 
 __all__ = ["SetEpisodeIntroUseCase"]

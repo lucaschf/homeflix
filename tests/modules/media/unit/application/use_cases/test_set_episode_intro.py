@@ -78,9 +78,16 @@ class TestSetEpisodeIntroUseCase:
         assert result.confidence is None
 
         mocks.series.update_episode_intro.assert_awaited_once()
-        called_args = mocks.series.update_episode_intro.await_args
-        assert called_args is not None
-        assert called_args.args[1].source.value == "MANUAL"
+        # ``await_args_list[0]`` is explicit about which call we are
+        # inspecting; the surrounding ``assert_awaited_once`` already
+        # guards that there is exactly one. ``assert_awaited_once_with``
+        # cannot be used directly — IntroMarker.detected_at is auto-
+        # generated, so equality on the marker fails.
+        first_call = mocks.series.update_episode_intro.await_args_list[0]
+        assert first_call.args[0] == episode.id
+        assert first_call.args[1].source.value == "MANUAL"
+        assert first_call.args[1].start_seconds == 10
+        assert first_call.args[1].end_seconds == 80
 
     @pytest.mark.asyncio
     async def test_dispatches_intro_manually_set_event(self) -> None:
@@ -102,7 +109,7 @@ class TestSetEpisodeIntroUseCase:
         )
 
         event_bus.publish.assert_awaited_once()
-        published_event = event_bus.publish.await_args.args[0]
+        published_event = event_bus.publish.await_args_list[0].args[0]
         assert isinstance(published_event, IntroManuallySetEvent)
         assert published_event.episode_id == str(episode.id)
         assert published_event.series_id == str(episode.series_id)
