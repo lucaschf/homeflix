@@ -7,6 +7,11 @@ from src.modules.media.application.ports.file_scanner_port import (
 )
 from src.modules.media.application.ports.file_streamer_port import FileStreamerPort
 from src.modules.media.application.ports.hls_playlist_port import HlsPlaylistPort
+from src.modules.media.application.ports.intro_detector_port import (
+    DetectedIntro,
+    EpisodeFingerprint,
+    IntroDetectorPort,
+)
 from src.modules.media.application.ports.media_probe_port import (
     MediaProbePort,
     ProbeResult,
@@ -30,10 +35,13 @@ from src.modules.media.application.ports.variant_detector_port import (
 
 __all__ = [
     "CreditPerson",
+    "DetectedIntro",
+    "EpisodeFingerprint",
     "EpisodeMetadata",
     "FileStreamerPort",
     "FileSystemScanner",
     "HlsPlaylistPort",
+    "IntroDetectorPort",
     "LocalizedFields",
     "MediaMetadata",
     "MediaProbePort",

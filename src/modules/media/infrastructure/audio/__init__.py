@@ -7,9 +7,17 @@ host on minimal Docker images.
 """
 
 from src.modules.media.infrastructure.audio.audio_extractor import AudioExtractor
+from src.modules.media.infrastructure.audio.chromaprint_intro_detector import (
+    ChromaprintIntroDetector,
+)
 from src.modules.media.infrastructure.audio.chromaprint_service import (
     ChromaprintFingerprint,
     ChromaprintService,
 )
 
-__all__ = ["AudioExtractor", "ChromaprintFingerprint", "ChromaprintService"]
+__all__ = [
+    "AudioExtractor",
+    "ChromaprintFingerprint",
+    "ChromaprintIntroDetector",
+    "ChromaprintService",
+]
