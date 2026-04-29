@@ -1,9 +1,17 @@
 """Season ORM model."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.infrastructure.persistence.base import Base
@@ -56,6 +64,20 @@ class SeasonModel(Base):
 
     # Metadata
     air_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Intro detection job state (per-Season; manual markers on individual
+    # episodes are independent of this column). Default NOT_STARTED so
+    # backfilled rows enter the detection queue automatically.
+    intro_detection_state: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="NOT_STARTED",
+        server_default="NOT_STARTED",
+    )
+    intro_detection_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    intro_detection_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     series: Mapped["SeriesModel"] = relationship(

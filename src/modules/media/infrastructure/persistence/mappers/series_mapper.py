@@ -13,6 +13,9 @@ from src.modules.media.domain.value_objects import (
     Genre,
     ImageUrl,
     ImdbId,
+    IntroDetectionState,
+    IntroMarker,
+    IntroMarkerSource,
     MediaFile,
     Resolution,
     SeasonId,
@@ -74,6 +77,7 @@ class EpisodeMapper:
             if entity.scrub_preview_path
             else None,
             air_date=entity.air_date.value if entity.air_date else None,
+            **_intro_marker_to_columns(entity.intro),
         )
 
         for file in entity.files:
@@ -123,6 +127,7 @@ class EpisodeMapper:
             if model.scrub_preview_path
             else None,
             air_date=AirDate(model.air_date) if model.air_date else None,
+            intro=_intro_marker_from_columns(model),
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -154,6 +159,9 @@ class EpisodeMapper:
             entity.scrub_preview_path.value if entity.scrub_preview_path else None
         )
         model.air_date = entity.air_date.value if entity.air_date else None
+
+        for column, value in _intro_marker_to_columns(entity.intro).items():
+            setattr(model, column, value)
 
         _sync_episode_file_variants(model.file_variants, entity.files)
 
@@ -189,6 +197,9 @@ class SeasonMapper:
             synopsis=entity.synopsis,
             poster_path=entity.poster_path.value if entity.poster_path else None,
             air_date=entity.air_date.value if entity.air_date else None,
+            intro_detection_state=entity.intro_detection_state.value,
+            intro_detection_attempted_at=entity.intro_detection_attempted_at,
+            intro_detection_error=entity.intro_detection_error,
         )
 
     @staticmethod
@@ -217,6 +228,9 @@ class SeasonMapper:
             poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
             air_date=AirDate(model.air_date) if model.air_date else None,
             episodes=episode_list,
+            intro_detection_state=IntroDetectionState(model.intro_detection_state),
+            intro_detection_attempted_at=model.intro_detection_attempted_at,
+            intro_detection_error=model.intro_detection_error,
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -237,6 +251,9 @@ class SeasonMapper:
         model.synopsis = entity.synopsis
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.air_date = entity.air_date.value if entity.air_date else None
+        model.intro_detection_state = entity.intro_detection_state.value
+        model.intro_detection_attempted_at = entity.intro_detection_attempted_at
+        model.intro_detection_error = entity.intro_detection_error
 
         return model
 
@@ -349,6 +366,62 @@ class SeriesMapper:
         model.imdb_id = entity.imdb_id.value if entity.imdb_id else None
 
         return model
+
+
+def _intro_marker_to_columns(marker: IntroMarker | None) -> dict[str, object]:
+    """Explode an IntroMarker (or absence of one) into the 5 episode columns.
+
+    Args:
+        marker: The IntroMarker VO to persist, or ``None`` to clear it.
+
+    Returns:
+        A dict suitable for keyword-expansion into ``EpisodeModel`` or
+        ``setattr`` iteration on an existing model. All five columns
+        appear so callers can rely on a complete clear when ``marker``
+        is ``None``.
+    """
+    if marker is None:
+        return {
+            "intro_start_seconds": None,
+            "intro_end_seconds": None,
+            "intro_source": None,
+            "intro_confidence": None,
+            "intro_detected_at": None,
+        }
+
+    return {
+        "intro_start_seconds": marker.start_seconds,
+        "intro_end_seconds": marker.end_seconds,
+        "intro_source": marker.source.value,
+        "intro_confidence": marker.confidence,
+        "intro_detected_at": marker.detected_at,
+    }
+
+
+def _intro_marker_from_columns(model: EpisodeModel) -> IntroMarker | None:
+    """Reconstruct an IntroMarker from the 5 episode columns.
+
+    The intro is considered absent when ``intro_start_seconds`` is
+    ``NULL``; the other columns must be populated together when it is
+    set (a partially-populated row indicates schema corruption and
+    will surface as a Pydantic validation error here).
+
+    Args:
+        model: Source ORM model.
+
+    Returns:
+        The reconstructed VO, or ``None`` if no intro is persisted.
+    """
+    if model.intro_start_seconds is None:
+        return None
+
+    return IntroMarker(
+        start_seconds=model.intro_start_seconds,
+        end_seconds=model.intro_end_seconds,
+        source=IntroMarkerSource(model.intro_source),
+        confidence=model.intro_confidence,
+        detected_at=model.intro_detected_at,
+    )
 
 
 def _sync_episode_file_variants(

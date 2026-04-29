@@ -1,9 +1,19 @@
 """Episode ORM model."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Date, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.infrastructure.persistence.base import Base
@@ -79,6 +89,19 @@ class EpisodeModel(Base):
 
     # Metadata
     air_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Skip-intro support: flat columns persisting the IntroMarker VO. All
+    # fields are NULL when no intro has been set yet (auto job hasn't run
+    # AND no manual override). When ``intro_start_seconds`` is non-NULL,
+    # the remaining columns must form a valid IntroMarker (enforced by the
+    # mapper, not the schema, to keep the migration cheap).
+    intro_start_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    intro_end_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    intro_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    intro_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    intro_detected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     file_variants: Mapped[list["MediaFileModel"]] = relationship(

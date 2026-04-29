@@ -2,12 +2,23 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from datetime import datetime
 
 from src.building_blocks.application.pagination import PaginatedResult
 from src.modules.media.domain.entities.episode import Episode
+from src.modules.media.domain.entities.season import Season
 from src.modules.media.domain.entities.series import Series
 from src.modules.media.domain.repositories.movie_repository import GenreRow
-from src.modules.media.domain.value_objects import EpisodeId, FilePath, Genre, SeriesId, Title
+from src.modules.media.domain.value_objects import (
+    EpisodeId,
+    FilePath,
+    Genre,
+    IntroDetectionState,
+    IntroMarker,
+    SeasonId,
+    SeriesId,
+    Title,
+)
 
 
 class SeriesRepository(ABC):
@@ -255,6 +266,89 @@ class SeriesRepository(ABC):
         Args:
             episode_id: External id of the episode to update.
             path: Absolute path to the sprite VTT, or ``None`` to clear.
+
+        Returns:
+            ``True`` if a row was updated, ``False`` if no episode with
+            that id exists.
+        """
+        ...
+
+    @abstractmethod
+    async def find_seasons_pending_intro_detection(self, limit: int) -> Sequence[Season]:
+        """Return seasons whose intro-detection job has not converged yet.
+
+        Filters for seasons in ``NOT_STARTED`` or ``INSUFFICIENT_EPISODES``
+        state (the second so seasons that previously had too few
+        episodes get retried automatically once more land). ``COMPLETED``,
+        ``IN_PROGRESS``, ``FAILED``, and ``DISABLED`` are excluded —
+        ``FAILED`` and ``DISABLED`` require an explicit operator reset
+        before being retried.
+
+        Returned ``Season`` entities have their ``episodes`` collection
+        eagerly loaded (with file variants) so the detection job can
+        iterate file paths without N+1 queries. Soft-deleted seasons
+        and episodes are filtered out.
+
+        Args:
+            limit: Maximum number of seasons to return.
+
+        Returns:
+            Sequence of seasons eligible for the next detection tick.
+        """
+        ...
+
+    @abstractmethod
+    async def update_season_intro_detection(
+        self,
+        season_id: SeasonId,
+        state: IntroDetectionState,
+        *,
+        attempted_at: datetime | None = None,
+        error: str | None = None,
+    ) -> bool:
+        """Persist intro-detection job state for a season.
+
+        Direct UPDATE on the ``seasons`` table — analogous to
+        ``update_episode_scrub_preview_path`` — so the detection job can
+        record progress and outcomes without round-tripping the parent
+        ``Series`` aggregate per season. Domain-side state machine
+        validation belongs on the ``Season`` entity; callers are expected
+        to drive transitions via ``with_detection_started`` etc. and pass
+        the resulting state here.
+
+        Args:
+            season_id: External id of the season (sea_xxx).
+            state: New ``IntroDetectionState`` value.
+            attempted_at: When the job ran. Pass ``None`` to leave the
+                column unchanged for transient transitions like
+                ``IN_PROGRESS``.
+            error: Diagnostic message for ``FAILED`` runs, or ``None`` to
+                clear.
+
+        Returns:
+            ``True`` if a row was updated, ``False`` if no season with
+            that id exists.
+        """
+        ...
+
+    @abstractmethod
+    async def update_episode_intro(
+        self,
+        episode_id: EpisodeId,
+        marker: IntroMarker | None,
+    ) -> bool:
+        """Persist (or clear) the intro marker for a single episode.
+
+        Direct UPDATE on the ``episodes`` table covering all five intro
+        columns at once. The detection job calls this per-episode after
+        cross-correlation; the manual-edit endpoint also uses it to set
+        a ``MANUAL`` marker without rewriting the entire ``Series``
+        aggregate.
+
+        Args:
+            episode_id: External id of the episode (epi_xxx).
+            marker: The marker to persist, or ``None`` to clear all five
+                intro columns.
 
         Returns:
             ``True`` if a row was updated, ``False`` if no episode with

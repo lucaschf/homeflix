@@ -1,5 +1,7 @@
 """Integration tests for SQLAlchemySeriesRepository."""
 
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +13,9 @@ from src.modules.media.domain.value_objects import (
     Genre,
     ImageUrl,
     ImdbId,
+    IntroDetectionState,
+    IntroMarker,
+    IntroMarkerSource,
     MediaFile,
     Resolution,
     SeasonId,
@@ -1014,3 +1019,358 @@ class TestSeriesCountUnderPaths:
         await repo.save(_series_with_episode_paths("A", ["/media/tv/a/s01e01.mkv"]))
 
         assert await repo.count_under_paths(["/media/tv/"]) == 1
+
+
+def _series_with_intro(
+    *,
+    intro: IntroMarker | None = None,
+    detection_state: IntroDetectionState = IntroDetectionState.NOT_STARTED,
+    detection_attempted_at: datetime | None = None,
+    detection_error: str | None = None,
+    series_title: str = "Intro Series",
+) -> Series:
+    """Build a single-season, single-episode series with the given intro state.
+
+    The episode file path is derived from the series id so callers can
+    save multiple series in the same test without colliding on the
+    ``episodes.file_path`` unique constraint.
+    """
+    sid = SeriesId.generate()
+    episode = _create_episode(sid, file_path=f"/series/{sid}/s01e01.mkv")
+    if intro is not None:
+        episode = episode.with_intro_marker(intro)
+
+    season = Season(
+        id=SeasonId.generate(),
+        series_id=sid,
+        season_number=1,
+        title=Title("Season 1"),
+        episodes=[episode],
+        intro_detection_state=detection_state,
+        intro_detection_attempted_at=detection_attempted_at,
+        intro_detection_error=detection_error,
+    )
+    return Series(
+        id=sid,
+        title=Title(series_title),
+        start_year=Year(2020),
+        seasons=[season],
+    )
+
+
+@pytest.mark.integration
+class TestSeriesRepositoryIntroPersistence:
+    """Tests covering IntroMarker and Season detection-state persistence."""
+
+    async def test_episode_round_trip_without_intro_keeps_columns_null(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _create_series(season_count=1, episodes_per_season=1)
+        await repo.save(series)
+
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+
+        assert found is not None
+        assert found.seasons[0].episodes[0].intro is None
+
+    async def test_episode_round_trip_with_manual_intro(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        marker = IntroMarker(
+            start_seconds=10,
+            end_seconds=72,
+            source=IntroMarkerSource.MANUAL,
+            detected_at=datetime(2026, 4, 29, 12, 0, tzinfo=UTC),
+        )
+        series = _series_with_intro(intro=marker)
+        await repo.save(series)
+
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+
+        assert found is not None
+        episode = found.seasons[0].episodes[0]
+        assert episode.intro is not None
+        assert episode.intro.start_seconds == 10
+        assert episode.intro.end_seconds == 72
+        assert episode.intro.source == IntroMarkerSource.MANUAL
+        assert episode.intro.confidence is None
+
+    async def test_episode_round_trip_with_auto_detected_intro(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        marker = IntroMarker(
+            start_seconds=12,
+            end_seconds=98,
+            source=IntroMarkerSource.AUTO_DETECTED,
+            confidence=0.91,
+        )
+        series = _series_with_intro(intro=marker)
+        await repo.save(series)
+
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+
+        assert found is not None
+        episode = found.seasons[0].episodes[0]
+        assert episode.intro is not None
+        assert episode.intro.source == IntroMarkerSource.AUTO_DETECTED
+        assert episode.intro.confidence == pytest.approx(0.91)
+
+    async def test_save_clears_intro_when_entity_intro_is_none(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        marker = IntroMarker(
+            start_seconds=0,
+            end_seconds=60,
+            source=IntroMarkerSource.MANUAL,
+        )
+        series = _series_with_intro(intro=marker)
+        await repo.save(series)
+
+        # Round-trip, then clear the intro and persist again.
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert found is not None
+        cleared_episode = found.seasons[0].episodes[0].with_intro_cleared()
+        cleared_season = found.seasons[0].with_updates(episodes=[cleared_episode])
+        cleared_series = found.with_updates(seasons=[cleared_season])
+        await repo.save(cleared_series)
+
+        roundtrip = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert roundtrip is not None
+        assert roundtrip.seasons[0].episodes[0].intro is None
+
+    async def test_season_detection_state_round_trip(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        attempted_at = datetime(2026, 4, 29, 18, 0, tzinfo=UTC)
+        series = _series_with_intro(
+            detection_state=IntroDetectionState.FAILED,
+            detection_attempted_at=attempted_at,
+            detection_error="ffmpeg returned non-zero",
+        )
+        await repo.save(series)
+
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+
+        assert found is not None
+        season = found.seasons[0]
+        assert season.intro_detection_state == IntroDetectionState.FAILED
+        assert season.intro_detection_error == "ffmpeg returned non-zero"
+        assert season.intro_detection_attempted_at is not None
+
+
+@pytest.mark.integration
+class TestFindSeasonsPendingIntroDetection:
+    """Tests for find_seasons_pending_intro_detection."""
+
+    async def test_returns_only_not_started_and_insufficient_seasons(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.NOT_STARTED,
+                series_title="A — pending",
+            )
+        )
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.INSUFFICIENT_EPISODES,
+                series_title="B — retry",
+            )
+        )
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.COMPLETED,
+                series_title="C — done",
+            )
+        )
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.DISABLED,
+                series_title="D — disabled",
+            )
+        )
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.FAILED,
+                series_title="E — failed",
+                detection_error="boom",
+            )
+        )
+
+        pending = await repo.find_seasons_pending_intro_detection(limit=10)
+
+        states = sorted(s.intro_detection_state.value for s in pending)
+        assert states == ["INSUFFICIENT_EPISODES", "NOT_STARTED"]
+
+    async def test_eager_loads_episodes_and_files(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_series_with_intro(detection_state=IntroDetectionState.NOT_STARTED))
+
+        pending = await repo.find_seasons_pending_intro_detection(limit=10)
+
+        assert len(pending) == 1
+        season = pending[0]
+        assert len(season.episodes) == 1
+        assert season.episodes[0].primary_file is not None
+
+    async def test_respects_limit(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        for i in range(3):
+            await repo.save(
+                _series_with_intro(
+                    detection_state=IntroDetectionState.NOT_STARTED,
+                    series_title=f"Series {i}",
+                )
+            )
+
+        pending = await repo.find_seasons_pending_intro_detection(limit=2)
+
+        assert len(pending) == 2
+
+
+@pytest.mark.integration
+class TestUpdateSeasonIntroDetection:
+    """Tests for update_season_intro_detection direct UPDATE."""
+
+    async def test_updates_state_and_error(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _series_with_intro(detection_state=IntroDetectionState.NOT_STARTED)
+        await repo.save(series)
+        season_id = series.seasons[0].id
+        assert season_id is not None
+
+        attempted_at = datetime(2026, 4, 29, 19, 0, tzinfo=UTC)
+        updated = await repo.update_season_intro_detection(
+            season_id,
+            IntroDetectionState.FAILED,
+            attempted_at=attempted_at,
+            error="ffmpeg crashed",
+        )
+        await db_session.commit()
+
+        assert updated is True
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert found is not None
+        season = found.seasons[0]
+        assert season.intro_detection_state == IntroDetectionState.FAILED
+        assert season.intro_detection_error == "ffmpeg crashed"
+
+    async def test_returns_false_for_unknown_season(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+
+        updated = await repo.update_season_intro_detection(
+            SeasonId.generate(),
+            IntroDetectionState.COMPLETED,
+        )
+
+        assert updated is False
+
+    async def test_leaves_attempted_at_untouched_when_none(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        original_attempted = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+        series = _series_with_intro(
+            detection_state=IntroDetectionState.COMPLETED,
+            detection_attempted_at=original_attempted,
+        )
+        await repo.save(series)
+        season_id = series.seasons[0].id
+        assert season_id is not None
+
+        # Transient transition without an attempted_at — must keep the
+        # previous run's timestamp visible for observability.
+        await repo.update_season_intro_detection(
+            season_id,
+            IntroDetectionState.IN_PROGRESS,
+        )
+        await db_session.commit()
+
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert found is not None
+        assert found.seasons[0].intro_detection_attempted_at is not None
+
+
+@pytest.mark.integration
+class TestUpdateEpisodeIntro:
+    """Tests for update_episode_intro direct UPDATE."""
+
+    async def test_sets_marker_on_episode_with_no_intro(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _series_with_intro()
+        await repo.save(series)
+        episode_id = series.seasons[0].episodes[0].id
+        assert episode_id is not None
+        marker = IntroMarker(
+            start_seconds=5,
+            end_seconds=80,
+            source=IntroMarkerSource.AUTO_DETECTED,
+            confidence=0.83,
+        )
+
+        updated = await repo.update_episode_intro(episode_id, marker)
+        await db_session.commit()
+
+        assert updated is True
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert found is not None
+        episode = found.seasons[0].episodes[0]
+        assert episode.intro is not None
+        assert episode.intro.start_seconds == 5
+        assert episode.intro.source == IntroMarkerSource.AUTO_DETECTED
+
+    async def test_clearing_marker_nulls_all_columns(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        marker = IntroMarker(
+            start_seconds=0,
+            end_seconds=60,
+            source=IntroMarkerSource.MANUAL,
+        )
+        series = _series_with_intro(intro=marker)
+        await repo.save(series)
+        episode_id = series.seasons[0].episodes[0].id
+        assert episode_id is not None
+
+        updated = await repo.update_episode_intro(episode_id, None)
+        await db_session.commit()
+
+        assert updated is True
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert found is not None
+        assert found.seasons[0].episodes[0].intro is None
+
+    async def test_returns_false_for_unknown_episode(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+
+        updated = await repo.update_episode_intro(EpisodeId.generate(), None)
+
+        assert updated is False
