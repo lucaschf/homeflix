@@ -15,7 +15,11 @@ from src.config.containers.media import MediaContainer
 from src.config.containers.preferences import PreferencesContainer
 from src.config.containers.watch_progress import WatchProgressContainer
 from src.config.settings import Settings
-from src.infrastructure.scheduling import LibraryScanScheduler, ThumbnailBackfillJob
+from src.infrastructure.scheduling import (
+    IntroDetectionJob,
+    LibraryScanScheduler,
+    ThumbnailBackfillJob,
+)
 from src.modules.media.infrastructure.acl import ProgressLookupAdapter
 from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyWatchProgressUnitOfWorkFactory,
@@ -132,6 +136,17 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         thumbnail_service=media.thumbnail_generation_service,
         batch_size=config.provided.thumbnail_backfill_batch_size,
         sprite_subdir=config.provided.thumbnail_backfill_subdir,
+    )
+
+    intro_detection_job = providers.Singleton(
+        IntroDetectionJob,
+        media_uow_factory=media.media_unit_of_work_factory,
+        audio_extractor=media.audio_extractor,
+        chromaprint_service=media.chromaprint_service,
+        intro_detector=media.intro_detector,
+        batch_size=config.provided.intro_detection_batch_size,
+        audio_window_seconds=config.provided.intro_detection_audio_window_seconds,
+        min_confidence=config.provided.intro_detection_min_confidence,
     )
 
 

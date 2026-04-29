@@ -43,6 +43,11 @@ from src.modules.media.application.use_cases.serve_hls_file import ServeHlsFileU
 from src.modules.media.application.use_cases.set_episode_intro import SetEpisodeIntroUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
 from src.modules.media.application.use_cases.stream_file_range import StreamFileRangeUseCase
+from src.modules.media.infrastructure.audio import (
+    AudioExtractor,
+    ChromaprintIntroDetector,
+    ChromaprintService,
+)
 from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
 from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
@@ -223,6 +228,19 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         ThumbnailGenerationService,
         ffmpeg_threads=ffmpeg_threads,
     )
+
+    # Audio analysis primitives — shared by the periodic intro detection
+    # job. Singletons because each wrapper is stateless apart from the
+    # configured ffmpeg threads / fpcalc timeout, and the job runs them
+    # serially per tick.
+    audio_extractor = providers.Singleton(
+        AudioExtractor,
+        ffmpeg_threads=ffmpeg_threads,
+    )
+
+    chromaprint_service = providers.Singleton(ChromaprintService)
+
+    intro_detector = providers.Singleton(ChromaprintIntroDetector)
 
     file_streamer = providers.Factory(LocalFileStreamer)
 
