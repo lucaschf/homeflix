@@ -23,6 +23,7 @@ from src.infrastructure.scheduling.scheduler_service import (
 from src.modules.library.domain.entities.library import Library
 from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.library.domain.value_objects.library_type import LibraryType
+from src.shared_kernel.value_objects.file_path import FilePath
 
 
 class _FakeJob:
@@ -252,3 +253,32 @@ class TestRunScan:
         assert kwargs["variant_detector"] is scheduler._variant_detector
         assert kwargs["event_bus"] is scheduler._event_bus
         assert kwargs["probe_service"] is scheduler._probe_service
+
+    @pytest.mark.asyncio
+    async def test_passes_file_path_objects_to_scan_input(
+        self, scheduler: LibraryScanScheduler, library_repo: AsyncMock
+    ) -> None:
+        """Library paths must reach the use case as ``FilePath`` instances —
+        the scanner unwraps ``.value`` and crashes if given raw strings."""
+        lib = _make_library("A", "0 * * * *")
+        library_repo.find_by_id.return_value = lib
+        library_repo.save = AsyncMock()
+
+        fake_use_case = AsyncMock()
+        fake_use_case.execute.return_value = MagicMock(
+            movies_created=0,
+            movies_updated=0,
+            episodes_created=0,
+            episodes_updated=0,
+            errors=[],
+        )
+
+        with patch(
+            "src.infrastructure.scheduling.scheduler_service.ScanMediaDirectoriesUseCase",
+            return_value=fake_use_case,
+        ):
+            await scheduler._run_scan(str(lib.id))
+
+        fake_use_case.execute.assert_awaited_once()
+        scan_input = fake_use_case.execute.await_args.args[0]
+        assert all(isinstance(p, FilePath) for p in scan_input.directories)
