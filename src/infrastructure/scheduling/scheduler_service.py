@@ -34,6 +34,7 @@ if TYPE_CHECKING:
         VariantDetectorPort,
     )
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+    from src.shared_kernel.value_objects.file_path import FilePath
 
 _logger = get_logger()
 
@@ -236,7 +237,7 @@ class LibraryScanScheduler:
             errors=len(result.errors),
         )
 
-    async def _load_library_paths(self, library_id: str) -> list[str] | None:
+    async def _load_library_paths(self, library_id: str) -> list[FilePath] | None:
         """Return the library's configured paths, or ``None`` if it vanished."""
         async with self._library_uow_factory() as uow:
             library = await uow.libraries.find_by_id(LibraryId(library_id))
@@ -246,7 +247,7 @@ class LibraryScanScheduler:
                     library_id=library_id,
                 )
                 return None
-            return [p.value for p in library.paths]
+            return list(library.paths)
 
     async def _mark_library_scanned(self, library_id: str) -> None:
         """Persist the completed-scan timestamp in its own UoW."""
