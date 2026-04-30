@@ -129,10 +129,20 @@ class IntroDetectionJob:
         """Drive one season through the detection pipeline.
 
         Returns the state the season was transitioned to (used by
-        ``run`` for the per-tick log line).
+        ``run`` for the per-tick log line). The caller relies on this
+        method never raising — a single bad season must not abort the
+        rest of the tick.
         """
         season_id = season.id
         if season_id is None:
+            # Defensive: the repository fetches persisted seasons, so a
+            # missing id would mean the entity was hand-built somewhere
+            # downstream. Surface it instead of silently dropping the
+            # season from the batch counters.
+            _logger.error(
+                "[intro-detection] skipping season with no id; cannot "
+                "transition state without a primary key",
+            )
             return IntroDetectionState.FAILED
 
         try:
@@ -152,11 +162,21 @@ class IntroDetectionJob:
                 season_id=str(season_id),
             )
             error_message = f"{type(exc).__name__}: {exc}"[:_MAX_ERROR_MESSAGE_LENGTH]
-            await self._mark_state(
-                season_id,
-                IntroDetectionState.FAILED,
-                error=error_message,
-            )
+            # Best-effort recording of the failure: if even the FAILED
+            # transition itself raises (DB hiccup mid-tick), swallow it
+            # so the batch loop in ``run`` can keep processing the rest
+            # of the seasons.
+            try:
+                await self._mark_state(
+                    season_id,
+                    IntroDetectionState.FAILED,
+                    error=error_message,
+                )
+            except Exception:
+                _logger.exception(
+                    "[intro-detection] failed to record FAILED state",
+                    season_id=str(season_id),
+                )
             return IntroDetectionState.FAILED
 
     async def _detect_and_persist(self, season: Season, season_id: SeasonId) -> IntroDetectionState:
@@ -202,19 +222,32 @@ class IntroDetectionJob:
         window = self._audio_window_seconds
 
         def _extract_and_fingerprint() -> EpisodeFingerprint | None:
-            with self._audio_extractor.extract_temporary(
-                file_path, duration_seconds=window
-            ) as wav_path:
-                if wav_path is None:
-                    return None
-                fingerprint = self._chromaprint_service.fingerprint(wav_path)
-                if fingerprint is None:
-                    return None
-                return EpisodeFingerprint(
-                    episode_id=episode_id,
-                    hashes=list(fingerprint.hashes),
-                    duration_seconds=fingerprint.duration_seconds,
+            # Per the docstring: any failure here just drops the
+            # episode from the detection pool. An unexpected exception
+            # from the audio stack must NOT promote into a season-level
+            # FAILED — the rest of the episodes might still produce a
+            # quorum. Swallow + log instead of letting it bubble.
+            try:
+                with self._audio_extractor.extract_temporary(
+                    file_path, duration_seconds=window
+                ) as wav_path:
+                    if wav_path is None:
+                        return None
+                    fingerprint = self._chromaprint_service.fingerprint(wav_path)
+            except Exception:
+                _logger.exception(
+                    "[intro-detection] fingerprinting episode failed; skipping",
+                    episode_id=str(episode_id),
+                    file_path=file_path,
                 )
+                return None
+            if fingerprint is None:
+                return None
+            return EpisodeFingerprint(
+                episode_id=episode_id,
+                hashes=list(fingerprint.hashes),
+                duration_seconds=fingerprint.duration_seconds,
+            )
 
         return await asyncio.to_thread(_extract_and_fingerprint)
 

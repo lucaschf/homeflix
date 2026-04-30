@@ -341,6 +341,117 @@ class TestIntroDetectionJob:
         assert terminal_state == IntroDetectionState.COMPLETED
 
     @pytest.mark.asyncio
+    async def test_unexpected_extractor_exception_drops_only_that_episode(
+        self,
+    ) -> None:
+        # The first episode's extraction raises an unexpected exception
+        # — the contract is best-effort: drop that episode, keep the
+        # season alive on the remaining ones rather than failing it.
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2, 3)]
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[season])
+        factory = MagicMock(return_value=uow)
+
+        crashing_extractor = MagicMock()
+        call_counter = {"n": 0}
+
+        @contextmanager
+        def extract_temporary(_file_path: str, *, duration_seconds: int) -> Iterator[Path | None]:
+            del duration_seconds
+            call_counter["n"] += 1
+            if call_counter["n"] == 1:
+                raise RuntimeError("unexpected ffmpeg failure")
+            yield Path("/tmp/fake.wav")
+
+        crashing_extractor.extract_temporary.side_effect = extract_temporary
+
+        job = IntroDetectionJob(
+            media_uow_factory=factory,
+            audio_extractor=crashing_extractor,
+            chromaprint_service=_make_chromaprint(),
+            intro_detector=_make_detector(detections={}),
+        )
+        await job.run()
+
+        # Detector still ran with the two surviving fingerprints.
+        passed_to_detector = job._intro_detector.detect.call_args.args[0]  # type: ignore[attr-defined]
+        assert len(passed_to_detector) == 2
+        terminal_state = uow.series.update_season_intro_detection.await_args_list[-1].args[1]
+        assert terminal_state == IntroDetectionState.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_does_not_abort_batch_when_failed_state_recording_raises(
+        self,
+    ) -> None:
+        # If the FAILED transition itself raises (e.g. DB hiccup mid-tick)
+        # the batch loop must continue to the next season rather than
+        # aborting silently.
+        sid = SeriesId.generate()
+        eps_a = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        season_a = _make_season(episodes=eps_a, series_id=sid)
+        eps_b = [
+            _make_episode(series_id=sid, episode_number=i, file_path=f"/series/s02e{i:02d}.mkv")
+            for i in (1, 2)
+        ]
+        season_b = _make_season(episodes=eps_b, series_id=sid)
+
+        # update_season_intro_detection raises on the second call
+        # (which is the FAILED transition for season_a after the
+        # detector raised). Subsequent calls succeed so season_b can
+        # complete.
+        uow = AsyncMock()
+        uow.__aenter__.return_value = uow
+        uow.__aexit__.return_value = None
+        uow.series = AsyncMock()
+        uow.series.find_seasons_pending_intro_detection = AsyncMock(
+            return_value=[season_a, season_b]
+        )
+        update_outcomes: list[bool | Exception] = [
+            True,  # season_a IN_PROGRESS → ok
+            RuntimeError("db hiccup"),  # season_a FAILED → boom
+            True,  # season_b IN_PROGRESS → ok
+            True,  # season_b COMPLETED → ok
+        ]
+
+        async def update_state(*_args: object, **_kwargs: object) -> bool:
+            outcome = update_outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        uow.series.update_season_intro_detection.side_effect = update_state
+        uow.series.update_episode_intro = AsyncMock(return_value=True)
+        factory = MagicMock(return_value=uow)
+
+        broken_detector = MagicMock()
+        # First call (season_a) raises; second call (season_b) returns
+        # an empty mapping so the season completes cleanly.
+        broken_detector.detect.side_effect = [RuntimeError("kaboom"), {}]
+
+        job = IntroDetectionJob(
+            media_uow_factory=factory,
+            audio_extractor=_make_audio_extractor(),
+            chromaprint_service=_make_chromaprint(),
+            intro_detector=broken_detector,
+        )
+        # Must not raise — the batch loop survives the failed
+        # state-recording on season_a.
+        await job.run()
+
+        # Both seasons walked the IN_PROGRESS path; season_b reached
+        # COMPLETED despite season_a's recording failure.
+        states_used = [
+            call.args[1] for call in uow.series.update_season_intro_detection.await_args_list
+        ]
+        assert states_used == [
+            IntroDetectionState.IN_PROGRESS,
+            IntroDetectionState.FAILED,
+            IntroDetectionState.IN_PROGRESS,
+            IntroDetectionState.COMPLETED,
+        ]
+
+    @pytest.mark.asyncio
     async def test_respects_batch_size(self) -> None:
         sid = SeriesId.generate()
         seasons = [
