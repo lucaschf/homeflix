@@ -93,6 +93,14 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # auto-default (all cores). Wired from ``Settings.ffmpeg_threads``.
     ffmpeg_threads = providers.Dependency(default=None)
 
+    # Intro-detection algorithm tuning knobs. Defaults match the
+    # detector's own defaults; the composition root overrides via
+    # ``Settings.intro_detection_*``.
+    intro_detection_max_hash_hamming = providers.Dependency(default=10)
+    intro_detection_tolerance_hashes = providers.Dependency(default=2)
+    intro_detection_min_intro_seconds = providers.Dependency(default=5.0)
+    intro_detection_max_intro_seconds = providers.Dependency(default=120.0)
+
     # =========================================================================
     # Unit of Work
     # =========================================================================
@@ -240,7 +248,13 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     chromaprint_service = providers.Singleton(ChromaprintService)
 
-    intro_detector = providers.Singleton(ChromaprintIntroDetector)
+    intro_detector = providers.Singleton(
+        ChromaprintIntroDetector,
+        max_hash_hamming=intro_detection_max_hash_hamming,
+        tolerance_hashes=intro_detection_tolerance_hashes,
+        min_intro_seconds=intro_detection_min_intro_seconds,
+        max_intro_seconds=intro_detection_max_intro_seconds,
+    )
 
     file_streamer = providers.Factory(LocalFileStreamer)
 

@@ -88,6 +88,10 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         hls_cache_directory=config.provided.hls_cache_directory,
         hls_cache_max_size_mb=config.provided.hls_cache_max_size_mb,
         ffmpeg_threads=config.provided.ffmpeg_threads,
+        intro_detection_max_hash_hamming=config.provided.intro_detection_max_hash_hamming,
+        intro_detection_tolerance_hashes=config.provided.intro_detection_tolerance_hashes,
+        intro_detection_min_intro_seconds=config.provided.intro_detection_min_intro_seconds,
+        intro_detection_max_intro_seconds=config.provided.intro_detection_max_intro_seconds,
     )
 
     library = providers.Container(

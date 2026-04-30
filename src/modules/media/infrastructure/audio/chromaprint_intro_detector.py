@@ -46,9 +46,10 @@ from src.modules.media.domain.value_objects import EpisodeId
 # anime / sitcom seasons. They are exposed as constructor kwargs so
 # operators can adjust without forking the implementation.
 _DEFAULT_MAX_ALIGNMENT_SHIFT_SECONDS = 30.0
-_DEFAULT_MAX_HASH_HAMMING = 14  # bits, out of 32
-_DEFAULT_TOLERANCE_HASHES = 4
+_DEFAULT_MAX_HASH_HAMMING = 10  # bits, out of 32
+_DEFAULT_TOLERANCE_HASHES = 2
 _DEFAULT_MIN_INTRO_SECONDS = 5.0
+_DEFAULT_MAX_INTRO_SECONDS = 120.0
 _DEFAULT_MIN_PAIR_AGREEMENT = 0.5
 _DEFAULT_ALIGNMENT_WINDOW_SECONDS = 60.0
 
@@ -76,13 +77,24 @@ class ChromaprintIntroDetector(IntroDetectorPort):
             two episodes can differ. Wider values cost more search time;
             30s comfortably covers most production patterns.
         max_hash_hamming: Per-hash hamming distance (out of 32 bits)
-            considered "matching". 14 ≈ 44% bit divergence — generous
-            enough to absorb the natural Chromaprint noise floor.
-        tolerance_hashes: How many consecutive non-matching hashes a
-            run can tolerate before terminating. Smooths over isolated
-            spikes inside an otherwise strong match.
+            considered "matching". Tighter values discriminate better
+            but also reject more genuine intro hashes that drifted
+            under encoding noise. ``10`` (≈ 31% bit divergence) is the
+            sweet spot for raw chromaprint hashes from typical TV
+            audio.
+        tolerance_hashes: How many CONSECUTIVE non-matching hashes a
+            run can absorb before terminating. Smooths over isolated
+            spikes inside an otherwise strong match — once a fresh
+            good hash arrives the counter resets, so the run can keep
+            extending. Trailing bad hashes never count toward the
+            reported segment length.
         min_intro_seconds: Discard matches shorter than this. Stops the
             detector from firing on incidental musical stings.
+        max_intro_seconds: Hard cap on the persisted match length.
+            Real intros virtually never exceed two minutes; longer
+            detections almost always include shared underscore /
+            transition music that bleeds past the title sequence and
+            should be truncated rather than persisted as-is.
         min_pair_agreement: Episodes whose match-rate against their
             peers falls below this fraction are dropped.
         alignment_window_seconds: How much of each fingerprint to scan
@@ -97,6 +109,7 @@ class ChromaprintIntroDetector(IntroDetectorPort):
         max_hash_hamming: int = _DEFAULT_MAX_HASH_HAMMING,
         tolerance_hashes: int = _DEFAULT_TOLERANCE_HASHES,
         min_intro_seconds: float = _DEFAULT_MIN_INTRO_SECONDS,
+        max_intro_seconds: float = _DEFAULT_MAX_INTRO_SECONDS,
         min_pair_agreement: float = _DEFAULT_MIN_PAIR_AGREEMENT,
         alignment_window_seconds: float = _DEFAULT_ALIGNMENT_WINDOW_SECONDS,
     ) -> None:
@@ -104,6 +117,7 @@ class ChromaprintIntroDetector(IntroDetectorPort):
         self._max_hash_hamming = max_hash_hamming
         self._tolerance_hashes = tolerance_hashes
         self._min_intro_seconds = min_intro_seconds
+        self._max_intro_seconds = max_intro_seconds
         self._min_pair_agreement = min_pair_agreement
         self._alignment_window_seconds = alignment_window_seconds
 
@@ -203,43 +217,56 @@ class ChromaprintIntroDetector(IntroDetectorPort):
     def _longest_run(self, distances: list[int]) -> tuple[int, int]:
         """Return (start, length) of the longest tolerant run.
 
-        A "run" is a contiguous span of positions where the running
-        count of "bad" hashes (distance > ``max_hash_hamming``) stays
-        below ``tolerance_hashes``. The tolerance lets a few isolated
-        outliers survive inside an otherwise strong match — chromaprint
-        often emits one or two bit-flipped hashes per second of clean
-        audio. When a run terminates because tolerance was exceeded,
-        the trailing bad streak is trimmed so callers always see a
-        run that ends on a "good" position.
+        A "run" is a contiguous span starting on a good hash and
+        absorbing up to ``tolerance_hashes`` CONSECUTIVE bad hashes
+        before terminating. A fresh good hash resets the consecutive
+        counter, so isolated noise inside an otherwise strong match
+        is forgiven indefinitely.
+
+        Crucially the reported segment always ends on a good hash —
+        ``last_good`` tracks the rightmost good index inside the run
+        and is the bound used when updating the best length, so a
+        trailing bad streak never inflates the reported range. Without
+        this, the previous implementation could overshoot the real end
+        by up to ``tolerance_hashes`` chromaprint frames (a fraction
+        of a second per frame, but noticeable on real episodes when
+        the audio fades out into shared underscore music).
         """
         best_start = 0
         best_length = 0
-        run_start = 0
-        run_bad = 0
-        run_length = 0
+        run_start = -1
+        last_good = -1
+        consecutive_bad = 0
+
         for i, d in enumerate(distances):
             is_bad = d > self._max_hash_hamming
-            if run_length == 0 and is_bad:
-                continue
-            if run_length == 0:
+
+            if run_start < 0:
+                # Outside any run — only a good hash can start a new one.
+                if is_bad:
+                    continue
                 run_start = i
-                run_bad = 0
-            run_length = i - run_start + 1
-            if is_bad:
-                run_bad += 1
-            if run_bad > self._tolerance_hashes:
-                # End this run; record it if it beat the current best,
-                # trimming the trailing bad streak so the reported range
-                # ends on a "good" position.
-                effective_length = run_length - self._tolerance_hashes
-                if effective_length > best_length:
+                last_good = i
+                consecutive_bad = 0
+                if best_length < 1:
                     best_start = run_start
-                    best_length = effective_length
-                run_length = 0
+                    best_length = 1
                 continue
-            if run_length > best_length:
+
+            if is_bad:
+                consecutive_bad += 1
+                if consecutive_bad > self._tolerance_hashes:
+                    run_start = -1
+                continue
+
+            # Good hash: reset the consecutive-bad counter and extend
+            # the accepted region to here.
+            consecutive_bad = 0
+            last_good = i
+            length = last_good - run_start + 1
+            if length > best_length:
                 best_start = run_start
-                best_length = run_length
+                best_length = length
 
         return best_start, best_length
 
@@ -261,6 +288,16 @@ class ChromaprintIntroDetector(IntroDetectorPort):
                 continue
             start_seconds = float(median(s for s, _ in segments))
             end_seconds = float(median(e for _, e in segments))
+            # Cap the segment at ``max_intro_seconds``. A real intro
+            # virtually never exceeds two minutes — runs that come back
+            # longer almost always include shared underscore /
+            # transition music that bleeds past the title sequence.
+            # Truncating the END is preferable to dropping the marker
+            # entirely; the user gets a "Skip Intro" button covering
+            # the shared region without overshooting deep into the
+            # episode.
+            if end_seconds - start_seconds > self._max_intro_seconds:
+                end_seconds = start_seconds + self._max_intro_seconds
             if end_seconds - start_seconds < self._min_intro_seconds:
                 continue
             result[episode_id] = DetectedIntro(
