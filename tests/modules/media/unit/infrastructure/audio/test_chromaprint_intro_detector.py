@@ -253,6 +253,62 @@ class TestChromaprintIntroDetector:
         for marker in result.values():
             assert 0.0 <= marker.confidence <= 1.0
 
+    def test_max_intro_seconds_clamps_long_matches(self) -> None:
+        # Plant a 60-hash (~7.5 s) shared region but configure the cap
+        # at 5 s. The detector finds the full match, then truncates the
+        # END so the persisted segment never goes past the cap.
+        long_intro = _make_random_hashes(60, seed=99)
+        detector = ChromaprintIntroDetector(max_intro_seconds=5.0)
+        episodes = [
+            _episode(
+                intro_hashes=long_intro,
+                intro_offset_hashes=0,
+                total_hashes=500,
+                seed=seed,
+            )
+            for seed in (1, 2, 3)
+        ]
+
+        result = detector.detect(episodes)
+
+        assert len(result) == len(episodes)
+        for episode in episodes:
+            marker = result[episode.episode_id]
+            assert marker.start_seconds == pytest.approx(0.0, abs=0.5)
+            # End clamped to start + max_intro_seconds (with a hair of
+            # rounding slack for the float median).
+            assert marker.end_seconds - marker.start_seconds <= 5.0 + 0.001
+
+    def test_run_end_does_not_inflate_into_trailing_bad_streak(self) -> None:
+        # Regression: the previous algorithm updated best_length on
+        # every "still good" iteration without trimming, which let the
+        # reported end include positions that hadn't yet exceeded
+        # tolerance but already contained noisy hashes. The new
+        # last_good tracking guarantees the end is always a confirmed
+        # good hash.
+        intro = _make_random_hashes(80, seed=42)
+        detector = ChromaprintIntroDetector()
+        episodes = [
+            _episode(
+                intro_hashes=intro,
+                intro_offset_hashes=0,
+                total_hashes=400,
+                seed=seed,
+            )
+            for seed in (100, 200, 300)
+        ]
+
+        result = detector.detect(episodes)
+
+        for episode in episodes:
+            marker = result[episode.episode_id]
+            # 80 hashes / 8 hashes-per-second = 10 s. Allow at most a
+            # half-second of slack for the float median; the previous
+            # algorithm could overshoot by tolerance_hashes worth of
+            # positions (~0.5 s on its own, much more in real episodes
+            # where shared underscore extended the run).
+            assert marker.end_seconds <= 10.5
+
     def test_misconfigured_alignment_window_does_not_disable_matching(
         self, shared_intro: list[int]
     ) -> None:

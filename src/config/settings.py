@@ -191,6 +191,38 @@ class Settings(BaseSettings):  # type: ignore[misc]
         "is the fraction of peer episodes whose fingerprint agreed "
         "with the candidate marker.",
     )
+    intro_detection_max_hash_hamming: int = Field(
+        default=10,
+        ge=0,
+        le=32,
+        description="Per-hash hamming-distance ceiling (out of 32 bits) "
+        "considered a 'match' between two episode fingerprints. Lower "
+        "values reject more borderline hashes — useful when detections "
+        "overshoot into shared underscore music; higher values absorb "
+        "more chromaprint noise.",
+    )
+    intro_detection_tolerance_hashes: int = Field(
+        default=2,
+        ge=0,
+        description="How many CONSECUTIVE non-matching hashes a run "
+        "can absorb before terminating. A fresh good hash resets the "
+        "counter so isolated chromaprint noise is forgiven indefinitely.",
+    )
+    intro_detection_min_intro_seconds: float = Field(
+        default=5.0,
+        ge=0.0,
+        description="Minimum intro length to accept. Shorter matches "
+        "are dropped — usually they are recurring stingers / bumpers "
+        "rather than the title sequence proper.",
+    )
+    intro_detection_max_intro_seconds: float = Field(
+        default=120.0,
+        ge=10.0,
+        description="Hard cap on persisted intro length. Real intros "
+        "rarely exceed two minutes; longer detections almost always "
+        "include shared underscore that bleeds past the title sequence "
+        "and should be truncated to avoid skipping into the episode.",
+    )
 
     ffmpeg_threads: int | None = Field(
         default=None,
