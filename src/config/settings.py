@@ -153,6 +153,45 @@ class Settings(BaseSettings):  # type: ignore[misc]
         "folder) where backfilled sprite + VTT files are written.",
     )
 
+    intro_detection_enabled: bool = Field(
+        default=False,
+        description="Enable the periodic intro-detection job that locates "
+        "the shared opening sequence for each season via Chromaprint "
+        "audio fingerprinting. Off by default because it requires the "
+        "``fpcalc`` binary on PATH; turn it on once Chromaprint is "
+        "installed (``apt install libchromaprint-tools`` / "
+        "``brew install chromaprint``).",
+    )
+    intro_detection_batch_size: int = Field(
+        default=1,
+        ge=1,
+        description="Maximum number of seasons processed per detection "
+        "tick. Each season triggers ffmpeg + fpcalc per episode, so "
+        "values above 2 can saturate the host on large seasons.",
+    )
+    intro_detection_interval_minutes: int = Field(
+        default=30,
+        ge=1,
+        description="How often the intro-detection job runs.",
+    )
+    intro_detection_audio_window_seconds: int = Field(
+        default=600,
+        ge=60,
+        description="How many seconds of leading audio to analyse per "
+        "episode. 600s (10 min) covers all common cold-open + intro "
+        "lengths; trimming this lower speeds up the job at the cost "
+        "of missing intros that start late.",
+    )
+    intro_detection_min_confidence: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Minimum detector confidence (in ``[0.0, 1.0]``) "
+        "required before an auto-detected intro is persisted. Confidence "
+        "is the fraction of peer episodes whose fingerprint agreed "
+        "with the candidate marker.",
+    )
+
     ffmpeg_threads: int | None = Field(
         default=None,
         ge=1,
