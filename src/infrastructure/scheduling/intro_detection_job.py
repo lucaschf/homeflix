@@ -133,6 +133,7 @@ class IntroDetectionJob:
         method never raising — a single bad season must not abort the
         rest of the tick.
         """
+        log_ctx = _season_log_context(season)
         season_id = season.id
         if season_id is None:
             # Defensive: the repository fetches persisted seasons, so a
@@ -142,6 +143,7 @@ class IntroDetectionJob:
             _logger.error(
                 "[intro-detection] skipping season with no id; cannot "
                 "transition state without a primary key",
+                **log_ctx,
             )
             return IntroDetectionState.FAILED
 
@@ -150,16 +152,16 @@ class IntroDetectionJob:
         except Exception:
             _logger.exception(
                 "[intro-detection] failed to claim season",
-                season_id=str(season_id),
+                **log_ctx,
             )
             return IntroDetectionState.FAILED
 
         try:
-            return await self._detect_and_persist(season, season_id)
+            return await self._detect_and_persist(season, season_id, log_ctx)
         except Exception as exc:
             _logger.exception(
                 "[intro-detection] season processing failed",
-                season_id=str(season_id),
+                **log_ctx,
             )
             error_message = f"{type(exc).__name__}: {exc}"[:_MAX_ERROR_MESSAGE_LENGTH]
             # Best-effort recording of the failure: if even the FAILED
@@ -175,24 +177,51 @@ class IntroDetectionJob:
             except Exception:
                 _logger.exception(
                     "[intro-detection] failed to record FAILED state",
-                    season_id=str(season_id),
+                    **log_ctx,
                 )
             return IntroDetectionState.FAILED
 
-    async def _detect_and_persist(self, season: Season, season_id: SeasonId) -> IntroDetectionState:
+    async def _detect_and_persist(
+        self,
+        season: Season,
+        season_id: SeasonId,
+        log_ctx: dict[str, str | int],
+    ) -> IntroDetectionState:
         candidates = [ep for ep in season.episodes if not _has_manual_marker(ep)]
-        if len(candidates) < _MIN_EPISODES_FOR_DETECTION:
+        candidate_count = len(candidates)
+        if candidate_count < _MIN_EPISODES_FOR_DETECTION:
             await self._mark_state(season_id, IntroDetectionState.INSUFFICIENT_EPISODES)
+            _logger.info(
+                "[intro-detection] season skipped: not enough non-MANUAL episodes",
+                **log_ctx,
+                total_episodes=len(season.episodes),
+                candidate_count=candidate_count,
+            )
             return IntroDetectionState.INSUFFICIENT_EPISODES
 
         fingerprints = await self._build_fingerprints(candidates)
-        if len(fingerprints) < _MIN_EPISODES_FOR_DETECTION:
+        fingerprint_count = len(fingerprints)
+        if fingerprint_count < _MIN_EPISODES_FOR_DETECTION:
             await self._mark_state(season_id, IntroDetectionState.INSUFFICIENT_EPISODES)
+            _logger.info(
+                "[intro-detection] season skipped: not enough usable fingerprints",
+                **log_ctx,
+                candidate_count=candidate_count,
+                fingerprint_count=fingerprint_count,
+            )
             return IntroDetectionState.INSUFFICIENT_EPISODES
 
         detections = await asyncio.to_thread(self._intro_detector.detect, fingerprints)
-        await self._persist_detections(detections)
+        persisted_count = await self._persist_detections(detections)
         await self._mark_state(season_id, IntroDetectionState.COMPLETED)
+        _logger.info(
+            "[intro-detection] season completed",
+            **log_ctx,
+            candidate_count=candidate_count,
+            fingerprint_count=fingerprint_count,
+            detected_count=len(detections),
+            persisted_count=persisted_count,
+        )
         return IntroDetectionState.COMPLETED
 
     async def _build_fingerprints(self, episodes: list[Episode]) -> list[EpisodeFingerprint]:
@@ -251,16 +280,26 @@ class IntroDetectionJob:
 
         return await asyncio.to_thread(_extract_and_fingerprint)
 
-    async def _persist_detections(self, detections: Mapping[EpisodeId, DetectedIntro]) -> None:
-        """Persist the auto-detected markers that clear the confidence floor."""
+    async def _persist_detections(self, detections: Mapping[EpisodeId, DetectedIntro]) -> int:
+        """Persist auto-detected markers that clear the confidence floor.
+
+        Returns the number of markers actually written so the caller
+        can include it in the per-season summary log line. Detections
+        below ``min_confidence`` are silently dropped — the season is
+        still flagged ``COMPLETED`` upstream so it does not get
+        reprocessed indefinitely.
+        """
         if not detections:
-            return
+            return 0
+        persisted = 0
         async with self._media_uow_factory() as uow:
             for episode_id, detected in detections.items():
                 if detected.confidence < self._min_confidence:
                     continue
                 marker = _build_auto_marker(detected)
                 await uow.series.update_episode_intro(episode_id, marker)
+                persisted += 1
+        return persisted
 
     async def _mark_state(
         self,
@@ -299,6 +338,20 @@ def _build_auto_marker(detected: DetectedIntro) -> IntroMarker:
 def _has_manual_marker(episode: Episode) -> bool:
     """Return ``True`` when the episode's intro was set manually."""
     return episode.intro is not None and episode.intro.is_manual
+
+
+def _season_log_context(season: Season) -> dict[str, str | int]:
+    """Build the structured log fields for a season under processing.
+
+    ``season.series_id`` is always set (it's the parent FK), even on a
+    season that somehow lacks its own external id, so the context is
+    safe to compute before any guard checks.
+    """
+    return {
+        "series_id": str(season.series_id),
+        "season_id": str(season.id) if season.id is not None else "",
+        "season_number": season.season_number.value,
+    }
 
 
 __all__ = ["IntroDetectionJob"]
