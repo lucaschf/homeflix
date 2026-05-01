@@ -15,13 +15,14 @@ from scratch:
 1. ``UPDATE episodes SET scrub_preview_path = NULL`` so every episode
    re-enters ``find_episodes_missing_scrub_preview`` and gets a fresh
    sprite at the new layout.
-2. Walk every configured library path and best-effort delete the
-   legacy ``.homeflix/thumbnails/sprite.jpg`` and ``sprite.vtt`` files
-   sitting directly under that subfolder (i.e. NOT inside a per-stem
-   leaf — those are the new layout's sprites and must stay). Failures
-   are swallowed because filesystem cleanup is housekeeping, not data
-   integrity, and we do not want a missing path or a permission
-   glitch to abort the schema migration.
+2. Best-effort delete the legacy ``.homeflix/thumbnails/sprite.jpg``
+   and ``sprite.vtt`` files that were sitting directly under each
+   season directory. The candidate directories are derived from the
+   ``media_files`` rows tied to episodes — we only touch parents we
+   know hosted an episode file, never recursively scan a library
+   tree. Failures are swallowed: filesystem cleanup is housekeeping,
+   not data integrity, and we never want a missing path or a
+   permission glitch to abort the schema migration.
 
 Movies are intentionally not reset. The new per-stem layout means a
 movie's existing sprite still lives at the path the DB column
@@ -36,7 +37,6 @@ Create Date: 2026-04-30 22:00:00.000000
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -45,7 +45,7 @@ import sqlalchemy as sa
 from alembic import op
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
 revision: str = "e1f2a3b4c5d6"
 down_revision: str | Sequence[str] | None = "d0e1f2a3b4c5"
@@ -74,67 +74,50 @@ def downgrade() -> None:
 
 
 def _delete_legacy_sprite_files() -> None:
-    """Walk every library root and prune legacy sprite files.
-
-    Best-effort: any IO error is logged at WARNING and the migration
-    keeps going.
-    """
-    roots = list(_collect_library_roots())
-    seen_dirs: set[Path] = set()
+    """Prune the bug's legacy sprite files across every season directory."""
     deleted = 0
-    for root in roots:
-        deleted += _prune_legacy_under(root, seen_dirs)
+    for legacy_dir in _legacy_dirs_for_episodes():
+        for filename in _LEGACY_FILES:
+            target = legacy_dir / filename
+            if not target.is_file():
+                continue
+            try:
+                target.unlink()
+                deleted += 1
+            except OSError as exc:
+                _logger.warning("Could not delete legacy sprite %s: %s", target, exc)
     if deleted:
         _logger.info("Removed %d legacy sprite file(s) from disk", deleted)
 
 
-def _collect_library_roots() -> list[Path]:
-    """Return existing directories from ``libraries.paths`` JSON arrays."""
+def _legacy_dirs_for_episodes() -> Iterator[Path]:
+    """Yield each unique legacy ``.homeflix/thumbnails`` dir under an episode parent.
+
+    Drives off ``media_files`` rows whose ``episode_id`` is set, so we
+    visit exactly the season directories that were affected by the
+    bug instead of recursively scanning a (potentially huge) library
+    tree. Yields each candidate at most once and only when the
+    directory actually exists on disk.
+    """
     conn = op.get_bind()
     try:
         rows = conn.execute(
-            sa.text("SELECT paths FROM libraries WHERE deleted_at IS NULL"),
+            sa.text(
+                "SELECT DISTINCT file_path FROM media_files WHERE episode_id IS NOT NULL",
+            ),
         ).fetchall()
     except sa.exc.SQLAlchemyError as exc:
         _logger.warning("Skipping legacy sprite cleanup; query failed: %s", exc)
-        return []
+        return
 
-    roots: list[Path] = []
+    seen: set[Path] = set()
     for row in rows:
-        paths_json = row[0]
-        if not paths_json:
+        file_path = row[0]
+        if not file_path:
             continue
-        try:
-            library_paths = json.loads(paths_json)
-        except (TypeError, ValueError):
+        legacy_dir = Path(file_path).parent / _LEGACY_SPRITE_RELATIVE_DIR
+        if legacy_dir in seen:
             continue
-        for raw in library_paths:
-            try:
-                root = Path(raw).resolve()
-            except OSError:
-                continue
-            if root.is_dir():
-                roots.append(root)
-    return roots
-
-
-def _prune_legacy_under(root: Path, seen_dirs: set[Path]) -> int:
-    """Delete legacy sprite files inside one library root."""
-    deleted = 0
-    for legacy_dir in root.rglob(_LEGACY_SPRITE_RELATIVE_DIR.name):
-        # ``rglob`` returns every directory named ``thumbnails``; only
-        # the ones whose parent is the ``.homeflix`` marker belong to
-        # this app's layout.
-        if legacy_dir.parent.name != _LEGACY_SPRITE_RELATIVE_DIR.parts[0]:
-            continue
-        if legacy_dir in seen_dirs:
-            continue
-        seen_dirs.add(legacy_dir)
-        for filename in _LEGACY_FILES:
-            target = legacy_dir / filename
-            try:
-                target.unlink(missing_ok=True)
-                deleted += 1
-            except OSError as exc:
-                _logger.warning("Could not delete legacy sprite %s: %s", target, exc)
-    return deleted
+        seen.add(legacy_dir)
+        if legacy_dir.is_dir():
+            yield legacy_dir
