@@ -208,7 +208,13 @@ class ThumbnailBackfillJob:
                 file_path=file_path,
             )
             return None
-        output_dir = source.parent / self._sprite_subdir
+        # Per-stem subfolder so episodes that share a season directory
+        # do not overwrite each other's ``sprite.jpg`` / ``sprite.vtt``.
+        # Movies typically sit in their own folders so the change is a
+        # no-op for them in practice, but the consistent layout means a
+        # "Movies/" folder hosting multiple titles flat would survive
+        # the same overwrite hazard.
+        output_dir = source.parent / self._sprite_subdir / source.stem
         return await asyncio.to_thread(
             self._thumbnail_service.generate,
             file_path,

@@ -228,10 +228,48 @@ class TestThumbnailBackfillJob:
         )
         await job.run()
 
-        # Service was invoked with output_dir = <movie parent>/<sprite_subdir>.
+        # Service was invoked with output_dir =
+        # <parent>/<sprite_subdir>/<file_stem>. The per-stem leaf keeps
+        # episodes that share a season folder from overwriting each
+        # other's sprite.
         call = service.generate.call_args
         assert call.args[0] == str(movie_file)
-        assert call.args[1] == movie_file.parent / "custom" / "thumbs"
+        assert call.args[1] == movie_file.parent / "custom" / "thumbs" / "movie"
+
+    @pytest.mark.asyncio
+    async def test_episodes_in_same_season_get_distinct_output_dirs(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Two episodes that share a season directory must write to
+        per-stem subfolders so their sprites don't overwrite each
+        other — the bug that motivated the fix."""
+        season_dir = tmp_path / "Show" / "Season 01"
+        season_dir.mkdir(parents=True)
+        ep1_file = season_dir / "Show.S01E01.mkv"
+        ep2_file = season_dir / "Show.S01E02.mkv"
+        ep1_file.write_bytes(b"\x00")
+        ep2_file.write_bytes(b"\x00")
+
+        ep1 = _make_episode(str(ep1_file))
+        ep2 = _make_episode(str(ep2_file))
+
+        uow = _build_uow(movies_missing=[], episodes_missing=[ep1, ep2])
+        factory = MagicMock(return_value=uow)
+        service = _make_thumbnail_service(tmp_path / "irrelevant.vtt")
+
+        job = ThumbnailBackfillJob(
+            media_uow_factory=factory,
+            thumbnail_service=service,
+            batch_size=2,
+        )
+        await job.run()
+
+        assert service.generate.call_count == 2
+        called_output_dirs = [c.args[1] for c in service.generate.call_args_list]
+        assert called_output_dirs[0] != called_output_dirs[1]
+        assert called_output_dirs[0].name == "Show.S01E01"
+        assert called_output_dirs[1].name == "Show.S01E02"
 
     @pytest.mark.asyncio
     async def test_process_movie_by_id_loads_then_generates(self, tmp_path: Path) -> None:
