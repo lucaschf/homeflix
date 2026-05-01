@@ -459,7 +459,7 @@ class TmdbClient(MetadataProvider):
         resp = await self._client.get(
             f"{self._base_url}/tv/{tmdb_id}",
             params=self._params(
-                append_to_response="external_ids,content_ratings,videos,images",
+                append_to_response="external_ids,content_ratings,videos,images,credits",
                 include_image_language="en,null",
             ),
         )
@@ -467,6 +467,12 @@ class TmdbClient(MetadataProvider):
             return None
         resp.raise_for_status()
         data = resp.json()
+
+        # Top-billed cast comes back nested under ``credits.cast`` thanks
+        # to the ``credits`` append above. Reuse the same parser the
+        # movie path uses so series and movies share the cap/order rules.
+        credits = data.get("credits", {})
+        cast = self._parse_cast(credits.get("cast", []))
 
         start_year = None
         if data.get("first_air_date"):
@@ -499,6 +505,7 @@ class TmdbClient(MetadataProvider):
             backdrop_url=self._image_url(data.get("backdrop_path")),
             logo_url=logo_url,
             genres=[g["name"] for g in data.get("genres", [])],
+            cast=cast,
             tmdb_id=data["id"],
             imdb_id=data.get("external_ids", {}).get("imdb_id"),
             content_rating=content_rating.value if content_rating else None,

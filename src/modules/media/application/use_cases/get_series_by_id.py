@@ -1,6 +1,7 @@
 """GetSeriesByIdUseCase - Retrieve a series with all seasons and episodes."""
 
 from src.building_blocks.application.errors import ResourceNotFoundException
+from src.modules.media.application.dtos.movie_dtos import CastMemberOutput
 from src.modules.media.application.dtos.series_dtos import (
     EpisodeOutput,
     GetSeriesByIdInput,
@@ -118,6 +119,15 @@ class GetSeriesByIdUseCase:
             season_count=series.season_count,
             total_episodes=series.total_episodes,
             seasons=[self._to_season_output(s, series_id, progress_map) for s in series.seasons],
+            cast=[
+                CastMemberOutput(
+                    name=m.name,
+                    profile_path=m.profile_path,
+                    role=m.role,
+                    tmdb_id=m.tmdb_id,
+                )
+                for m in series.cast
+            ],
             created_at=series.created_at.isoformat(),
             updated_at=series.updated_at.isoformat(),
         )

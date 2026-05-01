@@ -7,6 +7,7 @@ import pytest
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.enrichment_dtos import EnrichMediaInput
 from src.modules.media.application.ports import (
+    CreditPerson,
     EpisodeMetadata,
     LocalizedFields,
     MediaMetadata,
@@ -497,6 +498,72 @@ class TestApplySeriesFields:
         assert saved.backdrop_path is not None
         assert saved.content_rating == ContentRating("TV-MA")
         assert saved.trailer_url == "https://youtube.com/abc"
+
+    @pytest.mark.asyncio
+    async def test_should_persist_cast_when_metadata_provides_it(self) -> None:
+        """A series enriched for the first time picks up the cast list
+        TMDB returned via the credits append_to_response. Mirrors the
+        movie enrichment path so the detail UI can render an actor
+        carousel on series too."""
+        series = _make_series()
+        metadata = MediaMetadata(
+            title="Breaking Bad",
+            tmdb_id=1396,
+            cast=[
+                CreditPerson(
+                    name="Bryan Cranston",
+                    role="Walter White",
+                    profile_url="https://image.tmdb.org/p/bryan.jpg",
+                    tmdb_id=17419,
+                ),
+                CreditPerson(name="Aaron Paul", role="Jesse Pinkman", tmdb_id=84497),
+            ],
+        )
+
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = metadata
+
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        saved = mocks.series.save.call_args[0][0]
+        assert [m.name for m in saved.cast] == ["Bryan Cranston", "Aaron Paul"]
+        assert saved.cast[0].role == "Walter White"
+        assert saved.cast[0].tmdb_id == 17419
+        assert saved.cast[0].profile_path == "https://image.tmdb.org/p/bryan.jpg"
+
+    @pytest.mark.asyncio
+    async def test_should_not_overwrite_existing_cast(self) -> None:
+        """Cast follows the same fill-if-empty rule the rest of the
+        series enrichment does — a series that already has cast keeps
+        whatever was there even when the provider returns a different
+        list. Force-refresh on cast is out of scope for this PR; today
+        the user clears it manually if they want a re-pull."""
+        from src.modules.media.domain.value_objects import CastMember
+
+        series = _make_series().with_updates(
+            cast=[CastMember(name="Existing Actor", tmdb_id=1)],
+        )
+        metadata = MediaMetadata(
+            title="Breaking Bad",
+            tmdb_id=1396,
+            cast=[CreditPerson(name="New Actor", tmdb_id=2)],
+        )
+
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = metadata
+
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        saved = mocks.series.save.call_args[0][0]
+        assert [m.name for m in saved.cast] == ["Existing Actor"]
 
     @pytest.mark.asyncio
     async def test_should_apply_localized_series_fields(self) -> None:

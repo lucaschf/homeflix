@@ -48,6 +48,9 @@ class SeriesModel(Base):
     content_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)
     trailer_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # Credits — same JSON-array-of-cast-dicts shape MovieModel uses.
+    cast: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Localized metadata (JSON)
     localized: Mapped[str | None] = mapped_column(Text, nullable=True)
 

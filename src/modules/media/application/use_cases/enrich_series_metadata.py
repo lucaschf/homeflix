@@ -20,6 +20,7 @@ from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
     AirDate,
+    CastMember,
     ContentRating,
     Duration,
     Genre,
@@ -201,6 +202,22 @@ def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
             "trailer_url": ("trailer_url", None),
         },
     )
+
+    # Cast: same fill-if-empty rule as the rest of the don't-overwrite
+    # block, but built outside ``_set_if_missing`` because the
+    # provider DTO uses a different field name (``cast`` ↔ ``cast``)
+    # AND a per-element converter from ``CreditPerson`` to the
+    # domain ``CastMember`` VO.
+    if metadata.cast and not series.cast:
+        updates["cast"] = [
+            CastMember(
+                name=p.name,
+                profile_path=p.profile_url,
+                role=p.role,
+                tmdb_id=p.tmdb_id,
+            )
+            for p in metadata.cast
+        ]
 
     _apply_localized(updates, series.localized, metadata)
 
