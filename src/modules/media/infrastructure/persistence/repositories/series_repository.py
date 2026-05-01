@@ -332,6 +332,32 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             model.external_id: SeriesMapper.to_entity(model) for model in result.scalars().all()
         }
 
+    async def find_by_tmdb_ids(self, tmdb_ids: Sequence[int]) -> dict[int, Series]:
+        """Find series whose ``tmdb_id`` matches any of ``tmdb_ids``.
+
+        Used by ``GetRelatedSeries`` to resolve the subset of TMDB's
+        recommendation list that exists locally. Returning a dict
+        keyed by ``tmdb_id`` lets the caller preserve TMDB's
+        relevance ordering by iterating the request list.
+        """
+        if not tmdb_ids:
+            return {}
+        stmt = (
+            select(SeriesModel)
+            .where(
+                SeriesModel.tmdb_id.in_(tmdb_ids),
+                SeriesModel.deleted_at.is_(None),
+            )
+            .options(*self._series_load_options())
+            .execution_options(populate_existing=True)
+        )
+        result = await self._session.execute(stmt)
+        return {
+            model.tmdb_id: SeriesMapper.to_entity(model)
+            for model in result.scalars().all()
+            if model.tmdb_id is not None
+        }
+
     async def find_by_episode_id(self, episode_id: EpisodeId) -> Series | None:
         """Find a series containing an episode with this ID.
 

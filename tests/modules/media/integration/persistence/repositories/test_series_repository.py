@@ -600,6 +600,52 @@ class TestSQLAlchemySeriesRepositoryFindByIds:
 
 
 @pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryFindByTmdbIds:
+    """Tests for ``find_by_tmdb_ids`` — used by ``GetRelatedSeries``."""
+
+    async def test_returns_empty_dict_for_empty_input(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        assert await repo.find_by_tmdb_ids([]) == {}
+
+    async def test_returns_mapping_by_tmdb_id(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        a = _create_series(title="A", tmdb_id=TmdbId(100))
+        b = _create_series(title="B", tmdb_id=TmdbId(200))
+        await repo.save(a)
+        await repo.save(b)
+
+        result = await repo.find_by_tmdb_ids([100, 200])
+
+        assert set(result.keys()) == {100, 200}
+        assert result[100].title.value == "A"
+        assert result[200].title.value == "B"
+
+    async def test_skips_ids_not_in_catalog(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        present = _create_series(title="Present", tmdb_id=TmdbId(42))
+        await repo.save(present)
+
+        result = await repo.find_by_tmdb_ids([42, 9999])
+
+        assert set(result.keys()) == {42}
+
+    async def test_excludes_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _create_series(title="Trashed", tmdb_id=TmdbId(7))
+        await repo.save(series)
+        await repo.delete(_id_of(series))
+
+        assert await repo.find_by_tmdb_ids([7]) == {}
+
+    async def test_skips_series_with_null_tmdb_id(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        no_tmdb = _create_series(title="Manual")
+        await repo.save(no_tmdb)
+
+        assert await repo.find_by_tmdb_ids([1, 2, 3]) == {}
+
+
+@pytest.mark.integration
 class TestSQLAlchemySeriesRepositoryFindByTitle:
     """Tests for find_by_title."""
 
