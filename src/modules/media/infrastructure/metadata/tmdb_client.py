@@ -1,5 +1,7 @@
 """TMDB API client implementing MetadataProvider port."""
 
+from typing import Literal
+
 import httpx
 
 from src.modules.media.application.ports import (
@@ -292,8 +294,8 @@ class TmdbClient(MetadataProvider):
     async def _fetch_related_ids(
         self,
         tmdb_id: int,
-        media_type: str,
-        endpoint: str,
+        media_type: Literal["movie", "tv"],
+        endpoint: Literal["recommendations", "similar"],
     ) -> list[int]:
         """Hit a single ``/{media_type}/{id}/<endpoint>`` and extract numeric ids.
 

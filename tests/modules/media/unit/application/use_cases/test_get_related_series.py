@@ -16,7 +16,7 @@ from tests.modules.media.unit.conftest import make_media_uow_mock
 
 def _series(*, title: str, tmdb_id: int | None) -> Series:
     series = Series.create(title=title, start_year=2010)
-    return series.with_updates(tmdb_id=TmdbId(tmdb_id)) if tmdb_id else series
+    return series.with_updates(tmdb_id=TmdbId(tmdb_id)) if tmdb_id is not None else series
 
 
 class TestGetRelatedSeriesUseCase:
