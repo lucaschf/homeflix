@@ -25,6 +25,10 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
+from src.modules.media.infrastructure.persistence.mappers.cast_serialization import (
+    deserialize_cast,
+    serialize_cast,
+)
 from src.modules.media.infrastructure.persistence.mappers.media_file_mapper import (
     MediaFileMapper,
 )
@@ -290,6 +294,7 @@ class SeriesMapper:
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
             content_rating=entity.content_rating.value if entity.content_rating else None,
             trailer_url=entity.trailer_url,
+            cast=serialize_cast(entity.cast),
             localized=json.dumps(entity.localized, ensure_ascii=False)
             if entity.localized
             else None,
@@ -329,6 +334,7 @@ class SeriesMapper:
             genres=genre_list,
             content_rating=ContentRating(model.content_rating) if model.content_rating else None,
             trailer_url=model.trailer_url,
+            cast=deserialize_cast(model.cast),
             localized=json.loads(model.localized) if model.localized else {},
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
             imdb_id=ImdbId(model.imdb_id) if model.imdb_id else None,
@@ -359,6 +365,7 @@ class SeriesMapper:
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
         model.content_rating = entity.content_rating.value if entity.content_rating else None
         model.trailer_url = entity.trailer_url
+        model.cast = serialize_cast(entity.cast)
         model.localized = (
             json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None
         )

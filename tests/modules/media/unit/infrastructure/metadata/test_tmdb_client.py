@@ -1184,6 +1184,48 @@ class TestFetchSeriesDetails:
 
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_should_parse_cast_from_credits_append(self) -> None:
+        """The series details fetch appends ``credits`` so TMDB returns
+        a top-billed cast list. Pin that the client surfaces it on
+        ``MediaMetadata.cast`` the same way the movie path does."""
+        data = _series_details()
+        data["credits"] = {
+            "cast": [
+                {
+                    "id": 17419,
+                    "name": "Bryan Cranston",
+                    "character": "Walter White",
+                    "profile_path": "/bryan.jpg",
+                    "order": 0,
+                },
+                {
+                    "id": 84497,
+                    "name": "Aaron Paul",
+                    "character": "Jesse Pinkman",
+                    "profile_path": "/aaron.jpg",
+                    "order": 1,
+                },
+            ],
+            "crew": [],
+        }
+        client = _make_client(
+            get_responses=[
+                _build_response(json_data=data),
+                _build_response(json_data=_season_details()),
+            ]
+        )
+
+        result = await client._fetch_series_details(1396)
+
+        assert result is not None
+        assert len(result.cast) == 2
+        assert result.cast[0].name == "Bryan Cranston"
+        assert result.cast[0].role == "Walter White"
+        assert result.cast[0].tmdb_id == 17419
+        assert result.cast[0].profile_url is not None
+        assert result.cast[1].name == "Aaron Paul"
+
 
 @pytest.mark.unit
 class TestFetchSeason:

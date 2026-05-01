@@ -10,6 +10,7 @@ from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE
 if TYPE_CHECKING:
     from src.modules.media.application.dtos.intro_dtos import IntroMarkerOutput
     from src.modules.media.application.dtos.media_file_dtos import MediaFileOutput
+    from src.modules.media.application.dtos.movie_dtos import CastMemberOutput
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,7 @@ class SeriesOutput:
     season_count: int
     total_episodes: int
     seasons: list[SeasonOutput]
+    cast: list[CastMemberOutput]
     created_at: str
     updated_at: str
 

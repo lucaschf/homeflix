@@ -11,6 +11,7 @@ from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
+    CastMember,
     ContentRating,
     Genre,
     ImageUrl,
@@ -58,6 +59,12 @@ class Series(AggregateRoot[SeriesId]):
     genres: list[Genre] = Field(default_factory=list)
     content_rating: ContentRating | None = None
     trailer_url: str | None = None
+
+    # Credits (top-billed cast pulled from TMDB during enrichment).
+    # Mirrors Movie.cast so the detail page can render the same
+    # actor cards on series and movies, and so the actor browse page
+    # can later filter on series cast as well.
+    cast: list[CastMember] = Field(default_factory=list)
 
     # Localized metadata
     localized: dict[str, dict[str, Any]] = Field(default_factory=dict)

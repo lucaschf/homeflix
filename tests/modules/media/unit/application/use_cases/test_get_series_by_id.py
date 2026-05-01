@@ -10,6 +10,7 @@ from src.modules.media.application.ports import ProgressLookupPort
 from src.modules.media.application.use_cases import GetSeriesByIdUseCase
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
+    CastMember,
     Duration,
     EpisodeId,
     FilePath,
@@ -31,6 +32,40 @@ def mock_progress_lookup() -> AsyncMock:
 
 class TestGetSeriesByIdUseCase:
     """Tests for GetSeriesByIdUseCase."""
+
+    @pytest.mark.asyncio
+    async def test_should_expose_cast_in_output(self, mock_progress_lookup):
+        """The series output mirrors the movie shape: each cast entry
+        carries name, profile_path, role and tmdb_id so the detail UI
+        can render the same actor cards across both media types."""
+        mocks = make_media_uow_mock()
+        series = Series.create(title="Breaking Bad", start_year=2008).with_updates(
+            cast=[
+                CastMember(
+                    name="Bryan Cranston",
+                    profile_path="https://image.tmdb.org/p/bryan.jpg",
+                    role="Walter White",
+                    tmdb_id=17419,
+                ),
+                CastMember(name="Aaron Paul", role="Jesse Pinkman"),
+            ],
+        )
+        mocks.series.find_by_id.return_value = series
+        use_case = GetSeriesByIdUseCase(
+            uow_factory=mocks.factory,
+            progress_lookup=mock_progress_lookup,
+        )
+
+        result = await use_case.execute(GetSeriesByIdInput(series_id=str(series.id)))
+
+        assert len(result.cast) == 2
+        assert result.cast[0].name == "Bryan Cranston"
+        assert result.cast[0].profile_path == "https://image.tmdb.org/p/bryan.jpg"
+        assert result.cast[0].role == "Walter White"
+        assert result.cast[0].tmdb_id == 17419
+        assert result.cast[1].name == "Aaron Paul"
+        assert result.cast[1].profile_path is None
+        assert result.cast[1].tmdb_id is None
 
     @pytest.mark.asyncio
     async def test_should_return_series_when_found(self, mock_progress_lookup):

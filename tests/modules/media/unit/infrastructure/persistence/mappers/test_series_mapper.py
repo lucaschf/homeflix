@@ -6,6 +6,7 @@ import pytest
 
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
+    CastMember,
     Duration,
     EpisodeId,
     FilePath,
@@ -292,3 +293,57 @@ class TestSeriesMapper:
         assert entity.title.value == "Shallow Series"
         assert entity.start_year.value == 2020
         assert entity.seasons == []
+
+    def test_cast_roundtrips_through_to_model_and_to_entity(self) -> None:
+        """A series carrying a populated cast list survives one
+        ``to_model`` → ``to_entity`` cycle byte-for-byte. Pins that
+        the JSON encoding stays the same shape that the movie-side
+        decoder already understands so shared helpers don't drift."""
+        series = _create_series(series_id=SeriesId.generate()).with_updates(
+            cast=[
+                CastMember(
+                    name="Bryan Cranston",
+                    profile_path="https://image.tmdb.org/t/p/original/bryan.jpg",
+                    role="Walter White",
+                    tmdb_id=17419,
+                ),
+                CastMember(name="Aaron Paul", role="Jesse Pinkman"),
+            ],
+        )
+
+        model = SeriesMapper.to_model(series)
+        # Stamp creation timestamps so to_entity can rebuild without
+        # the DB defaults that aren't applied in unit tests.
+        now = datetime.now(UTC)
+        model.created_at = now
+        model.updated_at = now
+
+        rebuilt = SeriesMapper.to_entity(model, include_seasons=False)
+
+        assert len(rebuilt.cast) == 2
+        assert rebuilt.cast[0].name == "Bryan Cranston"
+        assert rebuilt.cast[0].profile_path == "https://image.tmdb.org/t/p/original/bryan.jpg"
+        assert rebuilt.cast[0].role == "Walter White"
+        assert rebuilt.cast[0].tmdb_id == 17419
+        assert rebuilt.cast[1].name == "Aaron Paul"
+        assert rebuilt.cast[1].profile_path is None
+        assert rebuilt.cast[1].tmdb_id is None
+
+    def test_update_model_overwrites_existing_cast(self) -> None:
+        """``update_model`` replaces the persisted cast wholesale
+        rather than merging — the new entity's list is the source of
+        truth, matching how MovieMapper handles re-enrichment."""
+        series_id = SeriesId.generate()
+        existing = SeriesMapper.to_model(
+            _create_series(series_id=series_id).with_updates(
+                cast=[CastMember(name="Old Actor")],
+            ),
+        )
+
+        refreshed = _create_series(series_id=series_id).with_updates(
+            cast=[CastMember(name="New Actor", tmdb_id=42)],
+        )
+
+        SeriesMapper.update_model(existing, refreshed)
+        assert "New Actor" in (existing.cast or "")
+        assert "Old Actor" not in (existing.cast or "")
