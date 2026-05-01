@@ -47,17 +47,20 @@ def deserialize_cast(raw: str | None) -> list[CastMember]:
     ``tmdb_id``. The next save migrates the row to the current shape
     implicitly.
 
-    Tolerant of malformed payloads at the storage boundary: a JSON
-    value that is not a list (drift from a future migration, manual
-    DB edit) collapses to an empty cast rather than iterating dict
-    keys as if they were entries; dict entries with no usable
-    ``name`` are skipped so the UI never renders empty cards. A
-    non-int ``tmdb_id`` (string, float, malformed import) is dropped
-    silently rather than raising.
+    Tolerant of malformed payloads at the storage boundary:
+    unparseable JSON (truncated row, manual DB edit) and a JSON value
+    that is not a list (drift from a future migration) both collapse
+    to an empty cast rather than crashing the read path; dict entries
+    with no usable ``name`` are skipped so the UI never renders empty
+    cards. A non-int ``tmdb_id`` (string, float, malformed import) is
+    dropped silently rather than raising.
     """
     if not raw:
         return []
-    items = json.loads(raw)
+    try:
+        items = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
     if not isinstance(items, list):
         return []
     members: list[CastMember] = []
