@@ -1,5 +1,7 @@
 """TMDB API client implementing MetadataProvider port."""
 
+from typing import Literal
+
 import httpx
 
 from src.modules.media.application.ports import (
@@ -200,13 +202,40 @@ class TmdbClient(MetadataProvider):
         never load-bearing.
         """
         collection_ids = await self._fetch_collection_movie_ids(tmdb_id)
-        other_ids = await self._fetch_related_movie_ids(tmdb_id, "recommendations")
+        other_ids = await self._fetch_related_ids(tmdb_id, "movie", "recommendations")
         if not other_ids:
-            other_ids = await self._fetch_related_movie_ids(tmdb_id, "similar")
+            other_ids = await self._fetch_related_ids(tmdb_id, "movie", "similar")
 
         seen: set[int] = {tmdb_id}
         ordered: list[int] = []
         for tid in [*collection_ids, *other_ids]:
+            if tid in seen:
+                continue
+            seen.add(tid)
+            ordered.append(tid)
+        return ordered
+
+    async def get_series_recommendations(self, tmdb_id: int) -> list[int]:
+        """Return TMDB ids of series related to ``tmdb_id``.
+
+        Series have no collection equivalent on TMDB (no ``parts``
+        list akin to movie franchises), so the source list is just:
+
+        1. **``/recommendations``** — ML-based.
+        2. **``/similar``** — heuristic fallback, only used when
+           recommendations is empty.
+
+        Network failures and unexpected payload shapes degrade to an
+        empty list — recommendation rendering is best-effort polish,
+        never load-bearing.
+        """
+        ids = await self._fetch_related_ids(tmdb_id, "tv", "recommendations")
+        if not ids:
+            ids = await self._fetch_related_ids(tmdb_id, "tv", "similar")
+
+        seen: set[int] = {tmdb_id}
+        ordered: list[int] = []
+        for tid in ids:
             if tid in seen:
                 continue
             seen.add(tid)
@@ -262,17 +291,23 @@ class TmdbClient(MetadataProvider):
                 ids.append(pid)
         return ids
 
-    async def _fetch_related_movie_ids(self, tmdb_id: int, endpoint: str) -> list[int]:
-        """Hit a single ``/movie/{id}/<endpoint>`` and extract numeric ids.
+    async def _fetch_related_ids(
+        self,
+        tmdb_id: int,
+        media_type: Literal["movie", "tv"],
+        endpoint: Literal["recommendations", "similar"],
+    ) -> list[int]:
+        """Hit a single ``/{media_type}/{id}/<endpoint>`` and extract numeric ids.
 
-        ``endpoint`` is ``"recommendations"`` or ``"similar"``; both
-        paginate but page 1 already carries enough candidates for the
-        UI's ~10-item carousel and a second request would just burn
-        latency on results we'd discard.
+        ``media_type`` is ``"movie"`` or ``"tv"``; ``endpoint`` is
+        ``"recommendations"`` or ``"similar"``. Both endpoints paginate
+        but page 1 already carries enough candidates for the UI's
+        ~10-item carousel and a second request would just burn latency
+        on results we'd discard.
         """
         try:
             resp = await self._client.get(
-                f"{self._base_url}/movie/{tmdb_id}/{endpoint}",
+                f"{self._base_url}/{media_type}/{tmdb_id}/{endpoint}",
                 params=self._params(),
             )
         except httpx.HTTPError:

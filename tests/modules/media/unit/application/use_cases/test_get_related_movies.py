@@ -23,7 +23,7 @@ def _movie(*, title: str, tmdb_id: int | None) -> Movie:
         file_size=1_000_000_000,
         resolution="1080p",
     )
-    return movie.with_updates(tmdb_id=TmdbId(tmdb_id)) if tmdb_id else movie
+    return movie.with_updates(tmdb_id=TmdbId(tmdb_id)) if tmdb_id is not None else movie
 
 
 class TestGetRelatedMoviesUseCase:

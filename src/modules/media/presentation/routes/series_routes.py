@@ -22,6 +22,10 @@ from src.modules.media.application.dtos.series_dtos import GetSeriesByIdInput, L
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
 from src.modules.media.application.use_cases.clear_episode_intro import ClearEpisodeIntroUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
+from src.modules.media.application.use_cases.get_related_series import (
+    GetRelatedSeriesInput,
+    GetRelatedSeriesUseCase,
+)
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
@@ -88,6 +92,29 @@ async def get_series(
     """Get a series by ID (includes full season/episode hierarchy)."""
     result = await use_case.execute(GetSeriesByIdInput(series_id=series_id, lang=lang))
     return api_single("series", _dataclass_to_dict(result))
+
+
+@router.get("/{series_id}/related")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def get_related_series(
+    series_id: str,
+    lang: str = "en",
+    limit: int = 12,
+    use_case: GetRelatedSeriesUseCase = Depends(
+        Provide[ApplicationContainer.media.get_related_series],
+    ),
+) -> dict[str, Any]:
+    """Return series in the local catalog that TMDB recommends for ``series_id``.
+
+    Best-effort polish for the "you might also like" carousel: the
+    response is an empty list whenever the series has no TMDB id, the
+    provider returns nothing, or no recommendation overlaps with the
+    local catalog. The route never raises.
+    """
+    items = await use_case.execute(
+        GetRelatedSeriesInput(series_id=series_id, lang=lang, limit=max(1, min(limit, 30))),
+    )
+    return api_list([_dataclass_to_dict(item) for item in items])
 
 
 # ── Episode file variant endpoints ──────────────────────────────────

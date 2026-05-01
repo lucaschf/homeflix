@@ -3,10 +3,9 @@
 from src.modules.media.application.dtos.series_dtos import (
     ListSeriesInput,
     ListSeriesOutput,
-    SeriesSummaryOutput,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
-from src.modules.media.domain.entities import Series
+from src.modules.media.application.use_cases._series_summary_helpers import to_series_summary
 
 
 class ListSeriesUseCase:
@@ -54,35 +53,10 @@ class ListSeriesUseCase:
             )
 
         return ListSeriesOutput(
-            series=[self._to_summary(s, input_dto.lang) for s in page.items],
+            series=[to_series_summary(s, input_dto.lang) for s in page.items],
             next_cursor=page.pagination.next_cursor,
             has_more=page.pagination.has_more,
             total_count=page.total_count,
-        )
-
-    @staticmethod
-    def _to_summary(series: Series, lang: str = "en") -> SeriesSummaryOutput:
-        """Convert Series entity to summary output.
-
-        Args:
-            series: The Series entity to convert.
-            lang: Language code for localized fields.
-
-        Returns:
-            SeriesSummaryOutput with essential fields.
-        """
-        return SeriesSummaryOutput(
-            id=str(series.id),
-            title=series.get_title(lang),
-            start_year=series.start_year.value,
-            end_year=series.end_year.value if series.end_year else None,
-            is_ongoing=series.is_ongoing,
-            synopsis=series.get_synopsis(lang),
-            poster_path=series.poster_path.value if series.poster_path else None,
-            backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
-            season_count=series.season_count,
-            total_episodes=series.total_episodes,
-            genres=series.get_genres(lang),
         )
 
 

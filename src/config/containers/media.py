@@ -28,6 +28,7 @@ from src.modules.media.application.use_cases.get_file_variants import GetFileVar
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_person_bio import GetPersonBioUseCase
 from src.modules.media.application.use_cases.get_related_movies import GetRelatedMoviesUseCase
+from src.modules.media.application.use_cases.get_related_series import GetRelatedSeriesUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
@@ -334,6 +335,12 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         EnrichSeriesMetadataUseCase,
         uow_factory=media_unit_of_work_factory,
         primary_provider=tmdb_client,
+    )
+
+    get_related_series = providers.Factory(
+        GetRelatedSeriesUseCase,
+        uow_factory=media_unit_of_work_factory,
+        metadata_provider=tmdb_client,
     )
 
     bulk_enrich_metadata = providers.Factory(

@@ -181,6 +181,24 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_by_tmdb_ids(self, tmdb_ids: Sequence[int]) -> dict[int, Series]:
+        """Find series whose ``tmdb_id`` matches any of ``tmdb_ids``.
+
+        Used by ``GetRelatedSeries`` to resolve the subset of TMDB's
+        recommendation list that exists locally. Returning a dict
+        keyed by ``tmdb_id`` lets the caller preserve TMDB's
+        relevance ordering by iterating the request list.
+
+        Args:
+            tmdb_ids: TMDB tv ids to look up.
+
+        Returns:
+            Dict mapping ``tmdb_id`` to the matching ``Series``. Empty
+            when ``tmdb_ids`` is empty or no rows match.
+        """
+        ...
+
+    @abstractmethod
     async def find_by_episode_id(self, episode_id: EpisodeId) -> Series | None:
         """Find a series containing an episode with this ID.
 
