@@ -17,6 +17,7 @@ from src.modules.media.application.ports.media_probe_port import (
     ProbeResult,
 )
 from src.modules.media.application.ports.metadata_provider_port import (
+    CollectionMetadata,
     CreditPerson,
     EpisodeMetadata,
     LocalizedFields,
@@ -34,6 +35,7 @@ from src.modules.media.application.ports.variant_detector_port import (
 )
 
 __all__ = [
+    "CollectionMetadata",
     "CreditPerson",
     "DetectedIntro",
     "EpisodeFingerprint",

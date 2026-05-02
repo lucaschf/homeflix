@@ -12,6 +12,7 @@ from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
     CastMember,
+    Collection,
     ContentRating,
     Duration,
     Genre,
@@ -177,6 +178,7 @@ def _apply_movie_metadata(
         updates["title"] = Title(metadata.title)
     if metadata.synopsis and (force or not movie.synopsis):
         updates["synopsis"] = metadata.synopsis
+    _apply_franchise_metadata(updates, movie, metadata, force=force)
     if metadata.tmdb_id:
         updates["tmdb_id"] = TmdbId(metadata.tmdb_id)
     if metadata.imdb_id:
@@ -202,6 +204,30 @@ def _apply_movie_metadata(
         movie = movie.with_updates(**updates)
 
     return movie
+
+
+def _apply_franchise_metadata(
+    updates: dict[str, object],
+    movie: Movie,
+    metadata: MediaMetadata,
+    *,
+    force: bool = False,
+) -> None:
+    """Apply tagline + collection (franchise) metadata.
+
+    Both fields follow the same "fill if empty" guard as the rest of
+    ``_apply_movie_metadata`` so re-enrichment doesn't clobber a
+    user-edited tagline or a manually-cleared collection. Extracted
+    out so the parent function stays under ``PLR0912``'s branch cap.
+    """
+    if metadata.tagline and (force or not movie.tagline):
+        updates["tagline"] = metadata.tagline
+    if metadata.collection and (force or not movie.collection):
+        updates["collection"] = Collection(
+            tmdb_id=metadata.collection.tmdb_id,
+            name=metadata.collection.name,
+            parts_count=metadata.collection.parts_count,
+        )
 
 
 def _apply_credits(
@@ -252,6 +278,7 @@ def _apply_localized(
         candidates = {
             "title": fields.title,
             "synopsis": fields.synopsis,
+            "tagline": fields.tagline,
             "genres": fields.genres or None,
             "logo_path": fields.logo_url,
         }

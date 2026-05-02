@@ -62,6 +62,21 @@ class CastMemberOutput:
 
 
 @dataclass(frozen=True)
+class CollectionOutput:
+    """Collection (franchise) the movie belongs to.
+
+    Attributes:
+        tmdb_id: TMDB collection id.
+        name: Display name (e.g. ``"Alien Collection"``).
+        parts_count: Number of titles in the collection per TMDB.
+    """
+
+    tmdb_id: int
+    name: str
+    parts_count: int
+
+
+@dataclass(frozen=True)
 class MovieOutput:
     """Output representation of a Movie.
 
@@ -101,6 +116,7 @@ class MovieOutput:
     duration_seconds: int
     duration_formatted: str
     synopsis: str | None
+    tagline: str | None
     poster_path: str | None
     backdrop_path: str | None
     logo_path: str | None
@@ -111,6 +127,7 @@ class MovieOutput:
     writers: list[str]
     content_rating: str | None
     trailer_url: str | None
+    collection: CollectionOutput | None
     file_path: str | None
     file_size: int | None
     resolution: str | None
@@ -197,6 +214,7 @@ class ListMoviesOutput:
 
 
 __all__ = [
+    "CollectionOutput",
     "GetMovieByIdInput",
     "ListMoviesInput",
     "ListMoviesOutput",

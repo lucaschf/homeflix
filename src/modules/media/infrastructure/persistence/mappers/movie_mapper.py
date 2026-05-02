@@ -4,6 +4,7 @@ import json
 
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
+    Collection,
     ContentRating,
     Duration,
     FilePath,
@@ -65,6 +66,7 @@ class MovieMapper:
             year=entity.year.value,
             duration=entity.duration.value,
             synopsis=entity.synopsis,
+            tagline=entity.tagline,
             poster_path=entity.poster_path.value if entity.poster_path else None,
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
             logo_path=entity.logo_path.value if entity.logo_path else None,
@@ -79,6 +81,9 @@ class MovieMapper:
             writers=json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None,
             content_rating=entity.content_rating.value if entity.content_rating else None,
             trailer_url=entity.trailer_url,
+            collection_tmdb_id=entity.collection.tmdb_id if entity.collection else None,
+            collection_name=entity.collection.name if entity.collection else None,
+            collection_parts_count=entity.collection.parts_count if entity.collection else None,
             localized=json.dumps(entity.localized, ensure_ascii=False)
             if entity.localized
             else None,
@@ -134,6 +139,18 @@ class MovieMapper:
                     )
                 ]
 
+        collection = None
+        if (
+            model.collection_tmdb_id is not None
+            and model.collection_name
+            and model.collection_parts_count is not None
+        ):
+            collection = Collection(
+                tmdb_id=model.collection_tmdb_id,
+                name=model.collection_name,
+                parts_count=model.collection_parts_count,
+            )
+
         return Movie(
             id=MovieId(model.external_id),
             title=Title(model.title),
@@ -141,6 +158,7 @@ class MovieMapper:
             year=Year(model.year),
             duration=Duration(model.duration),
             synopsis=model.synopsis,
+            tagline=model.tagline,
             poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
             backdrop_path=ImageUrl(model.backdrop_path) if model.backdrop_path else None,
             logo_path=ImageUrl(model.logo_path) if model.logo_path else None,
@@ -153,6 +171,7 @@ class MovieMapper:
             writers=json.loads(model.writers) if model.writers else [],
             content_rating=ContentRating(model.content_rating) if model.content_rating else None,
             trailer_url=model.trailer_url,
+            collection=collection,
             localized=json.loads(model.localized) if model.localized else {},
             files=files,
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
@@ -181,6 +200,7 @@ class MovieMapper:
         model.year = entity.year.value
         model.duration = entity.duration.value
         model.synopsis = entity.synopsis
+        model.tagline = entity.tagline
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
         model.logo_path = entity.logo_path.value if entity.logo_path else None
@@ -195,6 +215,9 @@ class MovieMapper:
         model.writers = json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None
         model.content_rating = entity.content_rating.value if entity.content_rating else None
         model.trailer_url = entity.trailer_url
+        model.collection_tmdb_id = entity.collection.tmdb_id if entity.collection else None
+        model.collection_name = entity.collection.name if entity.collection else None
+        model.collection_parts_count = entity.collection.parts_count if entity.collection else None
         model.localized = (
             json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None
         )
