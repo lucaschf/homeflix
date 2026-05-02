@@ -1,6 +1,7 @@
 """Media API routes."""
 
 from src.modules.media.presentation.routes.catalog_routes import router as catalog_router
+from src.modules.media.presentation.routes.collection_routes import router as collection_router
 from src.modules.media.presentation.routes.enrichment_routes import router as enrichment_router
 from src.modules.media.presentation.routes.featured_routes import router as featured_router
 from src.modules.media.presentation.routes.movie_routes import router as movie_router
@@ -12,6 +13,7 @@ from src.modules.media.presentation.routes.stream_routes import router as stream
 
 __all__ = [
     "catalog_router",
+    "collection_router",
     "enrichment_router",
     "featured_router",
     "movie_router",

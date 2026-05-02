@@ -17,12 +17,14 @@ from src.building_blocks.presentation.exception_handlers import register_excepti
 from src.config.containers import ApplicationContainer
 from src.config.logging import get_logger, setup_logging
 from src.config.settings import get_settings
+from src.modules.catalog_requests.presentation.routes import catalog_request_router
 from src.modules.collections.presentation.routes import custom_list_router, watchlist_router
 from src.modules.library.presentation.routes.library_routes import (
     router as library_router,
 )
 from src.modules.media.presentation.routes import (
     catalog_router,
+    collection_router,
     enrichment_router,
     featured_router,
     movie_router,
@@ -72,6 +74,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container.wire(
         modules=[
             "src.modules.media.presentation.routes.catalog_routes",
+            "src.modules.media.presentation.routes.collection_routes",
             "src.modules.media.presentation.routes.search_routes",
             "src.modules.media.presentation.routes.enrichment_routes",
             "src.modules.media.presentation.routes.featured_routes",
@@ -83,6 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "src.modules.watch_progress.presentation.routes.progress_routes",
             "src.modules.collections.presentation.routes.watchlist_routes",
             "src.modules.collections.presentation.routes.custom_list_routes",
+            "src.modules.catalog_requests.presentation.routes.catalog_request_routes",
             "src.modules.library.presentation.routes.library_routes",
             "src.modules.preferences.presentation.routes.preferences_routes",
         ],
@@ -190,6 +194,7 @@ def create_app() -> FastAPI:
     # Register routes
     register_health_routes(app)
     app.include_router(catalog_router)
+    app.include_router(collection_router)
     app.include_router(search_router)
     app.include_router(enrichment_router)
     app.include_router(featured_router)
@@ -201,6 +206,7 @@ def create_app() -> FastAPI:
     app.include_router(progress_router)
     app.include_router(watchlist_router)
     app.include_router(custom_list_router)
+    app.include_router(catalog_request_router)
     app.include_router(library_router)
     app.include_router(preferences_router)
 

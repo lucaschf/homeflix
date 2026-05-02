@@ -135,6 +135,62 @@ class CollectionMetadata:
 
 
 @dataclass(frozen=True)
+class CollectionPartMetadata:
+    """One member title of a TMDB collection.
+
+    Used by the Collection Detail page to render the list of films
+    in a franchise (the ``parts`` array on TMDB's
+    ``/collection/{id}``). Most fields are optional because TMDB
+    occasionally returns parts with no overview, poster, or rating
+    yet — typically pre-release or obscure entries.
+
+    Attributes:
+        tmdb_id: TMDB numeric id of the title.
+        title: Localized (or default) title.
+        year: Release year, parsed from ``release_date``. ``None``
+            when unreleased / unknown.
+        synopsis: Plot overview.
+        poster_url: Full URL to the poster image.
+        backdrop_url: Full URL to the backdrop image.
+        rating: TMDB ``vote_average`` (0-10), if any.
+    """
+
+    tmdb_id: int
+    title: str
+    year: int | None = None
+    synopsis: str | None = None
+    poster_url: str | None = None
+    backdrop_url: str | None = None
+    rating: float | None = None
+
+
+@dataclass(frozen=True)
+class CollectionDetailMetadata:
+    """Full TMDB collection (franchise) with parts list.
+
+    Returned by :meth:`MetadataProvider.get_collection`. The
+    ``parts`` list is ordered as TMDB returns it; the use case
+    layer is responsible for any further sorting (release year,
+    chronological, etc.).
+
+    Attributes:
+        tmdb_id: TMDB collection id.
+        name: Display name.
+        overview: Long-form description of the franchise.
+        poster_url: Collection-level poster URL.
+        backdrop_url: Collection-level backdrop URL.
+        parts: Member titles in the order TMDB returned them.
+    """
+
+    tmdb_id: int
+    name: str
+    overview: str | None = None
+    poster_url: str | None = None
+    backdrop_url: str | None = None
+    parts: list[CollectionPartMetadata] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class MediaMetadata:
     """Metadata fetched from an external provider.
 
@@ -265,6 +321,35 @@ class MetadataProvider(ABC):
         ...
 
     @abstractmethod
+    async def get_collection(
+        self,
+        tmdb_id: int,
+        language: str = "en-US",
+    ) -> CollectionDetailMetadata | None:
+        """Fetch a TMDB collection (franchise) with its parts list.
+
+        Powers the Collection Detail page: the response carries the
+        franchise-level metadata plus every part TMDB knows about,
+        including parts the local catalog doesn't host yet — those
+        rows render the missing-from-catalog state and the
+        "Solicitar inclusão" CTA.
+
+        Args:
+            tmdb_id: TMDB collection id.
+            language: BCP-47 tag for localized titles, overview,
+                and poster preference. Implementations may fall
+                back to English when a translation is missing.
+
+        Returns:
+            ``CollectionDetailMetadata`` for the collection, or
+            ``None`` when TMDB returns 404 / network errors / a
+            malformed payload — callers degrade gracefully (the
+            Collection Detail page renders an "unavailable" state)
+            rather than surface a 500.
+        """
+        ...
+
+    @abstractmethod
     async def get_movie_recommendations(self, tmdb_id: int) -> list[int]:
         """Return TMDB ids of movies recommended for ``tmdb_id``.
 
@@ -299,7 +384,9 @@ class MetadataProvider(ABC):
 
 
 __all__ = [
+    "CollectionDetailMetadata",
     "CollectionMetadata",
+    "CollectionPartMetadata",
     "CreditPerson",
     "EpisodeMetadata",
     "MediaMetadata",
