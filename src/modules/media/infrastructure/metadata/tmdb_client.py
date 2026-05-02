@@ -5,6 +5,7 @@ from typing import Literal
 import httpx
 
 from src.modules.media.application.ports import (
+    CollectionMetadata,
     CreditPerson,
     EpisodeMetadata,
     LocalizedFields,
@@ -167,6 +168,7 @@ class TmdbClient(MetadataProvider):
         pt_fields = LocalizedFields(
             title=pt_data.get("title"),
             synopsis=pt_data.get("overview"),
+            tagline=pt_data.get("tagline") or None,
             genres=[g["name"] for g in pt_data.get("genres", [])],
             logo_url=self._pick_best_logo_url(pt_data.get("images", {}).get("logos"), "pt-BR"),
         )
@@ -464,12 +466,14 @@ class TmdbClient(MetadataProvider):
         trailer_url = self._parse_trailer(data.get("videos", {}))
 
         logo_url = self._pick_best_logo_url(data.get("images", {}).get("logos"), language)
+        collection = await self._fetch_collection_metadata(data.get("belongs_to_collection"))
         return MediaMetadata(
             title=data.get("title", ""),
             original_title=data.get("original_title"),
             year=year,
             duration_seconds=(data.get("runtime") or 0) * 60,
             synopsis=data.get("overview"),
+            tagline=data.get("tagline") or None,
             poster_url=self._image_url(data.get("poster_path")),
             backdrop_url=self._image_url(data.get("backdrop_path")),
             logo_url=logo_url,
@@ -481,7 +485,37 @@ class TmdbClient(MetadataProvider):
             writers=writers,
             content_rating=content_rating.value if content_rating else None,
             trailer_url=trailer_url,
+            collection=collection,
         )
+
+    async def _fetch_collection_metadata(
+        self,
+        belongs_to: dict[str, object] | None,
+    ) -> CollectionMetadata | None:
+        """Build a ``CollectionMetadata`` from the ``belongs_to_collection`` payload.
+
+        Hits ``/collection/{id}`` once for ``parts_count``. Best-effort polish
+        — any HTTP/parse error degrades to ``None`` so a flaky collection
+        lookup never breaks movie enrichment.
+        """
+        if not isinstance(belongs_to, dict):
+            return None
+        coll_id = belongs_to.get("id")
+        name = belongs_to.get("name")
+        if not isinstance(coll_id, int) or not isinstance(name, str):
+            return None
+
+        try:
+            resp = await self._client.get(
+                f"{self._base_url}/collection/{coll_id}",
+                params=self._params(),
+            )
+        except httpx.HTTPError:
+            return None
+        if resp.status_code != 200:
+            return None
+        parts = resp.json().get("parts") or []
+        return CollectionMetadata(tmdb_id=coll_id, name=name, parts_count=len(parts))
 
     async def _fetch_series_details(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch full series details including seasons and episodes.

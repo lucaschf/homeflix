@@ -3,6 +3,7 @@
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.movie_dtos import (
     CastMemberOutput,
+    CollectionOutput,
     GetMovieByIdInput,
     MovieOutput,
 )
@@ -76,6 +77,7 @@ class GetMovieByIdUseCase:
             duration_seconds=movie.duration.value,
             duration_formatted=movie.duration.format_hms(),
             synopsis=movie.get_synopsis(lang),
+            tagline=movie.get_tagline(lang),
             poster_path=movie.poster_path.value if movie.poster_path else None,
             backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
             logo_path=movie.get_logo_path(lang),
@@ -94,6 +96,13 @@ class GetMovieByIdUseCase:
             writers=movie.writers,
             content_rating=movie.content_rating.value if movie.content_rating else None,
             trailer_url=movie.trailer_url,
+            collection=CollectionOutput(
+                tmdb_id=movie.collection.tmdb_id,
+                name=movie.collection.name,
+                parts_count=movie.collection.parts_count,
+            )
+            if movie.collection
+            else None,
             file_path=primary.file_path.value if primary else None,
             file_size=primary.file_size if primary else None,
             resolution=primary.resolution.value if primary else None,

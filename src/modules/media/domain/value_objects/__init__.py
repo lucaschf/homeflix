@@ -2,6 +2,7 @@
 
 from src.modules.media.domain.value_objects.air_date import AirDate
 from src.modules.media.domain.value_objects.cast_member import CastMember
+from src.modules.media.domain.value_objects.collection import Collection
 from src.modules.media.domain.value_objects.content_rating import ContentRating
 from src.modules.media.domain.value_objects.duration import Duration
 from src.modules.media.domain.value_objects.episode_number import EpisodeNumber
@@ -33,6 +34,7 @@ __all__ = [
     "AirDate",
     "AudioTrack",
     "CastMember",
+    "Collection",
     "ContentRating",
     "Duration",
     "EpisodeId",

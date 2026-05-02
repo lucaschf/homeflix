@@ -11,6 +11,7 @@ from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixi
 from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.value_objects import (
     CastMember,
+    Collection,
     ContentRating,
     Duration,
     FilePath,
@@ -52,6 +53,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     year: Year
     duration: Duration
     synopsis: str | None = Field(default=None, max_length=10000)
+    tagline: str | None = Field(default=None, max_length=500)
 
     # Images
     poster_path: ImageUrl | None = None
@@ -75,6 +77,9 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
 
     # Trailer
     trailer_url: str | None = None
+
+    # Collection / franchise on TMDB (Alien Collection, MCU, ...)
+    collection: Collection | None = None
 
     # Localized metadata: {"pt-BR": {"title": "...", "synopsis": "...", "genres": [...]}}
     localized: dict[str, dict[str, Any]] = Field(default_factory=dict)
@@ -110,6 +115,11 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
         """Get synopsis in the requested language, falling back to default."""
         loc = self.localized.get(lang, {})
         return str(loc["synopsis"]) if loc.get("synopsis") else self.synopsis
+
+    def get_tagline(self, lang: str = "en") -> str | None:
+        """Get tagline in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        return str(loc["tagline"]) if loc.get("tagline") else self.tagline
 
     def get_genres(self, lang: str = "en") -> list[str]:
         """Get genres in the requested language, falling back to default."""

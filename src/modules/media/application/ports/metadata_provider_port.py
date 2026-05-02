@@ -114,8 +114,24 @@ class LocalizedFields:
 
     title: str | None = None
     synopsis: str | None = None
+    tagline: str | None = None
     genres: list[str] = field(default_factory=list)
     logo_url: str | None = None
+
+
+@dataclass(frozen=True)
+class CollectionMetadata:
+    """TMDB collection (franchise) metadata.
+
+    Attributes:
+        tmdb_id: TMDB collection id.
+        name: Display name (e.g. ``"Alien Collection"``).
+        parts_count: Number of titles in the collection per TMDB.
+    """
+
+    tmdb_id: int
+    name: str
+    parts_count: int
 
 
 @dataclass(frozen=True)
@@ -161,6 +177,8 @@ class MediaMetadata:
     writers: list[CreditPerson] = field(default_factory=list)
     content_rating: str | None = None
     trailer_url: str | None = None
+    tagline: str | None = None
+    collection: CollectionMetadata | None = None
     localized: dict[str, LocalizedFields] = field(default_factory=dict)
 
 
@@ -281,10 +299,11 @@ class MetadataProvider(ABC):
 
 
 __all__ = [
+    "CollectionMetadata",
     "CreditPerson",
     "EpisodeMetadata",
-    "PersonMetadata",
     "MediaMetadata",
     "MetadataProvider",
+    "PersonMetadata",
     "SeasonMetadata",
 ]

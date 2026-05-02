@@ -38,6 +38,7 @@ class MovieModel(Base):
     year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     duration: Mapped[int] = mapped_column(Integer, nullable=False)  # seconds
     synopsis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tagline: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Images
     poster_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
@@ -68,6 +69,12 @@ class MovieModel(Base):
 
     # Trailer (YouTube URL)
     trailer_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Collection / franchise on TMDB (denormalized as 3 columns since
+    # we don't have a Collection aggregate of our own yet)
+    collection_tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    collection_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    collection_parts_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Localized metadata (JSON: {"pt-BR": {"title": "...", "synopsis": "...", "genres": [...]}})
     localized: Mapped[str | None] = mapped_column(Text, nullable=True)
