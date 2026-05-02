@@ -14,6 +14,7 @@ from src.modules.media.application.dtos.collection_dtos import (
 if TYPE_CHECKING:
     from src.modules.media.application.ports import (
         CatalogRequestLookupPort,
+        CatalogRequestStatus,
         CollectionPartMetadata,
         MetadataProvider,
     )
@@ -139,7 +140,7 @@ class GetCollectionByTmdbIdUseCase:
     def _merge_part(
         tmdb_part: CollectionPartMetadata,
         local: Movie | None,
-        request_status: object | None,
+        request_status: CatalogRequestStatus | None,
         lang: str,
     ) -> CollectionPartOutput:
         """Stitch TMDB metadata, local catalog, and request status."""
@@ -172,13 +173,10 @@ class GetCollectionByTmdbIdUseCase:
 
         # ``request_status`` is the cross-BC lookup result; it's
         # only present when the user has registered something.
-        is_requested = False
-        notify_on_arrival = False
-        if request_status is not None:
-            is_requested = bool(getattr(request_status, "is_requested", False))
-            notify_on_arrival = bool(
-                getattr(request_status, "notify_on_arrival", False),
-            )
+        is_requested = request_status.is_requested if request_status is not None else False
+        notify_on_arrival = (
+            request_status.notify_on_arrival if request_status is not None else False
+        )
 
         # Available parts shouldn't render the request CTA — collapse
         # the flags to ``False`` so the UI doesn't need a special case.

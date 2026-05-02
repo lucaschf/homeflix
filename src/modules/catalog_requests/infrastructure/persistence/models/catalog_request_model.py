@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String
+from sqlalchemy import Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.persistence.base import Base
@@ -52,14 +52,11 @@ class CatalogRequestModel(Base):
         index=True,
     )
 
-    __table_args__ = (
-        Index(
-            "ix_catalog_requests_tmdb_id_media_type",
-            "tmdb_id",
-            "media_type",
-            unique=False,
-        ),
-    )
+    # Composite ``(tmdb_id, media_type)`` index lives in the alembic
+    # migration only — declaring it here too would duplicate the
+    # source of truth without buying anything (the dev auto-create
+    # path already covers ``tmdb_id`` lookups via the per-column
+    # index above; the composite is a prod query-tuning aid).
 
     def __repr__(self) -> str:
         """Return string representation."""
