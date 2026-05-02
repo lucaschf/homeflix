@@ -213,11 +213,42 @@ class ListMoviesOutput:
     total_count: int | None = None
 
 
+@dataclass(frozen=True)
+class ListRecentlyAddedMoviesInput:
+    """Input for ``ListRecentlyAddedMoviesUseCase``.
+
+    Attributes:
+        limit: Maximum number of movies to return. Routes clamp this
+            to a sane upper bound before constructing the input.
+        lang: Language code for localized metadata.
+    """
+
+    limit: int = 20
+    lang: str = "en"
+
+
+@dataclass(frozen=True)
+class ListRecentlyAddedMoviesOutput:
+    """Output for ``ListRecentlyAddedMoviesUseCase``.
+
+    Plain top-N projection — no cursor, no ``has_more``. The home-page
+    carousel consumes the full slice in one shot and the user goes to
+    the catalog page if they want to keep scrolling.
+
+    Attributes:
+        movies: List of movie summaries, newest first.
+    """
+
+    movies: list[MovieSummaryOutput]
+
+
 __all__ = [
     "CollectionOutput",
     "GetMovieByIdInput",
     "ListMoviesInput",
     "ListMoviesOutput",
+    "ListRecentlyAddedMoviesInput",
+    "ListRecentlyAddedMoviesOutput",
     "MovieOutput",
     "MovieSummaryOutput",
 ]

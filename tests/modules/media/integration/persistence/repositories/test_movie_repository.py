@@ -554,6 +554,56 @@ class TestSQLAlchemyMovieRepositoryListPaginated:
 
 
 @pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryListRecentlyAdded:
+    """Integration tests for the bounded "top N newest" projection."""
+
+    async def test_should_return_movies_in_id_desc_order(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        seeded = await _seed_movies(repo, 4)
+
+        result = await repo.list_recently_added(limit=10)
+
+        returned_titles = [m.title.value for m in result]
+        assert returned_titles == list(reversed([m.title.value for m in seeded]))
+
+    async def test_should_clamp_to_limit(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await _seed_movies(repo, 5)
+
+        result = await repo.list_recently_added(limit=3)
+
+        assert len(result) == 3
+
+    async def test_should_return_all_when_limit_exceeds_total(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await _seed_movies(repo, 2)
+
+        result = await repo.list_recently_added(limit=10)
+
+        assert len(result) == 2
+
+    async def test_should_exclude_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movies = await _seed_movies(repo, 3)
+        await repo.delete(_id_of(movies[-1]))
+
+        result = await repo.list_recently_added(limit=10)
+
+        returned_ids = {_id_of(m) for m in result}
+        assert _id_of(movies[-1]) not in returned_ids
+        assert len(result) == 2
+
+    async def test_should_return_empty_when_no_movies(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+
+        result = await repo.list_recently_added(limit=10)
+
+        assert list(result) == []
+
+
+@pytest.mark.integration
 class TestSQLAlchemyMovieRepositoryListGenreRows:
     """Integration tests for the lightweight genre projection."""
 

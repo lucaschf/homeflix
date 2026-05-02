@@ -242,6 +242,25 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             total_count=total_count,
         )
 
+    async def list_recently_added(self, limit: int) -> Sequence[Series]:
+        """Return the top ``limit`` non-deleted series, newest first.
+
+        Same ``id DESC`` ordering as ``list_paginated`` — see the
+        matching ``MovieRepository.list_recently_added`` for the full
+        justification. The series hierarchy (seasons/episodes/file
+        variants) is eager-loaded via the same options as ``list_all``
+        so callers don't N+1 when rendering the carousel.
+        """
+        stmt = (
+            select(SeriesModel)
+            .where(SeriesModel.deleted_at.is_(None))
+            .options(*self._series_load_options())
+            .order_by(SeriesModel.id.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [SeriesMapper.to_entity(m) for m in result.scalars().all()]
+
     async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted series row."""
         return await fetch_genre_rows(self._session, SeriesModel, lang)

@@ -37,6 +37,15 @@ from src.modules.media.application.use_cases.list_by_genre import ListByGenreUse
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
 from src.modules.media.application.use_cases.list_movies_by_actor import ListMoviesByActorUseCase
+from src.modules.media.application.use_cases.list_recently_added_catalog import (
+    ListRecentlyAddedCatalogUseCase,
+)
+from src.modules.media.application.use_cases.list_recently_added_movies import (
+    ListRecentlyAddedMoviesUseCase,
+)
+from src.modules.media.application.use_cases.list_recently_added_series import (
+    ListRecentlyAddedSeriesUseCase,
+)
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
 from src.modules.media.application.use_cases.scan_media_directories import (
@@ -138,6 +147,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         uow_factory=media_unit_of_work_factory,
     )
 
+    list_recently_added_movies = providers.Factory(
+        ListRecentlyAddedMoviesUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
     delete_movie = providers.Factory(
         DeleteMovieUseCase,
         uow_factory=media_unit_of_work_factory,
@@ -151,6 +165,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     list_series = providers.Factory(
         ListSeriesUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
+    list_recently_added_series = providers.Factory(
+        ListRecentlyAddedSeriesUseCase,
         uow_factory=media_unit_of_work_factory,
     )
 
@@ -170,6 +189,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     list_movies_by_actor = providers.Factory(
         ListMoviesByActorUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
+    list_recently_added_catalog = providers.Factory(
+        ListRecentlyAddedCatalogUseCase,
         uow_factory=media_unit_of_work_factory,
     )
 

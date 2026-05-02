@@ -18,7 +18,11 @@ from src.modules.media.application.dtos.media_file_dtos import (
     RemoveFileVariantInput,
     SetPrimaryFileInput,
 )
-from src.modules.media.application.dtos.series_dtos import GetSeriesByIdInput, ListSeriesInput
+from src.modules.media.application.dtos.series_dtos import (
+    GetSeriesByIdInput,
+    ListRecentlyAddedSeriesInput,
+    ListSeriesInput,
+)
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
 from src.modules.media.application.use_cases.clear_episode_intro import ClearEpisodeIntroUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
@@ -27,6 +31,9 @@ from src.modules.media.application.use_cases.get_related_series import (
     GetRelatedSeriesUseCase,
 )
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
+from src.modules.media.application.use_cases.list_recently_added_series import (
+    ListRecentlyAddedSeriesUseCase,
+)
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
 from src.modules.media.application.use_cases.set_episode_intro import SetEpisodeIntroUseCase
@@ -78,6 +85,30 @@ async def list_series(
         pagination=Pagination(has_more=result.has_more, next_cursor=result.next_cursor),
         metadata_extras=extras,
     )
+
+
+# Registered before ``/{series_id}`` so the dynamic segment doesn't
+# swallow ``recently-added`` and dispatch to ``get_series``.
+@router.get("/recently-added")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def list_recently_added_series(
+    limit: int = 20,
+    lang: str = "en",
+    use_case: ListRecentlyAddedSeriesUseCase = Depends(
+        Provide[ApplicationContainer.media.list_recently_added_series],
+    ),
+) -> dict[str, Any]:
+    """Return the top N most recently added series for the home page.
+
+    Mirror of ``GET /api/v1/movies/recently-added`` — same clamp
+    bounds, same ``id DESC`` ordering. See ``SeriesRepository.
+    list_recently_added`` for the full justification.
+    """
+    clamped_limit = max(1, min(limit, 50))
+    result = await use_case.execute(
+        ListRecentlyAddedSeriesInput(limit=clamped_limit, lang=lang),
+    )
+    return api_list([_dataclass_to_dict(s) for s in result.series])
 
 
 @router.get("/{series_id}")  # type: ignore[misc]
