@@ -8,6 +8,7 @@ See ADR-004 for the rationale behind this design.
 
 from dependency_injector import containers, providers
 
+from src.config.containers.catalog_requests import CatalogRequestsContainer
 from src.config.containers.collections import CollectionsContainer
 from src.config.containers.infrastructure import InfrastructureContainer
 from src.config.containers.library import LibraryContainer
@@ -79,11 +80,21 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         watch_progress_uow_factory=_watch_progress_uow_factory_for_progress_lookup,
     )
 
+    # Catalog Requests is built before Media so its ACL adapter can be
+    # plumbed into the Media container as the ``CatalogRequestLookupPort``
+    # implementation. Catalog Requests itself takes no Media dependency,
+    # so the ordering is acyclic.
+    catalog_requests = providers.Container(
+        CatalogRequestsContainer,
+        session_factory=infrastructure.session_factory,
+    )
+
     media = providers.Container(
         MediaContainer,
         session_factory=infrastructure.session_factory,
         event_bus=infrastructure.event_bus,
         progress_lookup=_progress_lookup_adapter,
+        catalog_request_lookup=catalog_requests.catalog_request_lookup,
         tmdb_api_key=config.provided.tmdb_api_key,
         hls_cache_directory=config.provided.hls_cache_directory,
         hls_cache_max_size_mb=config.provided.hls_cache_max_size_mb,

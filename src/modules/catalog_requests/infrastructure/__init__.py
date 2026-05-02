@@ -1,0 +1,1 @@
+"""Catalog Requests infrastructure layer."""

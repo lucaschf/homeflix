@@ -22,6 +22,9 @@ from src.modules.media.application.use_cases.enrich_series_metadata import (
 from src.modules.media.application.use_cases.generate_hls_playlist import (
     GenerateHlsPlaylistUseCase,
 )
+from src.modules.media.application.use_cases.get_collection_by_tmdb_id import (
+    GetCollectionByTmdbIdUseCase,
+)
 from src.modules.media.application.use_cases.get_featured_media import GetFeaturedMediaUseCase
 from src.modules.media.application.use_cases.get_file_tracks import GetFileTracksUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
@@ -85,6 +88,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # Wired at the composition root — the adapter depends on the
     # Watch Progress UoW factory so the Media BC only knows the port.
     progress_lookup = providers.Dependency()
+
+    # Wired at the composition root — the adapter lives in the
+    # Catalog Requests BC, so this BC only ever sees
+    # ``CatalogRequestLookupPort``.
+    catalog_request_lookup = providers.Dependency()
 
     # Must be wired from parent container (Settings.hls_cache_directory / hls_cache_max_size_mb)
     hls_cache_directory = providers.Dependency(default="./hls_cache")
@@ -324,6 +332,13 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         GetRelatedMoviesUseCase,
         uow_factory=media_unit_of_work_factory,
         metadata_provider=tmdb_client,
+    )
+
+    get_collection_by_tmdb_id = providers.Factory(
+        GetCollectionByTmdbIdUseCase,
+        uow_factory=media_unit_of_work_factory,
+        metadata_provider=tmdb_client,
+        catalog_request_lookup=catalog_request_lookup,
     )
 
     get_person_bio = providers.Factory(

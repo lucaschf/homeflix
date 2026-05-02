@@ -1,5 +1,9 @@
 """Media application ports (interfaces for infrastructure and external BCs)."""
 
+from src.modules.media.application.ports.catalog_request_lookup_port import (
+    CatalogRequestLookupPort,
+    CatalogRequestStatus,
+)
 from src.modules.media.application.ports.file_scanner_port import (
     FileSystemScanner,
     MediaType,
@@ -17,7 +21,9 @@ from src.modules.media.application.ports.media_probe_port import (
     ProbeResult,
 )
 from src.modules.media.application.ports.metadata_provider_port import (
+    CollectionDetailMetadata,
     CollectionMetadata,
+    CollectionPartMetadata,
     CreditPerson,
     EpisodeMetadata,
     LocalizedFields,
@@ -35,7 +41,11 @@ from src.modules.media.application.ports.variant_detector_port import (
 )
 
 __all__ = [
+    "CatalogRequestLookupPort",
+    "CatalogRequestStatus",
+    "CollectionDetailMetadata",
     "CollectionMetadata",
+    "CollectionPartMetadata",
     "CreditPerson",
     "DetectedIntro",
     "EpisodeFingerprint",

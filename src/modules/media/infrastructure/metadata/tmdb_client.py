@@ -5,7 +5,9 @@ from typing import Literal
 import httpx
 
 from src.modules.media.application.ports import (
+    CollectionDetailMetadata,
     CollectionMetadata,
+    CollectionPartMetadata,
     CreditPerson,
     EpisodeMetadata,
     LocalizedFields,
@@ -180,6 +182,110 @@ class TmdbClient(MetadataProvider):
     async def get_series_by_id(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch series details by TMDB ID."""
         return await self._fetch_series_details(tmdb_id)
+
+    async def get_collection(
+        self,
+        tmdb_id: int,
+        language: str = "en-US",
+    ) -> CollectionDetailMetadata | None:
+        """Fetch ``/collection/{id}`` and shape it for the Collection Detail UI.
+
+        TMDB returns the collection-level fields (``name``,
+        ``overview``, ``poster_path``, ``backdrop_path``) plus a
+        ``parts`` array — one entry per member title with
+        ``id`` / ``title`` / ``release_date`` / ``overview`` /
+        ``poster_path`` / ``backdrop_path`` / ``vote_average``. Each
+        part is mapped onto :class:`CollectionPartMetadata`; missing
+        fields are tolerated.
+
+        404 / network errors / non-dict payloads degrade to ``None``
+        so the use case can render an "unavailable" state rather
+        than 500.
+        """
+        try:
+            resp = await self._client.get(
+                f"{self._base_url}/collection/{tmdb_id}",
+                params=self._params(language=language),
+            )
+        except httpx.HTTPError:
+            return None
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        if not isinstance(data, dict):
+            return None
+
+        raw_id = data.get("id")
+        name = data.get("name")
+        if not isinstance(raw_id, int) or not isinstance(name, str):
+            return None
+
+        parts_raw = data.get("parts") or []
+        parts: list[CollectionPartMetadata] = []
+        if isinstance(parts_raw, list):
+            for part in parts_raw:
+                shaped = self._shape_collection_part(part)
+                if shaped is not None:
+                    parts.append(shaped)
+
+        return CollectionDetailMetadata(
+            tmdb_id=raw_id,
+            name=name,
+            overview=str(data.get("overview")) if data.get("overview") else None,
+            poster_url=self._image_url(
+                str(data.get("poster_path")) if data.get("poster_path") else None,
+            ),
+            backdrop_url=self._image_url(
+                str(data.get("backdrop_path")) if data.get("backdrop_path") else None,
+            ),
+            parts=parts,
+        )
+
+    def _shape_collection_part(
+        self,
+        part: object,
+    ) -> CollectionPartMetadata | None:
+        """Convert a ``/collection/{id}`` ``parts`` entry to a part DTO.
+
+        Drops any entry without a usable ``id`` + ``title`` since the
+        UI cannot render those rows. Year is parsed from
+        ``release_date`` when present; ``vote_average`` is forwarded
+        as-is so 0.0 (TMDB's "no rating yet" signal) reaches the use
+        case which can decide to hide the star.
+        """
+        if not isinstance(part, dict):
+            return None
+        raw_id = part.get("id")
+        title = part.get("title") or part.get("original_title")
+        if not isinstance(raw_id, int) or not isinstance(title, str) or not title:
+            return None
+
+        year: int | None = None
+        release_date = part.get("release_date")
+        if isinstance(release_date, str) and len(release_date) >= 4:
+            try:
+                year = int(release_date[:4])
+            except ValueError:
+                year = None
+
+        rating: float | None = None
+        vote = part.get("vote_average")
+        if isinstance(vote, int | float) and vote > 0:
+            rating = float(vote)
+
+        return CollectionPartMetadata(
+            tmdb_id=raw_id,
+            title=title,
+            year=year,
+            synopsis=str(part.get("overview")) if part.get("overview") else None,
+            poster_url=self._image_url(
+                str(part.get("poster_path")) if part.get("poster_path") else None,
+            ),
+            backdrop_url=self._image_url(
+                str(part.get("backdrop_path")) if part.get("backdrop_path") else None,
+            ),
+            rating=rating,
+        )
 
     async def get_movie_recommendations(self, tmdb_id: int) -> list[int]:
         """Return TMDB ids of movies related to ``tmdb_id``.
