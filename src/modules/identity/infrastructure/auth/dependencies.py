@@ -14,6 +14,7 @@ This is FastAPI-native (not registered in the dependency-injector
 container) because FastAPI Users assumes its own dependency style.
 """
 
+import uuid
 from collections.abc import AsyncGenerator
 
 from fastapi import Depends, Request
@@ -44,7 +45,7 @@ async def get_async_session(request: Request) -> AsyncGenerator[AsyncSession, No
 
 async def get_user_db(
     session: AsyncSession = Depends(get_async_session),
-) -> AsyncGenerator[SQLAlchemyUserDatabase[UserModel, "UUID"], None]:  # noqa: F821
+) -> AsyncGenerator[SQLAlchemyUserDatabase[UserModel, uuid.UUID], None]:
     """Yield FastAPI Users' SQLAlchemy database adapter for ``UserModel``."""
     yield SQLAlchemyUserDatabase(session, UserModel)
 

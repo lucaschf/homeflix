@@ -5,9 +5,12 @@ Settings are loaded from environment variables and .env file.
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Self
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_PLACEHOLDER_SECRET_KEY = "CHANGE-ME-IN-PRODUCTION"  # — sentinel literal, not a secret
 
 
 class Settings(BaseSettings):  # type: ignore[misc]
@@ -241,12 +244,15 @@ class Settings(BaseSettings):  # type: ignore[misc]
     # Identity / Auth (see ADR-010 / ADR-011)
     # =========================================================================
 
-    secret_key: str = Field(
-        default="CHANGE-ME-IN-PRODUCTION",
+    secret_key: SecretStr = Field(
+        default=SecretStr(_PLACEHOLDER_SECRET_KEY),
         description="Secret used by FastAPI Users for password-reset and "
         "email-verification token signing. The session cookie itself is "
         "opaque DB-backed (per ADR-011), not signed, so this only affects "
-        "those future flows. Must be replaced in production.",
+        "those future flows. Wrapped in ``SecretStr`` so Pydantic does "
+        "not echo the value in ``repr``/``model_dump`` output. Replaced "
+        "in production via env var; the placeholder is rejected by the "
+        "production-environment validator below.",
     )
     session_lifetime_seconds: int = Field(
         default=60 * 60 * 24 * 90,  # 90 days — per ADR-011 (fixed, no slide)
@@ -258,8 +264,9 @@ class Settings(BaseSettings):  # type: ignore[misc]
     session_cookie_secure: bool = Field(
         default=False,
         description="Set the Secure flag on the session cookie (HTTPS only). "
-        "Force True in production. Defaults False so dev over plain HTTP "
-        "still works.",
+        "Defaults False so dev over plain HTTP still works; the "
+        "production-environment validator below refuses to start unless "
+        "this is True (or a manual override is provided).",
     )
     session_cookie_name: str = Field(default="homeflix_session")
 
@@ -275,6 +282,29 @@ class Settings(BaseSettings):  # type: ignore[misc]
     def parse_locales(cls, v: str | list[str]) -> list[str]:
         """Parse comma-separated locales string to list."""
         return [loc.strip() for loc in v.split(",")] if isinstance(v, str) else v
+
+    @model_validator(mode="after")
+    def reject_insecure_production_config(self) -> Self:
+        """Refuse to start in production with security-critical defaults.
+
+        Cross-field check that runs once per ``Settings`` instance after
+        all individual field validation. Caught at construction so the
+        process exits before the unsafe config can take effect.
+        """
+        if self.app_env == "production":
+            if self.secret_key.get_secret_value() == _PLACEHOLDER_SECRET_KEY:
+                raise ValueError(
+                    "secret_key is still the development placeholder; "
+                    "set SECRET_KEY to a strong unique value before "
+                    "running in production.",
+                )
+            if not self.session_cookie_secure:
+                raise ValueError(
+                    "session_cookie_secure must be True in production "
+                    "(HTTPS-only cookie). Set SESSION_COOKIE_SECURE=true "
+                    "or run behind a TLS-terminating reverse proxy.",
+                )
+        return self
 
     # =========================================================================
     # Properties

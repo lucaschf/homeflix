@@ -30,12 +30,12 @@ class UserManager(UUIDIDMixin, BaseUserManager[UserModel, uuid.UUID]):
     @property
     def reset_password_token_secret(self) -> str:  # type: ignore[override]
         """Secret used to sign password-reset tokens."""
-        return get_settings().secret_key
+        return get_settings().secret_key.get_secret_value()
 
     @property
     def verification_token_secret(self) -> str:  # type: ignore[override]
         """Secret used to sign email-verification tokens."""
-        return get_settings().secret_key
+        return get_settings().secret_key.get_secret_value()
 
 
 __all__ = ["UserManager"]
