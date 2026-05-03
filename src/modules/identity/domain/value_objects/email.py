@@ -41,7 +41,11 @@ class Email(StringValueObject):
     def normalize_and_validate(cls, value: object) -> str:
         """Normalize (trim + lowercase) and validate the email format."""
         if not isinstance(value, str):
-            raise ValueError(f"Email must be a string [{IdentityRuleCodes.EMAIL_INVALID_FORMAT}]")
+            # Defensive guard against programmer error; user-submitted JSON
+            # always arrives as a string before reaching this validator. No
+            # rule code — i18n only covers content-level violations (matches
+            # the pattern in library/value_objects/library_name.py).
+            raise ValueError("Email must be a string")
 
         normalized = value.strip().lower()
 

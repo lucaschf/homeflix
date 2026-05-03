@@ -29,9 +29,11 @@ class ProfileName(StringValueObject):
     def validate_name(cls, value: object) -> str:
         """Trim and validate the profile name."""
         if not isinstance(value, str):
-            raise ValueError(
-                f"Profile name must be a string [{IdentityRuleCodes.PROFILE_NAME_EMPTY}]"
-            )
+            # Defensive guard against programmer error; user-submitted JSON
+            # always arrives as a string before reaching this validator. No
+            # rule code — i18n only covers content-level violations (matches
+            # the pattern in library/value_objects/library_name.py).
+            raise ValueError("Profile name must be a string")
 
         trimmed = value.strip()
 

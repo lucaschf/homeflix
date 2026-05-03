@@ -43,6 +43,10 @@ class TestProfileNameValidation:
         with pytest.raises(DomainValidationException, match="cannot exceed 50"):
             ProfileName("A" * 51)
 
+    def test_should_reject_non_string_input(self):
+        with pytest.raises(DomainValidationException, match="must be a string"):
+            ProfileName(123)  # type: ignore[arg-type]
+
 
 class TestProfileNameEquality:
     def test_same_name_should_be_equal(self):
