@@ -9,12 +9,13 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Import all models so they register on Base.metadata
-import src.modules.catalog_requests.infrastructure.persistence.models  # noqa: F401
-import src.modules.collections.infrastructure.persistence.models  # noqa: F401
-import src.modules.media.infrastructure.persistence.models  # noqa: F401
+import src.modules.catalog_requests.infrastructure.persistence.models
+import src.modules.collections.infrastructure.persistence.models
+import src.modules.identity.infrastructure.persistence.models
+import src.modules.media.infrastructure.persistence.models
 import src.modules.watch_progress.infrastructure.persistence.models  # noqa: F401
-from src.infrastructure.persistence.base import Base
 from src.config.settings import get_settings
+from src.infrastructure.persistence.base import Base
 
 config = context.config
 
