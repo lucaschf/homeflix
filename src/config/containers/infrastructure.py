@@ -39,6 +39,7 @@ async def _init_engine(
     if get_settings().is_development:
         import src.modules.catalog_requests.infrastructure.persistence.models
         import src.modules.collections.infrastructure.persistence.models
+        import src.modules.identity.infrastructure.persistence.models
         import src.modules.media.infrastructure.persistence.models
         import src.modules.watch_progress.infrastructure.persistence.models  # noqa: F401
         from src.infrastructure.persistence.base import Base

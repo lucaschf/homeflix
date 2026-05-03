@@ -10,6 +10,7 @@ from dependency_injector import containers, providers
 
 from src.config.containers.catalog_requests import CatalogRequestsContainer
 from src.config.containers.collections import CollectionsContainer
+from src.config.containers.identity import IdentityContainer
 from src.config.containers.infrastructure import InfrastructureContainer
 from src.config.containers.library import LibraryContainer
 from src.config.containers.media import MediaContainer
@@ -109,6 +110,14 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         LibraryContainer,
         session_factory=infrastructure.session_factory,
         media_uow_factory=media.media_unit_of_work_factory,
+    )
+
+    # Identity ships its container before the consumer BCs (watch_progress,
+    # collections, preferences) so future PRs can inject ``profile_lookup``
+    # via the ACL pattern without reordering the composition root.
+    identity = providers.Container(
+        IdentityContainer,
+        session_factory=infrastructure.session_factory,
     )
 
     preferences = providers.Container(

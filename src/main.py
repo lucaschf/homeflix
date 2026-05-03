@@ -19,6 +19,7 @@ from src.config.logging import get_logger, setup_logging
 from src.config.settings import get_settings
 from src.modules.catalog_requests.presentation.routes import catalog_request_router
 from src.modules.collections.presentation.routes import custom_list_router, watchlist_router
+from src.modules.identity.infrastructure.auth import auth_backend, fastapi_users
 from src.modules.library.presentation.routes.library_routes import (
     router as library_router,
 )
@@ -209,6 +210,15 @@ def create_app() -> FastAPI:
     app.include_router(catalog_request_router)
     app.include_router(library_router)
     app.include_router(preferences_router)
+
+    # Identity — FastAPI Users built-in cookie auth (login/logout). Custom
+    # /me and /profiles/* routes ship in the next slice. See ADR-011 for
+    # the cookie + DatabaseStrategy choice.
+    app.include_router(
+        fastapi_users.get_auth_router(auth_backend),
+        prefix="/api/v1/auth/cookie",
+        tags=["Auth"],
+    )
 
     return app
 
