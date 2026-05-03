@@ -26,26 +26,28 @@ class SqlAlchemyUserRepository(UserRepository):
         self._session = session
 
     async def save(self, user: User) -> User:
-        """Persist a user (insert when id is missing, partial update otherwise)."""
-        is_insert = user.id is None
+        """Persist a user (insert when missing, partial update when found).
+
+        Follows the same shape as ``SqlAlchemyLibraryRepository.save``:
+        always look the row up by ``external_id`` first; restore a
+        soft-deleted row before applying updates; reload via
+        ``find_by_id`` so the returned entity carries the
+        server-assigned timestamps.
+        """
         user = user.with_updates(id=UserId.generate_if_absent(user.id))
 
-        if is_insert:
-            model = UserMapper.to_model(user)
-            self._session.add(model)
+        stmt = select(UserModel).where(UserModel.external_id == str(user.id))
+        existing = (await self._session.execute(stmt)).scalar_one_or_none()
+
+        if existing is not None and existing.is_deleted:
+            existing.restore()
+
+        if existing is not None:
+            UserMapper.update_model(existing, user)
             await self._session.flush()
         else:
-            stmt = select(UserModel).where(UserModel.external_id == str(user.id))
-            existing = (await self._session.execute(stmt)).scalar_one_or_none()
-            if existing is None:
-                # The caller asked us to update a user that doesn't exist;
-                # treat it as an insert to keep the contract idempotent.
-                model = UserMapper.to_model(user)
-                self._session.add(model)
-            else:
-                if existing.is_deleted:
-                    existing.restore()
-                UserMapper.update_model(existing, user)
+            model = UserMapper.to_model(user)
+            self._session.add(model)
             await self._session.flush()
 
         if user.id is None:

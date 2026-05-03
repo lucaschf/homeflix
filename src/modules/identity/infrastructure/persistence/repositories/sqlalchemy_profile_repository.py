@@ -33,10 +33,14 @@ class SqlAlchemyProfileRepository(ProfileRepository):
         self._session = session
 
     async def save(self, profile: Profile) -> Profile:
-        """Persist a profile (create or update).
+        """Persist a profile (insert when missing, update when found).
 
         Resolves ``profile.user_id`` to the user's internal UUID
-        before passing the entity to the mapper.
+        before passing the entity to the mapper. Follows the same
+        shape as ``SqlAlchemyLibraryRepository.save``: always look the
+        row up by ``external_id`` first; restore a soft-deleted row
+        before applying updates; reload via ``find_by_id`` so the
+        returned entity carries the server-assigned timestamps.
 
         Args:
             profile: The profile to save.
@@ -47,7 +51,6 @@ class SqlAlchemyProfileRepository(ProfileRepository):
         Raises:
             ValueError: If the owning user does not exist.
         """
-        is_insert = profile.id is None
         profile = profile.with_updates(id=ProfileId.generate_if_absent(profile.id))
 
         user_uuid = await self._resolve_user_uuid(profile.user_id)
@@ -58,7 +61,7 @@ class SqlAlchemyProfileRepository(ProfileRepository):
         if existing is not None and existing.is_deleted:
             existing.restore()
 
-        if existing is not None and not is_insert:
+        if existing is not None:
             ProfileMapper.update_model(existing, profile)
             await self._session.flush()
         else:
