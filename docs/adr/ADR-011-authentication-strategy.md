@@ -27,14 +27,14 @@ Restrições: a decisão precisa ser compatível com o admin panel planejado (qu
 
 Nós iremos adotar **autenticação por sessão server-side em cookie HttpOnly**, implementada via FastAPI Users com `AuthenticationBackend` configurado como `DatabaseStrategy` + `CookieTransport`.
 
-**Storage de sessão**: tabela `access_tokens` no mesmo banco do BC `identity`, com schema `(token: str primary key, user_id: UUID, created_at: datetime)`. O token é uma string opaca aleatória (32+ bytes, base64url-safe), não um JWT — não carrega claims, é apenas a chave para lookup. Expiração configurável (padrão: 30 dias, slidable a cada request).
+**Storage de sessão**: tabela `access_tokens` no mesmo banco do BC `identity`, com schema `(token: str primary key, user_id: UUID, created_at: datetime)`. O token é uma string opaca aleatória (32+ bytes, base64url-safe), não um JWT — não carrega claims, é apenas a chave para lookup. **Expiração fixa de 90 dias desde a criação do token**, sem rolling refresh — `DatabaseStrategy` do FastAPI Users não atualiza `created_at` automaticamente em cada acesso, então sessão "slidable" exigiria custom strategy. Para uso doméstico (família re-loga ~4x/ano), expiração fixa é suficiente.
 
 **Transport**: cookie HTTP com nome `homeflix_session`, atributos:
 
 - `HttpOnly` — invisível a JavaScript, mitiga roubo via XSS
 - `Secure` — enviado apenas sobre HTTPS (no dev local, configurável via env var)
 - `SameSite=Strict` — bloqueia envio em requests cross-site, mitiga CSRF
-- `Max-Age` alinhado com a expiração do token (renovado a cada login bem-sucedido)
+- `Max-Age` alinhado com a expiração do token (emitido a cada login bem-sucedido)
 
 **Fluxo de revogação**: logout deleta a row de `access_tokens`. Não há janela entre "usuário pediu logout" e "token deixa de ser válido" — é instantâneo. Admin panel futuro consulta a tabela para listar sessões ativas por usuário e oferece operação "revogar dispositivo", que também é apenas `DELETE WHERE token = ?`.
 
@@ -59,7 +59,7 @@ Nós iremos adotar **autenticação por sessão server-side em cookie HttpOnly**
 
 - **Stateful por design** — todo request bate na tabela `access_tokens`. Em DB local single-process é sub-milissegundo, mas é uma operação que JWT stateless não precisaria fazer. Custo aceito conscientemente em troca dos benefícios acima.
 - **CSRF precisa atenção contínua** — qualquer mudança futura nas configurações de CORS ou origin allowlist precisa reavaliar se `SameSite=Strict` ainda é suficiente. Se um dia for relaxado, double-submit token CSRF vira obrigatório.
-- **Sessão pode viver indefinidamente** com slidable expiration — usuário ativo nunca é deslogado por timeout. Para uso doméstico isso é UX correta, mas é trade-off de segurança consciente.
+- **Sessão fixa de 90 dias força re-login trimestral** — usuário ativo é deslogado independentemente de uso recente. UX inferior a slidable expiration, mas tolerável para uso doméstico. Slidable foi rejeitada por exigir custom strategy não-nativa do FastAPI Users.
 - **Cliente não-browser exige trabalho adicional** — quando/se app mobile entrar no roadmap, é necessário adicionar segundo `AuthenticationBackend` (bearer) em paralelo. Não é refactor, mas é trabalho futuro identificado.
 - **DB bloat se cleanup falhar** — `access_tokens` cresce a cada login e só encolhe em logout/revogação/expiração. Sem job de limpeza, sessões expiradas acumulam.
 
@@ -69,7 +69,7 @@ Nós iremos adotar **autenticação por sessão server-side em cookie HttpOnly**
 |-------|---------------|---------|-----------|
 | Cookie de sessão interceptado em conexão HTTP não-criptografada | Baixa | Alto | Atributo `Secure` obrigatório em produção (env var); deploy doméstico atrás de TLS (Caddy/Traefik com Let's Encrypt ou self-signed); documentar no setup |
 | `access_tokens` cresce indefinidamente por falta de cleanup de sessões expiradas | Média | Baixo | Background job (APScheduler — já em uso) com cleanup periódico de tokens com `created_at + lifetime < now()`; também cleanup oportunístico durante validação de token |
-| Slidable expiration permite sessão "imortal" se atacante mantiver token ativo continuamente | Baixa | Médio | Limite absoluto de vida da sessão (ex: 90 dias desde criação, independente de atividade); admin panel oferece "revogar todas as sessões do usuário" como mitigação reativa |
+| Token comprometido permanece válido até 90 dias se usuário não fizer logout explícito | Baixa | Médio | Admin panel oferece "revogar todas as sessões do usuário" como mitigação reativa; documentar logout explícito em dispositivos não confiáveis (kiosks, dispositivos compartilhados) como prática recomendada |
 | Mudança futura de configuração CORS/origin relaxando `SameSite` reintroduz exposição CSRF | Baixa | Alto | Registrar nas Notas de Implementação que `SameSite=Strict` é load-bearing; checklist de revisão de PRs que tocam config de CORS deve revalidar exposição CSRF |
 | `current_profile_id` na sessão fica orfão se profile for deletado pelo user | Média | Baixo | `FOREIGN KEY ... ON DELETE SET NULL` na coluna; `get_current_profile` trata `None` como "precisa selecionar profile" e redireciona para `/profiles` |
 
@@ -144,7 +144,7 @@ class AccessTokenModel(Base):
 # src/modules/identity/infrastructure/auth/backend.py
 cookie_transport = CookieTransport(
     cookie_name="homeflix_session",
-    cookie_max_age=60 * 60 * 24 * 30,    # 30 dias slidable
+    cookie_max_age=60 * 60 * 24 * 90,    # 90 dias fixos desde a emissão
     cookie_secure=settings.is_production,  # True em prod, configurável em dev
     cookie_httponly=True,
     cookie_samesite="strict",
@@ -155,7 +155,7 @@ def get_database_strategy(
 ) -> DatabaseStrategy:
     return DatabaseStrategy(
         database=access_token_db,
-        lifetime_seconds=60 * 60 * 24 * 30,  # alinhado com cookie
+        lifetime_seconds=60 * 60 * 24 * 90,  # alinhado com cookie
     )
 
 auth_backend = AuthenticationBackend(

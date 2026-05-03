@@ -121,7 +121,7 @@ Consultar quando: detectar import cross-module. Implementar feature que exibe da
 
 Cobre:
 - Novo BC `identity` com `User` (auth root) e `Profile` (personalization context, referenciado cross-BC)
-- FastAPI Users como base de autenticação (signup, login, JWT, reset, verify)
+- FastAPI Users como **biblioteca base** de autenticação (signup, login, password reset, email verification) — estratégia concreta de transport/storage de sessão definida em ADR-011
 - ID strategy: UUID interno no DB (compat FastAPI Users) + prefixed `external_id` no domain/API (`usr_xxx`, `prf_xxx`) via mapper
 - Prefixos `usr` e `prf` adicionados ao `ExternalId.VALID_PREFIXES`
 - `profile_id` propagado **explicitamente** via Input dataclass — proibido `contextvars`/middleware mágico
@@ -138,7 +138,7 @@ Cobre:
 - FastAPI Users `AuthenticationBackend` = `DatabaseStrategy` + `CookieTransport`
 - Sessão server-side em tabela `access_tokens` (token opaco, não JWT)
 - Cookie `homeflix_session` com `HttpOnly` + `Secure` + `SameSite=Strict`
-- Slidable expiration (30 dias), max absolute lifetime (90 dias)
+- Expiração fixa de 90 dias desde a criação (sem slidable — `DatabaseStrategy` não suporta nativo; trade-off aceito para uso doméstico)
 - `current_profile_id` armazenado na sessão (suporta multi-device com profiles independentes)
 - Revogação imediata via `DELETE FROM access_tokens` (logout, kill switch, admin "deslogar dispositivo")
 - CSRF mitigado por `SameSite=Strict` + CORS allowlist; double-submit token diferido para se relaxar SameSite

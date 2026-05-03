@@ -157,15 +157,20 @@ def to_domain(row: UserRow) -> User:
     )
 
 
-# src/modules/watch_progress/presentation/dependencies.py
+# src/modules/identity/presentation/dependencies.py
+# Sessão é resolvida via cookie HttpOnly + DatabaseStrategy (ADR-011).
+# FastAPI Users injeta o `User` autenticado a partir do cookie; o
+# `current_profile_id` é lido da row de access_tokens correspondente.
 async def get_current_profile(
-    token: str = Depends(oauth2_scheme),
-    profile_repo: ProfileLookupPort = Depends(Provide[...]),
+    user: User = Depends(current_active_user),       # FastAPI Users
+    session: AccessTokenRow = Depends(get_current_session),
 ) -> ProfileContext:
-    # 1. Decode JWT -> user_id, profile_id
-    # 2. Verify profile.user_id == user_id (ownership check)
-    # 3. Return ProfileContext(profile_id=...)
-    ...
+    if session.current_profile_id is None:
+        raise NoActiveProfileSelected()
+    return ProfileContext(
+        user_id=user.id,
+        profile_id=ProfileId.from_uuid(session.current_profile_id),
+    )
 
 
 # Use case recebe profile_id explícito (proibido contextvar).
