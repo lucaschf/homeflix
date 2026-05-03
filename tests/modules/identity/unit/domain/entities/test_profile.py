@@ -1,0 +1,86 @@
+"""Tests for Profile aggregate root."""
+
+import pytest
+
+from src.building_blocks.domain.errors import DomainValidationException
+from src.modules.identity.domain.entities.profile import Profile
+from src.modules.identity.domain.value_objects.profile_id import ProfileId
+from src.modules.identity.domain.value_objects.profile_name import ProfileName
+from src.modules.identity.domain.value_objects.user_id import UserId
+
+
+def _user_id() -> UserId:
+    return UserId.generate()
+
+
+class TestProfileCreate:
+    def test_should_create_with_defaults(self):
+        uid = _user_id()
+        profile = Profile.create(user_id=uid, name=ProfileName("Lucas"))
+
+        assert profile.id is None
+        assert profile.user_id == uid
+        assert profile.name == ProfileName("Lucas")
+        assert profile.is_kids is False
+        assert profile.avatar_url is None
+
+    def test_should_create_kids_profile(self):
+        profile = Profile.create(
+            user_id=_user_id(),
+            name=ProfileName("Bia"),
+            is_kids=True,
+            avatar_url="https://example.com/avatar.png",
+        )
+
+        assert profile.is_kids is True
+        assert profile.avatar_url == "https://example.com/avatar.png"
+
+
+class TestProfileImmutability:
+    def test_should_be_frozen(self):
+        profile = Profile.create(user_id=_user_id(), name=ProfileName("Lucas"))
+
+        with pytest.raises(DomainValidationException):
+            profile.name = ProfileName("Other")  # type: ignore[misc]
+
+    def test_with_name_should_return_new_instance(self):
+        original = Profile.create(user_id=_user_id(), name=ProfileName("Old"))
+
+        renamed = original.with_name(ProfileName("New"))
+
+        assert renamed is not original
+        assert original.name == ProfileName("Old")
+        assert renamed.name == ProfileName("New")
+
+    def test_with_kids_flag_should_return_new_instance(self):
+        original = Profile.create(user_id=_user_id(), name=ProfileName("L"))
+
+        kids = original.with_kids_flag(is_kids=True)
+
+        assert kids.is_kids is True
+        assert original.is_kids is False
+
+    def test_with_avatar_should_set_url(self):
+        original = Profile.create(user_id=_user_id(), name=ProfileName("L"))
+
+        with_avatar = original.with_avatar("https://x/y.png")
+
+        assert with_avatar.avatar_url == "https://x/y.png"
+
+    def test_with_avatar_can_clear_to_none(self):
+        original = Profile.create(
+            user_id=_user_id(), name=ProfileName("L"), avatar_url="https://x/y.png"
+        )
+
+        cleared = original.with_avatar(None)
+
+        assert cleared.avatar_url is None
+
+
+class TestProfileEquality:
+    def test_profiles_with_same_id_should_be_equal(self):
+        pid = ProfileId.generate()
+        a = Profile(id=pid, user_id=_user_id(), name=ProfileName("L"))
+        b = Profile(id=pid, user_id=_user_id(), name=ProfileName("Other"))
+
+        assert a == b
