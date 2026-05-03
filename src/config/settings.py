@@ -238,6 +238,32 @@ class Settings(BaseSettings):  # type: ignore[misc]
     )
 
     # =========================================================================
+    # Identity / Auth (see ADR-010 / ADR-011)
+    # =========================================================================
+
+    secret_key: str = Field(
+        default="CHANGE-ME-IN-PRODUCTION",
+        description="Secret used by FastAPI Users for password-reset and "
+        "email-verification token signing. The session cookie itself is "
+        "opaque DB-backed (per ADR-011), not signed, so this only affects "
+        "those future flows. Must be replaced in production.",
+    )
+    session_lifetime_seconds: int = Field(
+        default=60 * 60 * 24 * 90,  # 90 days — per ADR-011 (fixed, no slide)
+        ge=60,
+        description="Fixed lifetime of a session cookie / DB row before it "
+        "expires. No rolling refresh — DatabaseStrategy from FastAPI Users "
+        "doesn't support sliding expiration natively.",
+    )
+    session_cookie_secure: bool = Field(
+        default=False,
+        description="Set the Secure flag on the session cookie (HTTPS only). "
+        "Force True in production. Defaults False so dev over plain HTTP "
+        "still works.",
+    )
+    session_cookie_name: str = Field(default="homeflix_session")
+
+    # =========================================================================
     # Internationalization
     # =========================================================================
 
