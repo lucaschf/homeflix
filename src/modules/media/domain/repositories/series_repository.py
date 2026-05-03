@@ -111,6 +111,24 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
+    async def list_recently_added(self, limit: int) -> Sequence[Series]:
+        """List the most recently added series.
+
+        Sorted by ``id DESC`` — same justification as
+        ``MovieRepository.list_recently_added``. The home-page
+        carousel consumes a fixed top N, so no cursor or pagination
+        metadata is involved.
+
+        Args:
+            limit: Maximum number of series to return.
+
+        Returns:
+            Sequence of recently added series (excluding soft-deleted),
+            most recent first.
+        """
+        ...
+
+    @abstractmethod
     async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted series row.
 

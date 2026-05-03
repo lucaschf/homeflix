@@ -12,6 +12,7 @@ from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.catalog_dtos import (
     ListByGenreInput,
     ListGenresInput,
+    ListRecentlyAddedCatalogInput,
     MediaTypeFilter,
 )
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
@@ -19,6 +20,9 @@ from src.modules.media.application.use_cases.list_genres import ListGenresUseCas
 from src.modules.media.application.use_cases.list_movies_by_actor import (
     ListMoviesByActorInput,
     ListMoviesByActorUseCase,
+)
+from src.modules.media.application.use_cases.list_recently_added_catalog import (
+    ListRecentlyAddedCatalogUseCase,
 )
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["Catalog"])
@@ -112,6 +116,35 @@ async def list_by_genre(
         [asdict(item) for item in result.items],
         pagination=Pagination(has_more=result.has_more, next_cursor=result.next_cursor),
     )
+
+
+@router.get("/recently-added")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def list_recently_added_catalog(
+    limit: int = 20,
+    lang: str = "en",
+    use_case: ListRecentlyAddedCatalogUseCase = Depends(
+        Provide[ApplicationContainer.media.list_recently_added_catalog],
+    ),
+) -> dict[str, Any]:
+    """Mixed top-N most recently added titles across movies + series.
+
+    Each repo is queried for its top ``limit`` newest entries (ordered
+    by ``id DESC``); the two streams are merged in Python by
+    ``created_at`` descending and trimmed to ``limit``. ``limit`` is
+    clamped to ``[1, 50]`` so the home carousel can't pull the full
+    catalog.
+
+    Query params:
+        limit: Maximum items returned. Defaults to 20.
+        lang: Language code for localized titles, synopses, and genre
+            names returned in each item.
+    """
+    clamped_limit = max(1, min(limit, 50))
+    result = await use_case.execute(
+        ListRecentlyAddedCatalogInput(limit=clamped_limit, lang=lang),
+    )
+    return api_list([asdict(item) for item in result.items])
 
 
 @router.get("/by-actor")  # type: ignore[misc]

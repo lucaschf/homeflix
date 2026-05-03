@@ -219,9 +219,40 @@ class ListSeriesOutput:
     total_count: int | None = None
 
 
+@dataclass(frozen=True)
+class ListRecentlyAddedSeriesInput:
+    """Input for ``ListRecentlyAddedSeriesUseCase``.
+
+    Attributes:
+        limit: Maximum number of series to return. Routes clamp this
+            to a sane upper bound before constructing the input.
+        lang: Language code for localized metadata.
+    """
+
+    limit: int = 20
+    lang: str = "en"
+
+
+@dataclass(frozen=True)
+class ListRecentlyAddedSeriesOutput:
+    """Output for ``ListRecentlyAddedSeriesUseCase``.
+
+    Plain top-N projection — no cursor, no ``has_more``. Mirror of
+    ``ListRecentlyAddedMoviesOutput`` for the series side of the
+    home-page carousel.
+
+    Attributes:
+        series: List of series summaries, newest first.
+    """
+
+    series: list[SeriesSummaryOutput]
+
+
 __all__ = [
     "EpisodeOutput",
     "GetSeriesByIdInput",
+    "ListRecentlyAddedSeriesInput",
+    "ListRecentlyAddedSeriesOutput",
     "ListSeriesInput",
     "ListSeriesOutput",
     "SeasonOutput",

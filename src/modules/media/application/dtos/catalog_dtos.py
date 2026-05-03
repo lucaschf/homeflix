@@ -135,6 +135,34 @@ class ListByGenreOutput:
     has_more: bool
 
 
+@dataclass(frozen=True)
+class ListRecentlyAddedCatalogInput:
+    """Input for ``ListRecentlyAddedCatalogUseCase``.
+
+    Attributes:
+        limit: Maximum number of mixed items to return. Routes clamp
+            this to a sane upper bound before constructing the input.
+        lang: Language code for localized titles, synopses, and genre
+            names returned in each item.
+    """
+
+    limit: int = 20
+    lang: str = "en"
+
+
+@dataclass(frozen=True)
+class ListRecentlyAddedCatalogOutput:
+    """Output for ``ListRecentlyAddedCatalogUseCase``.
+
+    Attributes:
+        items: Mixed list of movies and series, newest first by
+            ``created_at``. Same DTO shape as the by-genre / search
+            responses so the frontend reuses the existing card.
+    """
+
+    items: list[CatalogItemOutput]
+
+
 __all__ = [
     "CatalogItemOutput",
     "GenreOutput",
@@ -142,5 +170,7 @@ __all__ = [
     "ListByGenreOutput",
     "ListGenresInput",
     "ListGenresOutput",
+    "ListRecentlyAddedCatalogInput",
+    "ListRecentlyAddedCatalogOutput",
     "MediaTypeFilter",
 ]

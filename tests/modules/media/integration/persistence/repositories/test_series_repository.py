@@ -843,6 +843,56 @@ class TestSQLAlchemySeriesRepositoryListPaginated:
 
 
 @pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryListRecentlyAdded:
+    """Integration tests for the bounded "top N newest" projection."""
+
+    async def test_should_return_series_in_id_desc_order(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        seeded = await _seed_series(repo, count=4)
+
+        result = await repo.list_recently_added(limit=10)
+
+        returned_titles = [s.title.value for s in result]
+        assert returned_titles == list(reversed([s.title.value for s in seeded]))
+
+    async def test_should_clamp_to_limit(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await _seed_series(repo, count=5)
+
+        result = await repo.list_recently_added(limit=3)
+
+        assert len(result) == 3
+
+    async def test_should_return_all_when_limit_exceeds_total(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await _seed_series(repo, count=2)
+
+        result = await repo.list_recently_added(limit=10)
+
+        assert len(result) == 2
+
+    async def test_should_exclude_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series_list = await _seed_series(repo, count=3)
+        await repo.delete(_id_of(series_list[-1]))
+
+        result = await repo.list_recently_added(limit=10)
+
+        returned_ids = {_id_of(s) for s in result}
+        assert _id_of(series_list[-1]) not in returned_ids
+        assert len(result) == 2
+
+    async def test_should_return_empty_when_no_series(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+
+        result = await repo.list_recently_added(limit=10)
+
+        assert list(result) == []
+
+
+@pytest.mark.integration
 class TestSQLAlchemySeriesRepositoryListGenreRows:
     """Integration tests for the lightweight genre projection."""
 

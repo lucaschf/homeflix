@@ -18,6 +18,7 @@ from src.modules.media.application.dtos.movie_dtos import (
     DeleteMovieInput,
     GetMovieByIdInput,
     ListMoviesInput,
+    ListRecentlyAddedMoviesInput,
 )
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
 from src.modules.media.application.use_cases.delete_movie import DeleteMovieUseCase
@@ -28,6 +29,9 @@ from src.modules.media.application.use_cases.get_related_movies import (
     GetRelatedMoviesUseCase,
 )
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
+from src.modules.media.application.use_cases.list_recently_added_movies import (
+    ListRecentlyAddedMoviesUseCase,
+)
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
 from src.modules.media.presentation.schemas import (
@@ -85,6 +89,31 @@ async def list_movies(
         pagination=Pagination(has_more=result.has_more, next_cursor=result.next_cursor),
         metadata_extras=extras,
     )
+
+
+# Registered before ``/{movie_id}`` so the dynamic segment doesn't
+# swallow ``recently-added`` and dispatch to ``get_movie``.
+@router.get("/recently-added")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def list_recently_added_movies(
+    limit: int = 20,
+    lang: str = "en",
+    use_case: ListRecentlyAddedMoviesUseCase = Depends(
+        Provide[ApplicationContainer.media.list_recently_added_movies],
+    ),
+) -> dict[str, Any]:
+    """Return the top N most recently added movies for the home page.
+
+    Sorted by insertion order (newest first) — see
+    ``MovieRepository.list_recently_added`` for the ``id DESC``
+    justification. ``limit`` is clamped to ``[1, 50]`` so the home
+    carousel can't be coerced into pulling the full catalog.
+    """
+    clamped_limit = max(1, min(limit, 50))
+    result = await use_case.execute(
+        ListRecentlyAddedMoviesInput(limit=clamped_limit, lang=lang),
+    )
+    return api_list([_dataclass_to_dict(m) for m in result.movies])
 
 
 @router.get("/{movie_id}")  # type: ignore[misc]

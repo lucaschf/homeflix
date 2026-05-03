@@ -210,6 +210,25 @@ class SQLAlchemyMovieRepository(MovieRepository):
             total_count=total_count,
         )
 
+    async def list_recently_added(self, limit: int) -> Sequence[Movie]:
+        """Return the top ``limit`` non-deleted movies, newest first.
+
+        Same ``id DESC`` ordering as ``list_paginated`` — autoincrement
+        id is monotonic with insertion so it matches "newest by
+        ``created_at``" without paying for the SQLite ``func.now()``
+        precision quirk that ruled out a composite cursor on the
+        paginated path.
+        """
+        stmt = (
+            select(MovieModel)
+            .where(MovieModel.deleted_at.is_(None))
+            .options(selectinload(MovieModel.file_variants))
+            .order_by(MovieModel.id.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [MovieMapper.to_entity(m) for m in result.scalars().all()]
+
     async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted movie row."""
         return await fetch_genre_rows(self._session, MovieModel, lang)

@@ -118,6 +118,27 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def list_recently_added(self, limit: int) -> Sequence[Movie]:
+        """List the most recently added movies.
+
+        Sorted by ``id DESC`` — internal autoincrement id is monotonic
+        with insertion and matches "newest by ``created_at``" in
+        practice because ``created_at`` is server-generated on insert
+        and never edited later. Same justification as
+        ``list_paginated``; this method is the bounded "top N" variant
+        used by the home-page carousel where pagination would just be
+        noise.
+
+        Args:
+            limit: Maximum number of movies to return.
+
+        Returns:
+            Sequence of recently added movies (excluding soft-deleted),
+            most recent first.
+        """
+        ...
+
+    @abstractmethod
     async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted row.
 
