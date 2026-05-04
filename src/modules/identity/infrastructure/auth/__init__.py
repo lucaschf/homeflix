@@ -8,9 +8,15 @@ used for our domain use cases. The two coexist: routes import
 """
 
 from src.modules.identity.infrastructure.auth.backend import auth_backend
+from src.modules.identity.infrastructure.auth.dependencies import get_session_token
 from src.modules.identity.infrastructure.auth.fastapi_users import (
     current_active_user,
     fastapi_users,
 )
 
-__all__ = ["auth_backend", "current_active_user", "fastapi_users"]
+__all__ = [
+    "auth_backend",
+    "current_active_user",
+    "fastapi_users",
+    "get_session_token",
+]

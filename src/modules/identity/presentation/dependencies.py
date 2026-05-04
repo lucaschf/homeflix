@@ -17,14 +17,16 @@ from dataclasses import dataclass
 
 from fastapi import Depends, Request
 
-from src.config.settings import get_settings
 from src.modules.identity.domain.errors import (
     NoActiveProfileSelectedError,
     NoActiveSessionError,
 )
 from src.modules.identity.domain.value_objects.profile_id import ProfileId
 from src.modules.identity.domain.value_objects.user_id import UserId
-from src.modules.identity.infrastructure.auth import current_active_user
+from src.modules.identity.infrastructure.auth import (
+    current_active_user,
+    get_session_token,
+)
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 
 
@@ -47,6 +49,7 @@ class ProfileContext:
 async def get_current_profile(
     request: Request,
     user: UserModel = Depends(current_active_user),
+    token: str = Depends(get_session_token),
 ) -> ProfileContext:
     """Resolve the active ``ProfileContext`` for the request.
 
@@ -56,23 +59,15 @@ async def get_current_profile(
        cookie and produced the ``UserModel``. If the cookie was
        missing or invalid the dependency raised before reaching this
        function.
-    2. Read the cookie value to recover the opaque session token —
-       FastAPI Users stripped it during auth, so we read it again
-       directly from the request.
+    2. ``Depends(get_session_token)`` recovers the opaque token from
+       the cookie (single source of truth for cookie name + missing
+       cookie → 401 mapping).
     3. Look up the matching ``access_tokens`` row to find the
        ``current_profile_id`` chosen for this session.
     4. Raise :class:`NoActiveProfileSelectedError` (HTTP 409) if the
        user has not yet selected a profile, so the frontend can
        distinguish "logged in, pick a profile" from "not logged in".
     """
-    settings = get_settings()
-    token = request.cookies.get(settings.session_cookie_name)
-    if token is None:
-        # Should not happen — current_active_user already verified the
-        # cookie — but handle defensively rather than relying on an
-        # invariant that lives in another library.
-        raise NoActiveSessionError(message="Session cookie missing")
-
     container = request.app.state.container
     factory = container.identity.identity_unit_of_work_factory()
     async with factory() as uow:

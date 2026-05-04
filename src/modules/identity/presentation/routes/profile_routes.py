@@ -4,11 +4,10 @@ from dataclasses import asdict
 from typing import Any
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.config.settings import get_settings
 from src.modules.identity.application.dtos.identity_dtos import (
     CreateProfileInput,
     DeleteProfileInput,
@@ -31,8 +30,10 @@ from src.modules.identity.application.use_cases.switch_profile import (
 from src.modules.identity.application.use_cases.update_profile import (
     UpdateProfileUseCase,
 )
-from src.modules.identity.domain.errors import NoActiveSessionError
-from src.modules.identity.infrastructure.auth import current_active_user
+from src.modules.identity.infrastructure.auth import (
+    current_active_user,
+    get_session_token,
+)
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.identity.presentation.schemas.profile_schemas import (
     CreateProfileRequest,
@@ -129,26 +130,20 @@ async def delete_profile(
 @inject  # type: ignore[misc]
 async def switch_profile(
     profile_id: str,
-    request: Request,
     user: UserModel = Depends(current_active_user),
+    token: str = Depends(get_session_token),
     use_case: SwitchProfileUseCase = Depends(
         Provide[ApplicationContainer.identity.switch_profile],
     ),
 ) -> None:
     """Set the target profile as the active one in the caller's session.
 
-    Reads the opaque session token straight from the cookie (the
-    ``current_active_user`` dependency stripped it during auth) and
-    passes it to the use case, which updates the matching
+    The session token (read by ``get_session_token`` from the cookie)
+    is passed to the use case so it updates the matching
     ``access_tokens`` row. The cookie itself is not re-emitted —
     multi-device sessions can each carry their own active profile
     per ADR-011.
     """
-    settings = get_settings()
-    token = request.cookies.get(settings.session_cookie_name)
-    if token is None:
-        raise NoActiveSessionError(message="Session cookie missing")
-
     await use_case.execute(
         SwitchProfileInput(
             user_id=user.external_id,
