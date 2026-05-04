@@ -97,6 +97,80 @@ class TestSqlAlchemyProfileRepositorySave:
                     Profile.create(user_id=ghost_user_id, name=ProfileName("Ghost"))
                 )
 
+    async def test_should_round_trip_allowed_library_ids(
+        self, uow_factory: IdentityUnitOfWorkFactory
+    ):
+        owner = await _seed_user(uow_factory)
+        assert owner.id is not None
+
+        granted = ["lib_movies123456", "lib_series123456"]
+        async with uow_factory() as uow:
+            saved = await uow.profiles.save(
+                Profile.create(
+                    user_id=owner.id,
+                    name=ProfileName("Lucas"),
+                    allowed_library_ids=granted,
+                )
+            )
+
+        assert saved.id is not None
+        async with uow_factory() as uow:
+            found = await uow.profiles.find_by_id(saved.id)
+
+        assert found is not None
+        assert found.allowed_library_ids == granted
+
+    async def test_should_default_allowed_library_ids_to_empty_when_unset(
+        self, uow_factory: IdentityUnitOfWorkFactory
+    ):
+        # Default-deny: a freshly persisted profile with no explicit
+        # ACL must round-trip as an empty list, not as null or any
+        # legacy "see everything" sentinel.
+        owner = await _seed_user(uow_factory)
+        assert owner.id is not None
+
+        async with uow_factory() as uow:
+            saved = await uow.profiles.save(
+                Profile.create(user_id=owner.id, name=ProfileName("Anon"))
+            )
+
+        async with uow_factory() as uow:
+            assert saved.id is not None
+            found = await uow.profiles.find_by_id(saved.id)
+
+        assert found is not None
+        assert found.allowed_library_ids == []
+
+    async def test_save_should_replace_allowed_library_ids_on_update(
+        self, uow_factory: IdentityUnitOfWorkFactory
+    ):
+        # The aggregate's with_allowed_library_ids replaces the list
+        # entirely; persistence must mirror that semantics so a
+        # subsequent revoke (passing []) is durable.
+        owner = await _seed_user(uow_factory)
+        assert owner.id is not None
+
+        async with uow_factory() as uow:
+            original = await uow.profiles.save(
+                Profile.create(
+                    user_id=owner.id,
+                    name=ProfileName("L"),
+                    allowed_library_ids=["lib_a", "lib_b"],
+                )
+            )
+
+        revoked = original.with_allowed_library_ids([])
+
+        async with uow_factory() as uow:
+            await uow.profiles.save(revoked)
+
+        async with uow_factory() as uow:
+            assert original.id is not None
+            after = await uow.profiles.find_by_id(original.id)
+
+        assert after is not None
+        assert after.allowed_library_ids == []
+
 
 class TestSqlAlchemyProfileRepositoryReads:
     async def test_find_by_id_should_return_none_for_unknown_profile(

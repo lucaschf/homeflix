@@ -120,6 +120,41 @@ class TestCreateProfile:
         # Pydantic schema rejects empty name (min_length=1) -> 422.
         assert response.status_code == 422
 
+    async def test_should_default_allowed_library_ids_to_empty_when_omitted(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ):
+        # Default-deny: a fresh profile that does not name any
+        # libraries explicitly comes back with an empty ACL.
+        user = await seed_user_with_profile()
+        await _login(client, user)
+
+        response = await client.post(PROFILES_PATH, json={"name": "Anon"})
+
+        assert response.status_code == 201
+        assert response.json()["data"]["allowed_library_ids"] == []
+
+    async def test_should_persist_allowed_library_ids_when_supplied(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ):
+        user = await seed_user_with_profile()
+        await _login(client, user)
+
+        response = await client.post(
+            PROFILES_PATH,
+            json={
+                "name": "Lucas",
+                "allowed_library_ids": ["lib_movies123456", "lib_series123456"],
+            },
+        )
+
+        assert response.status_code == 201
+        created = response.json()["data"]
+        assert created["allowed_library_ids"] == ["lib_movies123456", "lib_series123456"]
+
 
 class TestUpdateProfile:
     async def test_should_apply_partial_update(
@@ -158,6 +193,68 @@ class TestUpdateProfile:
             json={"name": "Whatever"},
         )
         assert response.status_code == 404
+
+    async def test_should_replace_allowed_library_ids_when_supplied(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ):
+        user = await seed_user_with_profile()
+        await _login(client, user)
+
+        response = await client.put(
+            f"{PROFILES_PATH}/{user.profile_external_id}",
+            json={"allowed_library_ids": ["lib_grant1235678"]},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["allowed_library_ids"] == ["lib_grant1235678"]
+
+    async def test_should_revoke_all_libraries_with_explicit_empty_list(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ):
+        # Empty list is meaningful: revoke every library. Distinct
+        # from "field omitted" (None), which leaves the ACL alone.
+        user = await seed_user_with_profile()
+        await _login(client, user)
+        await client.put(
+            f"{PROFILES_PATH}/{user.profile_external_id}",
+            json={"allowed_library_ids": ["lib_grant1235678"]},
+        )
+
+        response = await client.put(
+            f"{PROFILES_PATH}/{user.profile_external_id}",
+            json={"allowed_library_ids": []},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["allowed_library_ids"] == []
+
+    async def test_should_leave_allowed_library_ids_alone_when_omitted(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ):
+        # PATCH-style semantics: omitted field never touches the
+        # underlying value, even when other fields are updated.
+        user = await seed_user_with_profile()
+        await _login(client, user)
+        await client.put(
+            f"{PROFILES_PATH}/{user.profile_external_id}",
+            json={"allowed_library_ids": ["lib_keepvalue12"]},
+        )
+
+        response = await client.put(
+            f"{PROFILES_PATH}/{user.profile_external_id}",
+            json={"name": "Renamed"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()["data"]
+        assert body["name"] == "Renamed"
+        assert body["allowed_library_ids"] == ["lib_keepvalue12"]
 
 
 class TestDeleteProfile:

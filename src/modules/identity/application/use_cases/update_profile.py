@@ -52,6 +52,8 @@ class UpdateProfileUseCase:
                 updated = updated.with_kids_flag(is_kids=input_dto.is_kids)
             if input_dto.avatar_url is not None:
                 updated = updated.with_avatar(input_dto.avatar_url)
+            if input_dto.allowed_library_ids is not None:
+                updated = updated.with_allowed_library_ids(input_dto.allowed_library_ids)
 
             saved = await uow.profiles.save(updated)
 

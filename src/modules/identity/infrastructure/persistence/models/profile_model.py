@@ -3,7 +3,7 @@
 import uuid
 
 from fastapi_users_db_sqlalchemy.generics import GUID
-from sqlalchemy import Boolean, ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.persistence.base import BaseWithUUID
@@ -23,8 +23,14 @@ class ProfileModel(BaseWithUUID):
             so deleting an account also removes its profiles.
         name: Display name shown in the profile picker (1..50 chars).
         avatar_url: Optional URL to an avatar image.
-        is_kids: Marks the profile as kids-mode (used by future library
-            ACL — see ADR-010 PR 6).
+        is_kids: Marks the profile as kids-mode (UX hint independent
+            of the ACL).
+        allowed_library_ids: JSON-encoded list of library external_ids
+            (``lib_xxx``) this profile may see in the catalog. Stored
+            as TEXT/JSON rather than a join table because reads are
+            "the whole list per profile" and the cardinality is small
+            (libraries are operator-managed, not user-generated).
+            Default-deny: empty list means no access.
     """
 
     __tablename__ = "profiles"
@@ -42,6 +48,12 @@ class ProfileModel(BaseWithUUID):
         Boolean,
         nullable=False,
         default=False,
+    )
+    allowed_library_ids: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+        server_default="[]",
     )
 
 

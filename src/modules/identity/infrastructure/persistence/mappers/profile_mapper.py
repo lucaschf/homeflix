@@ -8,6 +8,7 @@ responsible for resolving the user's UUID before calling
 lookup, keeping it dependency-free and synchronous.
 """
 
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -25,6 +26,22 @@ def _ensure_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _decode_allowed_libraries(raw: str | None) -> list[str]:
+    """Decode the JSON-encoded allowed_library_ids column.
+
+    A null or unparsable value is treated as an empty list so a
+    bad row can never silently grant access — explicit JSON or
+    empty-list, no third interpretation.
+    """
+    if not raw:
+        return []
+    try:
+        decoded = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    return [str(item) for item in decoded] if isinstance(decoded, list) else []
 
 
 class ProfileMapper:
@@ -55,6 +72,7 @@ class ProfileMapper:
             name=entity.name.value,
             avatar_url=entity.avatar_url,
             is_kids=entity.is_kids,
+            allowed_library_ids=json.dumps(entity.allowed_library_ids),
         )
 
     @staticmethod
@@ -77,6 +95,7 @@ class ProfileMapper:
             name=ProfileName(model.name),
             avatar_url=model.avatar_url,
             is_kids=model.is_kids,
+            allowed_library_ids=_decode_allowed_libraries(model.allowed_library_ids),
             created_at=_ensure_utc(model.created_at) or datetime.now(UTC),
             updated_at=_ensure_utc(model.updated_at) or datetime.now(UTC),
         )
@@ -100,6 +119,7 @@ class ProfileMapper:
         model.name = entity.name.value
         model.avatar_url = entity.avatar_url
         model.is_kids = entity.is_kids
+        model.allowed_library_ids = json.dumps(entity.allowed_library_ids)
         return model
 
 

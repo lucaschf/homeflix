@@ -84,3 +84,60 @@ class TestProfileEquality:
         b = Profile(id=pid, user_id=_user_id(), name=ProfileName("Other"))
 
         assert a == b
+
+
+class TestProfileAllowedLibraryIds:
+    def test_should_default_to_empty_list_when_unset(self):
+        profile = Profile.create(user_id=_user_id(), name=ProfileName("L"))
+
+        # Default-deny — the ACL is empty, not "everything".
+        assert profile.allowed_library_ids == []
+
+    def test_should_default_to_empty_when_factory_sees_none(self):
+        profile = Profile.create(
+            user_id=_user_id(), name=ProfileName("L"), allowed_library_ids=None
+        )
+
+        assert profile.allowed_library_ids == []
+
+    def test_should_accept_explicit_list_at_creation(self):
+        profile = Profile.create(
+            user_id=_user_id(),
+            name=ProfileName("L"),
+            allowed_library_ids=["lib_movies123456", "lib_series123456"],
+        )
+
+        assert profile.allowed_library_ids == ["lib_movies123456", "lib_series123456"]
+
+    def test_factory_should_copy_input_list(self):
+        # The aggregate must not alias caller-owned lists; otherwise
+        # an outside mutation would leak past the with_* boundary.
+        ids = ["lib_a"]
+        profile = Profile.create(user_id=_user_id(), name=ProfileName("L"), allowed_library_ids=ids)
+        ids.append("lib_b")
+
+        assert profile.allowed_library_ids == ["lib_a"]
+
+    def test_with_allowed_library_ids_should_replace_entirely(self):
+        original = Profile.create(
+            user_id=_user_id(),
+            name=ProfileName("L"),
+            allowed_library_ids=["lib_old"],
+        )
+
+        updated = original.with_allowed_library_ids(["lib_new1", "lib_new2"])
+
+        assert original.allowed_library_ids == ["lib_old"]
+        assert updated.allowed_library_ids == ["lib_new1", "lib_new2"]
+        assert updated is not original
+
+    def test_with_allowed_library_ids_should_accept_empty_list_to_revoke(self):
+        original = Profile.create(
+            user_id=_user_id(),
+            name=ProfileName("L"),
+            allowed_library_ids=["lib_a", "lib_b"],
+        )
+
+        revoked = original.with_allowed_library_ids([])
+
+        assert revoked.allowed_library_ids == []
