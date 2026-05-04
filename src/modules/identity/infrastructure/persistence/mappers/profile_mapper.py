@@ -12,6 +12,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 
+from src.config.logging import get_logger
 from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.modules.identity.infrastructure.persistence.models.profile_model import (
@@ -19,6 +20,8 @@ from src.modules.identity.infrastructure.persistence.models.profile_model import
 )
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
+
+_logger = get_logger()
 
 
 def _ensure_utc(value: datetime | None) -> datetime | None:
@@ -28,20 +31,35 @@ def _ensure_utc(value: datetime | None) -> datetime | None:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
-def _decode_allowed_libraries(raw: str | None) -> list[str]:
+def _decode_allowed_libraries(profile_external_id: str, raw: str | None) -> list[str]:
     """Decode the JSON-encoded allowed_library_ids column.
 
-    A null or unparsable value is treated as an empty list so a
-    bad row can never silently grant access — explicit JSON or
-    empty-list, no third interpretation.
+    A null or unparsable value is coerced to an empty list so a bad
+    row can never silently grant access — but the coercion is logged
+    at WARNING so corrupted ACLs are observable in dashboards rather
+    than disappearing into a silent default-deny.
     """
-    if not raw:
+    if raw is None:
+        return []
+    if raw == "":
         return []
     try:
         decoded = json.loads(raw)
     except (TypeError, ValueError):
+        _logger.warning(
+            "[identity] Malformed allowed_library_ids JSON; coercing to empty list",
+            profile_external_id=profile_external_id,
+            raw=raw,
+        )
         return []
-    return [str(item) for item in decoded] if isinstance(decoded, list) else []
+    if not isinstance(decoded, list):
+        _logger.warning(
+            "[identity] allowed_library_ids decoded to non-list; coercing to empty list",
+            profile_external_id=profile_external_id,
+            decoded_type=type(decoded).__name__,
+        )
+        return []
+    return [str(item) for item in decoded]
 
 
 class ProfileMapper:
@@ -95,7 +113,9 @@ class ProfileMapper:
             name=ProfileName(model.name),
             avatar_url=model.avatar_url,
             is_kids=model.is_kids,
-            allowed_library_ids=_decode_allowed_libraries(model.allowed_library_ids),
+            allowed_library_ids=_decode_allowed_libraries(
+                model.external_id, model.allowed_library_ids
+            ),
             created_at=_ensure_utc(model.created_at) or datetime.now(UTC),
             updated_at=_ensure_utc(model.updated_at) or datetime.now(UTC),
         )

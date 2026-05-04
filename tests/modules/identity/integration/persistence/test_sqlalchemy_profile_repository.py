@@ -1,12 +1,17 @@
 """Integration tests for SqlAlchemyProfileRepository."""
 
 import pytest
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
 from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.value_objects.email import Email
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
+from src.modules.identity.infrastructure.persistence.models.profile_model import (
+    ProfileModel,
+)
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -140,6 +145,44 @@ class TestSqlAlchemyProfileRepositorySave:
 
         assert found is not None
         assert found.allowed_library_ids == []
+
+    async def test_should_coerce_corrupted_allowed_library_ids_to_empty(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+    ) -> None:
+        # A corrupted JSON payload (e.g. an old deploy that wrote a
+        # scalar) must never be interpreted as "grant something" — the
+        # mapper coerces to an empty list and logs a warning so the
+        # corruption is observable in dashboards rather than silently
+        # turning a deny-all ACL into anything else.
+        owner = await _seed_user(uow_factory)
+        assert owner.id is not None
+
+        async with uow_factory() as uow:
+            saved = await uow.profiles.save(
+                Profile.create(
+                    user_id=owner.id,
+                    name=ProfileName("L"),
+                    allowed_library_ids=["lib_originaltttt"],
+                )
+            )
+
+        # Force a corrupted payload directly into the row (simulates
+        # an older release writing a non-list value).
+        assert saved.id is not None
+        await db_session.execute(
+            update(ProfileModel)
+            .where(ProfileModel.external_id == saved.id.value)
+            .values(allowed_library_ids='{"not": "a list"}')
+        )
+        await db_session.commit()
+
+        async with uow_factory() as uow:
+            after = await uow.profiles.find_by_id(saved.id)
+
+        assert after is not None
+        assert after.allowed_library_ids == []
 
     async def test_save_should_replace_allowed_library_ids_on_update(
         self, uow_factory: IdentityUnitOfWorkFactory
