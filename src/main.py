@@ -41,6 +41,30 @@ from src.modules.preferences.presentation.routes.preferences_routes import (
 )
 from src.modules.watch_progress.presentation.routes import progress_router
 
+#: Module paths whose ``@inject``-decorated callables are wired to the
+#: dependency-injector container. Extracted as a module constant so e2e
+#: tests can build a container with the same wiring without copying the
+#: list (drift between the two would mean tests miss DI-resolved deps).
+WIRED_ROUTE_MODULES: tuple[str, ...] = (
+    "src.modules.media.presentation.routes.catalog_routes",
+    "src.modules.media.presentation.routes.collection_routes",
+    "src.modules.media.presentation.routes.search_routes",
+    "src.modules.media.presentation.routes.enrichment_routes",
+    "src.modules.media.presentation.routes.featured_routes",
+    "src.modules.media.presentation.routes.movie_routes",
+    "src.modules.media.presentation.routes.people_routes",
+    "src.modules.media.presentation.routes.scan_routes",
+    "src.modules.media.presentation.routes.series_routes",
+    "src.modules.media.presentation.routes.stream_routes",
+    "src.modules.watch_progress.presentation.routes.progress_routes",
+    "src.modules.collections.presentation.routes.watchlist_routes",
+    "src.modules.collections.presentation.routes.custom_list_routes",
+    "src.modules.catalog_requests.presentation.routes.catalog_request_routes",
+    "src.modules.library.presentation.routes.library_routes",
+    "src.modules.preferences.presentation.routes.preferences_routes",
+    "src.modules.identity.presentation.routes.profile_routes",
+)
+
 
 def create_container() -> ApplicationContainer:
     """Create and configure the DI container.
@@ -73,27 +97,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Initialize DI container
     container = create_container()
-    container.wire(
-        modules=[
-            "src.modules.media.presentation.routes.catalog_routes",
-            "src.modules.media.presentation.routes.collection_routes",
-            "src.modules.media.presentation.routes.search_routes",
-            "src.modules.media.presentation.routes.enrichment_routes",
-            "src.modules.media.presentation.routes.featured_routes",
-            "src.modules.media.presentation.routes.movie_routes",
-            "src.modules.media.presentation.routes.people_routes",
-            "src.modules.media.presentation.routes.scan_routes",
-            "src.modules.media.presentation.routes.series_routes",
-            "src.modules.media.presentation.routes.stream_routes",
-            "src.modules.watch_progress.presentation.routes.progress_routes",
-            "src.modules.collections.presentation.routes.watchlist_routes",
-            "src.modules.collections.presentation.routes.custom_list_routes",
-            "src.modules.catalog_requests.presentation.routes.catalog_request_routes",
-            "src.modules.library.presentation.routes.library_routes",
-            "src.modules.preferences.presentation.routes.preferences_routes",
-            "src.modules.identity.presentation.routes.profile_routes",
-        ],
-    )
+    container.wire(modules=list(WIRED_ROUTE_MODULES))
     app.state.container = container
 
     # Initialize database
