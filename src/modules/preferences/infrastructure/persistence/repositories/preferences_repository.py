@@ -9,6 +9,7 @@ from src.modules.preferences.infrastructure.persistence.mappers import Preferenc
 from src.modules.preferences.infrastructure.persistence.models.preferences_model import (
     PreferencesModel,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class SQLAlchemyPreferencesRepository(PreferencesRepository):
@@ -21,14 +22,14 @@ class SQLAlchemyPreferencesRepository(PreferencesRepository):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def find_by_user_key(self, user_key: str) -> PlaybackPreferences | None:
+    async def find_by_profile_id(self, profile_id: ProfileId) -> PlaybackPreferences | None:
         """Map the persisted row (if any) back into a domain entity."""
-        model = await self._fetch_model(user_key)
+        model = await self._fetch_model(profile_id)
         return PreferencesMapper.to_entity(model) if model else None
 
     async def save(self, preferences: PlaybackPreferences) -> PlaybackPreferences:
         """Upsert the row; flush but leave the commit to the Unit of Work."""
-        existing = await self._fetch_model(preferences.user_key)
+        existing = await self._fetch_model(preferences.profile_id)
         if existing is None:
             model = PreferencesMapper.new_model(preferences)
             self._session.add(model)
@@ -41,9 +42,9 @@ class SQLAlchemyPreferencesRepository(PreferencesRepository):
         await self._session.refresh(model)
         return PreferencesMapper.to_entity(model)
 
-    async def _fetch_model(self, user_key: str) -> PreferencesModel | None:
+    async def _fetch_model(self, profile_id: ProfileId) -> PreferencesModel | None:
         stmt = select(PreferencesModel).where(
-            PreferencesModel.user_key == user_key,
+            PreferencesModel.profile_id == str(profile_id),
             PreferencesModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)

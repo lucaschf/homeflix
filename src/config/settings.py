@@ -279,6 +279,15 @@ class Settings(BaseSettings):  # type: ignore[misc]
         "mode (no cookie -> 401). Remove the env var once every consumer "
         "is sending the session cookie.",
     )
+    preferences_default_profile_id: str | None = Field(
+        default=None,
+        description="Optional fallback ``profile_id`` for the playback "
+        "preferences routes during the per-profile rollout. Same "
+        "semantics as ``watch_progress_default_profile_id`` — the "
+        "operator typically sets all *_default_profile_id env vars "
+        "together while the frontend is being migrated, then removes "
+        "them to enter strict mode.",
+    )
 
     # =========================================================================
     # Internationalization

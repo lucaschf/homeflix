@@ -6,8 +6,15 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class GetPreferencesInput:
+    """Input for ``GetPreferencesUseCase``."""
+
+    profile_id: str
+
+
+@dataclass(frozen=True)
 class PreferencesOutput:
-    """Current playback preferences for the user."""
+    """Current playback preferences for the profile."""
 
     audio_lang: str
     subtitle_lang: str
@@ -20,6 +27,7 @@ class PreferencesOutput:
 class UpdatePreferencesInput:
     """Partial update — only non-``None`` fields are applied."""
 
+    profile_id: str
     audio_lang: str | None = None
     subtitle_lang: str | None = None
     subtitle_mode: str | None = None
@@ -27,4 +35,4 @@ class UpdatePreferencesInput:
     speed: float | None = None
 
 
-__all__ = ["PreferencesOutput", "UpdatePreferencesInput"]
+__all__ = ["GetPreferencesInput", "PreferencesOutput", "UpdatePreferencesInput"]
