@@ -9,6 +9,8 @@ from src.modules.media.application.use_cases import GetMovieByIdUseCase
 from src.modules.media.domain.entities import Movie
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 class TestGetMovieByIdUseCase:
     """Tests for GetMovieByIdUseCase."""
@@ -17,6 +19,7 @@ class TestGetMovieByIdUseCase:
     async def test_should_return_movie_when_found(self):
         mocks = make_media_uow_mock()
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -39,6 +42,7 @@ class TestGetMovieByIdUseCase:
     async def test_should_return_formatted_duration(self):
         mocks = make_media_uow_mock()
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Test Movie",
             year=2020,
             duration=7200,
@@ -57,6 +61,7 @@ class TestGetMovieByIdUseCase:
     async def test_should_return_genres_as_strings(self):
         mocks = make_media_uow_mock()
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Test Movie",
             year=2020,
             duration=7200,
@@ -77,6 +82,7 @@ class TestGetMovieByIdUseCase:
     async def test_should_handle_optional_fields_as_none(self):
         mocks = make_media_uow_mock()
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Test Movie",
             year=2020,
             duration=7200,
@@ -112,6 +118,7 @@ class TestGetMovieByIdUseCase:
     async def test_should_call_repository_with_movie_id(self):
         mocks = make_media_uow_mock()
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Test Movie",
             year=2020,
             duration=7200,

@@ -43,6 +43,13 @@ class Series(AggregateRoot[SeriesId]):
     # Identity
     id: SeriesId | None = Field(default=None)
 
+    # Library scoping (the lib_xxx external id of the owning Library;
+    # held as ``str`` because Library lives in another bounded context
+    # and ADR-008 forbids the cross-BC import). Episodes inherit
+    # scoping through their parent Series — they do not carry their
+    # own ``library_id``.
+    library_id: str
+
     # Core info
     title: Title
     original_title: Title | None = None
@@ -199,6 +206,7 @@ class Series(AggregateRoot[SeriesId]):
         cls,
         title: str | Title,
         start_year: int | Year,
+        library_id: str,
         **kwargs: Any,
     ) -> Series:
         """Factory method with automatic ID generation.
@@ -206,6 +214,7 @@ class Series(AggregateRoot[SeriesId]):
         Args:
             title: Series title.
             start_year: First season year.
+            library_id: External id (``lib_xxx``) of the owning Library.
             **kwargs: Additional optional fields.
 
         Returns:
@@ -220,6 +229,7 @@ class Series(AggregateRoot[SeriesId]):
 
         series = cls(
             id=series_id,
+            library_id=library_id,
             title=title,
             start_year=start_year,
             **kwargs,

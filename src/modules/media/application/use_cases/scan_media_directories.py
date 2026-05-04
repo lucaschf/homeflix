@@ -82,9 +82,12 @@ class ScanMediaDirectoriesUseCase:
         movies = [f for f in scanned_files if f.media_type == MediaType.MOVIE]
         episodes = [f for f in scanned_files if f.media_type == MediaType.EPISODE]
 
-        movies_created, movies_updated, movie_errors = await self._process_movies(movies)
+        movies_created, movies_updated, movie_errors = await self._process_movies(
+            movies, library_id=input_dto.library_id
+        )
         episodes_created, episodes_updated, episode_errors = await self._process_episodes(
             episodes,
+            library_id=input_dto.library_id,
         )
 
         return ScanMediaOutput(
@@ -183,6 +186,8 @@ class ScanMediaDirectoriesUseCase:
     async def _process_movies(
         self,
         files: list[ScannedFile],
+        *,
+        library_id: str,
     ) -> tuple[int, int, list[str]]:
         """Process scanned movie files."""
         created = 0
@@ -195,7 +200,7 @@ class ScanMediaDirectoriesUseCase:
 
         for _base_name, paths in groups.items():
             try:
-                c, u = await self._process_movie_group(paths, by_path)
+                c, u = await self._process_movie_group(paths, by_path, library_id=library_id)
                 created += c
                 updated += u
             except Exception as e:
@@ -207,6 +212,8 @@ class ScanMediaDirectoriesUseCase:
         self,
         paths: list[str],
         by_path: dict[str, ScannedFile],
+        *,
+        library_id: str,
     ) -> tuple[int, int]:
         """Process a single group of movie file variants in its own UoW."""
         async with self._uow_factory() as uow:
@@ -214,7 +221,9 @@ class ScanMediaDirectoriesUseCase:
             if existing:
                 created, updated, events = await self._update_movie(uow, existing, paths, by_path)
             else:
-                created, updated, events = await self._create_movie(uow, paths, by_path)
+                created, updated, events = await self._create_movie(
+                    uow, paths, by_path, library_id=library_id
+                )
         await self._dispatch_events(events)
         return created, updated
 
@@ -270,6 +279,8 @@ class ScanMediaDirectoriesUseCase:
         uow: MediaUnitOfWork,
         paths: list[str],
         by_path: dict[str, ScannedFile],
+        *,
+        library_id: str,
     ) -> tuple[int, int, list[DomainEvent]]:
         """Create a new movie from a group of file variants."""
         first = by_path[paths[0]]
@@ -277,6 +288,7 @@ class ScanMediaDirectoriesUseCase:
         movie_id = MovieId.generate()
         movie = Movie(
             id=movie_id,
+            library_id=library_id,
             title=Title(first.title),
             year=Year(first.year or _current_year()),
             duration=Duration(0),
@@ -298,6 +310,8 @@ class ScanMediaDirectoriesUseCase:
     async def _process_episodes(
         self,
         files: list[ScannedFile],
+        *,
+        library_id: str,
     ) -> tuple[int, int, list[str]]:
         """Process scanned episode files."""
         created = 0
@@ -311,7 +325,7 @@ class ScanMediaDirectoriesUseCase:
 
         for series_name, series_files in by_series.items():
             try:
-                c, u = await self._process_series(series_name, series_files)
+                c, u = await self._process_series(series_name, series_files, library_id=library_id)
                 created += c
                 updated += u
             except Exception as e:
@@ -323,6 +337,8 @@ class ScanMediaDirectoriesUseCase:
         self,
         series_name: str,
         files: list[ScannedFile],
+        *,
+        library_id: str,
     ) -> tuple[int, int]:
         """Process all episodes of a single series in its own UoW."""
         created = 0
@@ -332,7 +348,7 @@ class ScanMediaDirectoriesUseCase:
             series = await uow.series.find_by_title(Title(series_name))
             if not series:
                 year = min((f.year for f in files if f.year), default=_current_year())
-                series = Series.create(title=series_name, start_year=year)
+                series = Series.create(title=series_name, start_year=year, library_id=library_id)
 
             ep_groups: dict[tuple[int, int], list[ScannedFile]] = defaultdict(list)
             for f in files:

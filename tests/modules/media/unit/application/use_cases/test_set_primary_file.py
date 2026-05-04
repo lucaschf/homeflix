@@ -16,10 +16,13 @@ from src.modules.media.domain.value_objects import (
 from src.shared_kernel.value_objects.file_path import FilePath
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _create_movie_with_variants() -> Movie:
     """Create a movie with multiple file variants."""
     movie = Movie.create(
+        library_id=_LIBRARY_ID,
         title="Inception",
         year=2010,
         duration=8880,
@@ -38,7 +41,7 @@ def _create_movie_with_variants() -> Movie:
 
 def _create_series_with_episode_variants() -> Series:
     """Create a series with one episode that has multiple file variants."""
-    series = Series.create(title="Breaking Bad", start_year=2008)
+    series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
     assert series.id is not None
     episode_id = EpisodeId.generate()
     episode = Episode(

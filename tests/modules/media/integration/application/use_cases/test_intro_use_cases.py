@@ -45,6 +45,8 @@ from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import
     SqlAlchemyMediaUnitOfWorkFactory,
 )
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _make_series_with_episode(*, duration_seconds: int = 2700) -> Series:
     sid = SeriesId.generate()
@@ -72,6 +74,7 @@ def _make_series_with_episode(*, duration_seconds: int = 2700) -> Series:
         episodes=[episode],
     )
     return Series(
+        library_id=_LIBRARY_ID,
         id=sid,
         title=Title("Test Series"),
         start_year=Year(2020),

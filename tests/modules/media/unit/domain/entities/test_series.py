@@ -7,6 +7,8 @@ from src.building_blocks.domain.errors import (
     DomainValidationException,
 )
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 class TestSeriesCreation:
     """Tests for Series instantiation."""
@@ -16,6 +18,7 @@ class TestSeriesCreation:
         from src.modules.media.domain.value_objects import Title, Year
 
         series = Series(
+            library_id=_LIBRARY_ID,
             title=Title("Breaking Bad"),
             start_year=Year(2008),
         )
@@ -31,6 +34,7 @@ class TestSeriesCreation:
         from src.modules.media.domain.value_objects import SeriesId
 
         series = Series.create(
+            library_id=_LIBRARY_ID,
             title="Breaking Bad",
             start_year=2008,
         )
@@ -44,6 +48,7 @@ class TestSeriesCreation:
         from src.modules.media.domain.value_objects import Title, Year
 
         series = Series(
+            library_id=_LIBRARY_ID,
             title=Title("Breaking Bad"),
             start_year=Year(2008),
             end_year=Year(2013),
@@ -59,6 +64,7 @@ class TestSeriesCreation:
 
         with pytest.raises(DomainValidationException, match="end_year"):
             Series(
+                library_id=_LIBRARY_ID,
                 title=Title("Breaking Bad"),
                 start_year=Year(2013),
                 end_year=Year(2008),
@@ -71,14 +77,14 @@ class TestSeriesSeasonManagement:
     def test_season_count_should_return_zero_when_empty(self):
         from src.modules.media.domain.entities import Series
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
 
         assert series.season_count == 0
 
     def test_total_episodes_should_return_zero_when_empty(self):
         from src.modules.media.domain.entities import Series
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
 
         assert series.total_episodes == 0
 
@@ -86,7 +92,7 @@ class TestSeriesSeasonManagement:
         from src.modules.media.domain.entities import Season, Series
         from src.modules.media.domain.value_objects import SeasonId
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
 
         season = Season(
             id=SeasonId.generate(),
@@ -102,7 +108,7 @@ class TestSeriesSeasonManagement:
         from src.modules.media.domain.entities import Season, Series
         from src.modules.media.domain.value_objects import SeasonId, SeriesId
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
 
         season = Season(
             id=SeasonId.generate(),
@@ -117,7 +123,7 @@ class TestSeriesSeasonManagement:
         from src.modules.media.domain.entities import Season, Series
         from src.modules.media.domain.value_objects import SeasonId
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
 
         season = Season(
             id=SeasonId.generate(),
@@ -133,7 +139,7 @@ class TestSeriesSeasonManagement:
     def test_should_return_none_when_season_not_found(self):
         from src.modules.media.domain.entities import Series
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
 
         found = series.get_season(99)
         assert found is None
@@ -149,12 +155,14 @@ class TestSeriesEquality:
         series_id = SeriesId.generate()
 
         series1 = Series(
+            library_id=_LIBRARY_ID,
             id=series_id,
             title=Title("Breaking Bad"),
             start_year=Year(2008),
         )
 
         series2 = Series(
+            library_id=_LIBRARY_ID,
             id=series_id,
             title=Title("Different"),
             start_year=Year(2010),
@@ -170,7 +178,7 @@ class TestSeriesEvents:
         from src.modules.media.domain.entities import Series
         from src.modules.media.domain.events import MediaCreatedEvent
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
 
         assert series.has_pending_events is True
 
@@ -185,7 +193,7 @@ class TestSeriesEvents:
     def test_should_add_and_pull_events(self):
         from src.modules.media.domain.entities import Series
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
 
         from dataclasses import dataclass
 
@@ -210,7 +218,7 @@ class TestSeriesImmutability:
     def test_should_reject_direct_attribute_assignment(self):
         from src.modules.media.domain.entities import Series
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
 
         with pytest.raises(DomainValidationException):
             series.start_year = 2020  # type: ignore[assignment, misc]
@@ -219,7 +227,7 @@ class TestSeriesImmutability:
         from src.modules.media.domain.entities import Season, Series
         from src.modules.media.domain.value_objects import SeasonId
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
         season = Season(
             id=SeasonId.generate(),
             series_id=series.id,
@@ -236,7 +244,7 @@ class TestSeriesImmutability:
         from src.modules.media.domain.entities import Season, Series
         from src.modules.media.domain.value_objects import SeasonId
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
         season = Season(
             id=SeasonId.generate(),
             series_id=series.id,
@@ -251,7 +259,7 @@ class TestSeriesImmutability:
         from src.modules.media.domain.entities import Season, Series
         from src.modules.media.domain.value_objects import SeasonId
 
-        series = Series.create(title="Breaking Bad", start_year=2008)
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
         season = Season(
             id=SeasonId.generate(),
             series_id=series.id,
@@ -283,7 +291,7 @@ class TestSeriesLogoLocalization:
             },
         }
         defaults.update(kwargs)
-        return Series(**defaults)
+        return Series(library_id=_LIBRARY_ID, **defaults)
 
     def test_returns_localized_logo_when_lang_has_one(self):
         series = self._series()

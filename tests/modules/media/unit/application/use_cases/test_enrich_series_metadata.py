@@ -32,9 +32,11 @@ from src.modules.media.domain.value_objects import (
 )
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _make_series(**kwargs: object) -> Series:
-    series = Series.create(title="Breaking Bad", start_year=2008, **kwargs)
+    series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008, **kwargs)
     assert series.id is not None
     season = Season(series_id=series.id, season_number=1)
     episode = Episode(
@@ -378,7 +380,9 @@ class TestEnrichSeriesByTmdbId:
 
     @pytest.mark.asyncio
     async def test_should_retry_with_cleaned_title(self) -> None:
-        series = Series.create(title="Breaking Bad 1080p BluRay", start_year=2008)
+        series = Series.create(
+            library_id=_LIBRARY_ID, title="Breaking Bad 1080p BluRay", start_year=2008
+        )
         mocks = make_media_uow_mock()
         mocks.series.find_by_id.return_value = series
         mocks.series.save.side_effect = lambda s: s

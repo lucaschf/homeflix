@@ -215,7 +215,9 @@ class LibraryScanScheduler:
             event_bus=self._event_bus,
         )
         try:
-            result = await use_case.execute(ScanMediaInput(directories=paths))
+            result = await use_case.execute(
+                ScanMediaInput(library_id=library_id, directories=paths)
+            )
         except Exception as exc:
             _logger.error(
                 "[scheduler] Scan failed",

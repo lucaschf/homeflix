@@ -29,6 +29,8 @@ from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 from tests.modules.media.unit.conftest import MediaUoWMocks, make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _audio_track(lang: str, *, index: int = 0) -> AudioTrack:
     return AudioTrack(
@@ -123,7 +125,7 @@ class TestScanMovies:
         files = [_movie_file("/movies/Inception.2010.1080p.mkv", "Inception", 2010)]
         use_case, _ = _make_use_case(scanner_results=files)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert isinstance(result, ScanMediaOutput)
         assert result.movies_created == 1
@@ -137,7 +139,7 @@ class TestScanMovies:
         ]
         use_case, _ = _make_use_case(scanner_results=files)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_created == 1
         assert result.movies_updated == 0
@@ -150,13 +152,14 @@ class TestScanMovies:
         ]
         use_case, _ = _make_use_case(scanner_results=files)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_created == 2
 
     @pytest.mark.asyncio
     async def test_should_update_existing_movie_with_new_variant(self) -> None:
         existing = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -177,7 +180,7 @@ class TestScanMovies:
         ]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_updated == 1
         assert result.movies_created == 0
@@ -186,7 +189,7 @@ class TestScanMovies:
     async def test_should_return_empty_when_no_files(self) -> None:
         use_case, _ = _make_use_case(scanner_results=[])
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_created == 0
         assert result.episodes_created == 0
@@ -203,7 +206,7 @@ class TestScanEpisodes:
         ]
         use_case, _ = _make_use_case(scanner_results=files)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.episodes_created == 1
 
@@ -216,7 +219,7 @@ class TestScanEpisodes:
         ]
         use_case, _ = _make_use_case(scanner_results=files)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.episodes_created == 3
 
@@ -228,7 +231,7 @@ class TestScanEpisodes:
         ]
         use_case, _ = _make_use_case(scanner_results=files)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.episodes_created == 2
 
@@ -240,7 +243,7 @@ class TestScanEpisodes:
         ]
         use_case, _ = _make_use_case(scanner_results=files)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_created == 1
         assert result.episodes_created == 1
@@ -253,6 +256,7 @@ class TestRescanResolutionUpgrade:
     @pytest.mark.asyncio
     async def test_should_upgrade_movie_unknown_resolution(self) -> None:
         existing = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -270,7 +274,7 @@ class TestRescanResolutionUpgrade:
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_updated == 1
         assert saved[0].files[0].resolution == Resolution("1080p")
@@ -278,6 +282,7 @@ class TestRescanResolutionUpgrade:
     @pytest.mark.asyncio
     async def test_should_not_overwrite_known_movie_resolution(self) -> None:
         existing = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -295,7 +300,7 @@ class TestRescanResolutionUpgrade:
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_updated == 0
         mocks.movies.save.assert_not_called()
@@ -303,6 +308,7 @@ class TestRescanResolutionUpgrade:
     @pytest.mark.asyncio
     async def test_should_skip_when_rescan_also_returns_no_resolution(self) -> None:
         existing = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -319,7 +325,7 @@ class TestRescanResolutionUpgrade:
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_updated == 0
         mocks.movies.save.assert_not_called()
@@ -333,7 +339,7 @@ class TestRescanResolutionUpgrade:
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
         use_case, _ = _make_use_case(scanner_results=files, probe_service=probe)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_created == 1
         probe.probe.assert_called_once_with("/movies/inception.mkv")
@@ -341,6 +347,7 @@ class TestRescanResolutionUpgrade:
     @pytest.mark.asyncio
     async def test_should_probe_when_existing_resolution_is_unknown(self) -> None:
         existing = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -365,7 +372,7 @@ class TestRescanResolutionUpgrade:
             probe_service=probe,
         )
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_updated == 1
         probe.probe.assert_called_once_with("/movies/inception.mkv")
@@ -376,6 +383,7 @@ class TestRescanResolutionUpgrade:
         self,
     ) -> None:
         existing = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -407,7 +415,7 @@ class TestRescanResolutionUpgrade:
             probe_service=probe,
         )
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_updated == 0
         probe.probe.assert_not_called()
@@ -425,14 +433,14 @@ class TestRescanResolutionUpgrade:
         files = [_movie_file("/movies/inception.1080p.mkv", "Inception", 2010, "1080p")]
         use_case, _ = _make_use_case(scanner_results=files, probe_service=probe)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_created == 1
         probe.probe.assert_called_once_with("/movies/inception.1080p.mkv")
 
     @pytest.mark.asyncio
     async def test_should_upgrade_episode_unknown_resolution(self) -> None:
-        series = Series.create(title="Show", start_year=2024)
+        series = Series.create(library_id=_LIBRARY_ID, title="Show", start_year=2024)
         assert series.id is not None
         episode = Episode(
             series_id=series.id,
@@ -472,7 +480,7 @@ class TestRescanResolutionUpgrade:
         ]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.episodes_updated == 1
         saved_episode = saved[0].seasons[0].episodes[0]
@@ -499,7 +507,7 @@ class TestTrackDetection:
         files = [_movie_file("/movies/Inception.mkv", "Inception", 2010, "1080p")]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_created == 1
         media_file = saved[0].files[0]
@@ -524,7 +532,7 @@ class TestTrackDetection:
         files = [_episode_file("/series/Anime/S01/Anime.S01E01.mkv")]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.episodes_created == 1
         ep_file = saved[0].seasons[0].episodes[0].files[0]
@@ -536,6 +544,7 @@ class TestTrackDetection:
     @pytest.mark.asyncio
     async def test_should_backfill_empty_tracks_on_rescan(self) -> None:
         existing = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -559,7 +568,7 @@ class TestTrackDetection:
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_updated == 1
         media_file = saved[0].files[0]
@@ -570,6 +579,7 @@ class TestTrackDetection:
     @pytest.mark.asyncio
     async def test_should_not_overwrite_existing_tracks_on_rescan(self) -> None:
         existing = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -596,7 +606,7 @@ class TestTrackDetection:
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_updated == 0
         probe.probe.assert_not_called()
@@ -625,7 +635,7 @@ class TestTrackDetection:
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, "1080p")]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
 
-        result = await use_case.execute(ScanMediaInput())
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_created == 1
         media_file = saved[0].files[0]
@@ -640,3 +650,63 @@ class TestTrackDetection:
         assert external[0].language == LanguageCode("pt")
         assert external[0].index == 1
         assert external[0].file_path == FilePath("/movies/inception.pt.srt")
+
+
+@pytest.mark.unit
+class TestScanLibraryIdPropagation:
+    """The scan input's ``library_id`` must reach every saved entity.
+
+    The catalog is filtered per-profile downstream by ``library_id``,
+    so a regression that drops the value during scan would un-scope
+    the entire newly-created catalog.
+    """
+
+    @pytest.mark.asyncio
+    async def test_movie_save_carries_input_library_id(self) -> None:
+        saved: list[Movie] = []
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.return_value = None
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
+        mocks.series.find_by_title.return_value = None
+
+        files = [_movie_file("/movies/Inception.2010.1080p.mkv", "Inception", 2010)]
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
+
+        await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert len(saved) == 1
+        assert saved[0].library_id == _LIBRARY_ID
+
+    @pytest.mark.asyncio
+    async def test_series_save_carries_input_library_id(self) -> None:
+        saved: list[Series] = []
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.return_value = None
+        mocks.series.find_by_title.return_value = None
+        mocks.series.save.side_effect = lambda s: saved.append(s) or s
+
+        files = [_episode_file("/series/Show/S01/Show.S01E01.mkv")]
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
+
+        await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert len(saved) == 1
+        assert saved[0].library_id == _LIBRARY_ID
+
+    @pytest.mark.asyncio
+    async def test_distinct_library_id_propagates_to_movie(self) -> None:
+        """Passing a non-default library_id reaches the saved Movie."""
+        saved: list[Movie] = []
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.return_value = None
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
+        mocks.series.find_by_title.return_value = None
+
+        files = [_movie_file("/movies/Inception.2010.1080p.mkv", "Inception", 2010)]
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
+
+        other_library = "lib_otherlibrary"
+        await use_case.execute(ScanMediaInput(library_id=other_library))
+
+        assert len(saved) == 1
+        assert saved[0].library_id == other_library

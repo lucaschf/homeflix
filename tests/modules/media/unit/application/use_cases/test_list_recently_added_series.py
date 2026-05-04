@@ -11,9 +11,11 @@ from src.modules.media.application.use_cases import ListRecentlyAddedSeriesUseCa
 from src.modules.media.domain.entities import Series
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _make_series(title: str = "Test Series", year: int = 2020) -> Series:
-    return Series.create(title=title, start_year=year)
+    return Series.create(library_id=_LIBRARY_ID, title=title, start_year=year)
 
 
 class TestListRecentlyAddedSeriesUseCase:

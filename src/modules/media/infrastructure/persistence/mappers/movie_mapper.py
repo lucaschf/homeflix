@@ -61,6 +61,7 @@ class MovieMapper:
         primary = entity.primary_file
         model = MovieModel(
             external_id=str(entity.id),
+            library_id=entity.library_id,
             title=entity.title.value,
             original_title=entity.original_title.value if entity.original_title else None,
             year=entity.year.value,
@@ -153,6 +154,7 @@ class MovieMapper:
 
         return Movie(
             id=MovieId(model.external_id),
+            library_id=model.library_id,
             title=Title(model.title),
             original_title=Title(model.original_title) if model.original_title else None,
             year=Year(model.year),
@@ -195,6 +197,9 @@ class MovieMapper:
             The updated MovieModel.
         """
         primary = entity.primary_file
+        # ``library_id`` is the immutable owning-library reference; the
+        # scanner picks it once at creation time and never changes it,
+        # so update_model deliberately leaves it alone.
         model.title = entity.title.value
         model.original_title = entity.original_title.value if entity.original_title else None
         model.year = entity.year.value

@@ -12,6 +12,8 @@ from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects.cast_member import CastMember
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _make_movie(
     title: str = "Test Movie",
@@ -19,6 +21,7 @@ def _make_movie(
     cast: list[CastMember] | None = None,
 ) -> Movie:
     movie = Movie.create(
+        library_id=_LIBRARY_ID,
         title=title,
         year=year,
         duration=7200,

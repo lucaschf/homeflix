@@ -13,9 +13,11 @@ from src.modules.media.domain.entities import Series
 from src.modules.media.domain.value_objects import SeriesId, TmdbId
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _series(*, title: str, tmdb_id: int | None) -> Series:
-    series = Series.create(title=title, start_year=2010)
+    series = Series.create(library_id=_LIBRARY_ID, title=title, start_year=2010)
     return series.with_updates(tmdb_id=TmdbId(tmdb_id)) if tmdb_id is not None else series
 
 

@@ -10,9 +10,14 @@ class ScanMediaInput:
     """Input for media directory scanning.
 
     Attributes:
-        directories: Directories to scan. If empty, uses settings defaults.
+        library_id: External id (``lib_xxx``) of the owning library.
+            Every Movie/Series the scan creates inherits this value
+            so the catalog can be filtered per-profile downstream.
+        directories: Directories to scan within the library. Empty
+            means the caller already validated there's nothing to do.
     """
 
+    library_id: str
     directories: list[FilePath] = field(default_factory=list)
 
 

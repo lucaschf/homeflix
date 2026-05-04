@@ -31,9 +31,12 @@ from src.modules.media.infrastructure.streaming.thumbnail_service import Thumbna
 if TYPE_CHECKING:
     from pathlib import Path
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _make_movie(file_path: str = "/media/movies/inception/inception.mkv") -> Movie:
     return Movie.create(
+        library_id=_LIBRARY_ID,
         title="Inception",
         year=2010,
         duration=8880,

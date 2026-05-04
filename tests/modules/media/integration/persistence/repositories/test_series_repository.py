@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.media.domain.entities import Episode, Season, Series
@@ -25,7 +26,11 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
+from src.modules.media.infrastructure.persistence.models import SeriesModel
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemySeriesRepository
+
+_LIBRARY_ID = "lib_test12345678"
+_LIBRARY_ID_OTHER = "lib_otherlibrary"
 
 
 def _create_episode(
@@ -84,6 +89,7 @@ def _create_series(
     sid = series_id or SeriesId.generate()
     seasons = [_create_season(sid, i + 1, episodes_per_season) for i in range(season_count)]
     return Series(
+        library_id=_LIBRARY_ID,
         id=sid,
         title=Title(title),
         start_year=Year(start_year),
@@ -167,6 +173,7 @@ class TestSQLAlchemySeriesRepository:
         await repo.save(series)
 
         updated = Series(
+            library_id=_LIBRARY_ID,
             id=series.id,
             title=Title("Updated Title"),
             start_year=series.start_year,
@@ -285,6 +292,7 @@ class TestSQLAlchemySeriesRepository:
             episodes=[episode],
         )
         series = Series(
+            library_id=_LIBRARY_ID,
             id=series_id,
             title=Title("My Show"),
             start_year=Year(2020),
@@ -348,6 +356,7 @@ class TestSQLAlchemySeriesRepository:
         # Add a second season
         new_season = _create_season(series.id, season_number=2, episode_count=2)  # type: ignore[arg-type]
         updated_series = Series(
+            library_id=_LIBRARY_ID,
             id=series.id,
             title=series.title,
             start_year=series.start_year,
@@ -366,6 +375,7 @@ class TestSQLAlchemySeriesRepository:
 
         # Remove the second season
         updated_series = Series(
+            library_id=_LIBRARY_ID,
             id=series.id,
             title=series.title,
             start_year=series.start_year,
@@ -423,6 +433,7 @@ class TestSQLAlchemySeriesRepository:
             episodes=[*saved.seasons[0].episodes, new_episode],
         )
         updated_series = Series(
+            library_id=_LIBRARY_ID,
             id=saved.id,
             title=saved.title,
             start_year=saved.start_year,
@@ -455,6 +466,7 @@ class TestSQLAlchemySeriesRepository:
             episodes=[saved.seasons[0].episodes[0]],
         )
         updated_series = Series(
+            library_id=_LIBRARY_ID,
             id=saved.id,
             title=saved.title,
             start_year=saved.start_year,
@@ -497,6 +509,7 @@ class TestSQLAlchemySeriesRepository:
             episodes=[updated_episode],
         )
         updated_series = Series(
+            library_id=_LIBRARY_ID,
             id=saved.id,
             title=saved.title,
             start_year=saved.start_year,
@@ -1049,6 +1062,7 @@ def _series_with_episode_paths(
         episodes=episodes,
     )
     return Series(
+        library_id=_LIBRARY_ID,
         id=sid,
         title=Title(title),
         start_year=Year(start_year),
@@ -1147,6 +1161,7 @@ def _series_with_intro(
         intro_detection_error=detection_error,
     )
     return Series(
+        library_id=_LIBRARY_ID,
         id=sid,
         title=Title(series_title),
         start_year=Year(2020),
@@ -1470,3 +1485,72 @@ class TestUpdateEpisodeIntro:
         updated = await repo.update_episode_intro(EpisodeId.generate(), None)
 
         assert updated is False
+
+
+@pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryLibraryIsolation:
+    """Cross-library isolation at the persistence layer.
+
+    The repository doesn't filter by ``library_id`` itself yet — that's
+    a higher-layer responsibility wired in PR 6b — but the column has
+    to persist accurately so a manual filter never leaks rows across
+    libraries. Mirrors the cross-key isolation tests in
+    ``tests/modules/watch_progress/integration/persistence/repositories/``.
+    """
+
+    async def test_two_libraries_can_coexist_and_be_filtered_by_column(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+
+        # Library A: two series
+        await repo.save(_create_series(title="A1"))
+        await repo.save(_create_series(title="A2"))
+
+        # Library B (different library_id): one series
+        series_b = Series(
+            library_id=_LIBRARY_ID_OTHER,
+            id=SeriesId.generate(),
+            title=Title("B1"),
+            start_year=Year(2024),
+        )
+        await repo.save(series_b)
+
+        # Direct queries by library_id never leak across.
+        rows_a = (
+            (
+                await db_session.execute(
+                    select(SeriesModel).where(SeriesModel.library_id == _LIBRARY_ID)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        rows_b = (
+            (
+                await db_session.execute(
+                    select(SeriesModel).where(SeriesModel.library_id == _LIBRARY_ID_OTHER)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        assert {r.title for r in rows_a} == {"A1", "A2"}
+        assert {r.title for r in rows_b} == {"B1"}
+        assert all(r.library_id == _LIBRARY_ID for r in rows_a)
+        assert all(r.library_id == _LIBRARY_ID_OTHER for r in rows_b)
+
+    async def test_library_id_persists_through_save_and_reload(
+        self, db_session: AsyncSession
+    ) -> None:
+        """``library_id`` round-trips through save + find_by_id."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _create_series(title="Scoped")
+
+        await repo.save(series)
+        assert series.id is not None
+        found = await repo.find_by_id(series.id)
+
+        assert found is not None
+        assert found.library_id == _LIBRARY_ID

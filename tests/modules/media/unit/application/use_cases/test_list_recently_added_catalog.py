@@ -13,10 +13,13 @@ from src.modules.media.application.use_cases import ListRecentlyAddedCatalogUseC
 from src.modules.media.domain.entities import Movie, Series
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _movie_at(title: str, when: datetime) -> Movie:
     """Build a movie pinned to a specific ``created_at`` for the merge test."""
     return Movie.create(
+        library_id=_LIBRARY_ID,
         title=title,
         year=2020,
         duration=7200,
@@ -28,7 +31,9 @@ def _movie_at(title: str, when: datetime) -> Movie:
 
 def _series_at(title: str, when: datetime) -> Series:
     """Build a series pinned to a specific ``created_at`` for the merge test."""
-    return Series.create(title=title, start_year=2020).with_updates(created_at=when)
+    return Series.create(library_id=_LIBRARY_ID, title=title, start_year=2020).with_updates(
+        created_at=when
+    )
 
 
 class TestListRecentlyAddedCatalogUseCase:
