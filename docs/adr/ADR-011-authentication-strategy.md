@@ -1,6 +1,6 @@
 # ADR-011: Authentication Strategy — Server-Side Session via HttpOnly Cookie
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-05-03
 **Deciders:** Lucas Cristovam
 **Technical Story:** Descendente direto do ADR-010 — define a estratégia de transport e storage de sessão para o bounded context `identity` introduzido lá.
@@ -212,3 +212,4 @@ Browsers continuam autenticando via cookie; clients que não suportam cookies (e
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-05-03 | Lucas Cristovam | Criação inicial |
+| 2026-05-03 | Lucas Cristovam | Promovido para `Aceito` após implementação do auth backend e e2e tests do fluxo cookie + DB session (login/logout/Set-Cookie/`Max-Age=0`). |
