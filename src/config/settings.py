@@ -288,6 +288,14 @@ class Settings(BaseSettings):  # type: ignore[misc]
         "together while the frontend is being migrated, then removes "
         "them to enter strict mode.",
     )
+    collections_default_profile_id: str | None = Field(
+        default=None,
+        description="Optional fallback ``profile_id`` for the collections "
+        "routes (``/custom-lists``, ``/watchlist``) during the per-profile "
+        "rollout. Same semantics as ``watch_progress_default_profile_id`` — "
+        "in practice the operator sets both together while the frontend "
+        "is being migrated, then removes both to enter strict mode.",
+    )
 
     # =========================================================================
     # Internationalization

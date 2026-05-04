@@ -19,11 +19,14 @@ from src.modules.collections.application.ports import MediaLookupPort
 from src.modules.collections.application.use_cases import GetWatchlistUseCase
 from src.modules.collections.domain.entities import WatchlistItem
 from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 if TYPE_CHECKING:
     from tests.modules.collections.unit.application.use_cases.conftest import (
         MediaSummaryFactory,
     )
+
+_PROFILE_ID = ProfileId("prf_test12345678")
 
 
 @pytest.mark.unit
@@ -36,6 +39,7 @@ class TestGetWatchlistUseCase:
     ) -> None:
         items = [
             WatchlistItem.create(
+                profile_id=_PROFILE_ID,
                 media_id="mov_abc123def456",
                 media_type=CollectionMediaType.MOVIE,
             ),
@@ -52,7 +56,7 @@ class TestGetWatchlistUseCase:
             media_lookup=media_lookup,
         )
 
-        result = await use_case.execute(GetWatchlistInput())
+        result = await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value))
 
         assert len(result) == 1
         assert isinstance(result[0], WatchlistItemOutput)
@@ -67,7 +71,7 @@ class TestGetWatchlistUseCase:
             media_lookup=AsyncMock(spec=MediaLookupPort),
         )
 
-        result = await use_case.execute(GetWatchlistInput())
+        result = await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value))
 
         assert result == []
 
@@ -75,6 +79,7 @@ class TestGetWatchlistUseCase:
     async def test_should_skip_missing_media(self) -> None:
         items = [
             WatchlistItem.create(
+                profile_id=_PROFILE_ID,
                 media_id="mov_missing00000",
                 media_type=CollectionMediaType.MOVIE,
             ),
@@ -87,7 +92,7 @@ class TestGetWatchlistUseCase:
             media_lookup=make_media_lookup_mock(),  # no summaries
         )
 
-        result = await use_case.execute(GetWatchlistInput())
+        result = await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value))
 
         assert result == []
 
@@ -99,10 +104,12 @@ class TestGetWatchlistUseCase:
     ) -> None:
         items = [
             WatchlistItem.create(
+                profile_id=_PROFILE_ID,
                 media_id="mov_abc123def456",
                 media_type=CollectionMediaType.MOVIE,
             ),
             WatchlistItem.create(
+                profile_id=_PROFILE_ID,
                 media_id="ser_xyz789abc123",
                 media_type=CollectionMediaType.SERIES,
             ),
@@ -120,7 +127,7 @@ class TestGetWatchlistUseCase:
             media_lookup=media_lookup,
         )
 
-        result = await use_case.execute(GetWatchlistInput())
+        result = await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value))
 
         assert len(result) == 2
         assert result[0].title == "Inception"
@@ -135,9 +142,9 @@ class TestGetWatchlistUseCase:
             media_lookup=AsyncMock(spec=MediaLookupPort),
         )
 
-        await use_case.execute(GetWatchlistInput(limit=25))
+        await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value, limit=25))
 
-        mocks.watchlist.list_all.assert_called_once_with(limit=25)
+        mocks.watchlist.list_all.assert_called_once_with(_PROFILE_ID, limit=25)
 
     @pytest.mark.asyncio
     async def test_should_pass_language_to_media_lookup(
@@ -145,6 +152,7 @@ class TestGetWatchlistUseCase:
     ) -> None:
         items = [
             WatchlistItem.create(
+                profile_id=_PROFILE_ID,
                 media_id="mov_abc123def456",
                 media_type=CollectionMediaType.MOVIE,
             ),
@@ -159,7 +167,7 @@ class TestGetWatchlistUseCase:
             media_lookup=media_lookup,
         )
 
-        await use_case.execute(GetWatchlistInput(lang="pt-BR"))
+        await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value, lang="pt-BR"))
 
         media_lookup.get_many.assert_awaited_once_with(
             ["mov_abc123def456"],

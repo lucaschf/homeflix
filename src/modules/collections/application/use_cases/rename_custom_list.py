@@ -7,39 +7,25 @@ from src.modules.collections.application.dtos import (
     RenameCustomListInput,
 )
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class RenameCustomListUseCase:
-    """Rename an existing custom list."""
+    """Rename an existing custom list owned by the caller's profile."""
 
     def __init__(self, uow_factory: CollectionsUnitOfWorkFactory) -> None:
-        """Initialize the use case.
-
-        Args:
-            uow_factory: Factory that opens a fresh collections Unit of Work.
-        """
         self._uow_factory = uow_factory
 
     async def execute(self, input_dto: RenameCustomListInput) -> CustomListOutput:
-        """Execute the use case.
-
-        Args:
-            input_dto: Contains list_id and new name.
-
-        Returns:
-            CustomListOutput with the updated list data.
-
-        Raises:
-            ResourceNotFoundException: If the list does not exist.
-            BusinessRuleViolationException: If the name is already taken.
-        """
+        """Rename the list, enforcing per-profile uniqueness."""
+        profile_id = ProfileId(input_dto.profile_id)
         async with self._uow_factory() as uow:
-            custom_list = await uow.custom_lists.find_by_id(input_dto.list_id)
+            custom_list = await uow.custom_lists.find_by_id(input_dto.list_id, profile_id)
             if not custom_list:
                 raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
 
             new_name = input_dto.name.strip()
-            existing = await uow.custom_lists.find_by_name(new_name)
+            existing = await uow.custom_lists.find_by_name(new_name, profile_id)
             if existing and str(existing.id) != input_dto.list_id:
                 raise BusinessRuleViolationException(
                     message=f"A list named '{new_name}' already exists",

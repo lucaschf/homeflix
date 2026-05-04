@@ -1,37 +1,20 @@
 """CheckWatchlistUseCase - Check if a media item is in the watchlist."""
 
+from src.modules.collections.application.dtos import CheckWatchlistInput
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class CheckWatchlistUseCase:
-    """Check whether a media item exists in the user's watchlist.
-
-    Example:
-        >>> use_case = CheckWatchlistUseCase(uow_factory)
-        >>> in_list = await use_case.execute("mov_abc123def456")
-        >>> in_list
-        True
-    """
+    """Check whether a media item is in the caller's watchlist."""
 
     def __init__(self, uow_factory: CollectionsUnitOfWorkFactory) -> None:
-        """Initialize the use case.
-
-        Args:
-            uow_factory: Factory that opens a fresh collections Unit of Work.
-        """
         self._uow_factory = uow_factory
 
-    async def execute(self, media_id: str) -> bool:
-        """Execute the use case.
-
-        Args:
-            media_id: External ID of the media to check.
-
-        Returns:
-            True if the item is in the watchlist, False otherwise.
-        """
+    async def execute(self, input_dto: CheckWatchlistInput) -> bool:
+        """Return True if the profile has the item on its watchlist."""
         async with self._uow_factory() as uow:
-            return await uow.watchlist.exists(media_id)
+            return await uow.watchlist.exists(input_dto.media_id, ProfileId(input_dto.profile_id))
 
 
 __all__ = ["CheckWatchlistUseCase"]

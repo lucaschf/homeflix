@@ -10,6 +10,7 @@ from src.modules.collections.application.dtos import (
 from src.modules.collections.application.ports import MediaLookupPort
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
 from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _logger = logging.getLogger(__name__)
 
@@ -56,12 +57,13 @@ class GetCustomListItemsUseCase:
         Raises:
             ResourceNotFoundException: If the list does not exist.
         """
+        profile_id = ProfileId(input_dto.profile_id)
         async with self._uow_factory() as uow:
-            custom_list = await uow.custom_lists.find_by_id(input_dto.list_id)
+            custom_list = await uow.custom_lists.find_by_id(input_dto.list_id, profile_id)
             if not custom_list:
                 raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
 
-            items = await uow.custom_lists.list_items(input_dto.list_id)
+            items = await uow.custom_lists.list_items(input_dto.list_id, profile_id)
         _logger.info("Found %d items in custom list %s", len(items), input_dto.list_id)
 
         if not items:

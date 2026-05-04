@@ -11,14 +11,14 @@ from src.infrastructure.persistence.base import Base
 class CustomListModel(Base):
     """SQLAlchemy model for CustomList.
 
-    Maps to the 'custom_lists' table. One row per user-created list.
+    Maps to the 'custom_lists' table. One row per (profile, list).
 
-    Attributes:
-        name: Display name of the list.
-        item_count: Number of items in the list.
-        items: Relationship to CustomListItemModel.
+    ``profile_id`` is stored as the prefixed external ID (``prf_xxx``)
+    so every list query can scope by profile without joining ``profiles``.
+    Cross-BC references travel as strings, not UUIDs (per ADR-008).
     """
 
+    profile_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     item_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
@@ -31,7 +31,8 @@ class CustomListModel(Base):
     def __repr__(self) -> str:
         """Return string representation."""
         return (
-            f"<CustomListModel(id={self.id}, name={self.name!r}, " f"item_count={self.item_count})>"
+            f"<CustomListModel(id={self.id}, profile_id={self.profile_id!r}, "
+            f"name={self.name!r}, item_count={self.item_count})>"
         )
 
 
@@ -40,12 +41,10 @@ class CustomListItemModel(Base):
 
     Maps to the 'custom_list_items' table. One row per item in a list.
 
-    Attributes:
-        custom_list_id: Foreign key to the parent custom list (internal ID).
-        media_id: External ID of the media (mov_xxx or ser_xxx).
-        media_type: Type of media ("movie" or "series").
-        position: Ordering position within the list.
-        added_at: Timestamp when the item was added.
+    Items inherit profile scoping from their parent ``CustomListModel``
+    via the ``custom_list_id`` FK; the repository joins on the parent
+    to enforce per-profile isolation rather than denormalising
+    ``profile_id`` here.
     """
 
     custom_list_id: Mapped[int] = mapped_column(

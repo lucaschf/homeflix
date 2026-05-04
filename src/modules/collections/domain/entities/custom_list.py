@@ -19,6 +19,7 @@ from src.modules.collections.domain.value_objects import (
 from src.shared_kernel.value_objects import (
     CollectionMediaType,  # noqa: TCH001 — runtime for Pydantic
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId  # noqa: TCH001
 
 MAX_LISTS = 10
 MAX_ITEMS_PER_LIST = 100
@@ -95,6 +96,7 @@ class CustomList(AggregateRoot[ListId]):
 
     id: ListId | None = Field(default=None)
 
+    profile_id: ProfileId
     name: ListName
     item_count: int = 0
 
@@ -105,10 +107,13 @@ class CustomList(AggregateRoot[ListId]):
         return ListName(v) if isinstance(v, str) else v
 
     @classmethod
-    def create(cls, name: str | ListName) -> CustomList:
+    def create(cls, profile_id: ProfileId, name: str | ListName) -> CustomList:
         """Factory method with automatic ID generation.
 
         Args:
+            profile_id: Owning profile (``prf_xxx``). Every list is scoped
+                to a single profile so multi-profile households keep
+                their lists separate.
             name: Display name for the list.
 
         Returns:
@@ -116,6 +121,7 @@ class CustomList(AggregateRoot[ListId]):
         """
         return cls(
             id=ListId.generate(),
+            profile_id=profile_id,
             name=name,
             item_count=0,
         )

@@ -12,41 +12,32 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ToggleWatchlistInput:
-    """Input for ToggleWatchlistUseCase.
+    """Input for ToggleWatchlistUseCase."""
 
-    Attributes:
-        media_id: External ID of the media (mov_xxx or ser_xxx).
-        media_type: Type of media (movie or series).
-    """
-
+    profile_id: str
     media_id: str
     media_type: CollectionMediaType
 
 
 @dataclass(frozen=True)
 class ToggleWatchlistOutput:
-    """Output for ToggleWatchlistUseCase.
-
-    Attributes:
-        media_id: External ID of the media.
-        added: True if added to list, False if removed.
-    """
+    """Output for ToggleWatchlistUseCase."""
 
     media_id: str
     added: bool
 
 
 @dataclass(frozen=True)
-class WatchlistItemOutput:
-    """Output representing a single watchlist item with media metadata.
+class CheckWatchlistInput:
+    """Input for CheckWatchlistUseCase."""
 
-    Attributes:
-        media_id: External ID of the media.
-        media_type: Type of media.
-        title: Display title (localized).
-        poster_path: URL to poster image.
-        added_at: ISO timestamp when added to watchlist.
-    """
+    profile_id: str
+    media_id: str
+
+
+@dataclass(frozen=True)
+class WatchlistItemOutput:
+    """Output representing a single watchlist item with media metadata."""
 
     media_id: str
     media_type: CollectionMediaType
@@ -61,16 +52,7 @@ class WatchlistItemOutput:
         title: str,
         poster_path: str | None,
     ) -> WatchlistItemOutput:
-        """Create output DTO from a WatchlistItem entity with metadata.
-
-        Args:
-            entity: The WatchlistItem domain entity.
-            title: Localized display title.
-            poster_path: URL to poster image.
-
-        Returns:
-            WatchlistItemOutput DTO.
-        """
+        """Create output DTO from a WatchlistItem entity with metadata."""
         return cls(
             media_id=entity.media_id,
             media_type=entity.media_type,
@@ -82,12 +64,8 @@ class WatchlistItemOutput:
 
 @dataclass(frozen=True)
 class GetWatchlistInput:
-    """Input for GetWatchlistUseCase.
+    """Input for GetWatchlistUseCase."""
 
-    Attributes:
-        limit: Maximum number of items to return.
-        lang: Language code for localized metadata.
-    """
-
+    profile_id: str
     limit: int = 100
     lang: str = "en"
