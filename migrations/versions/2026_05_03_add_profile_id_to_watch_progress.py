@@ -87,19 +87,38 @@ def upgrade() -> None:
             {"pid": default_profile},
         )
 
-    # Step 3: tighten the column + replace the legacy media_id unique with a
-    # composite (profile_id, media_id) unique so multiple profiles can watch
-    # the same title independently.
+    # Step 3: tighten the column and replace the legacy single-column
+    # uniqueness with a composite ``(profile_id, media_id)`` so multiple
+    # profiles can watch the same title independently.
+    #
+    # The legacy model had ``media_id`` declared with ``unique=True,
+    # index=True``. How that resolved to DDL depends on the dialect:
+    #
+    # - SQLite: an implicit UNIQUE inside the CREATE TABLE plus a
+    #   separate ``ix_watch_progresses_media_id`` index. ``batch_alter_table``
+    #   on SQLite does a table-rebuild against the current model, so the
+    #   legacy UNIQUE is effectively dropped automatically; the explicit
+    #   ``DROP INDEX IF EXISTS`` here only handles the secondary index.
+    # - Postgres: a named UNIQUE constraint plus the index. ``DROP INDEX
+    #   IF EXISTS`` is necessary; the UNIQUE is dropped by name. We don't
+    #   know what alembic auto-named the constraint historically, so the
+    #   ``execute(...)`` block below tries the conventional names.
+    op.execute("DROP INDEX IF EXISTS ix_watch_progresses_media_id")
+    if op.get_context().dialect.name == "postgresql":
+        op.execute(
+            "ALTER TABLE watch_progresses "
+            "DROP CONSTRAINT IF EXISTS watch_progresses_media_id_key"
+        )
+        op.execute(
+            "ALTER TABLE watch_progresses " "DROP CONSTRAINT IF EXISTS uq_watch_progresses_media_id"
+        )
+
     with op.batch_alter_table("watch_progresses") as batch_op:
         batch_op.alter_column(
             "profile_id",
             existing_type=sa.String(length=50),
             nullable=False,
         )
-        # The legacy schema declared media_id as UNIQUE; SQLAlchemy named the
-        # implicit constraint after the column but the original column had
-        # ``unique=True`` so dialects vary. Drop both shapes defensively.
-        batch_op.drop_index("ix_watch_progresses_media_id")
         batch_op.create_index(
             "ix_watch_progresses_media_id",
             ["media_id"],

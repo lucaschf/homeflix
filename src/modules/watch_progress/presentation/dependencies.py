@@ -14,8 +14,6 @@ strictly — at that point we can also collapse this dep into a direct
 re-export of ``identity.presentation.dependencies.get_current_profile``.
 """
 
-from contextlib import suppress
-
 from fastapi import Request
 
 from src.config.settings import get_settings
@@ -30,21 +28,25 @@ async def resolve_profile_id(request: Request) -> str:
     1. Session cookie present → look up the matching access_tokens row
        in the identity BC's UoW. If a ``current_profile_id`` exists,
        return it.
-    2. No usable cookie + ``watch_progress_default_profile_id`` setting
-       configured → return that fallback (transition mode).
+    2. No usable cookie or unknown token + ``watch_progress_default_profile_id``
+       setting configured → return that fallback (transition mode).
     3. Otherwise → raise :class:`NoActiveSessionError` (HTTP 401).
+
+    Errors raised by the identity UoW (container not wired, DB
+    unreachable, etc.) propagate as 500 by design — silently falling
+    back to anonymous on real misconfigurations would mask bugs and
+    let authenticated requests be served as anonymous data.
     """
     settings = get_settings()
 
     token = request.cookies.get(settings.session_cookie_name)
     if token is not None:
-        with suppress(Exception):
-            container = request.app.state.container
-            factory = container.identity.identity_unit_of_work_factory()
-            async with factory() as uow:
-                snap = await uow.access_tokens.get_by_token(token)
-            if snap is not None and snap.current_profile_id is not None:
-                return str(snap.current_profile_id)
+        container = request.app.state.container
+        factory = container.identity.identity_unit_of_work_factory()
+        async with factory() as uow:
+            snap = await uow.access_tokens.get_by_token(token)
+        if snap is not None and snap.current_profile_id is not None:
+            return str(snap.current_profile_id)
 
     if settings.watch_progress_default_profile_id:
         return settings.watch_progress_default_profile_id
