@@ -42,9 +42,16 @@ class WatchlistItemMapper:
 
     @staticmethod
     def update_model(model: WatchlistItemModel, entity: WatchlistItem) -> WatchlistItemModel:
-        """Update mutable fields; ``profile_id`` is not touched."""
-        model.media_id = entity.media_id
-        model.media_type = entity.media_type
+        """Refresh the mutable fields on restore (soft-delete reactivation).
+
+        ``profile_id`` and ``media_id`` form the composite uniqueness
+        key (``uq_watchlist_items_profile_media``); the caller used
+        that pair to locate ``model`` in the first place, so any
+        attempt to overwrite them here would either be a no-op or
+        smuggle in a unique-constraint violation. ``media_type`` is
+        a property of the media itself, not of the watchlist entry,
+        and is also left untouched.
+        """
         model.added_at = entity.added_at
         return model
 
