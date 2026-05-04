@@ -6,12 +6,14 @@ ownership isolation between distinct users, the can't-delete-last
 invariant, and the session-row update on profile switch.
 """
 
+import uuid
 from collections.abc import Awaitable, Callable
 
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.modules.identity.domain.value_objects.profile_id import ProfileId
 from src.modules.identity.infrastructure.persistence.models.access_token_model import (
     AccessTokenModel,
 )
@@ -34,7 +36,8 @@ async def _login(client: AsyncClient, user: SeededUser) -> None:
 
 async def _get_active_profile_uuid(
     session_factory: async_sessionmaker[AsyncSession],
-) -> object | None:
+) -> uuid.UUID | None:
+    """Return ``access_tokens.current_profile_id`` for the seeded session."""
     async with session_factory() as session:
         result = await session.execute(select(AccessTokenModel.current_profile_id))
         return result.scalar_one_or_none()
@@ -43,7 +46,8 @@ async def _get_active_profile_uuid(
 async def _profile_uuid_for_external(
     session_factory: async_sessionmaker[AsyncSession],
     external_id: str,
-) -> object | None:
+) -> uuid.UUID | None:
+    """Resolve a prefixed ``ProfileId`` to the matching internal UUID."""
     async with session_factory() as session:
         result = await session.execute(
             select(ProfileModel.id).where(ProfileModel.external_id == external_id)
@@ -145,9 +149,12 @@ class TestUpdateProfile:
     ):
         user = await seed_user_with_profile()
         await _login(client, user)
+        # Generate a syntactically valid prefixed ID that is guaranteed
+        # not to collide with any seeded row (12 chars of random base62).
+        unknown_id = ProfileId.generate().value
 
         response = await client.put(
-            f"{PROFILES_PATH}/prf_xXxXxXxXxXxX",
+            f"{PROFILES_PATH}/{unknown_id}",
             json={"name": "Whatever"},
         )
         assert response.status_code == 404
@@ -210,8 +217,9 @@ class TestSwitchProfile:
     ):
         user = await seed_user_with_profile()
         await _login(client, user)
+        unknown_id = ProfileId.generate().value
 
-        response = await client.post(f"{PROFILES_PATH}/prf_xXxXxXxXxXxX/switch")
+        response = await client.post(f"{PROFILES_PATH}/{unknown_id}/switch")
         assert response.status_code == 404
 
 
