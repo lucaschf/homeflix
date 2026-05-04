@@ -20,6 +20,7 @@ from src.config.settings import get_settings
 from src.modules.catalog_requests.presentation.routes import catalog_request_router
 from src.modules.collections.presentation.routes import custom_list_router, watchlist_router
 from src.modules.identity.infrastructure.auth import auth_backend, fastapi_users
+from src.modules.identity.presentation.routes import profile_router, users_router
 from src.modules.library.presentation.routes.library_routes import (
     router as library_router,
 )
@@ -90,6 +91,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "src.modules.catalog_requests.presentation.routes.catalog_request_routes",
             "src.modules.library.presentation.routes.library_routes",
             "src.modules.preferences.presentation.routes.preferences_routes",
+            "src.modules.identity.presentation.routes.profile_routes",
         ],
     )
     app.state.container = container
@@ -211,14 +213,16 @@ def create_app() -> FastAPI:
     app.include_router(library_router)
     app.include_router(preferences_router)
 
-    # Identity — FastAPI Users built-in cookie auth (login/logout). Custom
-    # /me and /profiles/* routes ship in the next slice. See ADR-011 for
-    # the cookie + DatabaseStrategy choice.
+    # Identity — FastAPI Users built-in cookie auth (login/logout) plus
+    # the custom users / profiles surface that returns prefixed external
+    # IDs and routes through the IdentityContainer use cases.
     app.include_router(
         fastapi_users.get_auth_router(auth_backend),
         prefix="/api/v1/auth/cookie",
         tags=["Auth"],
     )
+    app.include_router(users_router)
+    app.include_router(profile_router)
 
     return app
 

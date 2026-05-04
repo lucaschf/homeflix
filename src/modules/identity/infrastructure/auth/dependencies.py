@@ -24,11 +24,28 @@ from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyAccessTokenDataba
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.settings import get_settings
+from src.modules.identity.domain.errors import NoActiveSessionError
 from src.modules.identity.infrastructure.auth.user_manager import UserManager
 from src.modules.identity.infrastructure.persistence.models.access_token_model import (
     AccessTokenModel,
 )
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+
+
+def get_session_token(request: Request) -> str:
+    """Return the opaque session token from the configured cookie.
+
+    Single source of truth for the cookie name + missing-cookie error
+    used both by ``get_current_profile`` and by routes that need the
+    raw token (e.g. ``POST /profiles/{id}/switch``). Raises
+    :class:`NoActiveSessionError` (HTTP 401) so the caller does not
+    have to repeat the check.
+    """
+    settings = get_settings()
+    token = request.cookies.get(settings.session_cookie_name)
+    if token is None:
+        raise NoActiveSessionError(message="Session cookie missing")
+    return token
 
 
 async def get_async_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
