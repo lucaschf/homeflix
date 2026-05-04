@@ -13,6 +13,11 @@ class SearchInput:
     """Input for ``SearchCatalogUseCase``.
 
     Attributes:
+        profile_id: Caller's prefixed profile id. The use case
+            consults ``ProfileLibraryAccessPort`` and restricts both
+            repositories' searches to libraries the profile may see;
+            a deny-all profile yields an empty result without opening
+            a UoW.
         query: Full-text search string. Supports prefix matching
             (e.g. ``"incep"`` matches ``"Inception"``).
         media_type: Optional filter — restrict to ``"movie"`` or
@@ -24,6 +29,7 @@ class SearchInput:
         limit: Max results to return.
     """
 
+    profile_id: str
     query: str
     media_type: Literal["movie", "series"] | None = None
     genre: str | None = None

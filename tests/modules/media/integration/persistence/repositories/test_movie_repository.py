@@ -1101,3 +1101,114 @@ class TestSQLAlchemyMovieRepositoryLibraryIsolation:
 
         assert found is not None
         assert found.library_id == _LIBRARY_ID
+
+
+def _movie_in_library(*, library_id: str, title: str, file_path: str) -> Movie:
+    """Build a Movie with an explicit ``library_id`` for ACL tests."""
+    return Movie(
+        library_id=library_id,
+        id=MovieId.generate(),
+        title=Title(title),
+        year=Year(2024),
+        duration=Duration(7200),
+        files=[
+            MediaFile(
+                file_path=FilePath(file_path),
+                file_size=1_000_000_000,
+                resolution=Resolution("1080p"),
+                is_primary=True,
+            )
+        ],
+    )
+
+
+@pytest.mark.integration
+class TestAllowedLibraryIdsFilter:
+    """``allowed_library_ids`` kwarg restricts reads to a set of libraries.
+
+    The use cases pass the caller's profile ACL as this kwarg; these
+    tests pin the SQL filter at the repository boundary. Two
+    representative methods are covered: ``list_paginated`` (the page
+    query that backs the catalog grid) and ``find_by_id`` (the lookup
+    that backs the detail page and the stream routes).
+    """
+
+    async def test_list_paginated_includes_only_allowed_libraries(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(
+            _movie_in_library(library_id=_LIBRARY_ID, title="Visible", file_path="/libA/v.mkv")
+        )
+        await repo.save(
+            _movie_in_library(
+                library_id=_LIBRARY_ID_OTHER,
+                title="Hidden",
+                file_path="/libB/h.mkv",
+            )
+        )
+
+        page = await repo.list_paginated(
+            cursor=None,
+            limit=10,
+            allowed_library_ids=[_LIBRARY_ID],
+        )
+
+        titles = {m.title.value for m in page.items}
+        assert titles == {"Visible"}
+        assert "Hidden" not in titles
+
+    async def test_list_paginated_excludes_libraries_outside_allowed_set(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(
+            _movie_in_library(library_id=_LIBRARY_ID, title="In A", file_path="/libA/in.mkv")
+        )
+        await repo.save(
+            _movie_in_library(
+                library_id=_LIBRARY_ID_OTHER,
+                title="In B",
+                file_path="/libB/in.mkv",
+            )
+        )
+
+        # Allowed = library B only.
+        page = await repo.list_paginated(
+            cursor=None,
+            limit=10,
+            allowed_library_ids=[_LIBRARY_ID_OTHER],
+        )
+
+        titles = {m.title.value for m in page.items}
+        assert titles == {"In B"}
+
+    async def test_find_by_id_returns_none_for_row_outside_acl(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _movie_in_library(
+            library_id=_LIBRARY_ID_OTHER,
+            title="Forbidden",
+            file_path="/libB/forbidden.mkv",
+        )
+        await repo.save(movie)
+        assert movie.id is not None
+
+        # Caller is restricted to library A — must NOT see the row.
+        found = await repo.find_by_id(movie.id, allowed_library_ids=[_LIBRARY_ID])
+
+        assert found is None
+
+    async def test_find_by_id_returns_row_when_inside_acl(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _movie_in_library(
+            library_id=_LIBRARY_ID, title="Allowed", file_path="/libA/allowed.mkv"
+        )
+        await repo.save(movie)
+        assert movie.id is not None
+
+        found = await repo.find_by_id(movie.id, allowed_library_ids=[_LIBRARY_ID])
+
+        assert found is not None
+        assert found.title.value == "Allowed"

@@ -14,6 +14,7 @@ from src.modules.media.application.dtos.collection_dtos import (
 from src.modules.media.application.use_cases.get_collection_by_tmdb_id import (
     GetCollectionByTmdbIdUseCase,
 )
+from src.modules.media.presentation.dependencies import resolve_profile_id
 
 router = APIRouter(prefix="/api/v1/collections", tags=["Collections"])
 
@@ -23,6 +24,7 @@ router = APIRouter(prefix="/api/v1/collections", tags=["Collections"])
 async def get_collection(
     tmdb_id: int = Path(..., ge=1, description="TMDB collection id."),
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: GetCollectionByTmdbIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_collection_by_tmdb_id],
     ),
@@ -37,7 +39,7 @@ async def get_collection(
     upstream call fails — see ``GetCollectionByTmdbIdUseCase``.
     """
     result = await use_case.execute(
-        GetCollectionByTmdbIdInput(tmdb_id=tmdb_id, lang=lang),
+        GetCollectionByTmdbIdInput(profile_id=profile_id, tmdb_id=tmdb_id, lang=lang),
     )
     return api_single("collection", asdict(result))
 

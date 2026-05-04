@@ -288,6 +288,16 @@ class Settings(BaseSettings):  # type: ignore[misc]
         "together while the frontend is being migrated, then removes "
         "them to enter strict mode.",
     )
+    media_default_profile_id: str | None = Field(
+        default=None,
+        description="Optional fallback ``profile_id`` (``prf_xxx``) "
+        "used by media routes (catalog list/search/get/stream) when "
+        "the request has no session cookie. Lets the backend keep "
+        "serving consumers that have not shipped login yet during "
+        "the per-profile rollout. Unset = strict mode (no cookie -> "
+        "401). Remove the env var once every consumer is sending "
+        "the session cookie.",
+    )
     collections_default_profile_id: str | None = Field(
         default=None,
         description="Optional fallback ``profile_id`` for the collections "

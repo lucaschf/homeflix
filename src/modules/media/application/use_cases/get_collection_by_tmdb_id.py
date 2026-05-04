@@ -18,6 +18,9 @@ if TYPE_CHECKING:
         CollectionPartMetadata,
         MetadataProvider,
     )
+    from src.modules.media.application.ports.profile_library_access_port import (
+        ProfileLibraryAccessPort,
+    )
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities.movie import Movie
 
@@ -63,6 +66,7 @@ class GetCollectionByTmdbIdUseCase:
         uow_factory: MediaUnitOfWorkFactory,
         metadata_provider: MetadataProvider,
         catalog_request_lookup: CatalogRequestLookupPort,
+        profile_library_access: ProfileLibraryAccessPort,
     ) -> None:
         """Initialize the use case.
 
@@ -71,16 +75,26 @@ class GetCollectionByTmdbIdUseCase:
             metadata_provider: TMDB (or compatible) metadata client.
             catalog_request_lookup: Cross-BC port for resolving
                 per-title request/notification status.
+            profile_library_access: Port that resolves the caller's
+                allowed library_ids. The TMDB call itself is unaffected
+                — only the local-catalog overlay (which titles render
+                with ``in_catalog=True``) is restricted.
         """
         self._uow_factory = uow_factory
         self._metadata = metadata_provider
         self._catalog_request_lookup = catalog_request_lookup
+        self._profile_library_access = profile_library_access
 
     async def execute(
         self,
         input_dto: GetCollectionByTmdbIdInput,
     ) -> CollectionDetailOutput:
-        """Run the lookup."""
+        """Run the lookup.
+
+        A deny-all profile still hits TMDB (the page is informational
+        about the franchise as a whole) but skips the local-catalog
+        overlay so every part renders as missing.
+        """
         collection = await self._metadata.get_collection(
             input_dto.tmdb_id,
             language=_to_bcp47(input_dto.lang),
@@ -91,11 +105,17 @@ class GetCollectionByTmdbIdUseCase:
                 str(input_dto.tmdb_id),
             )
 
+        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
+
         # Cross-reference local catalog by TMDB id so we can stitch
         # the local mov_xxx + duration + artwork onto each TMDB part.
         part_tmdb_ids = [p.tmdb_id for p in collection.parts]
-        async with self._uow_factory() as uow:
-            local_movies = await uow.movies.find_by_tmdb_ids(part_tmdb_ids)
+        local_movies: dict[int, Movie] = {}
+        if allowed:
+            async with self._uow_factory() as uow:
+                local_movies = await uow.movies.find_by_tmdb_ids(
+                    part_tmdb_ids, allowed_library_ids=allowed
+                )
 
         # Per-title catalog-request status. Missing keys mean "no
         # request / no subscription" — the merge step defaults to

@@ -34,6 +34,7 @@ from src.modules.media.application.use_cases.list_recently_added_movies import (
 )
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
+from src.modules.media.presentation.dependencies import resolve_profile_id
 from src.modules.media.presentation.schemas import (
     AddFileVariantRequest,
     RemoveFileVariantRequest,
@@ -53,6 +54,7 @@ async def list_movies(
     limit: int = DEFAULT_PAGE_SIZE,
     include_count: bool = False,
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: ListMoviesUseCase = Depends(
         Provide[ApplicationContainer.media.list_movies],
     ),
@@ -75,6 +77,7 @@ async def list_movies(
     clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
     result = await use_case.execute(
         ListMoviesInput(
+            profile_id=profile_id,
             cursor=cursor,
             limit=clamped_limit,
             include_total=include_count,
@@ -98,6 +101,7 @@ async def list_movies(
 async def list_recently_added_movies(
     limit: int = 20,
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: ListRecentlyAddedMoviesUseCase = Depends(
         Provide[ApplicationContainer.media.list_recently_added_movies],
     ),
@@ -111,7 +115,7 @@ async def list_recently_added_movies(
     """
     clamped_limit = max(1, min(limit, 50))
     result = await use_case.execute(
-        ListRecentlyAddedMoviesInput(limit=clamped_limit, lang=lang),
+        ListRecentlyAddedMoviesInput(profile_id=profile_id, limit=clamped_limit, lang=lang),
     )
     return api_list([_dataclass_to_dict(m) for m in result.movies])
 
@@ -121,12 +125,15 @@ async def list_recently_added_movies(
 async def get_movie(
     movie_id: str,
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
 ) -> dict[str, Any]:
     """Get a movie by ID."""
-    result = await use_case.execute(GetMovieByIdInput(movie_id=movie_id, lang=lang))
+    result = await use_case.execute(
+        GetMovieByIdInput(profile_id=profile_id, movie_id=movie_id, lang=lang)
+    )
     return api_single("movie", _dataclass_to_dict(result))
 
 
@@ -136,6 +143,7 @@ async def get_related_movies(
     movie_id: str,
     lang: str = "en",
     limit: int = 12,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: GetRelatedMoviesUseCase = Depends(
         Provide[ApplicationContainer.media.get_related_movies],
     ),
@@ -148,7 +156,12 @@ async def get_related_movies(
     local catalog. The route never raises.
     """
     items = await use_case.execute(
-        GetRelatedMoviesInput(movie_id=movie_id, lang=lang, limit=max(1, min(limit, 30))),
+        GetRelatedMoviesInput(
+            profile_id=profile_id,
+            movie_id=movie_id,
+            lang=lang,
+            limit=max(1, min(limit, 30)),
+        ),
     )
     return api_list([_dataclass_to_dict(item) for item in items])
 

@@ -22,7 +22,13 @@ from src.infrastructure.scheduling import (
     LibraryScanScheduler,
     ThumbnailBackfillJob,
 )
-from src.modules.media.infrastructure.acl import ProgressLookupAdapter
+from src.modules.identity.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SqlAlchemyIdentityUnitOfWorkFactory,
+)
+from src.modules.media.infrastructure.acl import (
+    ProfileLibraryAccessAdapter,
+    ProgressLookupAdapter,
+)
 from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyWatchProgressUnitOfWorkFactory,
 )
@@ -82,6 +88,19 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         default_profile_id=config.provided.watch_progress_default_profile_id,
     )
 
+    # Same pattern for the per-profile library ACL: built at the
+    # composition root with its own identity UoW factory so the
+    # Media container stays free of an Identity import.
+    _identity_uow_factory_for_profile_library_access = providers.Singleton(
+        SqlAlchemyIdentityUnitOfWorkFactory,
+        session_factory=infrastructure.session_factory,
+    )
+
+    _profile_library_access_adapter = providers.Factory(
+        ProfileLibraryAccessAdapter,
+        identity_uow_factory=_identity_uow_factory_for_profile_library_access,
+    )
+
     # Catalog Requests is built before Media so its ACL adapter can be
     # plumbed into the Media container as the ``CatalogRequestLookupPort``
     # implementation. Catalog Requests itself takes no Media dependency,
@@ -96,6 +115,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         session_factory=infrastructure.session_factory,
         event_bus=infrastructure.event_bus,
         progress_lookup=_progress_lookup_adapter,
+        profile_library_access=_profile_library_access_adapter,
         catalog_request_lookup=catalog_requests.catalog_request_lookup,
         tmdb_api_key=config.provided.tmdb_api_key,
         hls_cache_directory=config.provided.hls_cache_directory,

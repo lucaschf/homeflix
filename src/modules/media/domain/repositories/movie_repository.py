@@ -33,11 +33,23 @@ class MovieRepository(ABC):
     """
 
     @abstractmethod
-    async def find_by_id(self, movie_id: MovieId) -> Movie | None:
+    async def find_by_id(
+        self,
+        movie_id: MovieId,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Movie | None:
         """Find a movie by its ID.
 
         Args:
             movie_id: The movie's external ID.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, the lookup also requires the row's
+                ``library_id`` to be in the supplied set; otherwise the
+                method returns ``None`` even when a row with the id
+                exists. ``None`` (default) applies no library filter —
+                used by internal callers (scanner, cross-BC ACL
+                adapters) that operate outside the per-profile catalog.
 
         Returns:
             The Movie if found, None otherwise.
@@ -84,6 +96,7 @@ class MovieRepository(ABC):
         limit: int,
         *,
         include_total: bool = False,
+        allowed_library_ids: Sequence[str] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies in a single page using cursor-based pagination.
 
@@ -109,6 +122,11 @@ class MovieRepository(ABC):
                 ``PaginatedResult.total_count``. Defaults to ``False``
                 because the count is the most expensive part of the
                 query and is rarely needed by infinite-scroll consumers.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, both the page query and the optional
+                ``COUNT(*)`` are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             ``PaginatedResult`` containing the page items, the
@@ -118,7 +136,12 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
-    async def list_recently_added(self, limit: int) -> Sequence[Movie]:
+    async def list_recently_added(
+        self,
+        limit: int,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[Movie]:
         """List the most recently added movies.
 
         Sorted by ``id DESC`` — internal autoincrement id is monotonic
@@ -131,6 +154,10 @@ class MovieRepository(ABC):
 
         Args:
             limit: Maximum number of movies to return.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, results are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             Sequence of recently added movies (excluding soft-deleted),
@@ -139,7 +166,12 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
-    async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
+    async def list_genre_rows(
+        self,
+        lang: str,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted row.
 
         This is the cheap input to cross-aggregate listings (e.g.
@@ -151,6 +183,10 @@ class MovieRepository(ABC):
             lang: Language code used to extract the localized genre
                 names from the per-row ``localized`` JSON. Falls back
                 to canonical English when no translation is present.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, the projection is restricted to rows
+                whose ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             One ``GenreRow`` per non-deleted movie. Order is not
@@ -164,6 +200,8 @@ class MovieRepository(ABC):
         genre: Genre,
         cursor: str | None,
         limit: int,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies belonging to a specific genre, paginated.
 
@@ -187,6 +225,10 @@ class MovieRepository(ABC):
                 fall back to the first page.
             limit: Page size. The repository fetches ``limit + 1``
                 rows and trims the sentinel to detect ``has_more``.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, results are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             ``PaginatedResult`` with the page items and pagination
@@ -203,6 +245,8 @@ class MovieRepository(ABC):
         actor_name: str,
         cursor: str | None,
         limit: int,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies whose cast includes a member named ``actor_name``.
 
@@ -226,6 +270,10 @@ class MovieRepository(ABC):
                 fall back to the first page.
             limit: Page size. Implementations fetch ``limit + 1`` rows
                 to detect ``has_more`` cheaply.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, results are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             ``PaginatedResult`` with the page items and pagination
@@ -242,6 +290,7 @@ class MovieRepository(ABC):
         year_min: int | None = None,
         year_max: int | None = None,
         limit: int = 20,
+        allowed_library_ids: Sequence[str] | None = None,
     ) -> list[tuple[Movie, float]]:
         """Full-text search over title, synopsis, cast, and genres.
 
@@ -257,6 +306,10 @@ class MovieRepository(ABC):
             year_min: Optional inclusive lower bound on release year.
             year_max: Optional inclusive upper bound on release year.
             limit: Maximum items to return.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, hits are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             List of (Movie, rank) tuples, ordered by relevance.
@@ -264,12 +317,22 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Movie]:
+    async def find_random(
+        self,
+        limit: int,
+        *,
+        with_backdrop: bool = False,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[Movie]:
         """Return random movies, optionally filtering to those with backdrop.
 
         Args:
             limit: Maximum number of movies to return.
             with_backdrop: If True, only return movies with a backdrop_path.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, results are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             Sequence of randomly selected movies.
@@ -277,11 +340,20 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_by_ids(self, movie_ids: Sequence[MovieId]) -> dict[str, Movie]:
+    async def find_by_ids(
+        self,
+        movie_ids: Sequence[MovieId],
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> dict[str, Movie]:
         """Find multiple movies by their IDs in a single query.
 
         Args:
             movie_ids: Sequence of movie external IDs.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, results are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             Dict mapping external ID string to Movie entity.
@@ -289,7 +361,12 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_by_tmdb_ids(self, tmdb_ids: Sequence[int]) -> dict[int, Movie]:
+    async def find_by_tmdb_ids(
+        self,
+        tmdb_ids: Sequence[int],
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> dict[int, Movie]:
         """Find movies whose ``tmdb_id`` is in ``tmdb_ids``.
 
         Used by the "you might also like" path: ``GetRelatedMovies``
@@ -301,6 +378,13 @@ class MovieRepository(ABC):
         up in the dict.
 
         Soft-deleted rows are excluded.
+
+        Args:
+            tmdb_ids: TMDB movie ids to look up.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, results are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             Dict mapping ``tmdb_id`` int to ``Movie`` entity. Keys

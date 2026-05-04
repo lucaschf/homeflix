@@ -11,9 +11,15 @@ from src.modules.media.application.dtos import (
 )
 from src.modules.media.application.use_cases import ListSeriesUseCase
 from src.modules.media.domain.entities import Series
-from tests.modules.media.unit.conftest import make_media_uow_mock
+from tests.modules.media.unit.conftest import (
+    FakeProfileLibraryAccessPort,
+    make_media_uow_mock,
+    make_profile_library_access,
+)
 
 _LIBRARY_ID = "lib_test12345678"
+_LIBRARY_ID_OTHER = "lib_otherlibrary"
+_PROFILE_ID = "prf_test12345678"
 
 
 def _page(
@@ -42,9 +48,12 @@ class TestListSeriesUseCase:
                 Series.create(library_id=_LIBRARY_ID, title="Show 2", start_year=2021),
             ]
         )
-        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
+        use_case = ListSeriesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListSeriesInput())
+        result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
 
         assert isinstance(result, ListSeriesOutput)
         assert len(result.series) == 2
@@ -55,6 +64,7 @@ class TestListSeriesUseCase:
             cursor=None,
             limit=20,
             include_total=False,
+            allowed_library_ids=[_LIBRARY_ID],
         )
 
     @pytest.mark.asyncio
@@ -68,9 +78,12 @@ class TestListSeriesUseCase:
             genres=["Drama", "Crime"],
         )
         mocks.series.list_paginated.return_value = _page([series])
-        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
+        use_case = ListSeriesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListSeriesInput())
+        result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
 
         summary = result.series[0]
         assert isinstance(summary, SeriesSummaryOutput)
@@ -84,14 +97,18 @@ class TestListSeriesUseCase:
     async def test_should_pass_cursor_and_limit_to_repository(self) -> None:
         mocks = make_media_uow_mock()
         mocks.series.list_paginated.return_value = _page([])
-        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
+        use_case = ListSeriesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        await use_case.execute(ListSeriesInput(cursor="abc123", limit=15))
+        await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID, cursor="abc123", limit=15))
 
         mocks.series.list_paginated.assert_awaited_once_with(
             cursor="abc123",
             limit=15,
             include_total=False,
+            allowed_library_ids=[_LIBRARY_ID],
         )
 
     @pytest.mark.asyncio
@@ -102,9 +119,12 @@ class TestListSeriesUseCase:
             next_cursor="next-token",
             has_more=True,
         )
-        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
+        use_case = ListSeriesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListSeriesInput())
+        result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
 
         assert result.next_cursor == "next-token"
         assert result.has_more is True
@@ -113,9 +133,12 @@ class TestListSeriesUseCase:
     async def test_should_return_empty_page_when_no_series(self) -> None:
         mocks = make_media_uow_mock()
         mocks.series.list_paginated.return_value = _page([])
-        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
+        use_case = ListSeriesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListSeriesInput())
+        result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
 
         assert result.series == []
         assert result.has_more is False
@@ -126,9 +149,12 @@ class TestListSeriesUseCase:
         mocks = make_media_uow_mock()
         series = Series.create(library_id=_LIBRARY_ID, title="Ongoing Show", start_year=2020)
         mocks.series.list_paginated.return_value = _page([series])
-        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
+        use_case = ListSeriesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListSeriesInput())
+        result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
 
         assert result.series[0].is_ongoing is True
         assert result.series[0].end_year is None
@@ -138,9 +164,12 @@ class TestListSeriesUseCase:
         mocks = make_media_uow_mock()
         series = Series.create(library_id=_LIBRARY_ID, title="Test Show", start_year=2020)
         mocks.series.list_paginated.return_value = _page([series])
-        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
+        use_case = ListSeriesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListSeriesInput())
+        result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
 
         assert result.series[0].season_count == 0
         assert result.series[0].total_episodes == 0
@@ -152,13 +181,53 @@ class TestListSeriesUseCase:
             [Series.create(library_id=_LIBRARY_ID, title="Show 1", start_year=2020)],
             total_count=10,
         )
-        use_case = ListSeriesUseCase(uow_factory=mocks.factory)
+        use_case = ListSeriesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListSeriesInput(include_total=True))
+        result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID, include_total=True))
 
         assert result.total_count == 10
         mocks.series.list_paginated.assert_awaited_once_with(
             cursor=None,
             limit=20,
             include_total=True,
+            allowed_library_ids=[_LIBRARY_ID],
         )
+
+    @pytest.mark.asyncio
+    async def test_should_short_circuit_for_deny_all_profile(self) -> None:
+        mocks = make_media_uow_mock()
+        use_case = ListSeriesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+        )
+
+        result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
+
+        assert result.series == []
+        assert result.has_more is False
+        assert result.next_cursor is None
+        mocks.factory.assert_not_called()
+        mocks.series.list_paginated.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_should_forward_only_allowed_libraries_for_inclusion_path(
+        self,
+    ) -> None:
+        mocks = make_media_uow_mock()
+        mocks.series.list_paginated.return_value = _page(
+            [Series.create(library_id=_LIBRARY_ID, title="Visible", start_year=2020)]
+        )
+        use_case = ListSeriesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: [_LIBRARY_ID]}),
+        )
+
+        result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
+
+        assert [s.title for s in result.series] == ["Visible"]
+        passed = mocks.series.list_paginated.await_args.kwargs["allowed_library_ids"]
+        assert list(passed) == [_LIBRARY_ID]
+        assert _LIBRARY_ID_OTHER not in list(passed)

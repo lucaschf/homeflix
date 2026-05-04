@@ -48,11 +48,17 @@ class SQLAlchemyMovieRepository(MovieRepository):
         """
         self._session = session
 
-    async def find_by_id(self, movie_id: MovieId) -> Movie | None:
+    async def find_by_id(
+        self,
+        movie_id: MovieId,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Movie | None:
         """Find a movie by its ID.
 
         Args:
             movie_id: The movie's external ID.
+            allowed_library_ids: Optional per-profile ACL filter.
 
         Returns:
             The Movie if found, None otherwise.
@@ -65,6 +71,8 @@ class SQLAlchemyMovieRepository(MovieRepository):
             )
             .options(selectinload(MovieModel.file_variants))
         )
+        if allowed_library_ids is not None:
+            stmt = stmt.where(MovieModel.library_id.in_(allowed_library_ids))
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
 
@@ -159,6 +167,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         limit: int,
         *,
         include_total: bool = False,
+        allowed_library_ids: Sequence[str] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies in a single cursor-paginated page.
 
@@ -181,6 +190,9 @@ class SQLAlchemyMovieRepository(MovieRepository):
             .options(selectinload(MovieModel.file_variants))
         )
 
+        if allowed_library_ids is not None:
+            stmt = stmt.where(MovieModel.library_id.in_(allowed_library_ids))
+
         if decoded is not None:
             stmt = stmt.where(MovieModel.id < decoded.id)
 
@@ -202,6 +214,8 @@ class SQLAlchemyMovieRepository(MovieRepository):
             count_stmt = (
                 select(func.count()).select_from(MovieModel).where(MovieModel.deleted_at.is_(None))
             )
+            if allowed_library_ids is not None:
+                count_stmt = count_stmt.where(MovieModel.library_id.in_(allowed_library_ids))
             total_count = (await self._session.execute(count_stmt)).scalar_one()
 
         return PaginatedResult(
@@ -210,7 +224,12 @@ class SQLAlchemyMovieRepository(MovieRepository):
             total_count=total_count,
         )
 
-    async def list_recently_added(self, limit: int) -> Sequence[Movie]:
+    async def list_recently_added(
+        self,
+        limit: int,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[Movie]:
         """Return the top ``limit`` non-deleted movies, newest first.
 
         Same ``id DESC`` ordering as ``list_paginated`` — autoincrement
@@ -223,21 +242,34 @@ class SQLAlchemyMovieRepository(MovieRepository):
             select(MovieModel)
             .where(MovieModel.deleted_at.is_(None))
             .options(selectinload(MovieModel.file_variants))
-            .order_by(MovieModel.id.desc())
-            .limit(limit)
         )
+        if allowed_library_ids is not None:
+            stmt = stmt.where(MovieModel.library_id.in_(allowed_library_ids))
+        stmt = stmt.order_by(MovieModel.id.desc()).limit(limit)
         result = await self._session.execute(stmt)
         return [MovieMapper.to_entity(m) for m in result.scalars().all()]
 
-    async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
+    async def list_genre_rows(
+        self,
+        lang: str,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted movie row."""
-        return await fetch_genre_rows(self._session, MovieModel, lang)
+        return await fetch_genre_rows(
+            self._session,
+            MovieModel,
+            lang,
+            allowed_library_ids=allowed_library_ids,
+        )
 
     async def list_paginated_by_genre(
         self,
         genre: Genre,
         cursor: str | None,
         limit: int,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies for a single genre, paginated and sorted by title.
 
@@ -255,6 +287,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             genre=genre,
             cursor=cursor,
             limit=limit,
+            allowed_library_ids=allowed_library_ids,
         )
 
     async def list_paginated_by_cast_member(
@@ -262,6 +295,8 @@ class SQLAlchemyMovieRepository(MovieRepository):
         actor_name: str,
         cursor: str | None,
         limit: int,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies whose ``cast`` JSON contains an entry for ``actor_name``.
 
@@ -308,6 +343,9 @@ class SQLAlchemyMovieRepository(MovieRepository):
             .options(selectinload(MovieModel.file_variants))
         )
 
+        if allowed_library_ids is not None:
+            stmt = stmt.where(MovieModel.library_id.in_(allowed_library_ids))
+
         if decoded is not None:
             stmt = stmt.where(
                 or_(
@@ -335,7 +373,13 @@ class SQLAlchemyMovieRepository(MovieRepository):
             total_count=None,
         )
 
-    async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Movie]:
+    async def find_random(
+        self,
+        limit: int,
+        *,
+        with_backdrop: bool = False,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[Movie]:
         """Return random movies."""
         from sqlalchemy.sql.expression import func
 
@@ -349,11 +393,18 @@ class SQLAlchemyMovieRepository(MovieRepository):
                 MovieModel.backdrop_path.is_not(None),
                 MovieModel.backdrop_path != "",
             )
+        if allowed_library_ids is not None:
+            stmt = stmt.where(MovieModel.library_id.in_(allowed_library_ids))
         stmt = stmt.order_by(func.random()).limit(limit)
         result = await self._session.execute(stmt)
         return [MovieMapper.to_entity(m) for m in result.scalars().all()]
 
-    async def find_by_ids(self, movie_ids: Sequence[MovieId]) -> dict[str, Movie]:
+    async def find_by_ids(
+        self,
+        movie_ids: Sequence[MovieId],
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> dict[str, Movie]:
         """Find multiple movies by their IDs in a single query."""
         if not movie_ids:
             return {}
@@ -367,10 +418,17 @@ class SQLAlchemyMovieRepository(MovieRepository):
             )
             .options(selectinload(MovieModel.file_variants))
         )
+        if allowed_library_ids is not None:
+            stmt = stmt.where(MovieModel.library_id.in_(allowed_library_ids))
         result = await self._session.execute(stmt)
         return {model.external_id: MovieMapper.to_entity(model) for model in result.scalars().all()}
 
-    async def find_by_tmdb_ids(self, tmdb_ids: Sequence[int]) -> dict[int, Movie]:
+    async def find_by_tmdb_ids(
+        self,
+        tmdb_ids: Sequence[int],
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> dict[int, Movie]:
         """Find movies whose ``tmdb_id`` matches any of ``tmdb_ids``.
 
         Used by ``GetRelatedMovies`` to resolve the subset of TMDB's
@@ -388,6 +446,8 @@ class SQLAlchemyMovieRepository(MovieRepository):
             )
             .options(selectinload(MovieModel.file_variants))
         )
+        if allowed_library_ids is not None:
+            stmt = stmt.where(MovieModel.library_id.in_(allowed_library_ids))
         result = await self._session.execute(stmt)
         return {
             model.tmdb_id: MovieMapper.to_entity(model)
@@ -487,6 +547,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         year_min: int | None = None,
         year_max: int | None = None,
         limit: int = 20,
+        allowed_library_ids: Sequence[str] | None = None,
     ) -> list[tuple[Movie, float]]:
         """Full-text search using FTS5.
 
@@ -540,6 +601,8 @@ class SQLAlchemyMovieRepository(MovieRepository):
             stmt = stmt.where(MovieModel.year >= year_min)
         if year_max is not None:
             stmt = stmt.where(MovieModel.year <= year_max)
+        if allowed_library_ids is not None:
+            stmt = stmt.where(MovieModel.library_id.in_(allowed_library_ids))
 
         result = await self._session.execute(stmt)
         models = result.scalars().all()

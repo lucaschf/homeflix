@@ -32,6 +32,9 @@ from src.modules.media.application.ports.metadata_provider_port import (
     PersonMetadata,
     SeasonMetadata,
 )
+from src.modules.media.application.ports.profile_library_access_port import (
+    ProfileLibraryAccessPort,
+)
 from src.modules.media.application.ports.progress_lookup_port import (
     ProgressLookupPort,
     ProgressSummary,
@@ -61,6 +64,7 @@ __all__ = [
     "MetadataProvider",
     "PersonMetadata",
     "ProbeResult",
+    "ProfileLibraryAccessPort",
     "ProgressLookupPort",
     "ProgressSummary",
     "ScannedFile",

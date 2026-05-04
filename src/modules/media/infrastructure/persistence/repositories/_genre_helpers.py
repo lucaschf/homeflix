@@ -81,6 +81,8 @@ async def fetch_genre_rows(
     session: AsyncSession,
     model: Any,
     lang: str,
+    *,
+    allowed_library_ids: Sequence[str] | None = None,
 ) -> list[GenreRow]:
     """Project the lightweight genre data of every non-deleted row.
 
@@ -89,11 +91,18 @@ async def fetch_genre_rows(
     Each returned ``GenreRow`` pairs the canonical genre list with
     the localized translation for the requested language (or an
     empty list when no translation is present).
+
+    When ``allowed_library_ids`` is non-``None``, the projection is
+    restricted to rows whose ``library_id`` is in the supplied set —
+    used by the per-profile catalog ACL. ``None`` (default) preserves
+    the unfiltered behavior for internal callers.
     """
     stmt = select(model.genres, model.localized).where(
         model.deleted_at.is_(None),
         model.genres.is_not(None),
     )
+    if allowed_library_ids is not None:
+        stmt = stmt.where(model.library_id.in_(allowed_library_ids))
     result = await session.execute(stmt)
     return [
         GenreRow(
@@ -113,6 +122,7 @@ async def fetch_genre_paginated_page(
     genre: Genre,
     cursor: str | None,
     limit: int,
+    allowed_library_ids: Sequence[str] | None = None,
 ) -> PaginatedResult[TEntity]:
     """Run one page of the title-sorted by-genre listing for ``model``.
 
@@ -140,6 +150,10 @@ async def fetch_genre_paginated_page(
             fall back to the first page.
         limit: Page size. The query fetches ``limit + 1`` rows and
             trims the sentinel.
+        allowed_library_ids: Optional per-profile ACL filter. When
+            non-``None``, rows are restricted to those whose
+            ``library_id`` is in the supplied set. ``None`` (default)
+            applies no library filter.
 
     Returns:
         ``PaginatedResult`` with mapped entities, pagination
@@ -162,6 +176,9 @@ async def fetch_genre_paginated_page(
         )
         .options(*options)
     )
+
+    if allowed_library_ids is not None:
+        stmt = stmt.where(model.library_id.in_(allowed_library_ids))
 
     if decoded is not None:
         # Composite ascending: anything strictly after the cursor

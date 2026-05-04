@@ -11,14 +11,28 @@ from src.modules.media.application.use_cases.get_related_series import (
 )
 from src.modules.media.domain.entities import Series
 from src.modules.media.domain.value_objects import SeriesId, TmdbId
-from tests.modules.media.unit.conftest import make_media_uow_mock
+from tests.modules.media.unit.conftest import (
+    FakeProfileLibraryAccessPort,
+    make_media_uow_mock,
+)
 
 _LIBRARY_ID = "lib_test12345678"
+_PROFILE_ID = "prf_test12345678"
 
 
 def _series(*, title: str, tmdb_id: int | None) -> Series:
     series = Series.create(library_id=_LIBRARY_ID, title=title, start_year=2010)
     return series.with_updates(tmdb_id=TmdbId(tmdb_id)) if tmdb_id is not None else series
+
+
+def _make_use_case(mocks, provider, *, allowed: list[str] | None = None) -> GetRelatedSeriesUseCase:
+    if allowed is None:
+        allowed = [_LIBRARY_ID]
+    return GetRelatedSeriesUseCase(
+        mocks.factory,
+        provider,
+        FakeProfileLibraryAccessPort({_PROFILE_ID: allowed}),
+    )
 
 
 class TestGetRelatedSeriesUseCase:
@@ -28,9 +42,9 @@ class TestGetRelatedSeriesUseCase:
         mocks.series.find_by_id.return_value = None
         provider = AsyncMock(spec=MetadataProvider)
 
-        use_case = GetRelatedSeriesUseCase(mocks.factory, provider)
+        use_case = _make_use_case(mocks, provider)
         result = await use_case.execute(
-            GetRelatedSeriesInput(series_id=str(SeriesId.generate())),
+            GetRelatedSeriesInput(profile_id=_PROFILE_ID, series_id=str(SeriesId.generate())),
         )
 
         assert result == []
@@ -44,9 +58,9 @@ class TestGetRelatedSeriesUseCase:
         mocks.series.find_by_id.return_value = _series(title="Manual", tmdb_id=None)
         provider = AsyncMock(spec=MetadataProvider)
 
-        use_case = GetRelatedSeriesUseCase(mocks.factory, provider)
+        use_case = _make_use_case(mocks, provider)
         result = await use_case.execute(
-            GetRelatedSeriesInput(series_id=str(SeriesId.generate())),
+            GetRelatedSeriesInput(profile_id=_PROFILE_ID, series_id=str(SeriesId.generate())),
         )
 
         assert result == []
@@ -72,12 +86,20 @@ class TestGetRelatedSeriesUseCase:
             888888,
         ]
 
-        use_case = GetRelatedSeriesUseCase(mocks.factory, provider)
+        use_case = _make_use_case(mocks, provider)
         result = await use_case.execute(
-            GetRelatedSeriesInput(series_id=str(SeriesId.generate()), limit=10),
+            GetRelatedSeriesInput(
+                profile_id=_PROFILE_ID,
+                series_id=str(SeriesId.generate()),
+                limit=10,
+            ),
         )
 
         assert [s.title for s in result] == ["Breaking Bad", "Rick and Morty"]
+        find_by_id_kwargs = mocks.series.find_by_id.await_args.kwargs
+        find_by_tmdb_ids_kwargs = mocks.series.find_by_tmdb_ids.await_args.kwargs
+        assert list(find_by_id_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
+        assert list(find_by_tmdb_ids_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
 
     @pytest.mark.asyncio
     async def test_truncates_to_limit(self) -> None:
@@ -89,9 +111,13 @@ class TestGetRelatedSeriesUseCase:
         provider = AsyncMock(spec=MetadataProvider)
         provider.get_series_recommendations.return_value = [10, 11, 12, 13, 14]
 
-        use_case = GetRelatedSeriesUseCase(mocks.factory, provider)
+        use_case = _make_use_case(mocks, provider)
         result = await use_case.execute(
-            GetRelatedSeriesInput(series_id=str(SeriesId.generate()), limit=3),
+            GetRelatedSeriesInput(
+                profile_id=_PROFILE_ID,
+                series_id=str(SeriesId.generate()),
+                limit=3,
+            ),
         )
 
         assert len(result) == 3
@@ -105,9 +131,9 @@ class TestGetRelatedSeriesUseCase:
         provider = AsyncMock(spec=MetadataProvider)
         provider.get_series_recommendations.return_value = [99, 100, 101]
 
-        use_case = GetRelatedSeriesUseCase(mocks.factory, provider)
+        use_case = _make_use_case(mocks, provider)
         result = await use_case.execute(
-            GetRelatedSeriesInput(series_id=str(SeriesId.generate())),
+            GetRelatedSeriesInput(profile_id=_PROFILE_ID, series_id=str(SeriesId.generate())),
         )
 
         assert result == []
@@ -119,11 +145,25 @@ class TestGetRelatedSeriesUseCase:
         provider = AsyncMock(spec=MetadataProvider)
         provider.get_series_recommendations.return_value = []
 
-        use_case = GetRelatedSeriesUseCase(mocks.factory, provider)
+        use_case = _make_use_case(mocks, provider)
         result = await use_case.execute(
-            GetRelatedSeriesInput(series_id=str(SeriesId.generate())),
+            GetRelatedSeriesInput(profile_id=_PROFILE_ID, series_id=str(SeriesId.generate())),
         )
 
         assert result == []
         # Should not even hit the repo on an empty TMDB result.
         mocks.series.find_by_tmdb_ids.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_for_deny_all_profile(self) -> None:
+        mocks = make_media_uow_mock()
+        provider = AsyncMock(spec=MetadataProvider)
+
+        use_case = _make_use_case(mocks, provider, allowed=[])
+        result = await use_case.execute(
+            GetRelatedSeriesInput(profile_id=_PROFILE_ID, series_id=str(SeriesId.generate())),
+        )
+
+        assert result == []
+        mocks.factory.assert_not_called()
+        provider.get_series_recommendations.assert_not_called()

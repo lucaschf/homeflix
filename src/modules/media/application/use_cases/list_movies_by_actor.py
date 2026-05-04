@@ -4,6 +4,9 @@ from dataclasses import dataclass
 
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE
 from src.modules.media.application.dtos.movie_dtos import MovieSummaryOutput
+from src.modules.media.application.ports.profile_library_access_port import (
+    ProfileLibraryAccessPort,
+)
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._movie_summary_helpers import to_movie_summary
 
@@ -13,6 +16,10 @@ class ListMoviesByActorInput:
     """Input for ``ListMoviesByActorUseCase``.
 
     Attributes:
+        profile_id: Caller's prefixed profile id. The use case
+            consults ``ProfileLibraryAccessPort`` and restricts the
+            page to libraries the profile may see; a deny-all profile
+            yields an empty page without opening a UoW.
         actor_name: Exact display name of the cast member. Match is
             by literal equality against the stored ``cast[].name``
             values; collisions between two real people who share a
@@ -26,6 +33,7 @@ class ListMoviesByActorInput:
             on the returned summaries.
     """
 
+    profile_id: str
     actor_name: str
     cursor: str | None = None
     limit: int = DEFAULT_PAGE_SIZE
@@ -61,25 +69,36 @@ class ListMoviesByActorUseCase:
     ``ListByGenreUseCase`` without breaking the API contract.
     """
 
-    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
+    def __init__(
+        self,
+        uow_factory: MediaUnitOfWorkFactory,
+        profile_library_access: ProfileLibraryAccessPort,
+    ) -> None:
         self._uow_factory = uow_factory
+        self._profile_library_access = profile_library_access
 
     async def execute(self, input_dto: ListMoviesByActorInput) -> ListMoviesByActorOutput:
         """Execute the use case.
 
         Args:
-            input_dto: ``actor_name`` (exact display name), ``cursor``,
-                ``limit``, ``lang``.
+            input_dto: ``profile_id``, ``actor_name`` (exact display
+                name), ``cursor``, ``limit``, ``lang``.
 
         Returns:
             ``ListMoviesByActorOutput`` carrying the page of summaries
-            plus the next cursor.
+            plus the next cursor. A deny-all profile yields an empty
+            page without opening a UoW.
         """
+        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
+        if not allowed:
+            return ListMoviesByActorOutput(movies=[], next_cursor=None, has_more=False)
+
         async with self._uow_factory() as uow:
             page = await uow.movies.list_paginated_by_cast_member(
                 actor_name=input_dto.actor_name,
                 cursor=input_dto.cursor,
                 limit=input_dto.limit,
+                allowed_library_ids=allowed,
             )
 
         return ListMoviesByActorOutput(

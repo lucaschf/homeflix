@@ -1554,3 +1554,81 @@ class TestSQLAlchemySeriesRepositoryLibraryIsolation:
 
         assert found is not None
         assert found.library_id == _LIBRARY_ID
+
+
+def _series_in_library(*, library_id: str, title: str) -> Series:
+    """Build a Series with an explicit ``library_id`` for ACL tests."""
+    return Series(
+        library_id=library_id,
+        id=SeriesId.generate(),
+        title=Title(title),
+        start_year=Year(2024),
+    )
+
+
+@pytest.mark.integration
+class TestAllowedLibraryIdsFilter:
+    """``allowed_library_ids`` kwarg restricts reads to a set of libraries.
+
+    Mirror of the movies-side coverage: pin ``list_paginated`` and
+    ``find_by_id`` at the repo boundary so the use cases can rely on
+    the kwarg's semantics without re-asserting in every unit test.
+    """
+
+    async def test_list_paginated_includes_only_allowed_libraries(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_series_in_library(library_id=_LIBRARY_ID, title="Visible"))
+        await repo.save(_series_in_library(library_id=_LIBRARY_ID_OTHER, title="Hidden"))
+
+        page = await repo.list_paginated(
+            cursor=None,
+            limit=10,
+            allowed_library_ids=[_LIBRARY_ID],
+        )
+
+        titles = {s.title.value for s in page.items}
+        assert titles == {"Visible"}
+        assert "Hidden" not in titles
+
+    async def test_list_paginated_excludes_libraries_outside_allowed_set(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_series_in_library(library_id=_LIBRARY_ID, title="In A"))
+        await repo.save(_series_in_library(library_id=_LIBRARY_ID_OTHER, title="In B"))
+
+        # Allowed = library B only.
+        page = await repo.list_paginated(
+            cursor=None,
+            limit=10,
+            allowed_library_ids=[_LIBRARY_ID_OTHER],
+        )
+
+        titles = {s.title.value for s in page.items}
+        assert titles == {"In B"}
+
+    async def test_find_by_id_returns_none_for_row_outside_acl(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _series_in_library(library_id=_LIBRARY_ID_OTHER, title="Forbidden")
+        await repo.save(series)
+        assert series.id is not None
+
+        # Caller is restricted to library A — must NOT see the row.
+        found = await repo.find_by_id(series.id, allowed_library_ids=[_LIBRARY_ID])
+
+        assert found is None
+
+    async def test_find_by_id_returns_row_when_inside_acl(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _series_in_library(library_id=_LIBRARY_ID, title="Allowed")
+        await repo.save(series)
+        assert series.id is not None
+
+        found = await repo.find_by_id(series.id, allowed_library_ids=[_LIBRARY_ID])
+
+        assert found is not None
+        assert found.title.value == "Allowed"

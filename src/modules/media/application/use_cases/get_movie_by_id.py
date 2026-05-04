@@ -7,6 +7,9 @@ from src.modules.media.application.dtos.movie_dtos import (
     GetMovieByIdInput,
     MovieOutput,
 )
+from src.modules.media.application.ports.profile_library_access_port import (
+    ProfileLibraryAccessPort,
+)
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._media_file_helpers import (
     to_media_file_output,
@@ -21,36 +24,57 @@ class GetMovieByIdUseCase:
     This use case fetches a movie from the repository and returns
     it in a format suitable for API consumption.
 
+    Per ADR-010, the lookup is restricted to the caller's
+    ``Profile.allowed_library_ids`` via ``ProfileLibraryAccessPort``. A
+    movie that exists outside the ACL surfaces as
+    ``ResourceNotFoundException`` (HTTP 404), preventing the catalog
+    ACL from being bypassed by id-poking. A deny-all profile
+    short-circuits to a 404 without opening the UoW.
+
     Example:
-        >>> use_case = GetMovieByIdUseCase(uow_factory)
-        >>> result = await use_case.execute(GetMovieByIdInput("mov_abc123"))
+        >>> use_case = GetMovieByIdUseCase(uow_factory, profile_library_access)
+        >>> result = await use_case.execute(
+        ...     GetMovieByIdInput(profile_id="prf_abc", movie_id="mov_abc123")
+        ... )
         >>> result.title
         'Inception'
     """
 
-    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
+    def __init__(
+        self,
+        uow_factory: MediaUnitOfWorkFactory,
+        profile_library_access: ProfileLibraryAccessPort,
+    ) -> None:
         """Initialize the use case.
 
         Args:
             uow_factory: Factory that opens a fresh media Unit of Work.
+            profile_library_access: Port that resolves the caller's
+                allowed library_ids.
         """
         self._uow_factory = uow_factory
+        self._profile_library_access = profile_library_access
 
     async def execute(self, input_dto: GetMovieByIdInput) -> MovieOutput:
         """Execute the use case.
 
         Args:
-            input_dto: Contains the movie_id to fetch.
+            input_dto: Contains the profile_id and movie_id to fetch.
 
         Returns:
             MovieOutput with all movie details.
 
         Raises:
-            ResourceNotFoundException: If movie with given ID doesn't exist.
+            ResourceNotFoundException: If the movie does not exist or
+                lives in a library outside the caller's ACL.
         """
+        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
+        if not allowed:
+            raise ResourceNotFoundException.for_resource("Movie", input_dto.movie_id)
+
         movie_id = MovieId(input_dto.movie_id)
         async with self._uow_factory() as uow:
-            movie = await uow.movies.find_by_id(movie_id)
+            movie = await uow.movies.find_by_id(movie_id, allowed_library_ids=allowed)
 
         if movie is None:
             raise ResourceNotFoundException.for_resource("Movie", input_dto.movie_id)

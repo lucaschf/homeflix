@@ -15,14 +15,19 @@ from src.modules.media.application.dtos.catalog_dtos import (
 )
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.domain.entities import Movie, Series
-from tests.modules.media.unit.conftest import make_media_uow_mock
+from tests.modules.media.unit.conftest import (
+    FakeProfileLibraryAccessPort,
+    make_media_uow_mock,
+)
 
 _LIBRARY_ID = "lib_test12345678"
+_LIBRARY_ID_OTHER = "lib_otherlibrary"
+_PROFILE_ID = "prf_test12345678"
 
 
-def _movie(title: str) -> Movie:
+def _movie(title: str, *, library_id: str = _LIBRARY_ID) -> Movie:
     return Movie.create(
-        library_id=_LIBRARY_ID,
+        library_id=library_id,
         title=title,
         year=2020,
         duration=7200,
@@ -32,8 +37,8 @@ def _movie(title: str) -> Movie:
     )
 
 
-def _series(title: str) -> Series:
-    return Series.create(library_id=_LIBRARY_ID, title=title, start_year=2020)
+def _series(title: str, *, library_id: str = _LIBRARY_ID) -> Series:
+    return Series.create(library_id=library_id, title=title, start_year=2020)
 
 
 def _movies_page(
@@ -64,6 +69,15 @@ def _series_page(
     )
 
 
+def _make_use_case(mocks, *, allowed: list[str] | None = None) -> ListByGenreUseCase:
+    if allowed is None:
+        allowed = [_LIBRARY_ID]
+    return ListByGenreUseCase(
+        uow_factory=mocks.factory,
+        profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: allowed}),
+    )
+
+
 @pytest.mark.unit
 class TestListByGenreUseCase:
     """Merge + dual-cursor behavior of ListByGenreUseCase."""
@@ -75,9 +89,9 @@ class TestListByGenreUseCase:
             [_movie("Avatar"), _movie("Cyrano")]
         )
         mocks.series.list_paginated_by_genre.return_value = _series_page([_series("Breaking Bad")])
-        use_case = ListByGenreUseCase(uow_factory=mocks.factory)
+        use_case = _make_use_case(mocks)
 
-        result = await use_case.execute(ListByGenreInput(genre="Action"))
+        result = await use_case.execute(ListByGenreInput(profile_id=_PROFILE_ID, genre="Action"))
 
         assert isinstance(result, ListByGenreOutput)
         titles = [item.title for item in result.items]
@@ -89,9 +103,9 @@ class TestListByGenreUseCase:
         mocks = make_media_uow_mock()
         mocks.movies.list_paginated_by_genre.return_value = _movies_page([_movie("Avatar")])
         mocks.series.list_paginated_by_genre.return_value = _series_page([_series("Breaking Bad")])
-        use_case = ListByGenreUseCase(uow_factory=mocks.factory)
+        use_case = _make_use_case(mocks)
 
-        result = await use_case.execute(ListByGenreInput(genre="Action"))
+        result = await use_case.execute(ListByGenreInput(profile_id=_PROFILE_ID, genre="Action"))
 
         types = {(item.title, item.type) for item in result.items}
         assert types == {("Avatar", "movie"), ("Breaking Bad", "series")}
@@ -101,18 +115,22 @@ class TestListByGenreUseCase:
         mocks = make_media_uow_mock()
         mocks.movies.list_paginated_by_genre.return_value = _movies_page([])
         mocks.series.list_paginated_by_genre.return_value = _series_page([])
-        use_case = ListByGenreUseCase(uow_factory=mocks.factory)
+        use_case = _make_use_case(mocks)
 
         # Build a real dual cursor so the use case decodes it
         from src.building_blocks.application.pagination import encode_dual_cursor
 
         cursor = encode_dual_cursor("movies-token", "series-token")
-        await use_case.execute(ListByGenreInput(genre="Action", cursor=cursor))
+        await use_case.execute(
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", cursor=cursor)
+        )
 
         movie_call_kwargs = mocks.movies.list_paginated_by_genre.await_args.kwargs
         series_call_kwargs = mocks.series.list_paginated_by_genre.await_args.kwargs
         assert movie_call_kwargs["cursor"] == "movies-token"
         assert series_call_kwargs["cursor"] == "series-token"
+        assert list(movie_call_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
+        assert list(series_call_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
 
     @pytest.mark.asyncio
     async def test_should_advance_cursor_only_for_consumed_streams(self) -> None:
@@ -131,13 +149,18 @@ class TestListByGenreUseCase:
             [_series("Zebra")],
             has_more=False,
         )
-        use_case = ListByGenreUseCase(uow_factory=mocks.factory)
+        use_case = _make_use_case(mocks)
 
         from src.building_blocks.application.pagination import encode_dual_cursor
 
         previous_cursor = encode_dual_cursor(None, "previous-series-cursor")
         result = await use_case.execute(
-            ListByGenreInput(genre="Action", cursor=previous_cursor, limit=2)
+            ListByGenreInput(
+                profile_id=_PROFILE_ID,
+                genre="Action",
+                cursor=previous_cursor,
+                limit=2,
+            )
         )
 
         assert result.has_more is True
@@ -165,9 +188,11 @@ class TestListByGenreUseCase:
             [_series("Banana"), _series("Date"), _series("Fig")],
             has_more=False,
         )
-        use_case = ListByGenreUseCase(uow_factory=mocks.factory)
+        use_case = _make_use_case(mocks)
 
-        result = await use_case.execute(ListByGenreInput(genre="Action", limit=2))
+        result = await use_case.execute(
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", limit=2)
+        )
 
         assert len(result.items) == 2
         assert [item.title for item in result.items] == ["Apple", "Banana"]
@@ -182,9 +207,11 @@ class TestListByGenreUseCase:
         mocks.series.list_paginated_by_genre.return_value = _series_page(
             [_series("Breaking Bad")], has_more=False
         )
-        use_case = ListByGenreUseCase(uow_factory=mocks.factory)
+        use_case = _make_use_case(mocks)
 
-        result = await use_case.execute(ListByGenreInput(genre="Action", limit=10))
+        result = await use_case.execute(
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", limit=10)
+        )
 
         assert len(result.items) == 2
         assert result.has_more is False
@@ -195,9 +222,11 @@ class TestListByGenreUseCase:
         mocks = make_media_uow_mock()
         mocks.movies.list_paginated_by_genre.return_value = _movies_page([])
         mocks.series.list_paginated_by_genre.return_value = _series_page([])
-        use_case = ListByGenreUseCase(uow_factory=mocks.factory)
+        use_case = _make_use_case(mocks)
 
-        result = await use_case.execute(ListByGenreInput(genre="NoSuchGenre"))
+        result = await use_case.execute(
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="NoSuchGenre")
+        )
 
         assert result.items == []
         assert result.has_more is False
@@ -212,9 +241,11 @@ class TestListByGenreUseCase:
         mocks.movies.list_paginated_by_genre.return_value = _movies_page(
             [_movie("Avatar"), _movie("Cyrano")]
         )
-        use_case = ListByGenreUseCase(uow_factory=mocks.factory)
+        use_case = _make_use_case(mocks)
 
-        result = await use_case.execute(ListByGenreInput(genre="Action", media_type="movie"))
+        result = await use_case.execute(
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", media_type="movie")
+        )
 
         mocks.movies.list_paginated_by_genre.assert_awaited_once()
         mocks.series.list_paginated_by_genre.assert_not_awaited()
@@ -227,9 +258,11 @@ class TestListByGenreUseCase:
         mocks.series.list_paginated_by_genre.return_value = _series_page(
             [_series("Breaking Bad"), _series("Dark")]
         )
-        use_case = ListByGenreUseCase(uow_factory=mocks.factory)
+        use_case = _make_use_case(mocks)
 
-        result = await use_case.execute(ListByGenreInput(genre="Action", media_type="series"))
+        result = await use_case.execute(
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", media_type="series")
+        )
 
         mocks.series.list_paginated_by_genre.assert_awaited_once()
         mocks.movies.list_paginated_by_genre.assert_not_awaited()
@@ -249,13 +282,14 @@ class TestListByGenreUseCase:
             [_movie("Apple"), _movie("Banana")],
             has_more=True,
         )
-        use_case = ListByGenreUseCase(uow_factory=mocks.factory)
+        use_case = _make_use_case(mocks)
 
         from src.building_blocks.application.pagination import encode_dual_cursor
 
         previous_cursor = encode_dual_cursor(None, "untouched-series-cursor")
         result = await use_case.execute(
             ListByGenreInput(
+                profile_id=_PROFILE_ID,
                 genre="Action",
                 cursor=previous_cursor,
                 limit=2,
@@ -273,12 +307,47 @@ class TestListByGenreUseCase:
         mocks = make_media_uow_mock()
         mocks.movies.list_paginated_by_genre.return_value = _movies_page([_movie("Test")])
         mocks.series.list_paginated_by_genre.return_value = _series_page([])
-        use_case = ListByGenreUseCase(uow_factory=mocks.factory)
+        use_case = _make_use_case(mocks)
 
-        result = await use_case.execute(ListByGenreInput(genre="Action"))
+        result = await use_case.execute(ListByGenreInput(profile_id=_PROFILE_ID, genre="Action"))
 
         item = result.items[0]
         assert isinstance(item, CatalogItemOutput)
         assert item.title == "Test"
         assert item.type == "movie"
         assert item.year == 2020
+
+    @pytest.mark.asyncio
+    async def test_should_short_circuit_for_deny_all_profile(self) -> None:
+        mocks = make_media_uow_mock()
+        use_case = ListByGenreUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+        )
+
+        result = await use_case.execute(ListByGenreInput(profile_id=_PROFILE_ID, genre="Action"))
+
+        assert result.items == []
+        assert result.has_more is False
+        assert result.next_cursor is None
+        mocks.factory.assert_not_called()
+        mocks.movies.list_paginated_by_genre.assert_not_awaited()
+        mocks.series.list_paginated_by_genre.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_should_forward_only_allowed_libraries_for_inclusion_path(
+        self,
+    ) -> None:
+        mocks = make_media_uow_mock()
+        mocks.movies.list_paginated_by_genre.return_value = _movies_page([_movie("Visible")])
+        mocks.series.list_paginated_by_genre.return_value = _series_page([])
+        use_case = _make_use_case(mocks)
+
+        result = await use_case.execute(ListByGenreInput(profile_id=_PROFILE_ID, genre="Action"))
+
+        assert [item.title for item in result.items] == ["Visible"]
+        movie_kwargs = mocks.movies.list_paginated_by_genre.await_args.kwargs
+        series_kwargs = mocks.series.list_paginated_by_genre.await_args.kwargs
+        assert list(movie_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
+        assert list(series_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
+        assert _LIBRARY_ID_OTHER not in list(movie_kwargs["allowed_library_ids"])

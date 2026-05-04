@@ -46,6 +46,7 @@ from src.modules.media.application.use_cases.stream_file_range import (
     StreamFileRangeInput,
     StreamFileRangeUseCase,
 )
+from src.modules.media.presentation.dependencies import resolve_profile_id
 
 router = APIRouter(prefix="/api/v1/stream", tags=["Streaming"])
 
@@ -131,6 +132,7 @@ async def hls_file(
 @inject  # type: ignore[misc]
 async def movie_hls_playlist(
     movie_id: str,
+    profile_id: str = Depends(resolve_profile_id),
     movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
@@ -147,7 +149,7 @@ async def movie_hls_playlist(
     in the background so a freshly-imported file gets thumbnails
     without waiting for the next periodic tick.
     """
-    movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
+    movie = await movie_uc.execute(GetMovieByIdInput(profile_id=profile_id, movie_id=movie_id))
     file_path = _require_file(movie.file_path)
     if movie.scrub_preview_path is None:
         _fire_eager_movie(backfill_job, movie_id)
@@ -160,6 +162,7 @@ async def episode_hls_playlist(
     series_id: str,
     season_number: int,
     episode_number: int,
+    profile_id: str = Depends(resolve_profile_id),
     series_uc: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
@@ -171,7 +174,7 @@ async def episode_hls_playlist(
     ),
 ) -> Response:
     """Generate and serve HLS master playlist for an episode."""
-    episode = await _find_episode(series_uc, series_id, season_number, episode_number)
+    episode = await _find_episode(series_uc, profile_id, series_id, season_number, episode_number)
     if episode is None:
         raise HTTPException(status_code=404, detail="Episode not found")
     file_path = _require_file(episode.file_path)
@@ -187,6 +190,7 @@ async def episode_hls_playlist(
 @inject  # type: ignore[misc]
 async def movie_tracks(
     movie_id: str,
+    profile_id: str = Depends(resolve_profile_id),
     movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
@@ -195,7 +199,7 @@ async def movie_tracks(
     ),
 ) -> dict[str, Any]:
     """Get available audio and subtitle tracks for a movie."""
-    movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
+    movie = await movie_uc.execute(GetMovieByIdInput(profile_id=profile_id, movie_id=movie_id))
     file_path = _require_file(movie.file_path)
     tracks = await tracks_uc.execute(GetFileTracksInput(file_path=file_path))
     return asdict(tracks)
@@ -207,6 +211,7 @@ async def episode_tracks(
     series_id: str,
     season_number: int,
     episode_number: int,
+    profile_id: str = Depends(resolve_profile_id),
     series_uc: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
@@ -215,7 +220,9 @@ async def episode_tracks(
     ),
 ) -> dict[str, Any]:
     """Get available audio and subtitle tracks for an episode."""
-    file_path = await _find_episode_file(series_uc, series_id, season_number, episode_number)
+    file_path = await _find_episode_file(
+        series_uc, profile_id, series_id, season_number, episode_number
+    )
     file_path = _require_file(file_path)
     tracks = await tracks_uc.execute(GetFileTracksInput(file_path=file_path))
     return asdict(tracks)
@@ -256,12 +263,13 @@ def _scrub_preview_files(scrub_preview_path: str | None) -> tuple[Path, Path]:
 @inject  # type: ignore[misc]
 async def movie_scrub_preview_vtt(
     movie_id: str,
+    profile_id: str = Depends(resolve_profile_id),
     movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
 ) -> FileResponse:
     """Serve the persisted scrub-preview WebVTT for a movie."""
-    movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
+    movie = await movie_uc.execute(GetMovieByIdInput(profile_id=profile_id, movie_id=movie_id))
     vtt_path, _ = _scrub_preview_files(movie.scrub_preview_path)
     return FileResponse(str(vtt_path), media_type="text/vtt")
 
@@ -270,12 +278,13 @@ async def movie_scrub_preview_vtt(
 @inject  # type: ignore[misc]
 async def movie_scrub_preview_sprite(
     movie_id: str,
+    profile_id: str = Depends(resolve_profile_id),
     movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
 ) -> FileResponse:
     """Serve the persisted scrub-preview sprite JPEG for a movie."""
-    movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
+    movie = await movie_uc.execute(GetMovieByIdInput(profile_id=profile_id, movie_id=movie_id))
     _, sprite_path = _scrub_preview_files(movie.scrub_preview_path)
     return FileResponse(str(sprite_path), media_type="image/jpeg")
 
@@ -286,12 +295,13 @@ async def episode_scrub_preview_vtt(
     series_id: str,
     season_number: int,
     episode_number: int,
+    profile_id: str = Depends(resolve_profile_id),
     series_uc: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
 ) -> FileResponse:
     """Serve the persisted scrub-preview WebVTT for an episode."""
-    episode = await _find_episode(series_uc, series_id, season_number, episode_number)
+    episode = await _find_episode(series_uc, profile_id, series_id, season_number, episode_number)
     if episode is None:
         raise HTTPException(status_code=404, detail="Episode not found")
     vtt_path, _ = _scrub_preview_files(episode.scrub_preview_path)
@@ -304,12 +314,13 @@ async def episode_scrub_preview_sprite(
     series_id: str,
     season_number: int,
     episode_number: int,
+    profile_id: str = Depends(resolve_profile_id),
     series_uc: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
 ) -> FileResponse:
     """Serve the persisted scrub-preview sprite JPEG for an episode."""
-    episode = await _find_episode(series_uc, series_id, season_number, episode_number)
+    episode = await _find_episode(series_uc, profile_id, series_id, season_number, episode_number)
     if episode is None:
         raise HTTPException(status_code=404, detail="Episode not found")
     _, sprite_path = _scrub_preview_files(episode.scrub_preview_path)
@@ -323,6 +334,7 @@ async def episode_scrub_preview_sprite(
 @inject  # type: ignore[misc]
 async def clear_movie_hls_cache(
     movie_id: str,
+    profile_id: str = Depends(resolve_profile_id),
     movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
@@ -331,7 +343,7 @@ async def clear_movie_hls_cache(
     ),
 ) -> Response:
     """Clear cached HLS segments for a movie, forcing regeneration."""
-    movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
+    movie = await movie_uc.execute(GetMovieByIdInput(profile_id=profile_id, movie_id=movie_id))
     await clear_uc.execute(ClearHlsCacheInput(file_path=movie.file_path))
     return Response(status_code=204)
 
@@ -344,6 +356,7 @@ async def clear_movie_hls_cache(
 async def stream_movie(
     movie_id: str,
     request: Request,
+    profile_id: str = Depends(resolve_profile_id),
     movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
     ),
@@ -352,7 +365,7 @@ async def stream_movie(
     ),
 ) -> StreamingResponse:
     """Direct stream a movie file with Range support (MP4/WebM only)."""
-    movie = await movie_uc.execute(GetMovieByIdInput(movie_id=movie_id))
+    movie = await movie_uc.execute(GetMovieByIdInput(profile_id=profile_id, movie_id=movie_id))
     file_path = _require_file(movie.file_path)
     return await _stream_range(stream_uc, file_path, request.headers.get("range"))
 
@@ -364,6 +377,7 @@ async def stream_episode(
     season_number: int,
     episode_number: int,
     request: Request,
+    profile_id: str = Depends(resolve_profile_id),
     series_uc: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
@@ -372,7 +386,9 @@ async def stream_episode(
     ),
 ) -> StreamingResponse:
     """Direct stream an episode file with Range support."""
-    file_path = await _find_episode_file(series_uc, series_id, season_number, episode_number)
+    file_path = await _find_episode_file(
+        series_uc, profile_id, series_id, season_number, episode_number
+    )
     file_path = _require_file(file_path)
     return await _stream_range(stream_uc, file_path, request.headers.get("range"))
 
@@ -417,23 +433,25 @@ async def _stream_range(
 
 async def _find_episode_file(
     use_case: GetSeriesByIdUseCase,
+    profile_id: str,
     series_id: str,
     season_number: int,
     episode_number: int,
 ) -> str | None:
     """Find episode file path from series hierarchy."""
-    episode = await _find_episode(use_case, series_id, season_number, episode_number)
+    episode = await _find_episode(use_case, profile_id, series_id, season_number, episode_number)
     return episode.file_path if episode else None
 
 
 async def _find_episode(
     use_case: GetSeriesByIdUseCase,
+    profile_id: str,
     series_id: str,
     season_number: int,
     episode_number: int,
 ) -> EpisodeOutput | None:
     """Resolve a single ``EpisodeOutput`` from the series aggregate."""
-    series = await use_case.execute(GetSeriesByIdInput(series_id=series_id))
+    series = await use_case.execute(GetSeriesByIdInput(profile_id=profile_id, series_id=series_id))
     for season in series.seasons:
         if season.season_number == season_number:
             for episode in season.episodes:

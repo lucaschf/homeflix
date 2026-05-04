@@ -5,6 +5,9 @@ from src.modules.media.application.dtos.catalog_dtos import (
     ListGenresInput,
     ListGenresOutput,
 )
+from src.modules.media.application.ports.profile_library_access_port import (
+    ProfileLibraryAccessPort,
+)
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.repositories.movie_repository import GenreRow
 
@@ -35,26 +38,41 @@ class ListGenresUseCase:
         GenreOutput(id="Action", name="Ação", count=42)
     """
 
-    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
+    def __init__(
+        self,
+        uow_factory: MediaUnitOfWorkFactory,
+        profile_library_access: ProfileLibraryAccessPort,
+    ) -> None:
         """Initialize the use case.
 
         Args:
             uow_factory: Factory that opens a fresh media Unit of Work.
+            profile_library_access: Port that resolves the caller's
+                allowed library_ids.
         """
         self._uow_factory = uow_factory
+        self._profile_library_access = profile_library_access
 
     async def execute(self, input_dto: ListGenresInput) -> ListGenresOutput:
         """Execute the use case.
 
         Args:
-            input_dto: Carries the requested ``lang`` and optional
-                ``media_type`` filter.
+            input_dto: Carries the caller's ``profile_id``, the
+                requested ``lang``, and an optional ``media_type``
+                filter.
 
         Returns:
             ``ListGenresOutput`` with one ``GenreOutput`` per unique
             canonical genre present in the library (restricted to the
-            selected media type when ``media_type`` is set).
+            selected media type when ``media_type`` is set, and
+            further restricted to the caller's
+            ``Profile.allowed_library_ids``). A deny-all profile
+            yields an empty list without opening a UoW.
         """
+        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
+        if not allowed:
+            return ListGenresOutput(genres=[])
+
         # Skip the repo call for the excluded media type when a
         # filter is active. The Movies and Series tabs on the frontend
         # use this to get counts scoped to just their half of the
@@ -62,12 +80,18 @@ class ListGenresUseCase:
         # appear on the Movies tab.
         async with self._uow_factory() as uow:
             movie_rows = (
-                await uow.movies.list_genre_rows(input_dto.lang)
+                await uow.movies.list_genre_rows(
+                    input_dto.lang,
+                    allowed_library_ids=allowed,
+                )
                 if input_dto.media_type != "series"
                 else []
             )
             series_rows = (
-                await uow.series.list_genre_rows(input_dto.lang)
+                await uow.series.list_genre_rows(
+                    input_dto.lang,
+                    allowed_library_ids=allowed,
+                )
                 if input_dto.media_type != "movie"
                 else []
             )
