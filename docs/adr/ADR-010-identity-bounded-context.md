@@ -1,6 +1,6 @@
 # ADR-010: Identity Bounded Context — User, Profile and Context Passing
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-05-03
 **Deciders:** Lucas Cristovam
 **Technical Story:** Introdução de autenticação e personalização ao HomeFlix — habilitar múltiplos usuários com login próprio, perfis de personalização (estilo Netflix) e isolamento de dados de uso (`watch_progress`, `collections`, `preferences`) por perfil.
@@ -187,3 +187,4 @@ A sequência de PRs implementando esta decisão (foundation do BC `identity` →
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-05-03 | Lucas Cristovam | Criação inicial |
+| 2026-05-03 | Lucas Cristovam | Promovido para `Aceito` após implementação do BC `identity` (PRs 163-170: domain, models, persistence, use cases, FastAPI Users wiring, routes, e2e). |
