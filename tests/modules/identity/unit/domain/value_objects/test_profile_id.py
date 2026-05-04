@@ -3,7 +3,7 @@
 import pytest
 
 from src.building_blocks.domain.errors import DomainValidationException
-from src.modules.identity.domain.value_objects.profile_id import ProfileId
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class TestProfileIdCreation:

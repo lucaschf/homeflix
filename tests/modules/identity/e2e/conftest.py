@@ -30,12 +30,12 @@ import src.modules.identity.infrastructure.persistence.models  # noqa: F401
 from src.config.containers import ApplicationContainer
 from src.infrastructure.persistence import Base
 from src.main import WIRED_ROUTE_MODULES, create_app
-from src.modules.identity.domain.value_objects.profile_id import ProfileId
-from src.modules.identity.domain.value_objects.user_id import UserId
 from src.modules.identity.infrastructure.persistence.models.profile_model import (
     ProfileModel,
 )
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.shared_kernel.value_objects.profile_id import ProfileId
+from src.shared_kernel.value_objects.user_id import UserId
 
 
 @pytest.fixture(scope="function")

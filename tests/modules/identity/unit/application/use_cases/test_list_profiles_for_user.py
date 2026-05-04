@@ -10,7 +10,7 @@ from src.modules.identity.application.use_cases.create_profile import (
 from src.modules.identity.application.use_cases.list_profiles_for_user import (
     ListProfilesForUserUseCase,
 )
-from src.modules.identity.domain.value_objects.user_id import UserId
+from src.shared_kernel.value_objects.user_id import UserId
 
 from .conftest import FakeIdentityUnitOfWorkFactory
 

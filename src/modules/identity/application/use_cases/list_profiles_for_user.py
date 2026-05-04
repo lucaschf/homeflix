@@ -6,7 +6,7 @@ from src.modules.identity.application.dtos.identity_dtos import (
 )
 from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
 from src.modules.identity.application.use_cases._to_output import profile_to_output
-from src.modules.identity.domain.value_objects.user_id import UserId
+from src.shared_kernel.value_objects.user_id import UserId
 
 
 class ListProfilesForUserUseCase:

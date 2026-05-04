@@ -13,13 +13,13 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.modules.identity.domain.value_objects.profile_id import ProfileId
 from src.modules.identity.infrastructure.persistence.models.access_token_model import (
     AccessTokenModel,
 )
 from src.modules.identity.infrastructure.persistence.models.profile_model import (
     ProfileModel,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId
 from tests.modules.identity.e2e.conftest import SeededUser
 
 LOGIN_PATH = "/api/v1/auth/cookie/login"

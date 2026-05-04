@@ -7,11 +7,11 @@ from typing import Self
 from pydantic import Field
 
 from src.building_blocks.domain.entity import AggregateRoot
-from src.modules.identity.domain.value_objects.profile_id import ProfileId
 from src.modules.identity.domain.value_objects.profile_name import (  # noqa: TCH001
     ProfileName,
 )
-from src.modules.identity.domain.value_objects.user_id import UserId  # noqa: TCH001
+from src.shared_kernel.value_objects.profile_id import ProfileId
+from src.shared_kernel.value_objects.user_id import UserId  # noqa: TCH001
 
 
 class Profile(AggregateRoot[ProfileId]):

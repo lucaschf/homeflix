@@ -4,9 +4,9 @@ import pytest
 
 from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.identity.domain.entities.profile import Profile
-from src.modules.identity.domain.value_objects.profile_id import ProfileId
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
-from src.modules.identity.domain.value_objects.user_id import UserId
+from src.shared_kernel.value_objects.profile_id import ProfileId
+from src.shared_kernel.value_objects.user_id import UserId
 
 
 def _user_id() -> UserId:

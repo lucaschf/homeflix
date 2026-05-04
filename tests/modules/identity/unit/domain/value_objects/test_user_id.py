@@ -3,7 +3,7 @@
 import pytest
 
 from src.building_blocks.domain.errors import DomainValidationException
-from src.modules.identity.domain.value_objects.user_id import UserId
+from src.shared_kernel.value_objects.user_id import UserId
 
 
 class TestUserIdCreation:

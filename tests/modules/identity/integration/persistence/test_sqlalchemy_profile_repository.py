@@ -6,9 +6,9 @@ from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFact
 from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.value_objects.email import Email
-from src.modules.identity.domain.value_objects.profile_id import ProfileId
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
-from src.modules.identity.domain.value_objects.user_id import UserId
+from src.shared_kernel.value_objects.profile_id import ProfileId
+from src.shared_kernel.value_objects.user_id import UserId
 
 
 async def _seed_user(

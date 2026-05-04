@@ -6,11 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.repositories.user_repository import UserRepository
 from src.modules.identity.domain.value_objects.email import Email
-from src.modules.identity.domain.value_objects.user_id import UserId
 from src.modules.identity.infrastructure.persistence.mappers.user_mapper import (
     UserMapper,
 )
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.shared_kernel.value_objects.user_id import UserId
 
 
 class SqlAlchemyUserRepository(UserRepository):

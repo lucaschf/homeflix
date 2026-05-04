@@ -8,7 +8,7 @@ from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFact
 from src.modules.identity.application.use_cases._to_output import profile_to_output
 from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
-from src.modules.identity.domain.value_objects.user_id import UserId
+from src.shared_kernel.value_objects.user_id import UserId
 
 
 class CreateProfileUseCase:
