@@ -21,6 +21,8 @@ from src.modules.media.domain.value_objects import (
 )
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 @pytest.fixture()
 def mock_progress_lookup() -> AsyncMock:
@@ -39,7 +41,9 @@ class TestGetSeriesByIdUseCase:
         carries name, profile_path, role and tmdb_id so the detail UI
         can render the same actor cards across both media types."""
         mocks = make_media_uow_mock()
-        series = Series.create(title="Breaking Bad", start_year=2008).with_updates(
+        series = Series.create(
+            library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008
+        ).with_updates(
             cast=[
                 CastMember(
                     name="Bryan Cranston",
@@ -71,6 +75,7 @@ class TestGetSeriesByIdUseCase:
     async def test_should_return_series_when_found(self, mock_progress_lookup):
         mocks = make_media_uow_mock()
         series = Series.create(
+            library_id=_LIBRARY_ID,
             title="Breaking Bad",
             start_year=2008,
         )
@@ -91,6 +96,7 @@ class TestGetSeriesByIdUseCase:
     async def test_should_return_series_with_seasons(self, mock_progress_lookup):
         mocks = make_media_uow_mock()
         series = Series.create(
+            library_id=_LIBRARY_ID,
             title="Breaking Bad",
             start_year=2008,
             end_year=2013,
@@ -117,6 +123,7 @@ class TestGetSeriesByIdUseCase:
     async def test_should_return_series_with_episodes(self, mock_progress_lookup):
         mocks = make_media_uow_mock()
         series = Series.create(
+            library_id=_LIBRARY_ID,
             title="Breaking Bad",
             start_year=2008,
         )
@@ -162,6 +169,7 @@ class TestGetSeriesByIdUseCase:
     async def test_should_return_ongoing_status(self, mock_progress_lookup):
         mocks = make_media_uow_mock()
         series = Series.create(
+            library_id=_LIBRARY_ID,
             title="Ongoing Show",
             start_year=2020,
         )
@@ -180,6 +188,7 @@ class TestGetSeriesByIdUseCase:
     async def test_should_return_completed_status(self, mock_progress_lookup):
         mocks = make_media_uow_mock()
         series = Series.create(
+            library_id=_LIBRARY_ID,
             title="Completed Show",
             start_year=2010,
             end_year=2015,
@@ -214,6 +223,7 @@ class TestGetSeriesByIdUseCase:
     async def test_should_handle_series_with_no_seasons(self, mock_progress_lookup):
         mocks = make_media_uow_mock()
         series = Series.create(
+            library_id=_LIBRARY_ID,
             title="New Show",
             start_year=2024,
         )
@@ -233,6 +243,7 @@ class TestGetSeriesByIdUseCase:
     async def test_should_return_genres_as_strings(self, mock_progress_lookup):
         mocks = make_media_uow_mock()
         series = Series.create(
+            library_id=_LIBRARY_ID,
             title="Drama Show",
             start_year=2020,
             genres=["Drama", "Thriller"],

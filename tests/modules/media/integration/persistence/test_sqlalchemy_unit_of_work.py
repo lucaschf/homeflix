@@ -26,6 +26,8 @@ from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import
     SqlAlchemyMediaUnitOfWorkFactory,
 )
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 @pytest.fixture
 async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
@@ -48,6 +50,7 @@ async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], 
 
 def _movie(title: str = "Inception") -> Movie:
     return Movie(
+        library_id=_LIBRARY_ID,
         id=MovieId.generate(),
         title=Title(title),
         year=Year(2010),

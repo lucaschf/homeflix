@@ -17,10 +17,13 @@ from src.modules.media.domain.value_objects import (
 from src.modules.media.infrastructure.persistence.mappers import MovieMapper
 from src.modules.media.infrastructure.persistence.models import MovieModel
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _create_movie(movie_id: MovieId | None = None) -> Movie:
     """Create a Movie entity for testing."""
     return Movie(
+        library_id=_LIBRARY_ID,
         id=movie_id,
         title=Title("Test Movie"),
         year=Year(2024),
@@ -72,6 +75,7 @@ class TestMovieMapper:
         movie_id = MovieId.generate()
         now = datetime.now(UTC)
         model = MovieModel(
+            library_id=_LIBRARY_ID,
             external_id=str(movie_id),
             title="Test Movie",
             year=2024,
@@ -98,6 +102,7 @@ class TestMovieMapper:
         movie_id = MovieId.generate()
         now = datetime.now(UTC)
         model = MovieModel(
+            library_id=_LIBRARY_ID,
             external_id=str(movie_id),
             title="Test Movie",
             year=2024,
@@ -125,6 +130,7 @@ class TestMovieMapper:
         movie_id = MovieId.generate()
         now = datetime.now(UTC)
         model = MovieModel(
+            library_id=_LIBRARY_ID,
             external_id=str(movie_id),
             title="Test Movie",
             year=2024,
@@ -151,6 +157,7 @@ class TestMovieMapper:
         movie_id = MovieId.generate()
         now = datetime.now(UTC)
         model = MovieModel(
+            library_id=_LIBRARY_ID,
             external_id=str(movie_id),
             title="Test Movie",
             year=2024,
@@ -182,6 +189,7 @@ class TestMovieMapper:
         movie_id = MovieId.generate()
         now = datetime.now(UTC)
         model = MovieModel(
+            library_id=_LIBRARY_ID,
             external_id=str(movie_id),
             title="Test Movie",
             year=2024,
@@ -205,6 +213,7 @@ class TestMovieMapper:
         movie_id = MovieId.generate()
         now = datetime.now(UTC)
         model = MovieModel(
+            library_id=_LIBRARY_ID,
             external_id=str(movie_id),
             title="Test Movie",
             year=2024,
@@ -233,6 +242,7 @@ class TestMovieMapper:
         movie_id = MovieId.generate()
         now = datetime.now(UTC)
         model = MovieModel(
+            library_id=_LIBRARY_ID,
             external_id=str(movie_id),
             title="Test Movie",
             year=2024,
@@ -256,6 +266,7 @@ class TestMovieMapper:
         movie_id = MovieId.generate()
         now = datetime.now(UTC)
         model = MovieModel(
+            library_id=_LIBRARY_ID,
             external_id=str(movie_id),
             title="Test Movie",
             year=2024,
@@ -279,6 +290,7 @@ class TestMovieMapper:
         movie_id = MovieId.generate()
         now = datetime.now(UTC)
         model = MovieModel(
+            library_id=_LIBRARY_ID,
             external_id=str(movie_id),
             title="Test Movie",
             year=2024,
@@ -297,3 +309,66 @@ class TestMovieMapper:
 
         assert len(entity.cast) == 1
         assert entity.cast[0].name == "Leonardo DiCaprio"
+
+    def test_to_model_persists_library_id_from_entity(self) -> None:
+        """``to_model`` carries the entity's ``library_id`` onto the row.
+
+        Pinned because the catalog is filtered per-profile downstream
+        through ``library_id``; a regression that drops the column
+        copy would silently un-scope every newly inserted movie.
+        """
+        movie_id = MovieId.generate()
+        movie = _create_movie(movie_id=movie_id)
+
+        model = MovieMapper.to_model(movie)
+
+        assert model.library_id == _LIBRARY_ID
+
+    def test_round_trip_preserves_library_id(self) -> None:
+        """Entity → model → entity round-trip keeps ``library_id`` intact."""
+        movie_id = MovieId.generate()
+        movie = _create_movie(movie_id=movie_id)
+
+        model = MovieMapper.to_model(movie)
+        now = datetime.now(UTC)
+        model.created_at = now
+        model.updated_at = now
+
+        rebuilt = MovieMapper.to_entity(model, include_files=False)
+
+        assert rebuilt.library_id == _LIBRARY_ID
+
+    def test_update_model_preserves_existing_library_id(self) -> None:
+        """``update_model`` deliberately leaves ``library_id`` alone.
+
+        ``library_id`` is the immutable owning-library reference set at
+        scan time; subsequent enrichment / update flows should never
+        rewrite it. The model's existing value wins even if the entity
+        somehow carries a different one.
+        """
+        movie_id = MovieId.generate()
+        existing_model = MovieMapper.to_model(_create_movie(movie_id=movie_id))
+        # Sanity-check baseline before update.
+        assert existing_model.library_id == _LIBRARY_ID
+
+        # Construct a refreshed entity that claims a *different* library_id
+        # to prove update_model does not propagate it onto the model.
+        refreshed = Movie(
+            library_id="lib_otherlibrary",
+            id=movie_id,
+            title=Title("Refreshed"),
+            year=Year(2025),
+            duration=Duration(7200),
+            files=[
+                MediaFile(
+                    file_path=FilePath("/movies/test.mkv"),
+                    file_size=1_000_000_000,
+                    resolution=Resolution("1080p"),
+                    is_primary=True,
+                )
+            ],
+        )
+
+        MovieMapper.update_model(existing_model, refreshed)
+
+        assert existing_model.library_id == _LIBRARY_ID

@@ -4,6 +4,8 @@ import pytest
 
 from src.building_blocks.domain.errors import DomainValidationException
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 class TestMovieCreation:
     """Tests for Movie instantiation."""
@@ -20,6 +22,7 @@ class TestMovieCreation:
         )
 
         movie = Movie(
+            library_id=_LIBRARY_ID,
             title=Title("Inception"),
             year=Year(2010),
             duration=Duration(8880),
@@ -42,6 +45,7 @@ class TestMovieCreation:
         from src.modules.media.domain.value_objects import MovieId
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -58,6 +62,7 @@ class TestMovieCreation:
         from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -81,6 +86,7 @@ class TestMovieCreation:
         )
 
         movie = Movie(
+            library_id=_LIBRARY_ID,
             id="mov_abc123abc123",
             title=Title("Inception"),
             year=Year(2010),
@@ -109,6 +115,7 @@ class TestMovieOptionalFields:
         )
 
         movie = Movie(
+            library_id=_LIBRARY_ID,
             title=Title("Inception"),
             original_title=Title("Inception"),
             year=Year(2010),
@@ -144,6 +151,7 @@ class TestMovieGenreManagement:
         from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -162,6 +170,7 @@ class TestMovieGenreManagement:
         from src.modules.media.domain.value_objects import Genre
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -178,6 +187,7 @@ class TestMovieGenreManagement:
         from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -199,6 +209,7 @@ class TestMovieFileManagement:
         from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -216,6 +227,7 @@ class TestMovieFileManagement:
         from src.modules.media.domain.value_objects import Duration, Title, Year
 
         movie = Movie(
+            library_id=_LIBRARY_ID,
             title=Title("Test"),
             year=Year(2024),
             duration=Duration(7200),
@@ -228,6 +240,7 @@ class TestMovieFileManagement:
         from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -252,6 +265,7 @@ class TestMovieFileManagement:
         from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -275,6 +289,7 @@ class TestMovieFileManagement:
         from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -297,6 +312,7 @@ class TestMovieFileManagement:
         from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -319,6 +335,7 @@ class TestMovieFileManagement:
         from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -343,6 +360,7 @@ class TestMovieFileManagement:
         from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -359,6 +377,7 @@ class TestMovieFileManagement:
         from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -386,6 +405,7 @@ class TestMovieEquality:
         movie_id = MovieId.generate()
 
         movie1 = Movie(
+            library_id=_LIBRARY_ID,
             id=movie_id,
             title=Title("Inception"),
             year=Year(2010),
@@ -393,6 +413,7 @@ class TestMovieEquality:
         )
 
         movie2 = Movie(
+            library_id=_LIBRARY_ID,
             id=movie_id,
             title=Title("Different"),
             year=Year(2010),
@@ -410,6 +431,7 @@ class TestMovieEvents:
         from src.modules.media.domain.events import MediaCreatedEvent
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -432,6 +454,7 @@ class TestMovieEvents:
         from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -462,6 +485,7 @@ class TestMovieEvents:
         from src.modules.media.domain.value_objects import Year
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -486,6 +510,7 @@ class TestMovieImmutability:
         from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -501,6 +526,7 @@ class TestMovieImmutability:
         from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -519,6 +545,7 @@ class TestMovieImmutability:
         from src.modules.media.domain.entities import Movie
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -537,6 +564,7 @@ class TestMovieImmutability:
         from src.modules.media.domain.value_objects import Genre
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -555,6 +583,7 @@ class TestMovieImmutability:
         from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
@@ -598,7 +627,7 @@ class TestMovieLogoLocalization:
             },
         }
         defaults.update(kwargs)
-        return Movie(**defaults)
+        return Movie(library_id=_LIBRARY_ID, **defaults)
 
     def test_returns_localized_logo_when_lang_has_one(self):
         movie = self._movie()

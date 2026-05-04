@@ -24,9 +24,12 @@ from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import
     SqlAlchemyMediaUnitOfWorkFactory,
 )
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _movie(title: str, file_path: str) -> Movie:
     return Movie(
+        library_id=_LIBRARY_ID,
         id=MovieId.generate(),
         title=Title(title),
         year=Year(2024),
@@ -43,7 +46,7 @@ def _movie(title: str, file_path: str) -> Movie:
 
 
 def _series_with_episode(title: str, file_path: str) -> Series:
-    series = Series.create(title=title, start_year=2024)
+    series = Series.create(library_id=_LIBRARY_ID, title=title, start_year=2024)
     assert series.id is not None
     season = Season(id=SeasonId.generate(), series_id=series.id, season_number=1)
     episode = Episode(

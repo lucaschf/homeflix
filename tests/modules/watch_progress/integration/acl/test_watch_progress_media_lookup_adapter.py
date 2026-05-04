@@ -26,6 +26,8 @@ from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import
 )
 from src.modules.watch_progress.infrastructure.acl import MediaLookupAdapter
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _movie(
     movie_id: MovieId,
@@ -34,6 +36,7 @@ def _movie(
     backdrop: str | None = "/b/m.jpg",
 ) -> Movie:
     return Movie(
+        library_id=_LIBRARY_ID,
         id=movie_id,
         title=Title(title),
         year=Year(2024),
@@ -58,6 +61,7 @@ def _series_with_episodes(
 ) -> Series:
     """Create a series with given (season, episode, title) triples."""
     series = Series(
+        library_id=_LIBRARY_ID,
         id=series_id,
         title=Title(title),
         start_year=Year(2024),

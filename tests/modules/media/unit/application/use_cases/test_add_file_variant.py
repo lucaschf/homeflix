@@ -8,6 +8,8 @@ from src.modules.media.application.use_cases import AddFileVariantUseCase
 from src.modules.media.domain.entities import Movie
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 @pytest.mark.unit
 class TestAddFileVariantUseCase:
@@ -18,6 +20,7 @@ class TestAddFileVariantUseCase:
         mocks = make_media_uow_mock()
 
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,

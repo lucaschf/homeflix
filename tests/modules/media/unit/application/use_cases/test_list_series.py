@@ -13,6 +13,8 @@ from src.modules.media.application.use_cases import ListSeriesUseCase
 from src.modules.media.domain.entities import Series
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _page(
     series_list: list[Series],
@@ -36,8 +38,8 @@ class TestListSeriesUseCase:
         mocks = make_media_uow_mock()
         mocks.series.list_paginated.return_value = _page(
             [
-                Series.create(title="Show 1", start_year=2020),
-                Series.create(title="Show 2", start_year=2021),
+                Series.create(library_id=_LIBRARY_ID, title="Show 1", start_year=2020),
+                Series.create(library_id=_LIBRARY_ID, title="Show 2", start_year=2021),
             ]
         )
         use_case = ListSeriesUseCase(uow_factory=mocks.factory)
@@ -59,6 +61,7 @@ class TestListSeriesUseCase:
     async def test_should_convert_series_to_summaries(self) -> None:
         mocks = make_media_uow_mock()
         series = Series.create(
+            library_id=_LIBRARY_ID,
             title="Breaking Bad",
             start_year=2008,
             end_year=2013,
@@ -95,7 +98,7 @@ class TestListSeriesUseCase:
     async def test_should_propagate_next_cursor_and_has_more(self) -> None:
         mocks = make_media_uow_mock()
         mocks.series.list_paginated.return_value = _page(
-            [Series.create(title="Show 1", start_year=2020)],
+            [Series.create(library_id=_LIBRARY_ID, title="Show 1", start_year=2020)],
             next_cursor="next-token",
             has_more=True,
         )
@@ -121,7 +124,7 @@ class TestListSeriesUseCase:
     @pytest.mark.asyncio
     async def test_should_indicate_ongoing_series(self) -> None:
         mocks = make_media_uow_mock()
-        series = Series.create(title="Ongoing Show", start_year=2020)
+        series = Series.create(library_id=_LIBRARY_ID, title="Ongoing Show", start_year=2020)
         mocks.series.list_paginated.return_value = _page([series])
         use_case = ListSeriesUseCase(uow_factory=mocks.factory)
 
@@ -133,7 +136,7 @@ class TestListSeriesUseCase:
     @pytest.mark.asyncio
     async def test_should_include_season_and_episode_counts(self) -> None:
         mocks = make_media_uow_mock()
-        series = Series.create(title="Test Show", start_year=2020)
+        series = Series.create(library_id=_LIBRARY_ID, title="Test Show", start_year=2020)
         mocks.series.list_paginated.return_value = _page([series])
         use_case = ListSeriesUseCase(uow_factory=mocks.factory)
 
@@ -146,7 +149,7 @@ class TestListSeriesUseCase:
     async def test_should_request_total_when_include_total_is_true(self) -> None:
         mocks = make_media_uow_mock()
         mocks.series.list_paginated.return_value = _page(
-            [Series.create(title="Show 1", start_year=2020)],
+            [Series.create(library_id=_LIBRARY_ID, title="Show 1", start_year=2020)],
             total_count=10,
         )
         use_case = ListSeriesUseCase(uow_factory=mocks.factory)

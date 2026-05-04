@@ -32,6 +32,11 @@ class MovieModel(Base):
         imdb_id: IMDb ID (e.g., "tt1234567").
     """
 
+    # Library scoping (lib_xxx prefixed external id; cross-BC string
+    # reference, no FK because the catalog and library tables live in
+    # different bounded contexts).
+    library_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+
     # Core info
     title: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
     original_title: Mapped[str | None] = mapped_column(String(500), nullable=True)

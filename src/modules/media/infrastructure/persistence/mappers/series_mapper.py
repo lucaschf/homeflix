@@ -283,6 +283,7 @@ class SeriesMapper:
 
         return SeriesModel(
             external_id=str(entity.id),
+            library_id=entity.library_id,
             title=entity.title.value,
             original_title=entity.original_title.value if entity.original_title else None,
             start_year=entity.start_year.value,
@@ -323,6 +324,7 @@ class SeriesMapper:
 
         return Series(
             id=SeriesId(model.external_id),
+            library_id=model.library_id,
             title=Title(model.title),
             original_title=Title(model.original_title) if model.original_title else None,
             start_year=Year(model.start_year),
@@ -354,6 +356,9 @@ class SeriesMapper:
         Returns:
             The updated SeriesModel.
         """
+        # ``library_id`` is the immutable owning-library reference; it
+        # gets set once at creation time and never changes, so the
+        # update path leaves it alone.
         model.title = entity.title.value
         model.original_title = entity.original_title.value if entity.original_title else None
         model.start_year = entity.start_year.value

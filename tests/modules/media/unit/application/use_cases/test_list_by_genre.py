@@ -17,9 +17,12 @@ from src.modules.media.application.use_cases.list_by_genre import ListByGenreUse
 from src.modules.media.domain.entities import Movie, Series
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _movie(title: str) -> Movie:
     return Movie.create(
+        library_id=_LIBRARY_ID,
         title=title,
         year=2020,
         duration=7200,
@@ -30,7 +33,7 @@ def _movie(title: str) -> Movie:
 
 
 def _series(title: str) -> Series:
-    return Series.create(title=title, start_year=2020)
+    return Series.create(library_id=_LIBRARY_ID, title=title, start_year=2020)
 
 
 def _movies_page(

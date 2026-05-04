@@ -31,6 +31,8 @@ from src.modules.media.infrastructure.persistence.models import (
     SeriesModel,
 )
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _create_episode(
     episode_id: EpisodeId | None = None,
@@ -71,6 +73,7 @@ def _create_season(
 def _create_series(series_id: SeriesId | None = None) -> Series:
     """Create a Series entity for testing."""
     return Series(
+        library_id=_LIBRARY_ID,
         id=series_id,
         title=Title("Test Series"),
         start_year=Year(2020),
@@ -280,6 +283,7 @@ class TestSeriesMapper:
         series_id = SeriesId.generate()
         now = datetime.now(UTC)
         model = SeriesModel(
+            library_id=_LIBRARY_ID,
             external_id=str(series_id),
             title="Shallow Series",
             start_year=2020,
@@ -347,3 +351,53 @@ class TestSeriesMapper:
         SeriesMapper.update_model(existing, refreshed)
         assert "New Actor" in (existing.cast or "")
         assert "Old Actor" not in (existing.cast or "")
+
+    def test_to_model_persists_library_id_from_entity(self) -> None:
+        """``to_model`` carries the entity's ``library_id`` onto the row.
+
+        Pinned because the catalog is filtered per-profile downstream
+        through ``library_id``; a regression that drops the column copy
+        would silently un-scope every newly inserted series.
+        """
+        series_id = SeriesId.generate()
+        series = _create_series(series_id=series_id)
+
+        model = SeriesMapper.to_model(series)
+
+        assert model.library_id == _LIBRARY_ID
+
+    def test_round_trip_preserves_library_id(self) -> None:
+        """Entity → model → entity round-trip keeps ``library_id`` intact."""
+        series_id = SeriesId.generate()
+        series = _create_series(series_id=series_id)
+
+        model = SeriesMapper.to_model(series)
+        now = datetime.now(UTC)
+        model.created_at = now
+        model.updated_at = now
+
+        rebuilt = SeriesMapper.to_entity(model, include_seasons=False)
+
+        assert rebuilt.library_id == _LIBRARY_ID
+
+    def test_update_model_preserves_existing_library_id(self) -> None:
+        """``update_model`` deliberately leaves ``library_id`` alone.
+
+        ``library_id`` is set once at scan time and must not be
+        overwritten by enrichment / update flows. The model's existing
+        value wins even if the entity carries a different one.
+        """
+        series_id = SeriesId.generate()
+        existing_model = SeriesMapper.to_model(_create_series(series_id=series_id))
+        assert existing_model.library_id == _LIBRARY_ID
+
+        refreshed = Series(
+            library_id="lib_otherlibrary",
+            id=series_id,
+            title=Title("Refreshed"),
+            start_year=Year(2024),
+        )
+
+        SeriesMapper.update_model(existing_model, refreshed)
+
+        assert existing_model.library_id == _LIBRARY_ID

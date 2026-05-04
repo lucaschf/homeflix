@@ -47,6 +47,11 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     # Identity
     id: MovieId | None = Field(default=None)
 
+    # Library scoping (the lib_xxx external id of the owning Library;
+    # held as ``str`` because Library lives in another bounded context
+    # and ADR-008 forbids the cross-BC import).
+    library_id: str
+
     # Core info
     title: Title
     original_title: Title | None = None
@@ -171,6 +176,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
         file_path: str | FilePath,
         file_size: int,
         resolution: str | Resolution,
+        library_id: str,
         **kwargs: Any,
     ) -> Movie:
         """Factory method with automatic ID generation.
@@ -182,6 +188,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
             file_path: Path to the video file.
             file_size: File size in bytes.
             resolution: Video resolution.
+            library_id: External id (``lib_xxx``) of the owning Library.
             **kwargs: Additional optional fields.
 
         Returns:
@@ -209,6 +216,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
 
         movie = cls(
             id=movie_id,
+            library_id=library_id,
             title=title,
             year=year,
             duration=duration,

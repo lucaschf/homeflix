@@ -22,9 +22,12 @@ from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import TmdbId
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _movie_with_tmdb(*, title: str, tmdb_id: int, year: int = 2010) -> Movie:
     movie = Movie.create(
+        library_id=_LIBRARY_ID,
         title=title,
         year=year,
         duration=8880,

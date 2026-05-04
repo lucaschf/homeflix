@@ -11,9 +11,12 @@ from src.modules.media.application.use_cases import ListRecentlyAddedMoviesUseCa
 from src.modules.media.domain.entities import Movie
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _make_movie(title: str = "Test Movie", year: int = 2020) -> Movie:
     return Movie.create(
+        library_id=_LIBRARY_ID,
         title=title,
         year=year,
         duration=7200,

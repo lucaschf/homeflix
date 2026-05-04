@@ -25,9 +25,12 @@ from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import
 )
 from src.shared_kernel.value_objects import CollectionMediaType
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _movie(movie_id: MovieId, title: str, poster: str | None = None) -> Movie:
     return Movie(
+        library_id=_LIBRARY_ID,
         id=movie_id,
         title=Title(title),
         year=Year(2024),
@@ -46,6 +49,7 @@ def _movie(movie_id: MovieId, title: str, poster: str | None = None) -> Movie:
 
 def _series(series_id: SeriesId, title: str, poster: str | None = None) -> Series:
     return Series(
+        library_id=_LIBRARY_ID,
         id=series_id,
         title=Title(title),
         start_year=Year(2024),

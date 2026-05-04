@@ -21,9 +21,12 @@ from src.modules.media.domain.value_objects import ContentRating, TmdbId
 from src.modules.media.domain.value_objects.cast_member import CastMember
 from tests.modules.media.unit.conftest import MediaUoWMocks, make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _make_movie() -> Movie:
     return Movie.create(
+        library_id=_LIBRARY_ID,
         title="Inception",
         year=2010,
         duration=0,
@@ -174,6 +177,7 @@ class TestEnrichMovieMetadata:
     @pytest.mark.asyncio
     async def test_should_retry_with_cleaned_title(self) -> None:
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception 1080p BluRay x264",
             year=2010,
             duration=0,

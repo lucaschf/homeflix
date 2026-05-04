@@ -1,6 +1,7 @@
 """Integration tests for SQLAlchemyMovieRepository."""
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.media.domain.entities import Movie
@@ -18,7 +19,11 @@ from src.modules.media.domain.value_objects import (
     Year,
 )
 from src.modules.media.domain.value_objects.cast_member import CastMember
+from src.modules.media.infrastructure.persistence.models import MovieModel
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemyMovieRepository
+
+_LIBRARY_ID = "lib_test12345678"
+_LIBRARY_ID_OTHER = "lib_otherlibrary"
 
 
 def _create_movie(
@@ -33,6 +38,7 @@ def _create_movie(
 ) -> Movie:
     """Create a Movie entity for testing."""
     return Movie(
+        library_id=_LIBRARY_ID,
         id=movie_id or MovieId.generate(),
         title=Title(title),
         year=Year(year),
@@ -88,6 +94,7 @@ class TestSQLAlchemyMovieRepository:
 
         # Update the movie
         updated_movie = Movie(
+            library_id=_LIBRARY_ID,
             id=movie.id,
             title=Title("Updated Title"),
             year=movie.year,
@@ -1016,3 +1023,81 @@ class TestCountUnderPaths:
         await repo.save(_create_movie(title="B", file_path="/other/b.mkv"))
 
         assert await repo.count_under_paths(["/"]) == 2
+
+
+@pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryLibraryIsolation:
+    """Cross-library isolation at the persistence layer.
+
+    The repository doesn't filter by ``library_id`` itself yet — that's
+    a higher-layer responsibility wired in PR 6b — but the column has
+    to persist accurately so a manual filter never leaks rows across
+    libraries. Mirrors the cross-key isolation tests in
+    ``tests/modules/watch_progress/integration/persistence/repositories/``.
+    """
+
+    async def test_two_libraries_can_coexist_and_be_filtered_by_column(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+
+        # Library A: two movies
+        await repo.save(_create_movie(title="A1", file_path="/libA/m1.mkv"))
+        await repo.save(_create_movie(title="A2", file_path="/libA/m2.mkv"))
+
+        # Library B (different library_id): one movie
+        movie_b = Movie(
+            library_id=_LIBRARY_ID_OTHER,
+            id=MovieId.generate(),
+            title=Title("B1"),
+            year=Year(2024),
+            duration=Duration(7200),
+            files=[
+                MediaFile(
+                    file_path=FilePath("/libB/m1.mkv"),
+                    file_size=1_000_000_000,
+                    resolution=Resolution("1080p"),
+                    is_primary=True,
+                )
+            ],
+        )
+        await repo.save(movie_b)
+
+        # Direct queries by library_id never leak across.
+        rows_a = (
+            (
+                await db_session.execute(
+                    select(MovieModel).where(MovieModel.library_id == _LIBRARY_ID)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        rows_b = (
+            (
+                await db_session.execute(
+                    select(MovieModel).where(MovieModel.library_id == _LIBRARY_ID_OTHER)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        assert {r.title for r in rows_a} == {"A1", "A2"}
+        assert {r.title for r in rows_b} == {"B1"}
+        assert all(r.library_id == _LIBRARY_ID for r in rows_a)
+        assert all(r.library_id == _LIBRARY_ID_OTHER for r in rows_b)
+
+    async def test_library_id_persists_through_save_and_reload(
+        self, db_session: AsyncSession
+    ) -> None:
+        """``library_id`` round-trips through save + find_by_id."""
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _create_movie(title="Scoped", file_path="/libA/scoped.mkv")
+
+        await repo.save(movie)
+        assert movie.id is not None
+        found = await repo.find_by_id(movie.id)
+
+        assert found is not None
+        assert found.library_id == _LIBRARY_ID

@@ -13,9 +13,12 @@ from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.value_objects import ImageUrl
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 def _make_movie(title: str = "Inception") -> Movie:
     movie = Movie.create(
+        library_id=_LIBRARY_ID,
         title=title,
         year=2010,
         duration=8880,
@@ -29,7 +32,7 @@ def _make_movie(title: str = "Inception") -> Movie:
 
 
 def _make_series(title: str = "Breaking Bad") -> Series:
-    series = Series.create(title=title, start_year=2008)
+    series = Series.create(library_id=_LIBRARY_ID, title=title, start_year=2008)
     return series.with_updates(
         backdrop_path=ImageUrl("https://image.tmdb.org/series_backdrop.jpg"),
     )

@@ -10,6 +10,8 @@ from src.modules.media.domain.value_objects import MediaFile, Resolution
 from src.shared_kernel.value_objects.file_path import FilePath
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
+_LIBRARY_ID = "lib_test12345678"
+
 
 @pytest.mark.unit
 class TestGetFileVariantsUseCase:
@@ -19,6 +21,7 @@ class TestGetFileVariantsUseCase:
     async def test_should_return_all_variants(self):
         mocks = make_media_uow_mock()
         movie = Movie.create(
+            library_id=_LIBRARY_ID,
             title="Inception",
             year=2010,
             duration=8880,
