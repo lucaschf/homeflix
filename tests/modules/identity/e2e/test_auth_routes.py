@@ -123,6 +123,24 @@ class TestLogout:
         assert response.status_code == 204
         assert await _count_session_rows(session_factory) == 0
 
+    async def test_should_clear_the_session_cookie_on_logout(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ):
+        user = await seed_user_with_profile()
+        await client.post(
+            LOGIN_PATH,
+            data={"username": user.email, "password": user.password},
+        )
+
+        response = await client.post(LOGOUT_PATH)
+
+        # FastAPI Users emits Set-Cookie with Max-Age=0 to clear the
+        # cookie client-side, complementing the server-side row delete.
+        set_cookie = response.headers.get("set-cookie", "").lower()
+        assert "max-age=0" in set_cookie
+
     async def test_should_return_401_when_no_session_cookie_is_present(
         self,
         client: AsyncClient,
@@ -163,3 +181,25 @@ class TestProtectedRoute:
         assert payload["id"] == user.user_external_id
         assert payload["id"].startswith("usr_")
         assert payload["email"] == "lucas@homeflix.local"
+
+    async def test_should_return_401_on_users_me_after_logout(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ):
+        # Full lifecycle: login succeeds -> /me succeeds -> logout
+        # invalidates the session -> /me must reject the now-stale cookie.
+        user = await seed_user_with_profile()
+        login = await client.post(
+            LOGIN_PATH,
+            data={"username": user.email, "password": user.password},
+        )
+        assert login.status_code == 204
+        before = await client.get(ME_PATH)
+        assert before.status_code == 200
+
+        logout = await client.post(LOGOUT_PATH)
+        assert logout.status_code == 204
+
+        after = await client.get(ME_PATH)
+        assert after.status_code == 401
