@@ -6,34 +6,20 @@ from src.modules.watch_progress.application.unit_of_work import (
 )
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.value_objects import WatchableMediaType
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class SaveProgressUseCase:
-    """Save or update watch progress for a media item.
-
-    Creates a new progress record if none exists, or updates the
-    existing one. Automatically marks as completed at ≥90%.
-    """
+    """Save or update watch progress for a media item, scoped to one profile."""
 
     def __init__(self, uow_factory: WatchProgressUnitOfWorkFactory) -> None:
-        """Initialize the use case.
-
-        Args:
-            uow_factory: Factory that opens a fresh watch progress UoW.
-        """
         self._uow_factory = uow_factory
 
     async def execute(self, input_dto: SaveProgressInput) -> ProgressOutput:
-        """Execute the use case.
-
-        Args:
-            input_dto: Progress data to save.
-
-        Returns:
-            The saved progress output.
-        """
+        """Persist progress for the caller's profile."""
+        profile_id = ProfileId(input_dto.profile_id)
         async with self._uow_factory() as uow:
-            existing = await uow.progress.find_by_media_id(input_dto.media_id)
+            existing = await uow.progress.find_by_media_id(input_dto.media_id, profile_id)
 
             if existing:
                 progress = existing.update_position(
@@ -44,6 +30,7 @@ class SaveProgressUseCase:
                 )
             else:
                 progress = WatchProgress.create(
+                    profile_id=profile_id,
                     media_id=input_dto.media_id,
                     media_type=WatchableMediaType(input_dto.media_type),
                     position_seconds=input_dto.position_seconds,

@@ -270,6 +270,16 @@ class Settings(BaseSettings):  # type: ignore[misc]
     )
     session_cookie_name: str = Field(default="homeflix_session")
 
+    watch_progress_default_profile_id: str | None = Field(
+        default=None,
+        description="Optional fallback ``profile_id`` (``prf_xxx``) used "
+        "by watch-progress/media routes when the request has no session "
+        "cookie. Lets the backend keep serving consumers that have not "
+        "shipped login yet during the per-profile rollout. Unset = strict "
+        "mode (no cookie -> 401). Remove the env var once every consumer "
+        "is sending the session cookie.",
+    )
+
     # =========================================================================
     # Internationalization
     # =========================================================================

@@ -17,10 +17,18 @@ from src.modules.watch_progress.application.ports import (
 from src.modules.watch_progress.application.use_cases import GetContinueWatchingUseCase
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.value_objects import WatchableMediaType
+from src.shared_kernel.value_objects.profile_id import ProfileId
 from tests.modules.watch_progress.unit.conftest import (
     WatchProgressUoWMocks,
     make_watch_progress_uow_mock,
 )
+
+_PROFILE_ID = ProfileId("prf_test12345678")
+
+
+def _input(*, limit: int = 10, lang: str = "en") -> GetContinueWatchingInput:
+    """Build the use case input scoped to the test profile."""
+    return GetContinueWatchingInput(profile_id=_PROFILE_ID.value, limit=limit, lang=lang)
 
 
 def _make_progress(
@@ -33,6 +41,7 @@ def _make_progress(
 ) -> WatchProgress:
     """Create a WatchProgress entity for testing."""
     return WatchProgress(
+        profile_id=_PROFILE_ID,
         media_id=media_id,
         media_type=media_type,
         position_seconds=position,
@@ -47,13 +56,6 @@ def _make_series_info(
     episodes_per_season: dict[int, list[int]],
     title: str = "Test Series",
 ) -> SeriesWithEpisodesInfo:
-    """Create a ``SeriesWithEpisodesInfo`` with specified seasons/episodes.
-
-    Args:
-        series_id: External series ID.
-        episodes_per_season: Mapping of season_number to list of episode_numbers.
-        title: Series title.
-    """
     episodes: list[EpisodeInfo] = []
     for season_num in sorted(episodes_per_season):
         for ep_num in sorted(episodes_per_season[season_num]):
@@ -76,7 +78,6 @@ def _make_series_info(
 
 @pytest.fixture()
 def repos() -> tuple[WatchProgressUoWMocks, AsyncMock]:
-    """Create mock UoW and media lookup port."""
     mocks = make_watch_progress_uow_mock()
     media_lookup = AsyncMock(spec=MediaLookupPort)
     return mocks, media_lookup
@@ -106,7 +107,7 @@ class TestEnrichEpisode:
         }
         media_lookup.get_series_with_episodes.return_value = series
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
 
         assert len(result.items) == 1
         item = result.items[0]
@@ -123,7 +124,7 @@ class TestEnrichEpisode:
             _make_progress("epi_03ZzYaQ77FaB"),
         ]
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
         assert len(result.items) == 0
 
     @pytest.mark.asyncio
@@ -134,7 +135,7 @@ class TestEnrichEpisode:
         ]
         media_lookup.get_series_with_episodes.return_value = None
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
         assert len(result.items) == 0
 
     @pytest.mark.asyncio
@@ -148,7 +149,7 @@ class TestEnrichEpisode:
         }
         media_lookup.get_series_with_episodes.return_value = series
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
         assert len(result.items) == 0
 
     @pytest.mark.asyncio
@@ -162,7 +163,7 @@ class TestEnrichEpisode:
         }
         media_lookup.get_series_with_episodes.return_value = series
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
         assert len(result.items) == 0
 
     @pytest.mark.asyncio
@@ -172,7 +173,7 @@ class TestEnrichEpisode:
             _make_progress("epi_ser_broken"),
         ]
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
         assert len(result.items) == 0
 
 
@@ -181,7 +182,6 @@ class TestSeriesDeduplication:
 
     @pytest.mark.asyncio
     async def test_multiple_episodes_same_series_returns_one_item(self, repos):
-        """Multiple in-progress episodes from same series → single item."""
         mocks, media_lookup = repos
         series = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2, 3]})
         media_lookup.get_series_with_episodes.return_value = series
@@ -196,13 +196,12 @@ class TestSeriesDeduplication:
             "epi_ser_AAAAAAAAAAAA_1_3": p3,
         }
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
 
         assert len(result.items) == 1
 
     @pytest.mark.asyncio
     async def test_picks_highest_in_progress_episode(self, repos):
-        """Should pick the highest-numbered in-progress episode."""
         mocks, media_lookup = repos
         series = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2, 3], 2: [1, 2]})
         media_lookup.get_series_with_episodes.return_value = series
@@ -225,7 +224,7 @@ class TestSeriesDeduplication:
             ),
         }
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
 
         assert len(result.items) == 1
         assert result.items[0].season_number == 2
@@ -233,7 +232,6 @@ class TestSeriesDeduplication:
 
     @pytest.mark.asyncio
     async def test_picks_next_unwatched_when_all_completed(self, repos):
-        """Completed episodes + unwatched episodes → next unwatched."""
         mocks, media_lookup = repos
         series = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2, 3]})
         media_lookup.get_series_with_episodes.return_value = series
@@ -252,7 +250,7 @@ class TestSeriesDeduplication:
             ),
         }
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
 
         assert len(result.items) == 1
         assert result.items[0].season_number == 1
@@ -261,7 +259,6 @@ class TestSeriesDeduplication:
 
     @pytest.mark.asyncio
     async def test_returns_nothing_when_all_episodes_completed(self, repos):
-        """All episodes completed, none unwatched → no item."""
         mocks, media_lookup = repos
         series = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2]})
         media_lookup.get_series_with_episodes.return_value = series
@@ -280,12 +277,11 @@ class TestSeriesDeduplication:
             ),
         }
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
         assert len(result.items) == 0
 
     @pytest.mark.asyncio
     async def test_two_series_return_one_item_each(self, repos):
-        """Two different series → two items, one per series."""
         mocks, media_lookup = repos
         series_a = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2]}, title="Series A")
         series_b = _make_series_info("ser_BBBBBBBBBBBB", {1: [1]}, title="Series B")
@@ -303,8 +299,8 @@ class TestSeriesDeduplication:
         pb = _make_progress("epi_ser_BBBBBBBBBBBB_1_1")
         mocks.progress.list_recently_watched.return_value = [pa, pb]
 
-        def find_by_media_ids_side_effect(ids):
-            result = {}
+        def find_by_media_ids_side_effect(ids, profile_id):
+            result: dict[str, WatchProgress] = {}
             if "epi_ser_AAAAAAAAAAAA_1_1" in ids:
                 result["epi_ser_AAAAAAAAAAAA_1_1"] = pa
             if "epi_ser_BBBBBBBBBBBB_1_1" in ids:
@@ -313,7 +309,7 @@ class TestSeriesDeduplication:
 
         mocks.progress.find_by_media_ids.side_effect = find_by_media_ids_side_effect
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
 
         assert len(result.items) == 2
         series_ids = {item.series_id for item in result.items}
@@ -321,7 +317,6 @@ class TestSeriesDeduplication:
 
     @pytest.mark.asyncio
     async def test_mixed_in_progress_and_completed_across_seasons(self, repos):
-        """S1 completed, S2E1 in-progress → picks S2E1."""
         mocks, media_lookup = repos
         series = _make_series_info("ser_AAAAAAAAAAAA", {1: [1, 2], 2: [1, 2]})
         media_lookup.get_series_with_episodes.return_value = series
@@ -344,7 +339,7 @@ class TestSeriesDeduplication:
             ),
         }
 
-        result = await _make_use_case(repos).execute(GetContinueWatchingInput(limit=10))
+        result = await _make_use_case(repos).execute(_input())
 
         assert len(result.items) == 1
         assert result.items[0].season_number == 2

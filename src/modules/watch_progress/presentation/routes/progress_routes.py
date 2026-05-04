@@ -28,6 +28,7 @@ from src.modules.watch_progress.application.use_cases.clear_series_progress impo
     ClearSeriesProgressInput,
     ClearSeriesProgressUseCase,
 )
+from src.modules.watch_progress.presentation.dependencies import resolve_profile_id
 
 router = APIRouter(prefix="/api/v1/progress", tags=["Watch Progress"])
 
@@ -54,12 +55,15 @@ class SaveProgressRequest(BaseModel):
 async def continue_watching(
     limit: int = Query(20, ge=1, le=100),
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: GetContinueWatchingUseCase = Depends(
         Provide[ApplicationContainer.watch_progress.get_continue_watching],
     ),
 ) -> dict[str, Any]:
     """List in-progress items for the Continue Watching section."""
-    result = await use_case.execute(GetContinueWatchingInput(limit=limit, lang=lang))
+    result = await use_case.execute(
+        GetContinueWatchingInput(profile_id=profile_id, limit=limit, lang=lang)
+    )
     return api_list([asdict(item) for item in result.items])
 
 
@@ -67,6 +71,7 @@ async def continue_watching(
 @inject  # type: ignore[misc]
 async def save_progress(
     body: SaveProgressRequest,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: SaveProgressUseCase = Depends(
         Provide[ApplicationContainer.watch_progress.save_progress],
     ),
@@ -74,6 +79,7 @@ async def save_progress(
     """Save or update watch progress for a media item."""
     result = await use_case.execute(
         SaveProgressInput(
+            profile_id=profile_id,
             media_id=body.media_id,
             media_type=body.media_type,
             position_seconds=body.position_seconds,
@@ -89,12 +95,13 @@ async def save_progress(
 @inject  # type: ignore[misc]
 async def get_progress(
     media_id: str,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: GetProgressUseCase = Depends(
         Provide[ApplicationContainer.watch_progress.get_progress],
     ),
 ) -> dict[str, Any]:
     """Get watch progress for a media item."""
-    result = await use_case.execute(GetProgressInput(media_id=media_id))
+    result = await use_case.execute(GetProgressInput(profile_id=profile_id, media_id=media_id))
     if result is None:
         return api_single("progress", None)
     return api_single("progress", asdict(result))
@@ -104,17 +111,18 @@ async def get_progress(
 @inject  # type: ignore[misc]
 async def clear_series_progress(
     series_id: str,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: ClearSeriesProgressUseCase = Depends(
         Provide[ApplicationContainer.watch_progress.clear_series_progress],
     ),
 ) -> Response:
-    """Clear all episode progress for a series.
+    """Clear all episode progress for a series in the caller's profile.
 
     Used by the "dismiss from Continue Watching" action so removing
     a series clears ALL its episode progress at once — otherwise
     deleting one episode's progress just surfaces the next.
     """
-    await use_case.execute(ClearSeriesProgressInput(series_id=series_id))
+    await use_case.execute(ClearSeriesProgressInput(profile_id=profile_id, series_id=series_id))
     return Response(status_code=204)
 
 
@@ -122,12 +130,13 @@ async def clear_series_progress(
 @inject  # type: ignore[misc]
 async def clear_progress(
     media_id: str,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: ClearProgressUseCase = Depends(
         Provide[ApplicationContainer.watch_progress.clear_progress],
     ),
 ) -> Response:
-    """Clear watch progress for a media item."""
-    await use_case.execute(ClearProgressInput(media_id=media_id))
+    """Clear watch progress for a media item in the caller's profile."""
+    await use_case.execute(ClearProgressInput(profile_id=profile_id, media_id=media_id))
     return Response(status_code=204)
 
 

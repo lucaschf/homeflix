@@ -14,6 +14,9 @@ from src.modules.watch_progress.domain.value_objects import (
     WatchableMediaType,
     WatchStatus,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId
+
+_PROFILE_ID = ProfileId("prf_test12345678")
 
 
 def _progress(
@@ -23,6 +26,7 @@ def _progress(
 ) -> WatchProgress:
     """Build a ``WatchProgress`` with the given status and timestamp."""
     return WatchProgress(
+        profile_id=_PROFILE_ID,
         media_id=media_id,
         media_type=WatchableMediaType.EPISODE,
         position_seconds=900,

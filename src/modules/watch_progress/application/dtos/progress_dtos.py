@@ -14,6 +14,9 @@ class SaveProgressInput:
     """Input for SaveProgressUseCase.
 
     Attributes:
+        profile_id: Owning profile (``prf_xxx``) — every row is scoped
+            to a single profile so multi-profile households watch
+            independently.
         media_id: External ID of the media (mov_xxx or epi_xxx).
         media_type: Type of media ("movie" or "episode").
         position_seconds: Current playback position in seconds.
@@ -22,6 +25,7 @@ class SaveProgressInput:
         subtitle_track: Selected subtitle track index (-1 = off).
     """
 
+    profile_id: str
     media_id: str
     media_type: str
     position_seconds: int
@@ -32,30 +36,15 @@ class SaveProgressInput:
 
 @dataclass(frozen=True)
 class GetProgressInput:
-    """Input for GetProgressUseCase.
+    """Input for GetProgressUseCase."""
 
-    Attributes:
-        media_id: External ID of the media.
-    """
-
+    profile_id: str
     media_id: str
 
 
 @dataclass(frozen=True)
 class ProgressOutput:
-    """Output representing watch progress for a media item.
-
-    Attributes:
-        media_id: External ID of the media.
-        media_type: Type of media.
-        position_seconds: Current playback position.
-        duration_seconds: Total duration.
-        percentage: Watch percentage (0-100).
-        status: Watch status ("in_progress" or "completed").
-        audio_track: Selected audio track index.
-        subtitle_track: Selected subtitle track index.
-        last_watched_at: ISO timestamp of last update.
-    """
+    """Output representing watch progress for a media item."""
 
     media_id: str
     media_type: str
@@ -85,31 +74,16 @@ class ProgressOutput:
 
 @dataclass(frozen=True)
 class GetContinueWatchingInput:
-    """Input for GetContinueWatchingUseCase.
+    """Input for GetContinueWatchingUseCase."""
 
-    Attributes:
-        limit: Maximum number of items to return.
-        lang: Language code for localized metadata.
-    """
-
+    profile_id: str
     limit: int = 20
     lang: str = "en"
 
 
 @dataclass(frozen=True)
 class ContinueWatchingItem:
-    """A single item in the continue watching list.
-
-    Attributes:
-        media_id: External ID of the media.
-        media_type: Type of media.
-        title: Display title (localized).
-        poster_path: URL to poster image.
-        position_seconds: Current playback position.
-        duration_seconds: Total duration.
-        percentage: Watch percentage.
-        last_watched_at: ISO timestamp of last update.
-    """
+    """A single item in the continue watching list."""
 
     media_id: str
     media_type: str
@@ -128,10 +102,6 @@ class ContinueWatchingItem:
 
 @dataclass(frozen=True)
 class ContinueWatchingOutput:
-    """Output for GetContinueWatchingUseCase.
-
-    Attributes:
-        items: List of continue watching items.
-    """
+    """Output for GetContinueWatchingUseCase."""
 
     items: list[ContinueWatchingItem]
