@@ -9,6 +9,9 @@ from src.modules.media.application.dtos.series_dtos import (
     SeriesOutput,
 )
 from src.modules.media.application.ports import ProgressLookupPort, ProgressSummary
+from src.modules.media.application.ports.profile_library_access_port import (
+    ProfileLibraryAccessPort,
+)
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._intro_marker_helpers import (
     to_intro_marker_output,
@@ -42,31 +45,40 @@ class GetSeriesByIdUseCase:
         self,
         uow_factory: MediaUnitOfWorkFactory,
         progress_lookup: ProgressLookupPort,
+        profile_library_access: ProfileLibraryAccessPort,
     ) -> None:
         """Initialize the use case.
 
         Args:
             uow_factory: Factory that opens a fresh media Unit of Work.
             progress_lookup: Port for resolving watch progress snapshots.
+            profile_library_access: Port that resolves the caller's
+                allowed library_ids.
         """
         self._uow_factory = uow_factory
         self._progress_lookup = progress_lookup
+        self._profile_library_access = profile_library_access
 
     async def execute(self, input_dto: GetSeriesByIdInput) -> SeriesOutput:
         """Execute the use case.
 
         Args:
-            input_dto: Contains the series_id to fetch.
+            input_dto: Contains the profile_id and series_id to fetch.
 
         Returns:
             SeriesOutput with complete hierarchy.
 
         Raises:
-            ResourceNotFoundException: If series doesn't exist.
+            ResourceNotFoundException: If the series does not exist
+                or lives in a library outside the caller's ACL.
         """
+        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
+        if not allowed:
+            raise ResourceNotFoundException.for_resource("Series", input_dto.series_id)
+
         series_id = SeriesId(input_dto.series_id)
         async with self._uow_factory() as uow:
-            series = await uow.series.find_by_id(series_id)
+            series = await uow.series.find_by_id(series_id, allowed_library_ids=allowed)
 
         if series is None:
             raise ResourceNotFoundException.for_resource("Series", input_dto.series_id)

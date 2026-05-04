@@ -10,6 +10,13 @@ class GetCollectionByTmdbIdInput:
     """Input for ``GetCollectionByTmdbIdUseCase``.
 
     Attributes:
+        profile_id: Caller's prefixed profile id. The use case
+            consults ``ProfileLibraryAccessPort`` and restricts the
+            local-catalog overlay (which titles are marked
+            ``in_catalog``) to libraries the profile may see. The
+            TMDB call itself is unaffected — the page still lists
+            every TMDB part. A deny-all profile sees every part as
+            missing, without opening a UoW.
         tmdb_id: TMDB collection id (e.g. ``8091`` for Alien
             Collection).
         lang: BCP-47 tag for localized titles, overview, and the
@@ -17,6 +24,7 @@ class GetCollectionByTmdbIdInput:
             the rest of the read-side use cases.
     """
 
+    profile_id: str
     tmdb_id: int
     lang: str = "en"
 

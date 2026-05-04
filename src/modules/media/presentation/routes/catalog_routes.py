@@ -24,6 +24,7 @@ from src.modules.media.application.use_cases.list_movies_by_actor import (
 from src.modules.media.application.use_cases.list_recently_added_catalog import (
     ListRecentlyAddedCatalogUseCase,
 )
+from src.modules.media.presentation.dependencies import resolve_profile_id
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["Catalog"])
 
@@ -44,6 +45,7 @@ _MEDIA_TYPE_QUERY: MediaTypeFilter | None = Query(
 async def list_genres(
     lang: str = "en",
     type: Literal["movie", "series"] | None = _MEDIA_TYPE_QUERY,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: ListGenresUseCase = Depends(
         Provide[ApplicationContainer.media.list_genres],
     ),
@@ -66,7 +68,9 @@ async def list_genres(
             and Series tabs can skip genres that exist only on the
             other side.
     """
-    result = await use_case.execute(ListGenresInput(lang=lang, media_type=type))
+    result = await use_case.execute(
+        ListGenresInput(profile_id=profile_id, lang=lang, media_type=type)
+    )
     return api_list([asdict(g) for g in result.genres])
 
 
@@ -78,6 +82,7 @@ async def list_by_genre(
     limit: int = DEFAULT_PAGE_SIZE,
     lang: str = "en",
     type: Literal["movie", "series"] | None = _MEDIA_TYPE_QUERY,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: ListByGenreUseCase = Depends(
         Provide[ApplicationContainer.media.list_by_genre],
     ),
@@ -105,6 +110,7 @@ async def list_by_genre(
     clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
     result = await use_case.execute(
         ListByGenreInput(
+            profile_id=profile_id,
             genre=genre,
             cursor=cursor,
             limit=clamped_limit,
@@ -123,6 +129,7 @@ async def list_by_genre(
 async def list_recently_added_catalog(
     limit: int = 20,
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: ListRecentlyAddedCatalogUseCase = Depends(
         Provide[ApplicationContainer.media.list_recently_added_catalog],
     ),
@@ -142,7 +149,7 @@ async def list_recently_added_catalog(
     """
     clamped_limit = max(1, min(limit, 50))
     result = await use_case.execute(
-        ListRecentlyAddedCatalogInput(limit=clamped_limit, lang=lang),
+        ListRecentlyAddedCatalogInput(profile_id=profile_id, limit=clamped_limit, lang=lang),
     )
     return api_list([asdict(item) for item in result.items])
 
@@ -154,6 +161,7 @@ async def list_by_actor(
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: ListMoviesByActorUseCase = Depends(
         Provide[ApplicationContainer.media.list_movies_by_actor],
     ),
@@ -187,6 +195,7 @@ async def list_by_actor(
     clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
     result = await use_case.execute(
         ListMoviesByActorInput(
+            profile_id=profile_id,
             actor_name=name,
             cursor=cursor,
             limit=clamped_limit,

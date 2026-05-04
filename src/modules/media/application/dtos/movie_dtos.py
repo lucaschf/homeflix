@@ -16,10 +16,16 @@ class GetMovieByIdInput:
     """Input for GetMovieByIdUseCase.
 
     Attributes:
+        profile_id: Caller's prefixed profile id. The use case looks
+            up the per-profile library ACL through
+            ``ProfileLibraryAccessPort`` and restricts the lookup to
+            those libraries — a row outside the ACL surfaces as
+            ``ResourceNotFoundException`` (404).
         movie_id: External ID of the movie (mov_xxx format).
         lang: Language code for localized metadata (e.g., "en", "pt-BR").
     """
 
+    profile_id: str
     movie_id: str
     lang: str = "en"
 
@@ -172,6 +178,10 @@ class ListMoviesInput:
     """Input for ListMoviesUseCase.
 
     Attributes:
+        profile_id: Caller's prefixed profile id. The use case
+            consults ``ProfileLibraryAccessPort`` and restricts the
+            page to libraries the profile may see; a deny-all profile
+            yields an empty page without opening a UoW.
         cursor: Opaque pagination cursor from the previous page's
             ``next_cursor``. ``None`` (or any invalid token) starts at
             the first page.
@@ -185,6 +195,7 @@ class ListMoviesInput:
         lang: Language code for localized metadata.
     """
 
+    profile_id: str
     cursor: str | None = None
     limit: int = DEFAULT_PAGE_SIZE
     include_total: bool = False
@@ -218,11 +229,16 @@ class ListRecentlyAddedMoviesInput:
     """Input for ``ListRecentlyAddedMoviesUseCase``.
 
     Attributes:
+        profile_id: Caller's prefixed profile id. The use case
+            consults ``ProfileLibraryAccessPort`` and restricts the
+            top-N to libraries the profile may see; a deny-all
+            profile yields an empty list without opening a UoW.
         limit: Maximum number of movies to return. Routes clamp this
             to a sane upper bound before constructing the input.
         lang: Language code for localized metadata.
     """
 
+    profile_id: str
     limit: int = 20
     lang: str = "en"
 

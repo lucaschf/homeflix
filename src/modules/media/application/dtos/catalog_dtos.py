@@ -40,6 +40,10 @@ class ListGenresInput:
     """Input for ``ListGenresUseCase``.
 
     Attributes:
+        profile_id: Caller's prefixed profile id. The use case
+            consults ``ProfileLibraryAccessPort`` and restricts the
+            aggregation to libraries the profile may see; a deny-all
+            profile yields an empty genre list without opening a UoW.
         lang: Language code used to resolve the localized display
             name for each canonical genre.
         media_type: Optional filter — when set to ``"movie"`` or
@@ -48,6 +52,7 @@ class ListGenresInput:
             that media type alone. ``None`` (default) aggregates both.
     """
 
+    profile_id: str
     lang: str = "en"
     media_type: MediaTypeFilter | None = None
 
@@ -100,6 +105,10 @@ class ListByGenreInput:
     """Input for ``ListByGenreUseCase``.
 
     Attributes:
+        profile_id: Caller's prefixed profile id. The use case
+            consults ``ProfileLibraryAccessPort`` and restricts both
+            streams to libraries the profile may see; a deny-all
+            profile yields an empty page without opening a UoW.
         genre: Canonical English genre id — same value the frontend
             received from ``ListGenresOutput.genres[*].id``.
         cursor: Opaque dual-stream cursor from the previous page, or
@@ -111,6 +120,7 @@ class ListByGenreInput:
             (default) merges both streams as usual.
     """
 
+    profile_id: str
     genre: str
     cursor: str | None = None
     limit: int = DEFAULT_PAGE_SIZE
@@ -140,12 +150,17 @@ class ListRecentlyAddedCatalogInput:
     """Input for ``ListRecentlyAddedCatalogUseCase``.
 
     Attributes:
+        profile_id: Caller's prefixed profile id. The use case
+            consults ``ProfileLibraryAccessPort`` and restricts both
+            streams to libraries the profile may see; a deny-all
+            profile yields an empty list without opening a UoW.
         limit: Maximum number of mixed items to return. Routes clamp
             this to a sane upper bound before constructing the input.
         lang: Language code for localized titles, synopses, and genre
             names returned in each item.
     """
 
+    profile_id: str
     limit: int = 20
     lang: str = "en"
 

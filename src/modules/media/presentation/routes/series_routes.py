@@ -38,6 +38,7 @@ from src.modules.media.application.use_cases.list_series import ListSeriesUseCas
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
 from src.modules.media.application.use_cases.set_episode_intro import SetEpisodeIntroUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
+from src.modules.media.presentation.dependencies import resolve_profile_id
 from src.modules.media.presentation.schemas import (
     AddFileVariantRequest,
     RemoveFileVariantRequest,
@@ -58,6 +59,7 @@ async def list_series(
     limit: int = DEFAULT_PAGE_SIZE,
     include_count: bool = False,
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: ListSeriesUseCase = Depends(
         Provide[ApplicationContainer.media.list_series],
     ),
@@ -71,6 +73,7 @@ async def list_series(
     clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
     result = await use_case.execute(
         ListSeriesInput(
+            profile_id=profile_id,
             cursor=cursor,
             limit=clamped_limit,
             include_total=include_count,
@@ -94,6 +97,7 @@ async def list_series(
 async def list_recently_added_series(
     limit: int = 20,
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: ListRecentlyAddedSeriesUseCase = Depends(
         Provide[ApplicationContainer.media.list_recently_added_series],
     ),
@@ -106,7 +110,7 @@ async def list_recently_added_series(
     """
     clamped_limit = max(1, min(limit, 50))
     result = await use_case.execute(
-        ListRecentlyAddedSeriesInput(limit=clamped_limit, lang=lang),
+        ListRecentlyAddedSeriesInput(profile_id=profile_id, limit=clamped_limit, lang=lang),
     )
     return api_list([_dataclass_to_dict(s) for s in result.series])
 
@@ -116,12 +120,15 @@ async def list_recently_added_series(
 async def get_series(
     series_id: str,
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
     ),
 ) -> dict[str, Any]:
     """Get a series by ID (includes full season/episode hierarchy)."""
-    result = await use_case.execute(GetSeriesByIdInput(series_id=series_id, lang=lang))
+    result = await use_case.execute(
+        GetSeriesByIdInput(profile_id=profile_id, series_id=series_id, lang=lang)
+    )
     return api_single("series", _dataclass_to_dict(result))
 
 
@@ -131,6 +138,7 @@ async def get_related_series(
     series_id: str,
     lang: str = "en",
     limit: int = 12,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: GetRelatedSeriesUseCase = Depends(
         Provide[ApplicationContainer.media.get_related_series],
     ),
@@ -143,7 +151,12 @@ async def get_related_series(
     local catalog. The route never raises.
     """
     items = await use_case.execute(
-        GetRelatedSeriesInput(series_id=series_id, lang=lang, limit=max(1, min(limit, 30))),
+        GetRelatedSeriesInput(
+            profile_id=profile_id,
+            series_id=series_id,
+            lang=lang,
+            limit=max(1, min(limit, 30)),
+        ),
     )
     return api_list([_dataclass_to_dict(item) for item in items])
 

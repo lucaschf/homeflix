@@ -11,6 +11,7 @@ from src.building_blocks.presentation import api_list
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.search_dtos import SearchInput
 from src.modules.media.application.use_cases.search_catalog import SearchCatalogUseCase
+from src.modules.media.presentation.dependencies import resolve_profile_id
 
 router = APIRouter(prefix="/api/v1", tags=["Search"])
 
@@ -28,6 +29,7 @@ async def search(
     year_max: int | None = Query(default=None, description="Inclusive upper bound on year"),
     limit: int = Query(default=20, ge=1, le=MAX_PAGE_SIZE, description="Max results"),
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: SearchCatalogUseCase = Depends(
         Provide[ApplicationContainer.media.search_catalog],
     ),
@@ -49,6 +51,7 @@ async def search(
     """
     result = await use_case.execute(
         SearchInput(
+            profile_id=profile_id,
             query=q,
             media_type=type,
             genre=genre,

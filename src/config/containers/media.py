@@ -103,6 +103,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # ``CatalogRequestLookupPort``.
     catalog_request_lookup = providers.Dependency()
 
+    # Wired at the composition root — the adapter reads
+    # ``Profile.allowed_library_ids`` via the Identity UoW so this
+    # BC only ever sees ``ProfileLibraryAccessPort``.
+    profile_library_access = providers.Dependency()
+
     # Must be wired from parent container (Settings.hls_cache_directory / hls_cache_max_size_mb)
     hls_cache_directory = providers.Dependency(default="./hls_cache")
     hls_cache_max_size_mb = providers.Dependency(default=5120)
@@ -135,21 +140,25 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     get_featured_media = providers.Factory(
         GetFeaturedMediaUseCase,
         uow_factory=media_unit_of_work_factory,
+        profile_library_access=profile_library_access,
     )
 
     get_movie_by_id = providers.Factory(
         GetMovieByIdUseCase,
         uow_factory=media_unit_of_work_factory,
+        profile_library_access=profile_library_access,
     )
 
     list_movies = providers.Factory(
         ListMoviesUseCase,
         uow_factory=media_unit_of_work_factory,
+        profile_library_access=profile_library_access,
     )
 
     list_recently_added_movies = providers.Factory(
         ListRecentlyAddedMoviesUseCase,
         uow_factory=media_unit_of_work_factory,
+        profile_library_access=profile_library_access,
     )
 
     delete_movie = providers.Factory(
@@ -161,16 +170,19 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         GetSeriesByIdUseCase,
         uow_factory=media_unit_of_work_factory,
         progress_lookup=progress_lookup,
+        profile_library_access=profile_library_access,
     )
 
     list_series = providers.Factory(
         ListSeriesUseCase,
         uow_factory=media_unit_of_work_factory,
+        profile_library_access=profile_library_access,
     )
 
     list_recently_added_series = providers.Factory(
         ListRecentlyAddedSeriesUseCase,
         uow_factory=media_unit_of_work_factory,
+        profile_library_access=profile_library_access,
     )
 
     # =========================================================================
@@ -180,26 +192,31 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     list_genres = providers.Factory(
         ListGenresUseCase,
         uow_factory=media_unit_of_work_factory,
+        profile_library_access=profile_library_access,
     )
 
     list_by_genre = providers.Factory(
         ListByGenreUseCase,
         uow_factory=media_unit_of_work_factory,
+        profile_library_access=profile_library_access,
     )
 
     list_movies_by_actor = providers.Factory(
         ListMoviesByActorUseCase,
         uow_factory=media_unit_of_work_factory,
+        profile_library_access=profile_library_access,
     )
 
     list_recently_added_catalog = providers.Factory(
         ListRecentlyAddedCatalogUseCase,
         uow_factory=media_unit_of_work_factory,
+        profile_library_access=profile_library_access,
     )
 
     search_catalog = providers.Factory(
         SearchCatalogUseCase,
         uow_factory=media_unit_of_work_factory,
+        profile_library_access=profile_library_access,
     )
 
     # =========================================================================
@@ -356,6 +373,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         GetRelatedMoviesUseCase,
         uow_factory=media_unit_of_work_factory,
         metadata_provider=tmdb_client,
+        profile_library_access=profile_library_access,
     )
 
     get_collection_by_tmdb_id = providers.Factory(
@@ -363,6 +381,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         uow_factory=media_unit_of_work_factory,
         metadata_provider=tmdb_client,
         catalog_request_lookup=catalog_request_lookup,
+        profile_library_access=profile_library_access,
     )
 
     get_person_bio = providers.Factory(
@@ -380,6 +399,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         GetRelatedSeriesUseCase,
         uow_factory=media_unit_of_work_factory,
         metadata_provider=tmdb_client,
+        profile_library_access=profile_library_access,
     )
 
     bulk_enrich_metadata = providers.Factory(

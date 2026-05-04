@@ -1,11 +1,15 @@
 """ListRecentlyAddedCatalogUseCase - mixed (movies + series) recents."""
 
 import asyncio
+from collections.abc import Sequence
 
 from src.modules.media.application.dtos.catalog_dtos import (
     CatalogItemOutput,
     ListRecentlyAddedCatalogInput,
     ListRecentlyAddedCatalogOutput,
+)
+from src.modules.media.application.ports.profile_library_access_port import (
+    ProfileLibraryAccessPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie, Series
@@ -37,13 +41,20 @@ class ListRecentlyAddedCatalogUseCase:
         20
     """
 
-    def __init__(self, uow_factory: MediaUnitOfWorkFactory) -> None:
+    def __init__(
+        self,
+        uow_factory: MediaUnitOfWorkFactory,
+        profile_library_access: ProfileLibraryAccessPort,
+    ) -> None:
         """Initialize the use case.
 
         Args:
             uow_factory: Factory that opens a fresh media Unit of Work.
+            profile_library_access: Port that resolves the caller's
+                allowed library_ids.
         """
         self._uow_factory = uow_factory
+        self._profile_library_access = profile_library_access
 
     async def execute(
         self, input_dto: ListRecentlyAddedCatalogInput
@@ -51,19 +62,24 @@ class ListRecentlyAddedCatalogUseCase:
         """Execute the use case.
 
         Args:
-            input_dto: ``limit`` (max items in the merged result) and
-                ``lang``.
+            input_dto: ``profile_id``, ``limit`` (max items in the
+                merged result) and ``lang``.
 
         Returns:
             ``ListRecentlyAddedCatalogOutput`` with the merged page,
-            newest first.
+            newest first. Empty when the caller's profile has no
+            ``allowed_library_ids`` — short-circuits the UoW.
         """
+        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
+        if not allowed:
+            return ListRecentlyAddedCatalogOutput(items=[])
+
         # Each branch opens its own UoW because SQLAlchemy AsyncSession
         # forbids concurrent execution on the same session — same
         # pattern as ``ListByGenreUseCase``.
         movies, series_list = await asyncio.gather(
-            self._fetch_recent_movies(input_dto.limit),
-            self._fetch_recent_series(input_dto.limit),
+            self._fetch_recent_movies(input_dto.limit, allowed),
+            self._fetch_recent_series(input_dto.limit, allowed),
         )
 
         merged: list[Movie | Series] = sorted(
@@ -76,13 +92,27 @@ class ListRecentlyAddedCatalogUseCase:
             items=[self._to_output(item, input_dto.lang) for item in merged],
         )
 
-    async def _fetch_recent_movies(self, limit: int) -> list[Movie]:
+    async def _fetch_recent_movies(
+        self, limit: int, allowed_library_ids: Sequence[str]
+    ) -> list[Movie]:
         async with self._uow_factory() as uow:
-            return list(await uow.movies.list_recently_added(limit))
+            return list(
+                await uow.movies.list_recently_added(
+                    limit,
+                    allowed_library_ids=allowed_library_ids,
+                )
+            )
 
-    async def _fetch_recent_series(self, limit: int) -> list[Series]:
+    async def _fetch_recent_series(
+        self, limit: int, allowed_library_ids: Sequence[str]
+    ) -> list[Series]:
         async with self._uow_factory() as uow:
-            return list(await uow.series.list_recently_added(limit))
+            return list(
+                await uow.series.list_recently_added(
+                    limit,
+                    allowed_library_ids=allowed_library_ids,
+                )
+            )
 
     @staticmethod
     def _to_output(item: Movie | Series, lang: str) -> CatalogItemOutput:

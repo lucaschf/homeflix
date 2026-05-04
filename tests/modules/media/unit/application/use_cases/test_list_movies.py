@@ -6,14 +6,25 @@ from src.building_blocks.application.pagination import PaginatedResult, Paginati
 from src.modules.media.application.dtos import ListMoviesInput, ListMoviesOutput, MovieSummaryOutput
 from src.modules.media.application.use_cases import ListMoviesUseCase
 from src.modules.media.domain.entities import Movie
-from tests.modules.media.unit.conftest import make_media_uow_mock
+from tests.modules.media.unit.conftest import (
+    FakeProfileLibraryAccessPort,
+    make_media_uow_mock,
+    make_profile_library_access,
+)
 
 _LIBRARY_ID = "lib_test12345678"
+_LIBRARY_ID_OTHER = "lib_otherlibrary"
+_PROFILE_ID = "prf_test12345678"
 
 
-def _make_movie(title: str = "Test Movie", year: int = 2020) -> Movie:
+def _make_movie(
+    title: str = "Test Movie",
+    year: int = 2020,
+    *,
+    library_id: str = _LIBRARY_ID,
+) -> Movie:
     return Movie.create(
-        library_id=_LIBRARY_ID,
+        library_id=library_id,
         title=title,
         year=year,
         duration=7200,
@@ -47,9 +58,12 @@ class TestListMoviesUseCase:
             [_make_movie("Movie 1"), _make_movie("Movie 2")],
             has_more=False,
         )
-        use_case = ListMoviesUseCase(uow_factory=mocks.factory)
+        use_case = ListMoviesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListMoviesInput())
+        result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
 
         assert isinstance(result, ListMoviesOutput)
         assert len(result.movies) == 2
@@ -61,6 +75,7 @@ class TestListMoviesUseCase:
             cursor=None,
             limit=20,
             include_total=False,
+            allowed_library_ids=[_LIBRARY_ID],
         )
 
     @pytest.mark.asyncio
@@ -68,9 +83,12 @@ class TestListMoviesUseCase:
         mocks = make_media_uow_mock()
         movie = _make_movie("Test Movie", 2020).with_genre("Action")
         mocks.movies.list_paginated.return_value = _page([movie])
-        use_case = ListMoviesUseCase(uow_factory=mocks.factory)
+        use_case = ListMoviesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListMoviesInput())
+        result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
 
         summary = result.movies[0]
         assert isinstance(summary, MovieSummaryOutput)
@@ -84,14 +102,18 @@ class TestListMoviesUseCase:
     async def test_should_pass_cursor_and_limit_to_repository(self) -> None:
         mocks = make_media_uow_mock()
         mocks.movies.list_paginated.return_value = _page([])
-        use_case = ListMoviesUseCase(uow_factory=mocks.factory)
+        use_case = ListMoviesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        await use_case.execute(ListMoviesInput(cursor="abc123", limit=15))
+        await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID, cursor="abc123", limit=15))
 
         mocks.movies.list_paginated.assert_awaited_once_with(
             cursor="abc123",
             limit=15,
             include_total=False,
+            allowed_library_ids=[_LIBRARY_ID],
         )
 
     @pytest.mark.asyncio
@@ -102,9 +124,12 @@ class TestListMoviesUseCase:
             next_cursor="next-token",
             has_more=True,
         )
-        use_case = ListMoviesUseCase(uow_factory=mocks.factory)
+        use_case = ListMoviesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListMoviesInput())
+        result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
 
         assert result.next_cursor == "next-token"
         assert result.has_more is True
@@ -113,9 +138,12 @@ class TestListMoviesUseCase:
     async def test_should_return_empty_page_when_no_movies(self) -> None:
         mocks = make_media_uow_mock()
         mocks.movies.list_paginated.return_value = _page([])
-        use_case = ListMoviesUseCase(uow_factory=mocks.factory)
+        use_case = ListMoviesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListMoviesInput())
+        result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
 
         assert result.movies == []
         assert result.has_more is False
@@ -128,13 +156,75 @@ class TestListMoviesUseCase:
             [_make_movie("Movie 1")],
             total_count=42,
         )
-        use_case = ListMoviesUseCase(uow_factory=mocks.factory)
+        use_case = ListMoviesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
 
-        result = await use_case.execute(ListMoviesInput(include_total=True))
+        result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID, include_total=True))
 
         assert result.total_count == 42
         mocks.movies.list_paginated.assert_awaited_once_with(
             cursor=None,
             limit=20,
             include_total=True,
+            allowed_library_ids=[_LIBRARY_ID],
         )
+
+    @pytest.mark.asyncio
+    async def test_should_short_circuit_for_deny_all_profile(self) -> None:
+        # Deny-all profile (empty allowed list) → empty result + no UoW.
+        # Load-bearing security assertion: an unauthorized profile must
+        # NEVER reach the catalog repository.
+        mocks = make_media_uow_mock()
+        use_case = ListMoviesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+        )
+
+        result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
+
+        assert result.movies == []
+        assert result.has_more is False
+        assert result.next_cursor is None
+        # The UoW factory must not be called.
+        mocks.factory.assert_not_called()
+        mocks.movies.list_paginated.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_should_zero_total_count_for_deny_all_when_requested(self) -> None:
+        mocks = make_media_uow_mock()
+        use_case = ListMoviesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+        )
+
+        result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID, include_total=True))
+
+        assert result.total_count == 0
+
+    @pytest.mark.asyncio
+    async def test_should_forward_only_allowed_libraries_for_inclusion_path(
+        self,
+    ) -> None:
+        # Two libraries' worth of items exist on the repo side; the
+        # fake port restricts the profile to library A, so only the
+        # library-A items must come back. We assert the kwarg the
+        # use case passes — the repo is mocked, so the actual filter
+        # is exercised in the integration tests; here we pin the
+        # contract between use case and repo.
+        mocks = make_media_uow_mock()
+        mocks.movies.list_paginated.return_value = _page(
+            [_make_movie("Visible", library_id=_LIBRARY_ID)]
+        )
+        use_case = ListMoviesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: [_LIBRARY_ID]}),
+        )
+
+        result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
+
+        assert [m.title for m in result.movies] == ["Visible"]
+        passed = mocks.movies.list_paginated.await_args.kwargs["allowed_library_ids"]
+        assert list(passed) == [_LIBRARY_ID]
+        assert _LIBRARY_ID_OTHER not in list(passed)

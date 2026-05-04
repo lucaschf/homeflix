@@ -29,11 +29,23 @@ class SeriesRepository(ABC):
     """
 
     @abstractmethod
-    async def find_by_id(self, series_id: SeriesId) -> Series | None:
+    async def find_by_id(
+        self,
+        series_id: SeriesId,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Series | None:
         """Find a series by its ID (includes seasons and episodes).
 
         Args:
             series_id: The series' external ID.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, the lookup also requires the row's
+                ``library_id`` to be in the supplied set; otherwise the
+                method returns ``None`` even when a row with the id
+                exists. ``None`` (default) applies no library filter —
+                used by internal callers (scanner, cross-BC ACL
+                adapters) that operate outside the per-profile catalog.
 
         Returns:
             The Series if found, None otherwise.
@@ -80,6 +92,7 @@ class SeriesRepository(ABC):
         limit: int,
         *,
         include_total: bool = False,
+        allowed_library_ids: Sequence[str] | None = None,
     ) -> PaginatedResult[Series]:
         """List series in a single page using cursor-based pagination.
 
@@ -102,6 +115,11 @@ class SeriesRepository(ABC):
             include_total: When ``True`` the implementation runs an
                 extra ``COUNT(*)`` to populate
                 ``PaginatedResult.total_count``. Defaults to ``False``.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, both the page query and the optional
+                ``COUNT(*)`` are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             ``PaginatedResult`` containing the page items, the
@@ -111,7 +129,12 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
-    async def list_recently_added(self, limit: int) -> Sequence[Series]:
+    async def list_recently_added(
+        self,
+        limit: int,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[Series]:
         """List the most recently added series.
 
         Sorted by ``id DESC`` — same justification as
@@ -121,6 +144,10 @@ class SeriesRepository(ABC):
 
         Args:
             limit: Maximum number of series to return.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, results are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             Sequence of recently added series (excluding soft-deleted),
@@ -129,7 +156,12 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
-    async def list_genre_rows(self, lang: str) -> Sequence[GenreRow]:
+    async def list_genre_rows(
+        self,
+        lang: str,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted series row.
 
         Same contract as ``MovieRepository.list_genre_rows`` — see
@@ -145,6 +177,8 @@ class SeriesRepository(ABC):
         genre: Genre,
         cursor: str | None,
         limit: int,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
     ) -> PaginatedResult[Series]:
         """List series belonging to a specific genre, paginated.
 
@@ -165,6 +199,7 @@ class SeriesRepository(ABC):
         year_min: int | None = None,
         year_max: int | None = None,
         limit: int = 20,
+        allowed_library_ids: Sequence[str] | None = None,
     ) -> list[tuple[Series, float]]:
         """Full-text search over title, synopsis, and genres.
 
@@ -174,12 +209,22 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_random(self, limit: int, *, with_backdrop: bool = False) -> Sequence[Series]:
+    async def find_random(
+        self,
+        limit: int,
+        *,
+        with_backdrop: bool = False,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[Series]:
         """Return random series, optionally filtering to those with backdrop.
 
         Args:
             limit: Maximum number of series to return.
             with_backdrop: If True, only return series with a backdrop_path.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, results are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             Sequence of randomly selected series.
@@ -187,11 +232,20 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_by_ids(self, series_ids: Sequence[SeriesId]) -> dict[str, Series]:
+    async def find_by_ids(
+        self,
+        series_ids: Sequence[SeriesId],
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> dict[str, Series]:
         """Find multiple series by their IDs in a single query.
 
         Args:
             series_ids: Sequence of series external IDs.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, results are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             Dict mapping external ID string to Series entity.
@@ -199,7 +253,12 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_by_tmdb_ids(self, tmdb_ids: Sequence[int]) -> dict[int, Series]:
+    async def find_by_tmdb_ids(
+        self,
+        tmdb_ids: Sequence[int],
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> dict[int, Series]:
         """Find series whose ``tmdb_id`` matches any of ``tmdb_ids``.
 
         Used by ``GetRelatedSeries`` to resolve the subset of TMDB's
@@ -209,6 +268,10 @@ class SeriesRepository(ABC):
 
         Args:
             tmdb_ids: TMDB tv ids to look up.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, results are restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             Dict mapping ``tmdb_id`` to the matching ``Series``. Empty
@@ -217,11 +280,20 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_by_episode_id(self, episode_id: EpisodeId) -> Series | None:
+    async def find_by_episode_id(
+        self,
+        episode_id: EpisodeId,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Series | None:
         """Find a series containing an episode with this ID.
 
         Args:
             episode_id: The episode's external ID.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, the lookup is restricted to series rows
+                whose ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             The Series if found, None otherwise.
@@ -229,11 +301,20 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_by_title(self, title: Title) -> Series | None:
+    async def find_by_title(
+        self,
+        title: Title,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Series | None:
         """Find a series by its title (case-insensitive).
 
         Args:
             title: The series title to search for.
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, the lookup is restricted to rows whose
+                ``library_id`` is in the supplied set. ``None``
+                (default) applies no library filter.
 
         Returns:
             The Series if found, None otherwise.
