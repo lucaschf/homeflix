@@ -13,8 +13,8 @@ from src.modules.preferences.domain.value_objects import (
     Speed,
     SubtitleMode,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId  # noqa: TCH001
 
-DEFAULT_USER_KEY = "default"
 DEFAULT_AUDIO_LANG = "pt-BR"
 DEFAULT_SUBTITLE_LANG = "pt-BR"
 DEFAULT_SUBTITLE_MODE = SubtitleMode.FOREIGN_ONLY
@@ -23,18 +23,21 @@ DEFAULT_SPEED = 1.0
 
 
 class PlaybackPreferences(AggregateRoot[PreferencesId]):
-    """Per-user playback defaults the video player applies on startup.
+    """Per-profile playback defaults the video player applies on startup.
 
-    Singleton-per-``user_key`` — there is exactly one record per user.
-    Until an auth system lands the only key is ``"default"``; every
-    browser session shares the same row.
+    Singleton-per-``profile_id`` — there is exactly one record per
+    profile. The row's external_id mirrors the owning profile id so
+    the natural key (``profile_id``) and the surrogate identity
+    (``PreferencesId``) stay in lockstep without an extra mapping
+    table.
 
     Languages are kept as plain strings (not ``LanguageCode``) because
     the frontend persists IETF tags like ``"pt-BR"``/``"en-US"`` that
     don't match the shared kernel's strict ISO 639-1 shape.
 
     Example:
-        >>> prefs = PlaybackPreferences.default_for()
+        >>> profile = ProfileId("prf_test12345678")
+        >>> prefs = PlaybackPreferences.default_for(profile)
         >>> prefs.speed.value
         1.0
         >>> prefs.subtitle_mode
@@ -43,7 +46,7 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
 
     id: PreferencesId | None = Field(default=None)
 
-    user_key: str = DEFAULT_USER_KEY
+    profile_id: ProfileId
     audio_lang: str = DEFAULT_AUDIO_LANG
     subtitle_lang: str = DEFAULT_SUBTITLE_LANG
     subtitle_mode: SubtitleMode = DEFAULT_SUBTITLE_MODE
@@ -69,11 +72,11 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
         return value if isinstance(value, Quality) else Quality(value)
 
     @classmethod
-    def default_for(cls, user_key: str = DEFAULT_USER_KEY) -> Self:
+    def default_for(cls, profile_id: ProfileId) -> Self:
         """Build a fresh preferences record with all factory defaults."""
         return cls(
-            id=PreferencesId.for_user_key(user_key),
-            user_key=user_key,
+            id=PreferencesId.for_profile(profile_id),
+            profile_id=profile_id,
         )
 
     def apply_updates(
@@ -112,6 +115,5 @@ __all__ = [
     "DEFAULT_SPEED",
     "DEFAULT_SUBTITLE_LANG",
     "DEFAULT_SUBTITLE_MODE",
-    "DEFAULT_USER_KEY",
     "PlaybackPreferences",
 ]

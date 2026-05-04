@@ -10,6 +10,7 @@ from src.modules.preferences.domain.value_objects import (
 from src.modules.preferences.infrastructure.persistence.models.preferences_model import (
     PreferencesModel,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class PreferencesMapper:
@@ -20,7 +21,7 @@ class PreferencesMapper:
         """Project a row into a fully-validated ``PlaybackPreferences``."""
         return PlaybackPreferences(
             id=PreferencesId(model.external_id),
-            user_key=model.user_key,
+            profile_id=ProfileId(model.profile_id),
             audio_lang=model.audio_lang,
             subtitle_lang=model.subtitle_lang,
             subtitle_mode=SubtitleMode(model.subtitle_mode),
@@ -38,7 +39,7 @@ class PreferencesMapper:
             raise ValueError(msg)
         return PreferencesModel(
             external_id=str(entity.id),
-            user_key=entity.user_key,
+            profile_id=str(entity.profile_id),
             audio_lang=entity.audio_lang,
             subtitle_lang=entity.subtitle_lang,
             subtitle_mode=entity.subtitle_mode.value,
@@ -51,7 +52,12 @@ class PreferencesMapper:
         model: PreferencesModel,
         entity: PlaybackPreferences,
     ) -> PreferencesModel:
-        """Copy mutable fields from the entity into an existing row."""
+        """Refresh the mutable fields on an existing row.
+
+        ``profile_id`` is not touched — the caller used it to locate
+        ``model`` in the first place, and it's part of the singleton
+        invariant enforced by the unique index.
+        """
         model.audio_lang = entity.audio_lang
         model.subtitle_lang = entity.subtitle_lang
         model.subtitle_mode = entity.subtitle_mode.value

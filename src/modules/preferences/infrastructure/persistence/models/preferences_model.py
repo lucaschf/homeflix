@@ -7,21 +7,21 @@ from src.infrastructure.persistence.base import Base
 
 
 class PreferencesModel(Base):
-    """SQLAlchemy model for user playback preferences.
+    """SQLAlchemy model for per-profile playback preferences.
 
-    Singleton-per-user design: there's exactly one row per
-    ``user_key``. Until an auth system lands the only key is
-    ``"default"`` — all browser sessions share the same prefs.
+    Singleton-per-profile design: there's exactly one row per
+    ``profile_id``. The unique index on ``profile_id`` enforces it
+    at the DB level so a race between two concurrent first-saves
+    can't materialise two rows.
 
     Maps to the ``preferences`` table.
     """
 
-    user_key: Mapped[str] = mapped_column(
+    profile_id: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         unique=True,
         index=True,
-        default="default",
     )
     audio_lang: Mapped[str] = mapped_column(String(10), nullable=False, default="pt-BR")
     subtitle_lang: Mapped[str] = mapped_column(String(10), nullable=False, default="pt-BR")

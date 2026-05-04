@@ -1,12 +1,16 @@
 """GetPreferencesUseCase."""
 
-from src.modules.preferences.application.dtos.preferences_dtos import PreferencesOutput
+from src.modules.preferences.application.dtos.preferences_dtos import (
+    GetPreferencesInput,
+    PreferencesOutput,
+)
 from src.modules.preferences.application.unit_of_work import PreferencesUnitOfWorkFactory
-from src.modules.preferences.domain.entities import DEFAULT_USER_KEY, PlaybackPreferences
+from src.modules.preferences.domain.entities import PlaybackPreferences
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class GetPreferencesUseCase:
-    """Return the current user's playback preferences.
+    """Return the current profile's playback preferences.
 
     On first access (no row persisted yet) the domain factory
     ``PlaybackPreferences.default_for`` supplies the defaults — the
@@ -16,12 +20,13 @@ class GetPreferencesUseCase:
     def __init__(self, uow_factory: PreferencesUnitOfWorkFactory) -> None:
         self._uow_factory = uow_factory
 
-    async def execute(self) -> PreferencesOutput:
-        """Fetch or default the user's playback preferences."""
+    async def execute(self, input_dto: GetPreferencesInput) -> PreferencesOutput:
+        """Fetch or default the profile's playback preferences."""
+        profile_id = ProfileId(input_dto.profile_id)
         async with self._uow_factory() as uow:
-            entity = await uow.preferences.find_by_user_key(DEFAULT_USER_KEY)
+            entity = await uow.preferences.find_by_profile_id(profile_id)
         if entity is None:
-            entity = PlaybackPreferences.default_for(DEFAULT_USER_KEY)
+            entity = PlaybackPreferences.default_for(profile_id)
         return _to_output(entity)
 
 
