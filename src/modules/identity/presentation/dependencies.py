@@ -1,22 +1,29 @@
 """FastAPI dependencies that resolve the caller's identity context.
 
-The single entry point is ``get_current_profile``: it combines the
-authenticated ``UserModel`` from FastAPI Users with the active
-``profile_id`` carried by the session row, returning a
-``ProfileContext`` with both as prefixed external IDs (UUIDs never
-cross into the domain).
+Two layers:
 
-Shipped in PR 1 deliberately unused — the consumer BCs
-(``watch_progress``, ``collections``, ``preferences``) pick this up
-in subsequent PRs to enforce per-profile isolation. Adding it now
-means PR 2 can import the dependency on day one without waiting on
-any further wiring.
+1. ``get_current_profile`` — the strict-mode dep. Combines the
+   authenticated ``UserModel`` from FastAPI Users with the active
+   ``profile_id`` carried by the session row, returning a
+   ``ProfileContext`` with both as prefixed external IDs (UUIDs
+   never cross into the domain).
+2. ``make_resolve_profile_id`` — the transitional factory. Returns
+   a per-BC dep that tries the cookie path first and falls back to
+   a configured ``*_default_profile_id`` setting when the request
+   has no session yet. Each consumer BC (``watch_progress``,
+   ``collections``, ``preferences``, ``media``) wires its own
+   bound dep at module level, parameterising the setting attribute
+   and the missing-session error message. Once every consumer
+   ships login support and the env vars are unset, the helpers
+   collapse into a direct re-export of ``get_current_profile``.
 """
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from fastapi import Depends, Request
 
+from src.config.settings import get_settings
 from src.modules.identity.domain.errors import (
     NoActiveProfileSelectedError,
     NoActiveSessionError,
@@ -88,4 +95,64 @@ async def get_current_profile(
     )
 
 
-__all__ = ["ProfileContext", "get_current_profile"]
+def make_resolve_profile_id(
+    *,
+    setting_attr: str,
+    missing_message: str,
+) -> Callable[[Request], Awaitable[str]]:
+    """Build a per-BC ``resolve_profile_id`` dep with a transitional fallback.
+
+    Resolution order at request time:
+
+    1. Session cookie present → look up the matching ``access_tokens``
+       row in the identity BC's UoW. If a ``current_profile_id``
+       exists, return it.
+    2. No usable cookie or unknown token + the configured
+       ``settings.<setting_attr>`` is set → return that fallback
+       (transition mode).
+    3. Otherwise → raise :class:`NoActiveSessionError` (HTTP 401)
+       with ``missing_message``.
+
+    Errors raised by the identity UoW (container not wired, DB
+    unreachable, etc.) propagate as 500 by design — silently falling
+    back to anonymous on real misconfigurations would mask bugs and
+    serve authenticated requests as anonymous.
+
+    Args:
+        setting_attr: Name of the field on ``Settings`` that holds
+            the per-BC fallback (e.g. ``"watch_progress_default_profile_id"``).
+            ``getattr`` is read every request so changes to the
+            setting (when sourced from a re-loaded ``.env``) take
+            effect without restarting.
+        missing_message: User-facing 401 message when neither path
+            resolves a profile.
+
+    Returns:
+        An ``async`` FastAPI dep returning the prefixed profile_id
+        as a plain ``str`` — kept primitive because every consumer
+        passes it straight into a use case input that already
+        validates the prefix.
+    """
+
+    async def resolve_profile_id(request: Request) -> str:
+        settings = get_settings()
+
+        token = request.cookies.get(settings.session_cookie_name)
+        if token is not None:
+            container = request.app.state.container
+            factory = container.identity.identity_unit_of_work_factory()
+            async with factory() as uow:
+                snap = await uow.access_tokens.get_by_token(token)
+            if snap is not None and snap.current_profile_id is not None:
+                return str(snap.current_profile_id)
+
+        fallback = getattr(settings, setting_attr)
+        if fallback:
+            return str(fallback)
+
+        raise NoActiveSessionError(message=missing_message)
+
+    return resolve_profile_id
+
+
+__all__ = ["ProfileContext", "get_current_profile", "make_resolve_profile_id"]

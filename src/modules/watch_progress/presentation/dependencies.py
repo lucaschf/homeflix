@@ -1,57 +1,18 @@
-"""FastAPI dependencies that resolve the caller's ``profile_id``.
+"""FastAPI dependency that resolves the caller's ``profile_id``.
 
-During the per-profile rollout (see ADR-010), watch_progress routes
-need a way to scope data by profile *before* every consumer is sending
-the session cookie. ``resolve_profile_id`` implements the transition
-strategy: try the authenticated path first, fall back to the
-configured ``watch_progress_default_profile_id`` setting when no
-cookie is present, and finally raise ``NoActiveSessionError`` (HTTP
-401) if neither works.
-
-Once every consumer ships login support, unset the
-``WATCH_PROGRESS_DEFAULT_PROFILE_ID`` env var so the dependency runs
-strictly — at that point we can also collapse this dep into a direct
-re-export of ``identity.presentation.dependencies.get_current_profile``.
+Thin wrapper around the centralised
+``identity.presentation.dependencies.make_resolve_profile_id``
+factory, parameterised with the watch-progress-specific transitional
+setting and 401 message. See the factory's docstring for resolution
+semantics.
 """
 
-from fastapi import Request
+from src.modules.identity.presentation.dependencies import make_resolve_profile_id
 
-from src.config.settings import get_settings
-from src.modules.identity.domain.errors import NoActiveSessionError
-
-
-async def resolve_profile_id(request: Request) -> str:
-    """Return the caller's profile_id (prefixed external ID).
-
-    Resolution order:
-
-    1. Session cookie present → look up the matching access_tokens row
-       in the identity BC's UoW. If a ``current_profile_id`` exists,
-       return it.
-    2. No usable cookie or unknown token + ``watch_progress_default_profile_id``
-       setting configured → return that fallback (transition mode).
-    3. Otherwise → raise :class:`NoActiveSessionError` (HTTP 401).
-
-    Errors raised by the identity UoW (container not wired, DB
-    unreachable, etc.) propagate as 500 by design — silently falling
-    back to anonymous on real misconfigurations would mask bugs and
-    let authenticated requests be served as anonymous data.
-    """
-    settings = get_settings()
-
-    token = request.cookies.get(settings.session_cookie_name)
-    if token is not None:
-        container = request.app.state.container
-        factory = container.identity.identity_unit_of_work_factory()
-        async with factory() as uow:
-            snap = await uow.access_tokens.get_by_token(token)
-        if snap is not None and snap.current_profile_id is not None:
-            return str(snap.current_profile_id)
-
-    if settings.watch_progress_default_profile_id:
-        return settings.watch_progress_default_profile_id
-
-    raise NoActiveSessionError(message="Authentication required to access watch progress")
+resolve_profile_id = make_resolve_profile_id(
+    setting_attr="watch_progress_default_profile_id",
+    missing_message="Authentication required to access watch progress",
+)
 
 
 __all__ = ["resolve_profile_id"]
