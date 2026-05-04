@@ -12,6 +12,9 @@ from src.modules.watch_progress.infrastructure.persistence.mappers import (
 from src.modules.watch_progress.infrastructure.persistence.models import (
     WatchProgressModel,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId
+
+_PROFILE_ID = ProfileId("prf_test12345678")
 
 
 def _make_progress(
@@ -23,6 +26,7 @@ def _make_progress(
 ) -> WatchProgress:
     return WatchProgress(
         id=progress_id or ProgressId.generate(),
+        profile_id=_PROFILE_ID,
         media_id=media_id,
         media_type=media_type,
         position_seconds=position,
@@ -37,6 +41,7 @@ class TestWatchProgressMapperToModel:
     def test_should_raise_when_id_is_none(self) -> None:
         progress = WatchProgress(
             id=None,
+            profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
             media_type=WatchableMediaType.MOVIE,
             position_seconds=100,
@@ -53,6 +58,7 @@ class TestWatchProgressMapperToModel:
         model = WatchProgressMapper.to_model(progress)
 
         assert model.external_id == str(progress_id)
+        assert model.profile_id == str(_PROFILE_ID)
         assert model.media_id == "mov_abc123def456"
         assert model.media_type == "movie"
         assert model.position_seconds == 1800
@@ -62,6 +68,7 @@ class TestWatchProgressMapperToModel:
     def test_should_preserve_optional_tracks(self) -> None:
         progress = WatchProgress(
             id=ProgressId.generate(),
+            profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
             media_type=WatchableMediaType.MOVIE,
             position_seconds=100,
@@ -79,6 +86,7 @@ class TestWatchProgressMapperToModel:
         now = datetime.now(UTC)
         progress = WatchProgress(
             id=ProgressId.generate(),
+            profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
             media_type=WatchableMediaType.MOVIE,
             position_seconds=7200,
@@ -102,6 +110,7 @@ class TestWatchProgressMapperToEntity:
         now = datetime.now(UTC)
         model = WatchProgressModel(
             external_id=str(progress_id),
+            profile_id=str(_PROFILE_ID),
             media_id="epi_xyz789abc123",
             media_type="episode",
             position_seconds=900,
@@ -118,6 +127,7 @@ class TestWatchProgressMapperToEntity:
         entity = WatchProgressMapper.to_entity(model)
 
         assert entity.id == progress_id
+        assert entity.profile_id == _PROFILE_ID
         assert entity.media_id == "epi_xyz789abc123"
         assert entity.media_type == "episode"
         assert entity.position_seconds == 900
@@ -135,6 +145,7 @@ class TestWatchProgressMapperToEntity:
         result = WatchProgressMapper.to_entity(model)
 
         assert result.id == original.id
+        assert result.profile_id == original.profile_id
         assert result.media_id == original.media_id
         assert result.position_seconds == original.position_seconds
         assert result.duration_seconds == original.duration_seconds
@@ -149,6 +160,7 @@ class TestWatchProgressMapperUpdateModel:
         now = datetime.now(UTC)
         model = WatchProgressModel(
             external_id=str(progress_id),
+            profile_id=str(_PROFILE_ID),
             media_id="mov_abc123def456",
             media_type="movie",
             position_seconds=100,
@@ -163,6 +175,7 @@ class TestWatchProgressMapperUpdateModel:
         later = datetime.now(UTC)
         updated = WatchProgress(
             id=progress_id,
+            profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
             media_type=WatchableMediaType.MOVIE,
             position_seconds=6500,
@@ -187,6 +200,7 @@ class TestWatchProgressMapperUpdateModel:
         progress_id = ProgressId.generate()
         model = WatchProgressModel(
             external_id=str(progress_id),
+            profile_id=str(_PROFILE_ID),
             media_id="mov_original00000",
             media_type="movie",
             position_seconds=100,
@@ -197,6 +211,7 @@ class TestWatchProgressMapperUpdateModel:
 
         updated = WatchProgress(
             id=progress_id,
+            profile_id=_PROFILE_ID,
             media_id="mov_different000",
             media_type=WatchableMediaType.MOVIE,
             position_seconds=200,
@@ -208,3 +223,4 @@ class TestWatchProgressMapperUpdateModel:
         # media_id and external_id are not touched by update_model
         assert result.external_id == str(progress_id)
         assert result.media_id == "mov_original00000"
+        assert result.profile_id == str(_PROFILE_ID)

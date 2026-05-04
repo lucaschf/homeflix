@@ -17,6 +17,7 @@ from src.modules.watch_progress.domain.value_objects import (
     WatchStatus,
 )
 from src.shared_kernel.episode_composite_id import EpisodeCompositeId
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -70,19 +71,15 @@ class GetContinueWatchingUseCase:
         self._selector = selector or ContinueWatchingSelector()
 
     async def execute(self, input_dto: GetContinueWatchingInput) -> ContinueWatchingOutput:
-        """Execute the use case.
-
-        Args:
-            input_dto: Contains limit and language.
-
-        Returns:
-            ContinueWatchingOutput with items including media metadata.
-        """
+        """Execute the use case for the caller's profile."""
+        profile_id = ProfileId(input_dto.profile_id)
         items: list[ContinueWatchingItem] = []
         seen_series: set[str] = set()
 
         async with self._uow_factory() as uow:
-            progress_list = await uow.progress.list_recently_watched(limit=input_dto.limit)
+            progress_list = await uow.progress.list_recently_watched(
+                profile_id, limit=input_dto.limit
+            )
 
             for progress in progress_list:
                 if progress.media_type == WatchableMediaType.MOVIE:
@@ -100,6 +97,7 @@ class GetContinueWatchingUseCase:
                         uow,
                         parsed.series_id,
                         input_dto.lang,
+                        profile_id,
                     )
                     if item:
                         items.append(item)
@@ -111,13 +109,14 @@ class GetContinueWatchingUseCase:
         uow: WatchProgressUnitOfWork,
         series_id: str,
         lang: str,
+        profile_id: ProfileId,
     ) -> ContinueWatchingItem | None:
         """Fetch series metadata, build candidates, pick one, project to a DTO."""
         series = await self._media_lookup.get_series_with_episodes(series_id, lang)
         if not series:
             return None
 
-        candidates = await self._build_candidates(uow, series_id, series)
+        candidates = await self._build_candidates(uow, series_id, series, profile_id)
         if not candidates:
             return None
 
@@ -132,6 +131,7 @@ class GetContinueWatchingUseCase:
         uow: WatchProgressUnitOfWork,
         series_id: str,
         series: SeriesWithEpisodesInfo,
+        profile_id: ProfileId,
     ) -> list[EpisodeCandidate]:
         """Translate series episodes + their progress into selector inputs.
 
@@ -151,7 +151,7 @@ class GetContinueWatchingUseCase:
             for ep in series.episodes
         ]
 
-        progress_map = await uow.progress.find_by_media_ids(media_ids)
+        progress_map = await uow.progress.find_by_media_ids(media_ids, profile_id)
 
         return [
             EpisodeCandidate(

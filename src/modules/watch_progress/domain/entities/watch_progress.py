@@ -13,6 +13,7 @@ from src.modules.watch_progress.domain.value_objects import (
     WatchableMediaType,
     WatchStatus,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId  # noqa: TCH001
 
 _COMPLETION_THRESHOLD = 0.9
 
@@ -35,6 +36,9 @@ class WatchProgress(AggregateRoot[ProgressId]):
     """
 
     id: ProgressId | None = Field(default=None)
+
+    # Owner — every progress row belongs to exactly one profile
+    profile_id: ProfileId
 
     # What is being watched
     media_id: str
@@ -111,6 +115,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
     @classmethod
     def create(
         cls,
+        profile_id: ProfileId,
         media_id: str,
         media_type: WatchableMediaType,
         position_seconds: int,
@@ -121,6 +126,9 @@ class WatchProgress(AggregateRoot[ProgressId]):
         """Factory method with automatic ID generation.
 
         Args:
+            profile_id: Owning profile (``prf_xxx``). Every progress
+                row is scoped to a single profile so multi-profile
+                households watch independently.
             media_id: External ID of the media (mov_xxx or epi_xxx).
             media_type: Type of media ("movie" or "episode").
             position_seconds: Current playback position in seconds.
@@ -137,6 +145,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
 
         return cls(
             id=ProgressId.generate(),
+            profile_id=profile_id,
             media_id=media_id,
             media_type=media_type,
             position_seconds=position_seconds,

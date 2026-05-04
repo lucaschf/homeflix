@@ -5,41 +5,30 @@ from dataclasses import dataclass
 from src.modules.watch_progress.application.unit_of_work import (
     WatchProgressUnitOfWorkFactory,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 @dataclass(frozen=True)
 class ClearProgressInput:
-    """Input for ClearProgressUseCase.
+    """Input for ClearProgressUseCase."""
 
-    Attributes:
-        media_id: External ID of the media.
-    """
-
+    profile_id: str
     media_id: str
 
 
 class ClearProgressUseCase:
-    """Clear (soft-delete) watch progress for a media item."""
+    """Clear (soft-delete) watch progress for a media item in one profile."""
 
     def __init__(self, uow_factory: WatchProgressUnitOfWorkFactory) -> None:
-        """Initialize the use case.
-
-        Args:
-            uow_factory: Factory that opens a fresh watch progress UoW.
-        """
         self._uow_factory = uow_factory
 
     async def execute(self, input_dto: ClearProgressInput) -> bool:
-        """Execute the use case.
-
-        Args:
-            input_dto: Contains the media_id to clear.
-
-        Returns:
-            True if progress was found and deleted, False otherwise.
-        """
+        """Soft-delete the row, returning ``True`` when one was found."""
         async with self._uow_factory() as uow:
-            return await uow.progress.delete(input_dto.media_id)
+            return await uow.progress.delete(
+                input_dto.media_id,
+                ProfileId(input_dto.profile_id),
+            )
 
 
-__all__ = ["ClearProgressUseCase"]
+__all__ = ["ClearProgressInput", "ClearProgressUseCase"]

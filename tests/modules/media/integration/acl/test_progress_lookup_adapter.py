@@ -12,6 +12,9 @@ from src.modules.watch_progress.infrastructure.persistence.repositories import (
 from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyWatchProgressUnitOfWorkFactory,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId
+
+_PROFILE_ID = ProfileId("prf_test12345678")
 
 
 def _progress(
@@ -21,10 +24,22 @@ def _progress(
     media_type: WatchableMediaType = WatchableMediaType.EPISODE,
 ) -> WatchProgress:
     return WatchProgress.create(
+        profile_id=_PROFILE_ID,
         media_id=media_id,
         media_type=media_type,
         position_seconds=position,
         duration_seconds=duration,
+    )
+
+
+def _make_adapter(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    default_profile_id: str | None = _PROFILE_ID.value,
+) -> ProgressLookupAdapter:
+    return ProgressLookupAdapter(
+        SqlAlchemyWatchProgressUnitOfWorkFactory(session_factory),
+        default_profile_id=default_profile_id,
     )
 
 
@@ -42,9 +57,7 @@ class TestProgressLookupAdapter:
         await progress_repo.save(_progress("epi_ser_ABC_1_2", position=3300))
         await db_session.commit()
 
-        adapter = ProgressLookupAdapter(
-            SqlAlchemyWatchProgressUnitOfWorkFactory(session_factory),
-        )
+        adapter = _make_adapter(session_factory)
 
         result = await adapter.find_for_media_ids(
             ["epi_ser_ABC_1_1", "epi_ser_ABC_1_2", "epi_ser_ABC_1_3"],
@@ -59,11 +72,24 @@ class TestProgressLookupAdapter:
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        adapter = ProgressLookupAdapter(
-            SqlAlchemyWatchProgressUnitOfWorkFactory(session_factory),
-        )
+        adapter = _make_adapter(session_factory)
 
         assert await adapter.find_for_media_ids([]) == {}
+
+    async def test_find_for_media_ids_returns_empty_when_no_default_profile(
+        self,
+        db_session: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        # Strict transition mode: no default_profile_id -> graceful
+        # degradation, even when matching rows exist.
+        progress_repo = SQLAlchemyWatchProgressRepository(db_session)
+        await progress_repo.save(_progress("epi_ser_ABC_1_1"))
+        await db_session.commit()
+
+        adapter = _make_adapter(session_factory, default_profile_id=None)
+
+        assert await adapter.find_for_media_ids(["epi_ser_ABC_1_1"]) == {}
 
     async def test_progress_summary_includes_last_watched_at(
         self,
@@ -74,9 +100,7 @@ class TestProgressLookupAdapter:
         await progress_repo.save(_progress("epi_ser_ABC_1_1"))
         await db_session.commit()
 
-        adapter = ProgressLookupAdapter(
-            SqlAlchemyWatchProgressUnitOfWorkFactory(session_factory),
-        )
+        adapter = _make_adapter(session_factory)
         result = await adapter.find_for_media_ids(["epi_ser_ABC_1_1"])
 
         summary = result["epi_ser_ABC_1_1"]
