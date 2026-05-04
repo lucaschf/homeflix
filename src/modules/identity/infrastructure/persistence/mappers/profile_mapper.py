@@ -12,12 +12,12 @@ import uuid
 from datetime import UTC, datetime
 
 from src.modules.identity.domain.entities.profile import Profile
-from src.modules.identity.domain.value_objects.profile_id import ProfileId
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
-from src.modules.identity.domain.value_objects.user_id import UserId
 from src.modules.identity.infrastructure.persistence.models.profile_model import (
     ProfileModel,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId
+from src.shared_kernel.value_objects.user_id import UserId
 
 
 def _ensure_utc(value: datetime | None) -> datetime | None:

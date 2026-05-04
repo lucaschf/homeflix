@@ -4,7 +4,7 @@ from src.modules.identity.application.dtos.identity_dtos import CreateProfileInp
 from src.modules.identity.application.use_cases.create_profile import (
     CreateProfileUseCase,
 )
-from src.modules.identity.domain.value_objects.user_id import UserId
+from src.shared_kernel.value_objects.user_id import UserId
 
 from .conftest import FakeIdentityUnitOfWork, FakeIdentityUnitOfWorkFactory
 

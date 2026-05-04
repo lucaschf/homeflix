@@ -10,8 +10,6 @@ from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.repositories.profile_repository import (
     ProfileRepository,
 )
-from src.modules.identity.domain.value_objects.profile_id import ProfileId
-from src.modules.identity.domain.value_objects.user_id import UserId
 from src.modules.identity.infrastructure.persistence.mappers.profile_mapper import (
     ProfileMapper,
 )
@@ -19,6 +17,8 @@ from src.modules.identity.infrastructure.persistence.models.profile_model import
     ProfileModel,
 )
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.shared_kernel.value_objects.profile_id import ProfileId
+from src.shared_kernel.value_objects.user_id import UserId
 
 
 class SqlAlchemyProfileRepository(ProfileRepository):

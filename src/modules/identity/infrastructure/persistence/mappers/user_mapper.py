@@ -17,9 +17,9 @@ from datetime import UTC, datetime
 
 from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.value_objects.email import Email
-from src.modules.identity.domain.value_objects.user_id import UserId
 from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.shared_kernel.value_objects.user_id import UserId
 
 
 def _ensure_utc(value: datetime | None) -> datetime | None:

@@ -12,7 +12,6 @@ from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFact
 from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.value_objects.email import Email
-from src.modules.identity.domain.value_objects.profile_id import ProfileId
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.modules.identity.infrastructure.persistence.models.access_token_model import (
     AccessTokenModel,
@@ -21,6 +20,7 @@ from src.modules.identity.infrastructure.persistence.models.profile_model import
     ProfileModel,
 )
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 def _new_token() -> str:

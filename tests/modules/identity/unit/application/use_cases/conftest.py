@@ -27,8 +27,8 @@ from src.modules.identity.domain.repositories.profile_repository import (
 )
 from src.modules.identity.domain.repositories.user_repository import UserRepository
 from src.modules.identity.domain.value_objects.email import Email
-from src.modules.identity.domain.value_objects.profile_id import ProfileId
-from src.modules.identity.domain.value_objects.user_id import UserId
+from src.shared_kernel.value_objects.profile_id import ProfileId
+from src.shared_kernel.value_objects.user_id import UserId
 
 
 class FakeUserRepository(UserRepository):
