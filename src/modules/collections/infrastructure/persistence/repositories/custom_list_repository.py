@@ -13,40 +13,47 @@ from src.modules.collections.infrastructure.persistence.models import (
     CustomListItemModel,
     CustomListModel,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class SQLAlchemyCustomListRepository(CustomListRepository):
     """SQLAlchemy implementation of CustomListRepository.
 
-    Example:
-        >>> repo = SQLAlchemyCustomListRepository(session)
-        >>> lists = await repo.list_all()
+    Every read/delete query is scoped by ``profile_id`` so a profile
+    can never see (or accidentally mutate) another profile's lists,
+    even when armed with a known ``list_id``. ``add``/``update`` derive
+    the profile from the entity, matching the contract.
     """
 
     def __init__(self, session: AsyncSession) -> None:
-        """Initialize repository with database session.
-
-        Args:
-            session: SQLAlchemy async session.
-        """
         self._session = session
 
     # -- List CRUD -------------------------------------------------------------
 
-    async def find_by_id(self, list_id: str) -> CustomList | None:
-        """Find a custom list by its external ID."""
+    async def find_by_id(
+        self,
+        list_id: str,
+        profile_id: ProfileId,
+    ) -> CustomList | None:
+        """Find a non-deleted list owned by ``profile_id``."""
         stmt = select(CustomListModel).where(
             CustomListModel.external_id == list_id,
+            CustomListModel.profile_id == str(profile_id),
             CustomListModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         return None if model is None else CustomListMapper.to_entity(model)
 
-    async def find_by_name(self, name: str) -> CustomList | None:
-        """Find a custom list by name (case-insensitive)."""
+    async def find_by_name(
+        self,
+        name: str,
+        profile_id: ProfileId,
+    ) -> CustomList | None:
+        """Find by name (case-insensitive) within the profile."""
         stmt = select(CustomListModel).where(
             func.lower(CustomListModel.name) == name.strip().lower(),
+            CustomListModel.profile_id == str(profile_id),
             CustomListModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
@@ -62,9 +69,10 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         return CustomListMapper.to_entity(model)
 
     async def update(self, custom_list: CustomList) -> CustomList:
-        """Update an existing custom list."""
+        """Update an existing custom list (scoped to its own profile)."""
         stmt = select(CustomListModel).where(
             CustomListModel.external_id == str(custom_list.id),
+            CustomListModel.profile_id == str(custom_list.profile_id),
             CustomListModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
@@ -79,10 +87,11 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         await self._session.refresh(model)
         return CustomListMapper.to_entity(model)
 
-    async def remove(self, list_id: str) -> bool:
-        """Soft-delete a custom list and all its items."""
+    async def remove(self, list_id: str, profile_id: ProfileId) -> bool:
+        """Soft-delete a list and its items, scoped to ``profile_id``."""
         stmt = select(CustomListModel).where(
             CustomListModel.external_id == list_id,
+            CustomListModel.profile_id == str(profile_id),
             CustomListModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
@@ -104,47 +113,56 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         await self._session.flush()
         return True
 
-    async def list_all(self) -> list[CustomList]:
-        """List all custom lists ordered by most recently updated."""
+    async def list_all(self, profile_id: ProfileId) -> list[CustomList]:
+        """List the profile's custom lists ordered by most recently updated."""
         stmt = (
             select(CustomListModel)
-            .where(CustomListModel.deleted_at.is_(None))
+            .where(
+                CustomListModel.profile_id == str(profile_id),
+                CustomListModel.deleted_at.is_(None),
+            )
             .order_by(CustomListModel.updated_at.desc())
         )
         result = await self._session.execute(stmt)
         return [CustomListMapper.to_entity(m) for m in result.scalars().all()]
 
-    async def count(self) -> int:
-        """Count total active custom lists."""
+    async def count(self, profile_id: ProfileId) -> int:
+        """Count active custom lists for the profile."""
         stmt = (
             select(func.count())
             .select_from(CustomListModel)
-            .where(CustomListModel.deleted_at.is_(None))
+            .where(
+                CustomListModel.profile_id == str(profile_id),
+                CustomListModel.deleted_at.is_(None),
+            )
         )
         result = await self._session.execute(stmt)
         return result.scalar() or 0
 
     # -- Item management -------------------------------------------------------
 
-    async def _get_list_internal_id(self, list_id: str) -> int | None:
-        """Get the internal DB ID for a custom list by external ID.
-
-        Args:
-            list_id: External ID of the list.
-
-        Returns:
-            Internal ID if found, None otherwise.
-        """
+    async def _get_list_internal_id(
+        self,
+        list_id: str,
+        profile_id: ProfileId,
+    ) -> int | None:
+        """Resolve internal DB id, scoped to the owning profile."""
         stmt = select(CustomListModel.id).where(
             CustomListModel.external_id == list_id,
+            CustomListModel.profile_id == str(profile_id),
             CustomListModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def find_item(self, list_id: str, media_id: str) -> CustomListItem | None:
-        """Find an item in a custom list."""
-        internal_id = await self._get_list_internal_id(list_id)
+    async def find_item(
+        self,
+        list_id: str,
+        media_id: str,
+        profile_id: ProfileId,
+    ) -> CustomListItem | None:
+        """Find an item, only if the parent list belongs to the profile."""
+        internal_id = await self._get_list_internal_id(list_id, profile_id)
         if internal_id is None:
             return None
 
@@ -157,9 +175,14 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         model = result.scalar_one_or_none()
         return None if model is None else CustomListItemMapper.to_entity(model)
 
-    async def add_item(self, list_id: str, item: CustomListItem) -> CustomListItem:
-        """Add an item to a custom list."""
-        internal_id = await self._get_list_internal_id(list_id)
+    async def add_item(
+        self,
+        list_id: str,
+        item: CustomListItem,
+        profile_id: ProfileId,
+    ) -> CustomListItem:
+        """Persist an item under a list owned by ``profile_id``."""
+        internal_id = await self._get_list_internal_id(list_id, profile_id)
         if internal_id is None:
             msg = f"CustomList {list_id} not found"
             raise ValueError(msg)
@@ -187,9 +210,14 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         await self._session.refresh(model)
         return CustomListItemMapper.to_entity(model)
 
-    async def remove_item(self, list_id: str, media_id: str) -> bool:
-        """Remove an item from a custom list."""
-        internal_id = await self._get_list_internal_id(list_id)
+    async def remove_item(
+        self,
+        list_id: str,
+        media_id: str,
+        profile_id: ProfileId,
+    ) -> bool:
+        """Soft-delete an item from a list owned by ``profile_id``."""
+        internal_id = await self._get_list_internal_id(list_id, profile_id)
         if internal_id is None:
             return False
 
@@ -208,9 +236,13 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         await self._session.flush()
         return True
 
-    async def list_items(self, list_id: str) -> list[CustomListItem]:
-        """List all items in a custom list ordered by position."""
-        internal_id = await self._get_list_internal_id(list_id)
+    async def list_items(
+        self,
+        list_id: str,
+        profile_id: ProfileId,
+    ) -> list[CustomListItem]:
+        """List items in a list, scoped to the owning profile."""
+        internal_id = await self._get_list_internal_id(list_id, profile_id)
         if internal_id is None:
             return []
 
@@ -225,9 +257,13 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         result = await self._session.execute(stmt)
         return [CustomListItemMapper.to_entity(m) for m in result.scalars().all()]
 
-    async def get_next_position(self, list_id: str) -> int:
-        """Get the next available position via DB MAX query."""
-        internal_id = await self._get_list_internal_id(list_id)
+    async def get_next_position(
+        self,
+        list_id: str,
+        profile_id: ProfileId,
+    ) -> int:
+        """Compute next position via MAX query, scoped to the owning profile."""
+        internal_id = await self._get_list_internal_id(list_id, profile_id)
         if internal_id is None:
             return 0
 

@@ -6,32 +6,22 @@ from src.modules.collections.infrastructure.persistence.models import (
     WatchlistItemModel,
 )
 from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class WatchlistItemMapper:
-    """Bidirectional mapper between WatchlistItem entity and ORM model.
-
-    Example:
-        >>> model = WatchlistItemMapper.to_model(entity)
-        >>> entity = WatchlistItemMapper.to_entity(model)
-    """
+    """Bidirectional mapper between WatchlistItem entity and ORM model."""
 
     @staticmethod
     def to_model(entity: WatchlistItem) -> WatchlistItemModel:
-        """Convert WatchlistItem entity to ORM model.
-
-        Args:
-            entity: The domain entity.
-
-        Returns:
-            SQLAlchemy model ready for persistence.
-        """
+        """Convert WatchlistItem entity to ORM model."""
         if entity.id is None:
             msg = "Cannot map entity without ID to model"
             raise ValueError(msg)
 
         return WatchlistItemModel(
             external_id=str(entity.id),
+            profile_id=str(entity.profile_id),
             media_id=entity.media_id,
             media_type=entity.media_type,
             added_at=entity.added_at,
@@ -39,16 +29,10 @@ class WatchlistItemMapper:
 
     @staticmethod
     def to_entity(model: WatchlistItemModel) -> WatchlistItem:
-        """Convert ORM model to WatchlistItem entity.
-
-        Args:
-            model: The SQLAlchemy model.
-
-        Returns:
-            Domain WatchlistItem entity.
-        """
+        """Convert ORM model to WatchlistItem entity."""
         return WatchlistItem(
             id=ListId(model.external_id),
+            profile_id=ProfileId(model.profile_id),
             media_id=model.media_id,
             media_type=CollectionMediaType(model.media_type),
             added_at=model.added_at,
@@ -58,15 +42,7 @@ class WatchlistItemMapper:
 
     @staticmethod
     def update_model(model: WatchlistItemModel, entity: WatchlistItem) -> WatchlistItemModel:
-        """Update existing ORM model with entity data.
-
-        Args:
-            model: The existing model.
-            entity: The updated entity.
-
-        Returns:
-            The updated model.
-        """
+        """Update mutable fields; ``profile_id`` is not touched."""
         model.media_id = entity.media_id
         model.media_type = entity.media_type
         model.added_at = entity.added_at

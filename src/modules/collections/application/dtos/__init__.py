@@ -5,11 +5,13 @@ from src.modules.collections.application.dtos.custom_list_dtos import (
     CreateCustomListInput,
     CustomListItemOutput,
     CustomListOutput,
+    DeleteCustomListInput,
     GetCustomListItemsInput,
     RemoveItemFromCustomListInput,
     RenameCustomListInput,
 )
 from src.modules.collections.application.dtos.watchlist_dtos import (
+    CheckWatchlistInput,
     GetWatchlistInput,
     ToggleWatchlistInput,
     ToggleWatchlistOutput,
@@ -18,9 +20,11 @@ from src.modules.collections.application.dtos.watchlist_dtos import (
 
 __all__ = [
     "AddItemToCustomListInput",
+    "CheckWatchlistInput",
     "CreateCustomListInput",
     "CustomListItemOutput",
     "CustomListOutput",
+    "DeleteCustomListInput",
     "GetCustomListItemsInput",
     "GetWatchlistInput",
     "RemoveItemFromCustomListInput",

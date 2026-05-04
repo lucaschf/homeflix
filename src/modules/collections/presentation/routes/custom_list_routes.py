@@ -11,6 +11,7 @@ from src.config.containers import ApplicationContainer
 from src.modules.collections.application.dtos import (
     AddItemToCustomListInput,
     CreateCustomListInput,
+    DeleteCustomListInput,
     GetCustomListItemsInput,
     RemoveItemFromCustomListInput,
     RenameCustomListInput,
@@ -24,6 +25,10 @@ from src.modules.collections.application.use_cases import (
     RemoveItemFromCustomListUseCase,
     RenameCustomListUseCase,
 )
+from src.modules.collections.application.use_cases.list_custom_lists import (
+    ListCustomListsInput,
+)
+from src.modules.collections.presentation.dependencies import resolve_profile_id
 from src.modules.collections.presentation.schemas import (
     AddItemToCustomListRequest,
     CreateCustomListRequest,
@@ -40,24 +45,26 @@ router = APIRouter(prefix="/api/v1/custom-lists", tags=["Custom Lists"])
 @inject  # type: ignore[misc]
 async def create_custom_list(
     body: CreateCustomListRequest,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: CreateCustomListUseCase = Depends(
         Provide[ApplicationContainer.collections.create_custom_list],
     ),
 ) -> dict[str, Any]:
     """Create a new custom list."""
-    result = await use_case.execute(CreateCustomListInput(name=body.name))
+    result = await use_case.execute(CreateCustomListInput(profile_id=profile_id, name=body.name))
     return api_single("custom_list", asdict(result))
 
 
 @router.get("")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def list_custom_lists(
+    profile_id: str = Depends(resolve_profile_id),
     use_case: ListCustomListsUseCase = Depends(
         Provide[ApplicationContainer.collections.list_custom_lists],
     ),
 ) -> dict[str, Any]:
-    """List all custom lists."""
-    items = await use_case.execute()
+    """List custom lists owned by the caller's profile."""
+    items = await use_case.execute(ListCustomListsInput(profile_id=profile_id))
     return api_list([asdict(item) for item in items])
 
 
@@ -66,12 +73,15 @@ async def list_custom_lists(
 async def rename_custom_list(
     list_id: str,
     body: RenameCustomListRequest,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: RenameCustomListUseCase = Depends(
         Provide[ApplicationContainer.collections.rename_custom_list],
     ),
 ) -> dict[str, Any]:
-    """Rename a custom list."""
-    result = await use_case.execute(RenameCustomListInput(list_id=list_id, name=body.name))
+    """Rename a custom list owned by the caller."""
+    result = await use_case.execute(
+        RenameCustomListInput(profile_id=profile_id, list_id=list_id, name=body.name)
+    )
     return api_single("custom_list", asdict(result))
 
 
@@ -79,12 +89,13 @@ async def rename_custom_list(
 @inject  # type: ignore[misc]
 async def delete_custom_list(
     list_id: str,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: DeleteCustomListUseCase = Depends(
         Provide[ApplicationContainer.collections.delete_custom_list],
     ),
 ) -> None:
-    """Delete a custom list and all its items."""
-    await use_case.execute(list_id)
+    """Delete a custom list and all its items, scoped to the profile."""
+    await use_case.execute(DeleteCustomListInput(profile_id=profile_id, list_id=list_id))
 
 
 # -- Item management -----------------------------------------------------------
@@ -95,12 +106,15 @@ async def delete_custom_list(
 async def get_custom_list_items(
     list_id: str,
     lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
     use_case: GetCustomListItemsUseCase = Depends(
         Provide[ApplicationContainer.collections.get_custom_list_items],
     ),
 ) -> dict[str, Any]:
-    """List all items in a custom list with media metadata."""
-    items = await use_case.execute(GetCustomListItemsInput(list_id=list_id, lang=lang))
+    """List items in a custom list with media metadata."""
+    items = await use_case.execute(
+        GetCustomListItemsInput(profile_id=profile_id, list_id=list_id, lang=lang)
+    )
     return api_list([asdict(item) for item in items])
 
 
@@ -109,13 +123,15 @@ async def get_custom_list_items(
 async def add_item_to_custom_list(
     list_id: str,
     body: AddItemToCustomListRequest,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: AddItemToCustomListUseCase = Depends(
         Provide[ApplicationContainer.collections.add_item_to_custom_list],
     ),
 ) -> dict[str, Any]:
-    """Add a media item to a custom list."""
+    """Add a media item to a custom list owned by the caller."""
     await use_case.execute(
         AddItemToCustomListInput(
+            profile_id=profile_id,
             list_id=list_id,
             media_id=body.media_id,
             media_type=body.media_type,
@@ -132,12 +148,15 @@ async def add_item_to_custom_list(
 async def remove_item_from_custom_list(
     list_id: str,
     media_id: str,
+    profile_id: str = Depends(resolve_profile_id),
     use_case: RemoveItemFromCustomListUseCase = Depends(
         Provide[ApplicationContainer.collections.remove_item_from_custom_list],
     ),
 ) -> None:
-    """Remove a media item from a custom list."""
-    await use_case.execute(RemoveItemFromCustomListInput(list_id=list_id, media_id=media_id))
+    """Remove a media item from a custom list owned by the caller."""
+    await use_case.execute(
+        RemoveItemFromCustomListInput(profile_id=profile_id, list_id=list_id, media_id=media_id)
+    )
 
 
 __all__ = ["router"]

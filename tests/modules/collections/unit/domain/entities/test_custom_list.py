@@ -15,6 +15,9 @@ from src.modules.collections.domain.value_objects import (
     ListName,
 )
 from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects.profile_id import ProfileId
+
+_PROFILE_ID = ProfileId("prf_test12345678")
 
 
 @pytest.mark.unit
@@ -22,22 +25,23 @@ class TestCustomListCreation:
     """Tests for CustomList instantiation."""
 
     def test_should_create_with_string_name(self) -> None:
-        custom_list = CustomList(name="Action Movies")
+        custom_list = CustomList(profile_id=_PROFILE_ID, name="Action Movies")
 
         assert custom_list.id is None
         assert isinstance(custom_list.name, ListName)
         assert custom_list.name.value == "Action Movies"
         assert custom_list.item_count == 0
+        assert custom_list.profile_id == _PROFILE_ID
 
     def test_should_create_with_list_name_instance(self) -> None:
         name = ListName("Action Movies")
-        custom_list = CustomList(name=name)
+        custom_list = CustomList(profile_id=_PROFILE_ID, name=name)
 
         assert custom_list.name is name
         assert custom_list.name.value == "Action Movies"
 
     def test_should_create_via_factory_with_auto_id(self) -> None:
-        custom_list = CustomList.create(name="Action Movies")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Action Movies")
 
         assert custom_list.id is not None
         assert isinstance(custom_list.id, ListId)
@@ -45,34 +49,34 @@ class TestCustomListCreation:
 
     def test_factory_should_accept_list_name_instance(self) -> None:
         name = ListName("Action Movies")
-        custom_list = CustomList.create(name=name)
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name=name)
 
         assert custom_list.name.value == "Action Movies"
 
     def test_factory_should_strip_name_whitespace(self) -> None:
-        custom_list = CustomList.create(name="  Action Movies  ")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="  Action Movies  ")
 
         assert custom_list.name.value == "Action Movies"
 
     def test_factory_should_initialize_item_count_to_zero(self) -> None:
-        custom_list = CustomList.create(name="My List")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="My List")
 
         assert custom_list.item_count == 0
 
     def test_should_accept_string_id(self) -> None:
         list_id = ListId.generate()
-        custom_list = CustomList(id=list_id, name="Test")
+        custom_list = CustomList(id=list_id, profile_id=_PROFILE_ID, name="Test")
 
         assert custom_list.id == list_id
 
     def test_should_be_frozen(self) -> None:
-        custom_list = CustomList.create(name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
 
         with pytest.raises(DomainValidationException):
             custom_list.name = "New Name"  # type: ignore[misc, assignment]
 
     def test_should_have_timestamps(self) -> None:
-        custom_list = CustomList.create(name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
 
         assert custom_list.created_at is not None
         assert custom_list.updated_at is not None
@@ -83,33 +87,33 @@ class TestCustomListRename:
     """Tests for CustomList.rename()."""
 
     def test_should_return_new_instance_with_updated_name(self) -> None:
-        original = CustomList.create(name="Old Name")
+        original = CustomList.create(profile_id=_PROFILE_ID, name="Old Name")
         renamed = original.rename("New Name")
 
         assert renamed.name.value == "New Name"
         assert original.name.value == "Old Name"
 
     def test_should_accept_list_name_instance(self) -> None:
-        original = CustomList.create(name="Old Name")
+        original = CustomList.create(profile_id=_PROFILE_ID, name="Old Name")
         new_name = ListName("New Name")
         renamed = original.rename(new_name)
 
         assert renamed.name.value == "New Name"
 
     def test_should_preserve_id(self) -> None:
-        original = CustomList.create(name="Old Name")
+        original = CustomList.create(profile_id=_PROFILE_ID, name="Old Name")
         renamed = original.rename("New Name")
 
         assert renamed.id == original.id
 
     def test_should_strip_new_name_whitespace(self) -> None:
-        custom_list = CustomList.create(name="Original")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Original")
         renamed = custom_list.rename("  Renamed  ")
 
         assert renamed.name.value == "Renamed"
 
     def test_should_preserve_item_count(self) -> None:
-        custom_list = CustomList.create(name="Original")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Original")
         incremented = custom_list.increment_item_count()
         renamed = incremented.rename("Renamed")
 
@@ -121,14 +125,14 @@ class TestCustomListItemCount:
     """Tests for increment/decrement item count."""
 
     def test_should_increment_item_count(self) -> None:
-        custom_list = CustomList.create(name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
         updated = custom_list.increment_item_count()
 
         assert updated.item_count == 1
         assert custom_list.item_count == 0
 
     def test_should_increment_multiple_times(self) -> None:
-        custom_list = CustomList.create(name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
         updated = custom_list.increment_item_count()
         updated = updated.increment_item_count()
         updated = updated.increment_item_count()
@@ -138,6 +142,7 @@ class TestCustomListItemCount:
     def test_should_raise_when_exceeding_max_items(self) -> None:
         custom_list = CustomList(
             id=ListId.generate(),
+            profile_id=_PROFILE_ID,
             name="Full List",
             item_count=MAX_ITEMS_PER_LIST,
         )
@@ -150,6 +155,7 @@ class TestCustomListItemCount:
     def test_should_allow_increment_at_max_minus_one(self) -> None:
         custom_list = CustomList(
             id=ListId.generate(),
+            profile_id=_PROFILE_ID,
             name="Almost Full",
             item_count=MAX_ITEMS_PER_LIST - 1,
         )
@@ -161,6 +167,7 @@ class TestCustomListItemCount:
     def test_should_decrement_item_count(self) -> None:
         custom_list = CustomList(
             id=ListId.generate(),
+            profile_id=_PROFILE_ID,
             name="Test",
             item_count=5,
         )
@@ -169,7 +176,7 @@ class TestCustomListItemCount:
         assert updated.item_count == 4
 
     def test_should_not_go_below_zero_on_decrement(self) -> None:
-        custom_list = CustomList.create(name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
         updated = custom_list.decrement_item_count()
 
         assert updated.item_count == 0
@@ -181,25 +188,25 @@ class TestCustomListEquality:
 
     def test_should_be_equal_by_id(self) -> None:
         list_id = ListId.generate()
-        list_a = CustomList(id=list_id, name="A")
-        list_b = CustomList(id=list_id, name="B")
+        list_a = CustomList(id=list_id, profile_id=_PROFILE_ID, name="A")
+        list_b = CustomList(id=list_id, profile_id=_PROFILE_ID, name="B")
 
         assert list_a == list_b
 
     def test_should_not_be_equal_with_different_ids(self) -> None:
-        list_a = CustomList.create(name="A")
-        list_b = CustomList.create(name="A")
+        list_a = CustomList.create(profile_id=_PROFILE_ID, name="A")
+        list_b = CustomList.create(profile_id=_PROFILE_ID, name="A")
 
         assert list_a != list_b
 
     def test_should_not_be_equal_when_id_is_none(self) -> None:
-        list_a = CustomList(name="A")
-        list_b = CustomList(name="A")
+        list_a = CustomList(profile_id=_PROFILE_ID, name="A")
+        list_b = CustomList(profile_id=_PROFILE_ID, name="A")
 
         assert list_a != list_b
 
     def test_should_be_hashable(self) -> None:
-        custom_list = CustomList.create(name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
 
         assert hash(custom_list) is not None
         assert {custom_list}

@@ -9,6 +9,7 @@ from src.modules.collections.application.dtos import (
 from src.modules.collections.application.ports import MediaLookupPort
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
 from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _logger = logging.getLogger(__name__)
 
@@ -49,8 +50,9 @@ class GetWatchlistUseCase:
         Returns:
             List of WatchlistItemOutput with media metadata.
         """
+        profile_id = ProfileId(input_dto.profile_id)
         async with self._uow_factory() as uow:
-            items = await uow.watchlist.list_all(limit=input_dto.limit)
+            items = await uow.watchlist.list_all(profile_id, limit=input_dto.limit)
         _logger.info("Found %d watchlist items", len(items))
 
         if not items:

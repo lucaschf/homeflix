@@ -11,28 +11,29 @@ from src.modules.collections.infrastructure.persistence.mappers import (
 from src.modules.collections.infrastructure.persistence.models import (
     WatchlistItemModel,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class SQLAlchemyWatchlistRepository(WatchlistRepository):
     """SQLAlchemy implementation of WatchlistRepository.
 
-    Example:
-        >>> repo = SQLAlchemyWatchlistRepository(session)
-        >>> item = await repo.find_by_media_id("mov_abc123def456")
+    Every read/delete query is scoped by ``profile_id`` so a profile
+    only sees its own watchlist. ``add`` derives the profile from the
+    entity, matching the contract.
     """
 
     def __init__(self, session: AsyncSession) -> None:
-        """Initialize repository with database session.
-
-        Args:
-            session: SQLAlchemy async session.
-        """
         self._session = session
 
-    async def find_by_media_id(self, media_id: str) -> WatchlistItem | None:
-        """Find a watchlist item by media external ID."""
+    async def find_by_media_id(
+        self,
+        media_id: str,
+        profile_id: ProfileId,
+    ) -> WatchlistItem | None:
+        """Find a row scoped to ``(media_id, profile_id)``."""
         stmt = select(WatchlistItemModel).where(
             WatchlistItemModel.media_id == media_id,
+            WatchlistItemModel.profile_id == str(profile_id),
             WatchlistItemModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
@@ -42,12 +43,14 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
     async def add(self, item: WatchlistItem) -> WatchlistItem:
         """Add an item to the watchlist.
 
-        If a soft-deleted record exists for the same media_id,
-        restores it instead of creating a duplicate.
+        If a soft-deleted record exists for the same
+        ``(profile_id, media_id)`` pair, restore it instead of
+        creating a duplicate (otherwise the composite UNIQUE
+        constraint would refuse the insert).
         """
-        # Check for soft-deleted record to restore
         stmt = select(WatchlistItemModel).where(
             WatchlistItemModel.media_id == item.media_id,
+            WatchlistItemModel.profile_id == str(item.profile_id),
             WatchlistItemModel.deleted_at.is_not(None),
         )
         result = await self._session.execute(stmt)
@@ -66,10 +69,11 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
         await self._session.refresh(model)
         return WatchlistItemMapper.to_entity(model)
 
-    async def remove(self, media_id: str) -> bool:
-        """Soft-delete an item from the watchlist."""
+    async def remove(self, media_id: str, profile_id: ProfileId) -> bool:
+        """Soft-delete the row for (media_id, profile_id)."""
         stmt = select(WatchlistItemModel).where(
             WatchlistItemModel.media_id == media_id,
+            WatchlistItemModel.profile_id == str(profile_id),
             WatchlistItemModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
@@ -82,24 +86,32 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
         await self._session.flush()
         return True
 
-    async def list_all(self, limit: int = 100) -> list[WatchlistItem]:
-        """List all watchlist items ordered by most recently added."""
+    async def list_all(
+        self,
+        profile_id: ProfileId,
+        limit: int = 100,
+    ) -> list[WatchlistItem]:
+        """List the profile's watchlist entries ordered by most recently added."""
         stmt = (
             select(WatchlistItemModel)
-            .where(WatchlistItemModel.deleted_at.is_(None))
+            .where(
+                WatchlistItemModel.profile_id == str(profile_id),
+                WatchlistItemModel.deleted_at.is_(None),
+            )
             .order_by(WatchlistItemModel.added_at.desc())
             .limit(limit)
         )
         result = await self._session.execute(stmt)
         return [WatchlistItemMapper.to_entity(m) for m in result.scalars().all()]
 
-    async def exists(self, media_id: str) -> bool:
-        """Check if a media item is in the watchlist."""
+    async def exists(self, media_id: str, profile_id: ProfileId) -> bool:
+        """Check whether ``media_id`` is on ``profile_id``'s watchlist."""
         stmt = (
             select(func.count())
             .select_from(WatchlistItemModel)
             .where(
                 WatchlistItemModel.media_id == media_id,
+                WatchlistItemModel.profile_id == str(profile_id),
                 WatchlistItemModel.deleted_at.is_(None),
             )
         )

@@ -14,10 +14,13 @@ from src.modules.collections.domain.entities import (
     CustomListItem,
 )
 from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects.profile_id import ProfileId
+
+_PROFILE_ID = ProfileId("prf_test12345678")
 
 
 def _create_list(name: str = "Test List", item_count: int = 0) -> CustomList:
-    return CustomList.create(name=name).with_updates(item_count=item_count)
+    return CustomList.create(profile_id=_PROFILE_ID, name=name).with_updates(item_count=item_count)
 
 
 @pytest.mark.unit
@@ -42,6 +45,7 @@ class TestAddItemToCustomListUseCase:
 
         await use_case.execute(
             AddItemToCustomListInput(
+                profile_id=_PROFILE_ID.value,
                 list_id=str(custom_list.id),
                 media_id="mov_abc123def456",
                 media_type=CollectionMediaType.MOVIE,
@@ -61,6 +65,7 @@ class TestAddItemToCustomListUseCase:
         with pytest.raises(ResourceNotFoundException) as exc_info:
             await use_case.execute(
                 AddItemToCustomListInput(
+                    profile_id=_PROFILE_ID.value,
                     list_id="lst_nonexistent00",
                     media_id="mov_abc123def456",
                     media_type=CollectionMediaType.MOVIE,
@@ -85,6 +90,7 @@ class TestAddItemToCustomListUseCase:
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await use_case.execute(
                 AddItemToCustomListInput(
+                    profile_id=_PROFILE_ID.value,
                     list_id=str(custom_list.id),
                     media_id="mov_abc123def456",
                     media_type=CollectionMediaType.MOVIE,
@@ -105,6 +111,7 @@ class TestAddItemToCustomListUseCase:
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await use_case.execute(
                 AddItemToCustomListInput(
+                    profile_id=_PROFILE_ID.value,
                     list_id=str(custom_list.id),
                     media_id="mov_abc123def456",
                     media_type=CollectionMediaType.MOVIE,
@@ -131,10 +138,11 @@ class TestAddItemToCustomListUseCase:
 
         await use_case.execute(
             AddItemToCustomListInput(
+                profile_id=_PROFILE_ID.value,
                 list_id=str(custom_list.id),
                 media_id="mov_abc123def456",
                 media_type=CollectionMediaType.MOVIE,
             )
         )
 
-        mock_repo.get_next_position.assert_called_once_with(str(custom_list.id))
+        mock_repo.get_next_position.assert_called_once_with(str(custom_list.id), _PROFILE_ID)

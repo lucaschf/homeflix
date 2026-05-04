@@ -12,6 +12,9 @@ from src.modules.collections.application.dtos import (
 )
 from src.modules.collections.application.use_cases import RenameCustomListUseCase
 from src.modules.collections.domain.entities import CustomList
+from src.shared_kernel.value_objects.profile_id import ProfileId
+
+_PROFILE_ID = ProfileId("prf_test12345678")
 
 
 @pytest.mark.unit
@@ -20,7 +23,7 @@ class TestRenameCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_rename_successfully(self) -> None:
-        custom_list = CustomList.create(name="Old Name")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Old Name")
         renamed = custom_list.rename("New Name")
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
@@ -30,7 +33,11 @@ class TestRenameCustomListUseCase:
         use_case = RenameCustomListUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(
-            RenameCustomListInput(list_id=str(custom_list.id), name="New Name")
+            RenameCustomListInput(
+                profile_id=_PROFILE_ID.value,
+                list_id=str(custom_list.id),
+                name="New Name",
+            )
         )
 
         assert isinstance(result, CustomListOutput)
@@ -46,15 +53,19 @@ class TestRenameCustomListUseCase:
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
             await use_case.execute(
-                RenameCustomListInput(list_id="lst_nonexistent00", name="New Name")
+                RenameCustomListInput(
+                    profile_id=_PROFILE_ID.value,
+                    list_id="lst_nonexistent00",
+                    name="New Name",
+                )
             )
 
         assert exc_info.value.resource_type == "CustomList"
 
     @pytest.mark.asyncio
     async def test_should_raise_when_name_taken_by_other_list(self) -> None:
-        custom_list = CustomList.create(name="My List")
-        other_list = CustomList.create(name="Taken Name")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="My List")
+        other_list = CustomList.create(profile_id=_PROFILE_ID, name="Taken Name")
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
@@ -63,14 +74,18 @@ class TestRenameCustomListUseCase:
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await use_case.execute(
-                RenameCustomListInput(list_id=str(custom_list.id), name="Taken Name")
+                RenameCustomListInput(
+                    profile_id=_PROFILE_ID.value,
+                    list_id=str(custom_list.id),
+                    name="Taken Name",
+                )
             )
 
         assert exc_info.value.message_code == "CUSTOM_LIST_NAME_DUPLICATE"
 
     @pytest.mark.asyncio
     async def test_should_allow_renaming_to_same_name(self) -> None:
-        custom_list = CustomList.create(name="Same Name")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Same Name")
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
@@ -79,7 +94,11 @@ class TestRenameCustomListUseCase:
         use_case = RenameCustomListUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(
-            RenameCustomListInput(list_id=str(custom_list.id), name="Same Name")
+            RenameCustomListInput(
+                profile_id=_PROFILE_ID.value,
+                list_id=str(custom_list.id),
+                name="Same Name",
+            )
         )
 
         assert result.name == "Same Name"

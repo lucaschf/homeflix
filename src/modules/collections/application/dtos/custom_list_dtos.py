@@ -12,26 +12,15 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class CreateCustomListInput:
-    """Input for CreateCustomListUseCase.
+    """Input for CreateCustomListUseCase."""
 
-    Attributes:
-        name: Display name for the new list.
-    """
-
+    profile_id: str
     name: str
 
 
 @dataclass(frozen=True)
 class CustomListOutput:
-    """Output representing a custom list.
-
-    Attributes:
-        id: External ID (lst_xxx format).
-        name: Display name of the list.
-        item_count: Number of items in the list.
-        created_at: ISO timestamp when the list was created.
-        updated_at: ISO timestamp when the list was last updated.
-    """
+    """Output representing a custom list."""
 
     id: str
     name: str
@@ -41,14 +30,7 @@ class CustomListOutput:
 
     @classmethod
     def from_entity(cls, entity: CustomList) -> CustomListOutput:
-        """Create output DTO from a CustomList entity.
-
-        Args:
-            entity: The CustomList domain entity.
-
-        Returns:
-            CustomListOutput DTO.
-        """
+        """Create output DTO from a CustomList entity."""
         return cls(
             id=str(entity.id),
             name=entity.name.value,
@@ -60,27 +42,26 @@ class CustomListOutput:
 
 @dataclass(frozen=True)
 class RenameCustomListInput:
-    """Input for RenameCustomListUseCase.
+    """Input for RenameCustomListUseCase."""
 
-    Attributes:
-        list_id: External ID of the list.
-        name: New display name.
-    """
-
+    profile_id: str
     list_id: str
     name: str
 
 
 @dataclass(frozen=True)
+class DeleteCustomListInput:
+    """Input for DeleteCustomListUseCase."""
+
+    profile_id: str
+    list_id: str
+
+
+@dataclass(frozen=True)
 class AddItemToCustomListInput:
-    """Input for AddItemToCustomListUseCase.
+    """Input for AddItemToCustomListUseCase."""
 
-    Attributes:
-        list_id: External ID of the list.
-        media_id: External ID of the media (mov_xxx or ser_xxx).
-        media_type: Type of media ("movie" or "series").
-    """
-
+    profile_id: str
     list_id: str
     media_id: str
     media_type: CollectionMediaType
@@ -88,42 +69,25 @@ class AddItemToCustomListInput:
 
 @dataclass(frozen=True)
 class RemoveItemFromCustomListInput:
-    """Input for RemoveItemFromCustomListUseCase.
+    """Input for RemoveItemFromCustomListUseCase."""
 
-    Attributes:
-        list_id: External ID of the list.
-        media_id: External ID of the media.
-    """
-
+    profile_id: str
     list_id: str
     media_id: str
 
 
 @dataclass(frozen=True)
 class GetCustomListItemsInput:
-    """Input for GetCustomListItemsUseCase.
+    """Input for GetCustomListItemsUseCase."""
 
-    Attributes:
-        list_id: External ID of the list.
-        lang: Language code for localized metadata.
-    """
-
+    profile_id: str
     list_id: str
     lang: str = "en"
 
 
 @dataclass(frozen=True)
 class CustomListItemOutput:
-    """Output representing an item in a custom list with media metadata.
-
-    Attributes:
-        media_id: External ID of the media.
-        media_type: Type of media.
-        title: Display title (localized).
-        poster_path: URL to poster image.
-        position: Ordering position within the list.
-        added_at: ISO timestamp when added to the list.
-    """
+    """Output representing an item in a custom list with media metadata."""
 
     media_id: str
     media_type: CollectionMediaType
@@ -139,16 +103,7 @@ class CustomListItemOutput:
         title: str,
         poster_path: str | None,
     ) -> CustomListItemOutput:
-        """Create output DTO from a CustomListItem entity with metadata.
-
-        Args:
-            entity: The CustomListItem domain entity.
-            title: Localized display title.
-            poster_path: URL to poster image.
-
-        Returns:
-            CustomListItemOutput DTO.
-        """
+        """Create output DTO from a CustomListItem entity with metadata."""
         return cls(
             media_id=entity.media_id,
             media_type=entity.media_type,
