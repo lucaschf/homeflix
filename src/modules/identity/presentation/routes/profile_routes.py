@@ -74,6 +74,7 @@ async def create_profile(
             name=body.name,
             is_kids=body.is_kids,
             avatar_url=body.avatar_url,
+            allowed_library_ids=body.allowed_library_ids,
         ),
     )
     return api_single("profile", asdict(result))
@@ -102,6 +103,7 @@ async def update_profile(
             name=body.name,
             is_kids=body.is_kids,
             avatar_url=body.avatar_url,
+            allowed_library_ids=body.allowed_library_ids,
         ),
     )
     return api_single("profile", asdict(result))

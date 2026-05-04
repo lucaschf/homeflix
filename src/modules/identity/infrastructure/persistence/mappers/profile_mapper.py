@@ -8,9 +8,11 @@ responsible for resolving the user's UUID before calling
 lookup, keeping it dependency-free and synchronous.
 """
 
+import json
 import uuid
 from datetime import UTC, datetime
 
+from src.config.logging import get_logger
 from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.modules.identity.infrastructure.persistence.models.profile_model import (
@@ -19,12 +21,45 @@ from src.modules.identity.infrastructure.persistence.models.profile_model import
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
+_logger = get_logger()
+
 
 def _ensure_utc(value: datetime | None) -> datetime | None:
     """Attach UTC tzinfo to naive datetimes loaded from the DB."""
     if value is None:
         return None
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _decode_allowed_libraries(profile_external_id: str, raw: str | None) -> list[str]:
+    """Decode the JSON-encoded allowed_library_ids column.
+
+    A null or unparsable value is coerced to an empty list so a bad
+    row can never silently grant access — but the coercion is logged
+    at WARNING so corrupted ACLs are observable in dashboards rather
+    than disappearing into a silent default-deny.
+    """
+    if raw is None:
+        return []
+    if raw == "":
+        return []
+    try:
+        decoded = json.loads(raw)
+    except (TypeError, ValueError):
+        _logger.warning(
+            "[identity] Malformed allowed_library_ids JSON; coercing to empty list",
+            profile_external_id=profile_external_id,
+            raw=raw,
+        )
+        return []
+    if not isinstance(decoded, list):
+        _logger.warning(
+            "[identity] allowed_library_ids decoded to non-list; coercing to empty list",
+            profile_external_id=profile_external_id,
+            decoded_type=type(decoded).__name__,
+        )
+        return []
+    return [str(item) for item in decoded]
 
 
 class ProfileMapper:
@@ -55,6 +90,7 @@ class ProfileMapper:
             name=entity.name.value,
             avatar_url=entity.avatar_url,
             is_kids=entity.is_kids,
+            allowed_library_ids=json.dumps(entity.allowed_library_ids),
         )
 
     @staticmethod
@@ -77,6 +113,9 @@ class ProfileMapper:
             name=ProfileName(model.name),
             avatar_url=model.avatar_url,
             is_kids=model.is_kids,
+            allowed_library_ids=_decode_allowed_libraries(
+                model.external_id, model.allowed_library_ids
+            ),
             created_at=_ensure_utc(model.created_at) or datetime.now(UTC),
             updated_at=_ensure_utc(model.updated_at) or datetime.now(UTC),
         )
@@ -100,6 +139,7 @@ class ProfileMapper:
         model.name = entity.name.value
         model.avatar_url = entity.avatar_url
         model.is_kids = entity.is_kids
+        model.allowed_library_ids = json.dumps(entity.allowed_library_ids)
         return model
 
 

@@ -34,13 +34,21 @@ class Profile(AggregateRoot[ProfileId]):
             supported operation).
         name: Display name shown in the profile picker.
         avatar_url: Optional URL to an avatar image.
-        is_kids: Marks the profile as kids-mode (used by the future
-            library ACL — see ADR-010 PR 6).
+        is_kids: Marks the profile as kids-mode. Independent of the
+            ACL list — the kids flag is a UX hint; the ACL is the
+            actual authorization gate.
+        allowed_library_ids: Library external ids (``lib_xxx``) this
+            profile is allowed to see in the catalog. Default-deny:
+            an empty list means the profile sees nothing. The catalog
+            filter (see PR 6c) is a no-op when this list is empty
+            beyond returning empty pages — the field is the source
+            of truth, not a hint.
 
     Example:
         >>> profile = Profile.create(
         ...     user_id=UserId("usr_2xK9mPqR7nL4"),
         ...     name=ProfileName("Lucas"),
+        ...     allowed_library_ids=["lib_movies12345"],
         ... )
         >>> renamed = profile.with_name(ProfileName("Luc"))
         >>> renamed.name.value
@@ -52,6 +60,7 @@ class Profile(AggregateRoot[ProfileId]):
     name: ProfileName
     avatar_url: str | None = None
     is_kids: bool = False
+    allowed_library_ids: list[str] = Field(default_factory=list)
 
     @classmethod
     def create(
@@ -61,6 +70,7 @@ class Profile(AggregateRoot[ProfileId]):
         *,
         is_kids: bool = False,
         avatar_url: str | None = None,
+        allowed_library_ids: list[str] | None = None,
     ) -> Profile:
         """Build a fresh ``Profile`` (id assigned at persistence time)."""
         return cls(
@@ -68,6 +78,7 @@ class Profile(AggregateRoot[ProfileId]):
             name=name,
             is_kids=is_kids,
             avatar_url=avatar_url,
+            allowed_library_ids=list(allowed_library_ids) if allowed_library_ids else [],
         )
 
     def with_name(self, name: ProfileName) -> Self:
@@ -81,6 +92,16 @@ class Profile(AggregateRoot[ProfileId]):
     def with_avatar(self, avatar_url: str | None) -> Self:
         """Return a copy with the given avatar URL (or ``None`` to clear)."""
         return self.with_updates(avatar_url=avatar_url)
+
+    def with_allowed_library_ids(self, library_ids: list[str]) -> Self:
+        """Return a copy whose ACL is replaced by ``library_ids``.
+
+        Replaces the list entirely — there is no partial-add or
+        partial-remove operation. Callers that want to grant access
+        compute the new list themselves and pass the full set, which
+        keeps the aggregate's invariants explicit at one update site.
+        """
+        return self.with_updates(allowed_library_ids=list(library_ids))
 
 
 __all__ = ["Profile"]

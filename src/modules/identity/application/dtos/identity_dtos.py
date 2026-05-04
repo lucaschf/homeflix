@@ -21,6 +21,7 @@ class ProfileOutput:
     name: str
     avatar_url: str | None
     is_kids: bool
+    allowed_library_ids: list[str]
     created_at: str
     updated_at: str
 
@@ -31,12 +32,18 @@ class CreateProfileInput:
 
     ``user_id`` is the caller's prefixed external ID; the use case
     creates a profile owned by that user.
+
+    ``allowed_library_ids`` defaults to ``None`` meaning "use the
+    aggregate's default" (an empty list — the ACL is default-deny).
+    Pass an explicit list at creation time to grant access right
+    away.
     """
 
     user_id: str
     name: str
     is_kids: bool = False
     avatar_url: str | None = None
+    allowed_library_ids: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -55,6 +62,10 @@ class UpdateProfileInput:
     ``avatar_url=None`` is **not** treated as "clear the avatar"; use
     a sentinel-typed payload at the route layer if explicit clearing
     is needed.
+
+    ``allowed_library_ids=None`` follows the same omitted-vs-cleared
+    convention: ``None`` means "don't touch the ACL"; an explicit
+    empty list ``[]`` means "revoke access to every library".
     """
 
     user_id: str
@@ -62,6 +73,7 @@ class UpdateProfileInput:
     name: str | None = None
     is_kids: bool | None = None
     avatar_url: str | None = None
+    allowed_library_ids: list[str] | None = None
 
 
 @dataclass(frozen=True)

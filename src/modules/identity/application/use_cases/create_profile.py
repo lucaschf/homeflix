@@ -31,6 +31,7 @@ class CreateProfileUseCase:
             name=ProfileName(input_dto.name),
             is_kids=input_dto.is_kids,
             avatar_url=input_dto.avatar_url,
+            allowed_library_ids=input_dto.allowed_library_ids,
         )
         async with self._uow_factory() as uow:
             saved = await uow.profiles.save(profile)
