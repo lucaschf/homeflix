@@ -15,8 +15,15 @@ the default profile's display name, then:
    ``is_superuser=True``, ``is_verified=True`` and persists it via
    ``UserRepository``.
 4. Creates a default ``Profile`` for the new admin via the
-   ``CreateProfileUseCase`` so ``get_current_profile`` resolves on
-   the first login.
+   ``CreateProfileUseCase`` and grants it access to every library
+   currently registered, so the operator can use the catalog
+   immediately. The domain default for ``allowed_library_ids`` is
+   the empty list (deny-all) — that's the right default for new
+   household members added via the UI later, but the bootstrap
+   account is the operator's admin and would otherwise see an
+   empty catalog after first login. The grant snapshots the
+   current libraries; libraries added afterward need an explicit
+   grant via ``PUT /api/v1/profiles/{id}``.
 
 Bootstrap path lives in ``scripts/`` rather than as a public route
 because PR 1 deliberately does not expose ``/auth/register`` —
@@ -38,6 +45,7 @@ from src.modules.identity.application.dtos.identity_dtos import CreateProfileInp
 from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.value_objects.email import Email
 from src.modules.identity.domain.value_objects.user_role import UserRole
+from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory  # noqa: TCH001
 
 _password_hash = PasswordHash.recommended()
 
@@ -71,6 +79,27 @@ def _read_profile_name() -> str:
     return raw or "Admin"
 
 
+async def _resolve_uow_factory(provider):  # type: ignore[no-untyped-def]
+    """Resolve a dependency-injector provider to its concrete factory.
+
+    Provider invocation returns a ``Future`` in production (because
+    of the ``providers.Resource`` session_factory dependency); in
+    tests it returns synchronously when overridden as
+    ``providers.Object``. ``isawaitable`` covers both shapes.
+    """
+    result = provider()
+    if inspect.isawaitable(result):
+        result = await result
+    return result
+
+
+async def _snapshot_library_ids(library_uow_factory: LibraryUnitOfWorkFactory) -> list[str]:
+    """Return the prefixed external_ids of every active library."""
+    async with library_uow_factory() as uow:
+        libraries = await uow.libraries.find_all()
+    return [str(library.id) for library in libraries if library.id is not None]
+
+
 async def _bootstrap_admin() -> None:
     email = _read_email()
     password = _read_password()
@@ -80,17 +109,10 @@ async def _bootstrap_admin() -> None:
     await container.infrastructure.init_resources()
 
     try:
-        # ``identity_unit_of_work_factory`` and ``create_profile`` are
-        # ``providers.Singleton`` / ``providers.Factory`` that
-        # transitively depend on ``infrastructure.session_factory``
-        # (a ``providers.Resource``). Invocation returns a Future
-        # under that wiring; ``isawaitable`` keeps the path tolerant
-        # of test wiring that overrides the resource as a synchronous
-        # ``providers.Object``.
-        uow_factory = container.identity.identity_unit_of_work_factory()
-        if inspect.isawaitable(uow_factory):
-            uow_factory = await uow_factory
-        async with uow_factory() as uow:
+        identity_uow_factory = await _resolve_uow_factory(
+            container.identity.identity_unit_of_work_factory,
+        )
+        async with identity_uow_factory() as uow:
             existing = await uow.users.find_by_email(email)
             if existing is not None:
                 print(f"  refusing to overwrite existing user {existing.id}")
@@ -109,15 +131,34 @@ async def _bootstrap_admin() -> None:
         if saved.id is None:
             raise RuntimeError("user id was not assigned during save")
 
+        # Snapshot every currently-registered library and grant the
+        # new admin access to all of them. Otherwise the domain's
+        # default-deny on ``allowed_library_ids`` would leave the
+        # operator with an empty catalog on first login.
+        library_uow_factory = await _resolve_uow_factory(
+            container.library.library_unit_of_work_factory,
+        )
+        library_ids = await _snapshot_library_ids(library_uow_factory)
+
         create_profile = container.identity.create_profile()
         if inspect.isawaitable(create_profile):
             create_profile = await create_profile
         profile = await create_profile.execute(
-            CreateProfileInput(user_id=saved.id.value, name=profile_name),
+            CreateProfileInput(
+                user_id=saved.id.value,
+                name=profile_name,
+                allowed_library_ids=library_ids,
+            ),
         )
 
         print(f"created admin {saved.id}")
         print(f"created default profile {profile.id} ({profile.name!r})")
+        if library_ids:
+            print(f"  granted access to {len(library_ids)} libraries: {', '.join(library_ids)}")
+        else:
+            print("  no libraries registered yet — admin will see an empty catalog")
+            print("  until libraries are created. Re-run identity_grant_all_libraries.py")
+            print("  after creating libraries, or grant via PUT /api/v1/profiles/{id}.")
     finally:
         await container.infrastructure.shutdown_resources()
 
