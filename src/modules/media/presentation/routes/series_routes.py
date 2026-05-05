@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.building_blocks.presentation import Pagination, api_list, api_single
 from src.config.containers import ApplicationContainer
+from src.modules.identity.infrastructure.auth import current_admin_user
+from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.media.application.dtos.intro_dtos import (
     ClearEpisodeIntroInput,
     SetEpisodeIntroInput,
@@ -182,6 +184,7 @@ async def get_episode_file_variants(
 async def add_episode_file_variant(
     episode_id: str,
     body: AddFileVariantRequest,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: AddFileVariantUseCase = Depends(
         Provide[ApplicationContainer.media.add_file_variant],
     ),
@@ -207,6 +210,7 @@ async def add_episode_file_variant(
 async def remove_episode_file_variant(
     episode_id: str,
     body: RemoveFileVariantRequest,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: RemoveFileVariantUseCase = Depends(
         Provide[ApplicationContainer.media.remove_file_variant],
     ),
@@ -222,6 +226,7 @@ async def remove_episode_file_variant(
 async def set_episode_primary_file(
     episode_id: str,
     body: SetPrimaryFileRequest,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: SetPrimaryFileUseCase = Depends(
         Provide[ApplicationContainer.media.set_primary_file],
     ),
@@ -238,6 +243,7 @@ async def set_episode_primary_file(
 async def set_episode_intro(
     episode_id: str,
     body: SetIntroRequest,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: SetEpisodeIntroUseCase = Depends(
         Provide[ApplicationContainer.media.set_episode_intro],
     ),
@@ -261,6 +267,7 @@ async def set_episode_intro(
 @inject  # type: ignore[misc]
 async def clear_episode_intro(
     episode_id: str,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: ClearEpisodeIntroUseCase = Depends(
         Provide[ApplicationContainer.media.clear_episode_intro],
     ),

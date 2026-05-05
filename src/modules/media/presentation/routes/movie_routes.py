@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.building_blocks.presentation import Pagination, api_list, api_single
 from src.config.containers import ApplicationContainer
+from src.modules.identity.infrastructure.auth import current_admin_user
+from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.media.application.dtos.media_file_dtos import (
     AddFileVariantInput,
     GetFileVariantsInput,
@@ -170,6 +172,7 @@ async def get_related_movies(
 @inject  # type: ignore[misc]
 async def delete_movie(
     movie_id: str,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: DeleteMovieUseCase = Depends(
         Provide[ApplicationContainer.media.delete_movie],
     ),
@@ -203,6 +206,7 @@ async def get_file_variants(
 async def add_file_variant(
     movie_id: str,
     body: AddFileVariantRequest,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: AddFileVariantUseCase = Depends(
         Provide[ApplicationContainer.media.add_file_variant],
     ),
@@ -228,6 +232,7 @@ async def add_file_variant(
 async def remove_file_variant(
     movie_id: str,
     body: RemoveFileVariantRequest,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: RemoveFileVariantUseCase = Depends(
         Provide[ApplicationContainer.media.remove_file_variant],
     ),
@@ -243,6 +248,7 @@ async def remove_file_variant(
 async def set_primary_file(
     movie_id: str,
     body: SetPrimaryFileRequest,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: SetPrimaryFileUseCase = Depends(
         Provide[ApplicationContainer.media.set_primary_file],
     ),

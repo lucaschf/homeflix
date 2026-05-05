@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
+from src.modules.identity.infrastructure.auth import current_admin_user
+from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.library.application.dtos.library_dtos import (
     CreateLibraryInput,
     DeleteLibraryInput,
@@ -31,6 +33,7 @@ router = APIRouter(prefix="/api/v1/libraries", tags=["Libraries"])
 @inject  # type: ignore[misc]
 async def create_library(
     body: CreateLibraryRequest,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: CreateLibraryUseCase = Depends(
         Provide[ApplicationContainer.library.create_library],
     ),
@@ -80,6 +83,7 @@ async def get_library(
 async def update_library(
     library_id: str,
     body: UpdateLibraryRequest,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: UpdateLibraryUseCase = Depends(
         Provide[ApplicationContainer.library.update_library],
     ),
@@ -108,6 +112,7 @@ async def update_library(
 @inject  # type: ignore[misc]
 async def delete_library(
     library_id: str,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: DeleteLibraryUseCase = Depends(
         Provide[ApplicationContainer.library.delete_library],
     ),
