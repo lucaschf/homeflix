@@ -12,6 +12,7 @@ from typing import Self
 
 import pytest
 
+from src.modules.identity.application.ports import AvatarStoragePort
 from src.modules.identity.application.unit_of_work import (
     IdentityUnitOfWork,
     IdentityUnitOfWorkFactory,
@@ -192,6 +193,34 @@ class FakeIdentityUnitOfWorkFactory(IdentityUnitOfWorkFactory):
         return self._uow
 
 
+class FakeAvatarStorage(AvatarStoragePort):
+    """In-memory ``AvatarStoragePort`` recording save / delete calls.
+
+    Tests that exercise the avatar use cases inspect ``saved`` /
+    ``deleted`` to verify the use case wired the port correctly.
+    Tests that just need a stand-in (e.g. ``DeleteProfileUseCase``
+    cascade) don't need to inspect anything — the empty default
+    behaviour is enough.
+    """
+
+    def __init__(self) -> None:
+        self.saved: list[tuple[str, bytes, str]] = []
+        self.deleted: list[str] = []
+
+    async def save(
+        self,
+        profile_id: str,
+        *,
+        content: bytes,
+        declared_mime_type: str,
+    ) -> str:
+        self.saved.append((profile_id, content, declared_mime_type))
+        return f"/api/v1/profiles/{profile_id}/avatar?v=fake"
+
+    async def delete(self, profile_id: str) -> None:
+        self.deleted.append(profile_id)
+
+
 @pytest.fixture
 def fake_uow() -> FakeIdentityUnitOfWork:
     """Fresh in-memory identity UoW per test."""
@@ -202,3 +231,9 @@ def fake_uow() -> FakeIdentityUnitOfWork:
 def fake_uow_factory(fake_uow: FakeIdentityUnitOfWork) -> FakeIdentityUnitOfWorkFactory:
     """Factory yielding the test's UoW on every call."""
     return FakeIdentityUnitOfWorkFactory(fake_uow)
+
+
+@pytest.fixture
+def fake_avatar_storage() -> FakeAvatarStorage:
+    """Fresh in-memory ``AvatarStoragePort`` per test."""
+    return FakeAvatarStorage()

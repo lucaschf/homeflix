@@ -55,6 +55,9 @@ apscheduler = "^3.10.4"
 # Authentication (identity bounded context — see ADR-010 / ADR-011)
 fastapi-users = { extras = ["sqlalchemy"], version = "^14.0" }
 
+# Image processing (profile avatar resize — see ADR-010 / project-avatar-upload)
+pillow = "^11.0.0"
+
 [tool.poetry.group.dev.dependencies]
 # Testing
 pytest = "^8.0.0"

@@ -92,6 +92,35 @@ class Settings(BaseSettings):  # type: ignore[misc]
         "cache fits. Default 5 GB.",
     )
 
+    avatar_storage_subdir: str = Field(
+        default=".homeflix/avatars",
+        description="Subdirectory (relative to ``thumbnails_directory``) "
+        "where uploaded profile avatars are stored. The subdirectory is "
+        "created on first upload; the operator can change this without "
+        "manual filesystem migration as long as the new path is empty.",
+    )
+    avatar_max_size_mb: int = Field(
+        default=2,
+        ge=1,
+        le=20,
+        description="Maximum accepted upload size for a profile avatar, "
+        "in megabytes. Uploads above this cap are rejected with HTTP 413 "
+        "before the image is decoded. Default 2 MB is comfortably above "
+        "what a phone camera produces after the browser-side compression "
+        "and well below what a laptop would happily upload over a slow "
+        "connection.",
+    )
+    avatar_size_pixels: int = Field(
+        default=256,
+        ge=64,
+        le=1024,
+        description="Final square side length (in pixels) of the resized "
+        "avatar. The uploaded image is centre-cropped to a square and "
+        "scaled to this size before being persisted as WebP. 256 is the "
+        "size the picker / AccountMenu render at 1x; bumping it would "
+        "let those surfaces render crisper at 2x / 3x pixel density.",
+    )
+
     @field_validator("media_directories", mode="before")
     @classmethod
     def parse_media_dirs(cls, v: str | list[str]) -> list[str]:
