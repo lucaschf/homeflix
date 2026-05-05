@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends
 
 from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
+from src.modules.identity.infrastructure.auth import current_admin_user
+from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.media.application.dtos.enrichment_dtos import (
     BulkEnrichInput,
     EnrichMediaInput,
@@ -31,6 +33,7 @@ router = APIRouter(prefix="/api/v1", tags=["Metadata Enrichment"])
 async def enrich_movie(
     movie_id: str,
     body: EnrichRequest | None = None,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: EnrichMovieMetadataUseCase = Depends(
         Provide[ApplicationContainer.media.enrich_movie_metadata],
     ),
@@ -46,6 +49,7 @@ async def enrich_movie(
 async def enrich_series(
     series_id: str,
     body: EnrichRequest | None = None,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: EnrichSeriesMetadataUseCase = Depends(
         Provide[ApplicationContainer.media.enrich_series_metadata],
     ),
@@ -60,6 +64,7 @@ async def enrich_series(
 @inject  # type: ignore[misc]
 async def bulk_enrich(
     body: EnrichRequest | None = None,
+    _admin: UserModel = Depends(current_admin_user),
     use_case: BulkEnrichMetadataUseCase = Depends(
         Provide[ApplicationContainer.media.bulk_enrich_metadata],
     ),
