@@ -85,7 +85,6 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     _progress_lookup_adapter = providers.Factory(
         ProgressLookupAdapter,
         watch_progress_uow_factory=_watch_progress_uow_factory_for_progress_lookup,
-        default_profile_id=config.provided.watch_progress_default_profile_id,
     )
 
     # Same pattern for the per-profile library ACL: built at the

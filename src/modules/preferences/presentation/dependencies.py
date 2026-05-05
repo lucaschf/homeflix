@@ -1,18 +1,12 @@
 """FastAPI dependency that resolves the caller's ``profile_id`` for preferences.
 
-Thin wrapper around the centralised
-``identity.presentation.dependencies.make_resolve_profile_id``
-factory, parameterised with the preferences-specific transitional
-setting and 401 message. See the factory's docstring for resolution
-semantics.
+Re-exports the canonical strict-mode helper from the identity BC.
+The per-BC wrapper file still exists so route imports stay local
+(``from .dependencies import resolve_profile_id``) — future
+preference-specific overrides plug in here without touching every
+route file.
 """
 
-from src.modules.identity.presentation.dependencies import make_resolve_profile_id
-
-resolve_profile_id = make_resolve_profile_id(
-    setting_attr="preferences_default_profile_id",
-    missing_message="Authentication required to access preferences",
-)
-
+from src.modules.identity.presentation.dependencies import resolve_profile_id
 
 __all__ = ["resolve_profile_id"]

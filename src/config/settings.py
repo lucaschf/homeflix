@@ -270,43 +270,6 @@ class Settings(BaseSettings):  # type: ignore[misc]
     )
     session_cookie_name: str = Field(default="homeflix_session")
 
-    watch_progress_default_profile_id: str | None = Field(
-        default=None,
-        description="Optional fallback ``profile_id`` (``prf_xxx``) used "
-        "by watch-progress/media routes when the request has no session "
-        "cookie. Lets the backend keep serving consumers that have not "
-        "shipped login yet during the per-profile rollout. Unset = strict "
-        "mode (no cookie -> 401). Remove the env var once every consumer "
-        "is sending the session cookie.",
-    )
-    preferences_default_profile_id: str | None = Field(
-        default=None,
-        description="Optional fallback ``profile_id`` for the playback "
-        "preferences routes during the per-profile rollout. Same "
-        "semantics as ``watch_progress_default_profile_id`` — the "
-        "operator typically sets all *_default_profile_id env vars "
-        "together while the frontend is being migrated, then removes "
-        "them to enter strict mode.",
-    )
-    media_default_profile_id: str | None = Field(
-        default=None,
-        description="Optional fallback ``profile_id`` (``prf_xxx``) "
-        "used by media routes (catalog list/search/get/stream) when "
-        "the request has no session cookie. Lets the backend keep "
-        "serving consumers that have not shipped login yet during "
-        "the per-profile rollout. Unset = strict mode (no cookie -> "
-        "401). Remove the env var once every consumer is sending "
-        "the session cookie.",
-    )
-    collections_default_profile_id: str | None = Field(
-        default=None,
-        description="Optional fallback ``profile_id`` for the collections "
-        "routes (``/custom-lists``, ``/watchlist``) during the per-profile "
-        "rollout. Same semantics as ``watch_progress_default_profile_id`` — "
-        "in practice the operator sets both together while the frontend "
-        "is being migrated, then removes both to enter strict mode.",
-    )
-
     # =========================================================================
     # Internationalization
     # =========================================================================

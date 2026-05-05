@@ -1,25 +1,29 @@
 """FastAPI dependencies that resolve the caller's identity context.
 
-Two layers:
+Two layers, both strict (no transitional fallback):
 
-1. ``get_current_profile`` — the strict-mode dep. Combines the
-   authenticated ``UserModel`` from FastAPI Users with the active
-   ``profile_id`` carried by the session row, returning a
-   ``ProfileContext`` with both as prefixed external IDs (UUIDs
-   never cross into the domain).
-2. ``make_resolve_profile_id`` — the transitional factory. Returns
-   a per-BC dep that tries the cookie path first and falls back to
-   a configured ``*_default_profile_id`` setting when the request
-   has no session yet. Each consumer BC (``watch_progress``,
-   ``collections``, ``preferences``, ``media``) wires its own
-   bound dep at module level, parameterising the setting attribute
-   and the missing-session error message. Once every consumer
-   ships login support and the env vars are unset, the helpers
-   collapse into a direct re-export of ``get_current_profile``.
+1. ``get_current_profile`` — combines the authenticated ``UserModel``
+   from FastAPI Users with the active ``profile_id`` carried by the
+   session row, returning a ``ProfileContext`` with both as
+   prefixed external IDs (UUIDs never cross into the domain).
+2. ``resolve_profile_id`` — the lighter dep used by the per-BC
+   catalog reads (watch_progress, collections, preferences, media).
+   Reads the session cookie, looks up the matching ``access_tokens``
+   row and returns ``current_profile_id``. Raises 401 when the
+   cookie is missing or the row has no profile selected.
+
+The earlier ``make_resolve_profile_id`` factory threaded a per-BC
+``*_default_profile_id`` env-var fallback through this path so the
+old frontend (pre-login) could keep serving anonymous catalog
+requests during the rollout (PRs #163-180). With the route guards
+in ``homeflix-web`` (#107-#112) anonymous requests never reach the
+catalog, so the fallback was dead code in practice. Removed in this
+cleanup so the entry point is a single function with one
+behaviour — easier to reason about and to migrate when the next
+auth feature lands.
 """
 
 import inspect
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from fastapi import Depends, Request
@@ -54,6 +58,21 @@ class ProfileContext:
     session_token: str
 
 
+async def _resolve_uow_factory(request: Request):  # type: ignore[no-untyped-def]
+    """Resolve the identity UoW factory from ``app.state.container``.
+
+    ``infrastructure.session_factory`` is a ``providers.Resource`` in
+    production: invoking the wrapping ``identity_unit_of_work_factory``
+    provider returns a Future. Tests override the session factory with
+    ``providers.Object``, which returns synchronously. The
+    ``isawaitable`` branch covers both shapes.
+    """
+    factory = request.app.state.container.identity.identity_unit_of_work_factory()
+    if inspect.isawaitable(factory):
+        factory = await factory
+    return factory
+
+
 async def get_current_profile(
     request: Request,
     user: UserModel = Depends(current_active_user),
@@ -76,15 +95,7 @@ async def get_current_profile(
        user has not yet selected a profile, so the frontend can
        distinguish "logged in, pick a profile" from "not logged in".
     """
-    container = request.app.state.container
-    # Provider invocation returns a Future in production because it
-    # transitively depends on the ``infrastructure.session_factory``
-    # ``providers.Resource``. Tests override that resource with
-    # ``providers.Object``, which returns synchronously. The
-    # ``isawaitable`` branch handles both shapes.
-    factory = container.identity.identity_unit_of_work_factory()
-    if inspect.isawaitable(factory):
-        factory = await factory
+    factory = await _resolve_uow_factory(request)
     async with factory() as uow:
         snapshot = await uow.access_tokens.get_by_token(token)
 
@@ -103,69 +114,36 @@ async def get_current_profile(
     )
 
 
-def make_resolve_profile_id(
-    *,
-    setting_attr: str,
-    missing_message: str,
-) -> Callable[[Request], Awaitable[str]]:
-    """Build a per-BC ``resolve_profile_id`` dep with a transitional fallback.
+async def resolve_profile_id(request: Request) -> str:
+    """Return the caller's prefixed ``profile_id`` (``prf_xxx``).
 
-    Resolution order at request time:
+    Resolution:
 
-    1. Session cookie present → look up the matching ``access_tokens``
-       row in the identity BC's UoW. If a ``current_profile_id``
-       exists, return it.
-    2. No usable cookie or unknown token + the configured
-       ``settings.<setting_attr>`` is set → return that fallback
-       (transition mode).
-    3. Otherwise → raise :class:`NoActiveSessionError` (HTTP 401)
-       with ``missing_message``.
+    1. Session cookie missing → :class:`NoActiveSessionError` (HTTP 401).
+    2. Cookie present but the matching ``access_tokens`` row has no
+       ``current_profile_id`` (logged in, picker not visited yet) →
+       same 401.
+    3. Otherwise → return the ``current_profile_id`` as a plain
+       string.
 
     Errors raised by the identity UoW (container not wired, DB
-    unreachable, etc.) propagate as 500 by design — silently falling
-    back to anonymous on real misconfigurations would mask bugs and
-    serve authenticated requests as anonymous.
-
-    Args:
-        setting_attr: Name of the field on ``Settings`` that holds
-            the per-BC fallback (e.g. ``"watch_progress_default_profile_id"``).
-            ``getattr`` is read every request so changes to the
-            setting (when sourced from a re-loaded ``.env``) take
-            effect without restarting.
-        missing_message: User-facing 401 message when neither path
-            resolves a profile.
-
-    Returns:
-        An ``async`` FastAPI dep returning the prefixed profile_id
-        as a plain ``str`` — kept primitive because every consumer
-        passes it straight into a use case input that already
-        validates the prefix.
+    unreachable, etc.) propagate as 500 by design — silently
+    degrading to anonymous on real misconfigurations would mask
+    bugs and serve authenticated requests as anonymous data.
     """
+    settings = get_settings()
+    token = request.cookies.get(settings.session_cookie_name)
+    if token is None:
+        raise NoActiveSessionError(message="Authentication required")
 
-    async def resolve_profile_id(request: Request) -> str:
-        settings = get_settings()
+    factory = await _resolve_uow_factory(request)
+    async with factory() as uow:
+        snap = await uow.access_tokens.get_by_token(token)
 
-        token = request.cookies.get(settings.session_cookie_name)
-        if token is not None:
-            container = request.app.state.container
-            # Same async-Resource gotcha as ``get_current_profile``;
-            # the ``isawaitable`` branch tolerates both production
-            # (Future) and test (``providers.Object``) shapes.
-            factory = container.identity.identity_unit_of_work_factory()
-            if inspect.isawaitable(factory):
-                factory = await factory
-            async with factory() as uow:
-                snap = await uow.access_tokens.get_by_token(token)
-            if snap is not None and snap.current_profile_id is not None:
-                return str(snap.current_profile_id)
+    if snap is None or snap.current_profile_id is None:
+        raise NoActiveSessionError(message="Authentication required")
 
-        fallback = getattr(settings, setting_attr)
-        if fallback:
-            return str(fallback)
-
-        raise NoActiveSessionError(message=missing_message)
-
-    return resolve_profile_id
+    return str(snap.current_profile_id)
 
 
-__all__ = ["ProfileContext", "get_current_profile", "make_resolve_profile_id"]
+__all__ = ["ProfileContext", "get_current_profile", "resolve_profile_id"]

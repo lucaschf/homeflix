@@ -38,21 +38,26 @@ class ProgressSummary:
 
 
 class ProgressLookupPort(ABC):
-    """Batch lookup of progress records by media id."""
+    """Batch lookup of progress records by media id, scoped to a profile."""
 
     @abstractmethod
     async def find_for_media_ids(
         self,
         media_ids: Sequence[str],
+        *,
+        profile_id: str,
     ) -> dict[str, ProgressSummary]:
         """Return progress summaries for the given media ids.
 
         Args:
             media_ids: Composite or standalone media ids to look up.
+            profile_id: Prefixed external id (``prf_xxx``) of the
+                profile whose progress to read. Per-profile rollout
+                (PR #172) scopes every progress row to a profile.
 
         Returns:
             Map keyed by ``media_id``. Ids without a matching progress
-            row are simply absent from the map.
+            row for the given profile are simply absent from the map.
         """
         ...
 

@@ -91,7 +91,10 @@ class GetSeriesByIdUseCase:
             for s in series.seasons
             for ep in s.episodes
         ]
-        progress_map = await self._progress_lookup.find_for_media_ids(composite_ids)
+        progress_map = await self._progress_lookup.find_for_media_ids(
+            composite_ids,
+            profile_id=input_dto.profile_id,
+        )
 
         return self._to_output(series, input_dto.lang, progress_map)
 
