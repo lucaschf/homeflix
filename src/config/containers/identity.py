@@ -16,6 +16,7 @@ from src.modules.identity.application.use_cases import (
     CreateProfileUseCase,
     DeleteProfileAvatarUseCase,
     DeleteProfileUseCase,
+    GetActiveProfileForSessionUseCase,
     ListProfilesForUserUseCase,
     SwitchProfileUseCase,
     UpdateProfileUseCase,
@@ -80,6 +81,11 @@ class IdentityContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     list_profiles_for_user = providers.Factory(
         ListProfilesForUserUseCase,
+        uow_factory=identity_unit_of_work_factory,
+    )
+
+    get_active_profile_for_session = providers.Factory(
+        GetActiveProfileForSessionUseCase,
         uow_factory=identity_unit_of_work_factory,
     )
 

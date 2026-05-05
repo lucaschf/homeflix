@@ -63,6 +63,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.library.presentation.routes.library_routes",
     "src.modules.preferences.presentation.routes.preferences_routes",
     "src.modules.identity.presentation.routes.profile_routes",
+    "src.modules.identity.presentation.routes.users_routes",
 )
 
 

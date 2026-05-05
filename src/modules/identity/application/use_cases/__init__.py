@@ -9,6 +9,9 @@ from src.modules.identity.application.use_cases.delete_profile import (
 from src.modules.identity.application.use_cases.delete_profile_avatar import (
     DeleteProfileAvatarUseCase,
 )
+from src.modules.identity.application.use_cases.get_active_profile_for_session import (
+    GetActiveProfileForSessionUseCase,
+)
 from src.modules.identity.application.use_cases.list_profiles_for_user import (
     ListProfilesForUserUseCase,
 )
@@ -26,6 +29,7 @@ __all__ = [
     "CreateProfileUseCase",
     "DeleteProfileAvatarUseCase",
     "DeleteProfileUseCase",
+    "GetActiveProfileForSessionUseCase",
     "ListProfilesForUserUseCase",
     "SwitchProfileUseCase",
     "UpdateProfileUseCase",
