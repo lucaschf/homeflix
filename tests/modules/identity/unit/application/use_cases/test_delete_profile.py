@@ -28,13 +28,16 @@ class TestDeleteProfileUseCase:
         self,
         fake_uow: FakeIdentityUnitOfWork,
         fake_uow_factory: FakeIdentityUnitOfWorkFactory,
+        fake_avatar_storage,
     ):
         caller_id = UserId.generate()
         creator = CreateProfileUseCase(uow_factory=fake_uow_factory)
         keep = await creator.execute(CreateProfileInput(user_id=caller_id.value, name="Keep"))
         doomed = await creator.execute(CreateProfileInput(user_id=caller_id.value, name="Doomed"))
 
-        use_case = DeleteProfileUseCase(uow_factory=fake_uow_factory)
+        use_case = DeleteProfileUseCase(
+            uow_factory=fake_uow_factory, avatar_storage=fake_avatar_storage
+        )
         await use_case.execute(
             DeleteProfileInput(
                 user_id=caller_id.value,
@@ -48,13 +51,15 @@ class TestDeleteProfileUseCase:
         assert await fake_uow.profiles.count_for_user(caller_id) == 1
 
     async def test_should_raise_when_deleting_last_profile(
-        self, fake_uow_factory: FakeIdentityUnitOfWorkFactory
+        self, fake_uow_factory: FakeIdentityUnitOfWorkFactory, fake_avatar_storage
     ):
         caller_id = UserId.generate()
         creator = CreateProfileUseCase(uow_factory=fake_uow_factory)
         only = await creator.execute(CreateProfileInput(user_id=caller_id.value, name="Only"))
 
-        use_case = DeleteProfileUseCase(uow_factory=fake_uow_factory)
+        use_case = DeleteProfileUseCase(
+            uow_factory=fake_uow_factory, avatar_storage=fake_avatar_storage
+        )
 
         with pytest.raises(CannotDeleteLastProfileError):
             await use_case.execute(
@@ -65,9 +70,11 @@ class TestDeleteProfileUseCase:
             )
 
     async def test_should_raise_when_profile_does_not_exist(
-        self, fake_uow_factory: FakeIdentityUnitOfWorkFactory
+        self, fake_uow_factory: FakeIdentityUnitOfWorkFactory, fake_avatar_storage
     ):
-        use_case = DeleteProfileUseCase(uow_factory=fake_uow_factory)
+        use_case = DeleteProfileUseCase(
+            uow_factory=fake_uow_factory, avatar_storage=fake_avatar_storage
+        )
 
         with pytest.raises(ProfileNotFoundException):
             await use_case.execute(
@@ -78,7 +85,7 @@ class TestDeleteProfileUseCase:
             )
 
     async def test_should_raise_when_caller_is_not_the_owner(
-        self, fake_uow_factory: FakeIdentityUnitOfWorkFactory
+        self, fake_uow_factory: FakeIdentityUnitOfWorkFactory, fake_avatar_storage
     ):
         owner_id = UserId.generate()
         intruder_id = UserId.generate()
@@ -87,7 +94,9 @@ class TestDeleteProfileUseCase:
         await creator.execute(CreateProfileInput(user_id=owner_id.value, name="Other"))
         target = await creator.execute(CreateProfileInput(user_id=owner_id.value, name="Target"))
 
-        use_case = DeleteProfileUseCase(uow_factory=fake_uow_factory)
+        use_case = DeleteProfileUseCase(
+            uow_factory=fake_uow_factory, avatar_storage=fake_avatar_storage
+        )
 
         with pytest.raises(ProfileOwnershipViolation):
             await use_case.execute(

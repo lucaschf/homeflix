@@ -1,25 +1,37 @@
-"""Profile CRUD + switch routes."""
+"""Profile CRUD + switch + avatar routes."""
 
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
+from src.config.settings import get_settings
 from src.modules.identity.application.dtos.identity_dtos import (
     CreateProfileInput,
+    DeleteProfileAvatarInput,
     DeleteProfileInput,
     ListProfilesForUserInput,
     SwitchProfileInput,
     UpdateProfileInput,
+    UploadProfileAvatarInput,
+)
+from src.modules.identity.application.ports import (
+    AvatarTooLargeError,
+    InvalidAvatarImageError,
 )
 from src.modules.identity.application.use_cases.create_profile import (
     CreateProfileUseCase,
 )
 from src.modules.identity.application.use_cases.delete_profile import (
     DeleteProfileUseCase,
+)
+from src.modules.identity.application.use_cases.delete_profile_avatar import (
+    DeleteProfileAvatarUseCase,
 )
 from src.modules.identity.application.use_cases.list_profiles_for_user import (
     ListProfilesForUserUseCase,
@@ -29,6 +41,9 @@ from src.modules.identity.application.use_cases.switch_profile import (
 )
 from src.modules.identity.application.use_cases.update_profile import (
     UpdateProfileUseCase,
+)
+from src.modules.identity.application.use_cases.upload_profile_avatar import (
+    UploadProfileAvatarUseCase,
 )
 from src.modules.identity.infrastructure.auth import (
     current_active_user,
@@ -153,6 +168,92 @@ async def switch_profile(
             session_token=token,
         ),
     )
+
+
+@router.post("/{profile_id}/avatar")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def upload_profile_avatar(
+    profile_id: str,
+    file: UploadFile = File(...),
+    user: UserModel = Depends(current_active_user),
+    use_case: UploadProfileAvatarUseCase = Depends(
+        Provide[ApplicationContainer.identity.upload_profile_avatar],
+    ),
+) -> dict[str, Any]:
+    """Upload a new avatar image for the given profile.
+
+    Multipart upload accepting JPEG / PNG / WebP. The server
+    validates the bytes (Pillow decode), centre-crops to a square
+    and persists as WebP. Bad MIME → 415; oversized payload → 413;
+    cross-user upload → 403; unknown profile → 404.
+    """
+    content = await file.read()
+    try:
+        result = await use_case.execute(
+            UploadProfileAvatarInput(
+                user_id=user.external_id,
+                profile_id=profile_id,
+                content=content,
+                declared_mime_type=file.content_type or "application/octet-stream",
+            ),
+        )
+    except AvatarTooLargeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
+    except InvalidAvatarImageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=str(exc),
+        ) from exc
+    return api_single("profile", asdict(result))
+
+
+@router.delete("/{profile_id}/avatar")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def delete_profile_avatar(
+    profile_id: str,
+    user: UserModel = Depends(current_active_user),
+    use_case: DeleteProfileAvatarUseCase = Depends(
+        Provide[ApplicationContainer.identity.delete_profile_avatar],
+    ),
+) -> dict[str, Any]:
+    """Clear the profile's avatar (sets ``avatar_url`` null + deletes file).
+
+    Idempotent — calling on a profile that has no avatar succeeds
+    and returns the (still-empty) profile.
+    """
+    result = await use_case.execute(
+        DeleteProfileAvatarInput(user_id=user.external_id, profile_id=profile_id),
+    )
+    return api_single("profile", asdict(result))
+
+
+@router.get("/{profile_id}/avatar")  # type: ignore[misc]
+async def get_profile_avatar(
+    profile_id: str,
+    _user: UserModel = Depends(current_active_user),
+) -> FileResponse:
+    """Serve the persisted avatar WebP for ``profile_id``.
+
+    Auth-gated (``current_active_user``) but **not** ownership-gated:
+    any authenticated household member needs to be able to render
+    siblings' avatars in the picker / AccountMenu. The file path is
+    deterministic from the profile id, so resolving it here doesn't
+    require a database round-trip — kept lean because the picker
+    fires one of these per profile on every render.
+    """
+    settings = get_settings()
+    target = (
+        Path(settings.thumbnails_directory) / settings.avatar_storage_subdir / f"{profile_id}.webp"
+    )
+    if not target.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="avatar not found",
+        )
+    return FileResponse(str(target), media_type="image/webp")
 
 
 __all__ = ["router"]

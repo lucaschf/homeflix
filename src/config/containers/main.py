@@ -138,6 +138,10 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     identity = providers.Container(
         IdentityContainer,
         session_factory=infrastructure.session_factory,
+        thumbnails_directory=config.provided.thumbnails_directory,
+        avatar_storage_subdir=config.provided.avatar_storage_subdir,
+        avatar_max_size_mb=config.provided.avatar_max_size_mb,
+        avatar_size_pixels=config.provided.avatar_size_pixels,
     )
 
     preferences = providers.Container(

@@ -98,11 +98,36 @@ class SwitchProfileInput:
     session_token: str
 
 
+@dataclass(frozen=True)
+class UploadProfileAvatarInput:
+    """Input for ``UploadProfileAvatarUseCase``.
+
+    Bytes + declared MIME come from the multipart upload at the
+    route boundary; the route enforces ownership before this DTO
+    is constructed (caller's ``user_id`` must own the profile).
+    """
+
+    user_id: str
+    profile_id: str
+    content: bytes
+    declared_mime_type: str
+
+
+@dataclass(frozen=True)
+class DeleteProfileAvatarInput:
+    """Input for ``DeleteProfileAvatarUseCase``."""
+
+    user_id: str
+    profile_id: str
+
+
 __all__ = [
     "CreateProfileInput",
+    "DeleteProfileAvatarInput",
     "DeleteProfileInput",
     "ListProfilesForUserInput",
     "ProfileOutput",
     "SwitchProfileInput",
     "UpdateProfileInput",
+    "UploadProfileAvatarInput",
 ]
