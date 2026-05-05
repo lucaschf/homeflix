@@ -12,9 +12,12 @@ HomeFlix is a self-hosted media server that allows you to:
 
 - 📁 Scan and organize your local video library
 - 🎯 Auto-fetch metadata from TMDB/OMDb
-- ▶️ Stream videos in your browser with subtitle support
-- 📊 Track watch progress across devices
-- 📋 Create watchlists and custom collections
+- ▶️ Stream videos in your browser with multi-audio / multi-subtitle support
+- 📊 Track watch progress per profile across devices
+- 👪 Share the household with multiple profiles (kids flag, library ACLs, custom avatars)
+- 📋 Create watchlists and custom collections per profile
+- ⏭️ Skip intros automatically (Chromaprint fingerprinting) and scrub with thumbnail trickplay
+- 🔍 Full-text search across the catalog
 
 ## Tech Stack
 
@@ -34,34 +37,23 @@ src/
 ├── building_blocks/      # Domain-agnostic base (Entity, ValueObject, errors, event bus)
 ├── shared_kernel/        # Cross-module value objects (FilePath, LanguageCode, AudioTrack)
 ├── modules/
-│   ├── media/            # Bounded Context: Media Catalog
-│   │   ├── domain/       #   entities, value_objects, repositories (ABCs), services
-│   │   ├── application/  #   use_cases, dtos, event_handlers
-│   │   ├── infrastructure/ # persistence, file_system, external APIs
-│   │   └── presentation/ #   routes (movies, series, scan, enrichment, streaming)
-│   ├── collections/      # Bounded Context: Watchlists & Custom Lists
-│   │   ├── domain/
-│   │   ├── application/
-│   │   ├── infrastructure/
-│   │   └── presentation/
-│   ├── watch_progress/   # Bounded Context: Watch Progress
-│   │   ├── domain/
-│   │   ├── application/
-│   │   ├── infrastructure/
-│   │   └── presentation/
-│   ├── library/          # Bounded Context: Library Configuration
-│   │   ├── domain/
-│   │   ├── application/
-│   │   ├── infrastructure/
-│   │   └── presentation/
-│   └── preferences/      # Bounded Context: Playback Preferences
-│       ├── application/
-│       ├── infrastructure/
-│       └── presentation/
-├── infrastructure/       # Shared infra (database, Base model)
+│   ├── media/             # Bounded Context: Media Catalog
+│   ├── library/           # Bounded Context: Library Configuration
+│   ├── watch_progress/    # Bounded Context: Watch Progress
+│   ├── collections/       # Bounded Context: Watchlists & Custom Lists
+│   ├── preferences/       # Bounded Context: Playback Preferences
+│   ├── identity/          # Bounded Context: Users, Profiles, Sessions, ACL
+│   └── catalog_requests/  # Bounded Context: Missing-title requests
+├── infrastructure/       # Shared infra (database, scheduler, Base model)
 ├── config/               # Settings, DI containers
 └── main.py
 ```
+
+Each module follows the same internal layout — `domain/` (entities,
+value objects, repository interfaces, domain services), `application/`
+(use cases, DTOs, event handlers, ports), `infrastructure/`
+(persistence, external integrations) and `presentation/` (FastAPI
+routes + Pydantic schemas).
 
 ### Dependency Rule
 
@@ -184,37 +176,41 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 
 ## Project Status
 
-**Phase 1: Foundation** — Complete
+**Phases 1–4 shipped.** HomeFlix is a working multi-user household
+streaming server with profile ACLs, automatic intro detection,
+trickplay scrub thumbnails, and a scheduled scan/enrichment pipeline.
 
-- 52 REST API endpoints across 5 bounded contexts
-- 1 450+ tests
-- Responsive React frontend with HLS player
+- 77 REST API endpoints across 7 bounded contexts
+- 2 200+ tests
+- Responsive React frontend with HLS player and per-profile UI
 
 ### Modules
 
 | Module | Scope | Highlights |
 |--------|-------|------------|
-| **Media Catalog** | Movies, Series, Seasons, Episodes | File variants (ADR-006), HLS streaming, multi-audio/subtitle, FTS5 search, TMDB enrichment, filesystem scanner |
+| **Media Catalog** | Movies, Series, Seasons, Episodes | File variants (ADR-006), HLS streaming, multi-audio/subtitle, FTS5 search, TMDB enrichment, filesystem scanner, intro markers, trickplay sprites |
 | **Library** | Media source configuration | CRUD, metadata providers, scan settings, TrackSelector service (ADR-005) |
-| **Watch Progress** | Playback tracking | Save/resume, continue watching, auto-complete at 90% |
-| **Collections** | Watchlist & Custom Lists | Toggle watchlist, up to 10 custom lists with ordering |
-| **Preferences** | Playback settings | Audio/subtitle language, subtitle mode, quality, speed |
+| **Watch Progress** | Playback tracking, scoped per profile | Save/resume, continue watching, auto-complete at 90% |
+| **Collections** | Watchlist & Custom Lists, scoped per profile | Toggle watchlist, up to 10 custom lists with ordering |
+| **Preferences** | Playback settings, scoped per profile | Audio/subtitle language, subtitle mode, quality, speed |
+| **Identity** | Users, Profiles, Sessions, ACL | FastAPI Users + cookie auth (ADR-011), prefixed external IDs (ADR-002), Profile aggregate with `allowed_library_ids`, avatar upload (Pillow → WebP), bootstrap admin CLI |
+| **Catalog Requests** | Missing-title tracking | Mark titles seen on TMDB but absent locally; auto-fulfilled when scanner picks them up |
 
 ### Frontend ([homeflix-web](https://github.com/lucaschf/homeflix-web))
 
+- Login, profile picker, profile management (HBO/Netflix-inspired), avatar upload, account menu chip
 - Hero carousel, genre browsing, full-text search with recent history
-- HLS player: multi-audio, multi-subtitle with smart modes, quality selector, playback speed, keyboard shortcuts, auto-advance
+- HLS player: multi-audio, multi-subtitle with smart modes, quality selector, playback speed, keyboard shortcuts, auto-advance, skip-intro button, scrub thumbnails
 - Continue watching, watchlist, custom lists, settings
 - i18n (pt-BR + en), responsive mobile-first design
 
 ### What's Next
 
-See [docs/roadmap.md](docs/roadmap.md) for the full roadmap. Up next:
+See [docs/roadmap.md](docs/roadmap.md) for the full roadmap. Open work:
 
-- **Phase 2**: Docker, primitive obsession cleanup, scheduled scan, subtitle appearance fix
-- **Phase 3**: Trickplay thumbnails, hardware transcoding, skip intro detection
-- **Phase 4**: Multi-user authentication and permissions
-- **Phase 5**: Webhooks and observability
+- **Phase 2**: Docker & Compose, primitive obsession cleanup, subtitle appearance fix
+- **Phase 3**: Hardware transcoding (VAAPI / NVENC) — depends on Docker
+- **Phase 5**: Webhooks / outbox pattern, Prometheus metrics
 
 ## License
 

@@ -1,6 +1,6 @@
 # HomeFlix — Roadmap
 
-> Last updated: 2026-04-13
+> Last updated: 2026-05-05
 
 This roadmap captures **what comes next** after the Phase 1 foundation.
 Items are ordered so each tier builds on the previous one — both in
@@ -15,9 +15,9 @@ patterns are explicitly excluded.
 
 ---
 
-## Current state (Phase 1 — Foundation)
+## Shipped (Phases 1–4)
 
-Completed:
+### Phase 1 — Foundation
 
 - Media catalog (Movie, Series, Season, Episode) with Clean Architecture
 - Library CRUD with metadata provider config and scan settings
@@ -29,42 +29,59 @@ Completed:
 - Genre browsing with cursor pagination
 - TMDB metadata enrichment (single + bulk)
 - Media file variants (multiple resolutions per media)
+- Catalog requests (mark missing titles for arrival)
 - Responsive React frontend with MUI, TanStack Query, hls.js player
 - i18n (pt-BR + en)
-- 52 REST API endpoints, 1 450+ tests
+
+### Phase 2 — Hardening (partial)
+
+- **2.3 Scheduled Scan / Background Jobs** — APScheduler-based
+  scheduler with library scan, thumbnail backfill, intro detection
+  pipeline.
+
+### Phase 3 — Player & Streaming (partial)
+
+- **3.1 Trickplay (Thumbnail Scrub)** — sprite-sheet generator +
+  WebVTT thumbnail track served alongside the HLS playlist; player
+  shows thumbnails on seek-bar hover.
+- **3.3 Skip Intro Detection** — Chromaprint-based fingerprinting,
+  cross-episode matching, per-episode intro markers, "Skip Intro"
+  button + manual override editor (`/admin/intros`).
+
+### Phase 4 — Multi-User & Access Control
+
+- **4.1 Authentication** — Identity bounded context (ADR-010, ADR-011)
+  with FastAPI Users, cookie sessions, prefixed external IDs, bootstrap
+  admin CLI.
+- **4.2 User Profiles & Permissions** — Profile aggregate with kids
+  flag, per-profile watch progress / collections / preferences,
+  `allowed_library_ids` ACL filtering catalog reads, profile picker
+  + management UI, profile avatar upload (Pillow centre-crop to WebP).
+- 77 REST API endpoints across 7 bounded contexts, 2 200+ tests.
 
 ---
 
-## Phase 2 — Hardening & Infrastructure
+## Open work
 
-Focus: solidify what exists, build shared infrastructure that later
-features depend on.
+### Phase 2 — Hardening & Infrastructure (remaining)
 
-### 2.1 Docker & Compose
+#### 2.1 Docker & Compose
 
 | | |
 |---|---|
 | **Teaches** | Multi-stage builds, containerization, infra as code |
-| **Unlocks** | Reproducible dev env, CI pipeline, easy deployment |
-| **Scope** | Dockerfile (backend), docker-compose with SQLite volume, optional PostgreSQL profile |
+| **Unlocks** | Reproducible dev env, CI pipeline, easy deployment, GPU passthrough for 3.2 |
+| **Scope** | Dockerfile (backend), docker-compose with SQLite volume, optional PostgreSQL profile, optional GPU runtime profile |
 
-### 2.2 Primitive Obsession Cleanup
+#### 2.2 Primitive Obsession Cleanup
 
 | | |
 |---|---|
 | **Teaches** | Value Object design, domain modeling discipline |
 | **Unlocks** | Stronger type safety, self-documenting domain |
-| **Scope** | Audit codebase for raw `str`, `int`, `float` that carry domain meaning; extract to Value Objects in `shared_kernel` or module-level `value_objects` |
+| **Scope** | Audit codebase for raw `str`, `int`, `float` that carry domain meaning; extract to Value Objects in `shared_kernel` or module-level `value_objects`. Can be scope-bound to one BC at a time |
 
-### 2.3 Scheduled Scan (Background Jobs)
-
-| | |
-|---|---|
-| **Teaches** | Task scheduling, background workers, async job lifecycle |
-| **Unlocks** | Foundation for trickplay generation, auto-enrichment, any future async pipeline |
-| **Scope** | Cron-like scheduler (APScheduler or similar), library scan on configurable interval, job status endpoint |
-
-### 2.4 Subtitle Appearance (fix)
+#### 2.4 Subtitle Appearance (fix)
 
 | | |
 |---|---|
@@ -72,22 +89,9 @@ features depend on.
 | **Unlocks** | Readable subtitles with user-chosen colors/size |
 | **Scope** | Investigate why `::cue` and custom overlay both failed; likely requires understanding HLS.js text track lifecycle in depth |
 
----
+### Phase 3 — Player & Streaming Evolution (remaining)
 
-## Phase 3 — Player & Streaming Evolution
-
-Focus: bring the playback experience closer to commercial quality.
-
-### 3.1 Trickplay (Thumbnail Scrub)
-
-| | |
-|---|---|
-| **Teaches** | Heavy async processing pipeline, sprite sheet generation, FFmpeg image extraction, BIF/WebVTT-thumbnails spec |
-| **Unlocks** | Visual seek — the single biggest UX gap in the player |
-| **Scope** | Background job generates thumbnail grid per media file; player shows thumbnails on hover over seek bar |
-| **Depends on** | 2.3 (background jobs) |
-
-### 3.2 Hardware Transcoding (VAAPI / NVENC)
+#### 3.2 Hardware Transcoding (VAAPI / NVENC)
 
 | | |
 |---|---|
@@ -96,44 +100,9 @@ Focus: bring the playback experience closer to commercial quality.
 | **Scope** | Detect available HW encoders at startup, prefer HW pipeline in HLS generation, graceful fallback to software |
 | **Depends on** | 2.1 (Docker — GPU passthrough config) |
 
-### 3.3 Skip Intro Detection
+### Phase 5 — Observability & Resilience
 
-| | |
-|---|---|
-| **Teaches** | Audio fingerprinting (Chromaprint), cross-episode matching algorithms |
-| **Unlocks** | "Skip Intro" button during playback |
-| **Scope** | Analyze first 5 min of each episode in a season, find common audio segment, store start/end timestamps, player shows skip button |
-| **Depends on** | 2.3 (background jobs) |
-
----
-
-## Phase 4 — Multi-User & Access Control
-
-Focus: make HomeFlix usable by more than one person on the network.
-
-### 4.1 Authentication (JWT)
-
-| | |
-|---|---|
-| **Teaches** | JWT lifecycle, refresh tokens, middleware auth, secure password storage |
-| **Unlocks** | Per-user state isolation |
-| **Scope** | Register/login endpoints, JWT access + refresh tokens, auth middleware, per-user preferences and progress |
-
-### 4.2 User Profiles & Permissions
-
-| | |
-|---|---|
-| **Teaches** | Row-level filtering, RBAC, multi-tenant patterns |
-| **Unlocks** | Parental controls, library-level access |
-| **Scope** | Admin vs. regular user roles, library visibility per user, content rating restrictions |
-
----
-
-## Phase 5 — Observability & Resilience
-
-Focus: production-grade operational visibility.
-
-### 5.1 Webhooks & Notifications
+#### 5.1 Webhooks & Notifications
 
 | | |
 |---|---|
@@ -141,13 +110,13 @@ Focus: production-grade operational visibility.
 | **Unlocks** | "Scan complete" notifications, integration with Telegram/Discord bots |
 | **Scope** | Domain events → outbox table → webhook dispatcher; configurable endpoints per event type |
 
-### 5.2 Structured Logging & Metrics
+#### 5.2 Structured Logging & Metrics
 
 | | |
 |---|---|
 | **Teaches** | Correlation IDs, structured JSON logs, Prometheus metrics |
 | **Unlocks** | Debugging production issues, performance monitoring |
-| **Scope** | Request-scoped correlation ID, structured log format, basic Prometheus endpoint (request count, latency, transcoding queue) |
+| **Scope** | Request-scoped correlation ID, structured log format, basic Prometheus endpoint (request count, latency, transcoding queue). Note: structlog with request_id middleware is already in place — this item is about exporting metrics, not the logging primitives. |
 
 ---
 
