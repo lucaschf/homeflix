@@ -182,6 +182,45 @@ class TestProtectedRoute:
         assert payload["id"].startswith("usr_")
         assert payload["email"] == "lucas@homeflix.local"
 
+    async def test_should_return_null_active_profile_id_after_fresh_login(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ):
+        # Post-login, pre-picker — the access token row exists but no
+        # profile has been bound to it yet.
+        user = await seed_user_with_profile()
+        await client.post(
+            LOGIN_PATH,
+            data={"username": user.email, "password": user.password},
+        )
+
+        response = await client.get(ME_PATH)
+
+        assert response.status_code == 200
+        assert response.json()["data"]["active_profile_id"] is None
+
+    async def test_should_reflect_active_profile_id_after_switch(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ):
+        # Full picker flow: login → switch → /me carries the prefixed
+        # prf_xxx so the frontend can render profile-scoped UI without
+        # keeping its own mirror of the active profile.
+        user = await seed_user_with_profile()
+        await client.post(
+            LOGIN_PATH,
+            data={"username": user.email, "password": user.password},
+        )
+        switch = await client.post(f"/api/v1/profiles/{user.profile_external_id}/switch")
+        assert switch.status_code == 204
+
+        response = await client.get(ME_PATH)
+
+        assert response.status_code == 200
+        assert response.json()["data"]["active_profile_id"] == user.profile_external_id
+
     async def test_should_return_401_on_users_me_after_logout(
         self,
         client: AsyncClient,
