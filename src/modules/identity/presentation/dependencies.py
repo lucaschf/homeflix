@@ -18,6 +18,7 @@ Two layers:
    collapse into a direct re-export of ``get_current_profile``.
 """
 
+import inspect
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -76,7 +77,14 @@ async def get_current_profile(
        distinguish "logged in, pick a profile" from "not logged in".
     """
     container = request.app.state.container
+    # Provider invocation returns a Future in production because it
+    # transitively depends on the ``infrastructure.session_factory``
+    # ``providers.Resource``. Tests override that resource with
+    # ``providers.Object``, which returns synchronously. The
+    # ``isawaitable`` branch handles both shapes.
     factory = container.identity.identity_unit_of_work_factory()
+    if inspect.isawaitable(factory):
+        factory = await factory
     async with factory() as uow:
         snapshot = await uow.access_tokens.get_by_token(token)
 
@@ -140,7 +148,12 @@ def make_resolve_profile_id(
         token = request.cookies.get(settings.session_cookie_name)
         if token is not None:
             container = request.app.state.container
+            # Same async-Resource gotcha as ``get_current_profile``;
+            # the ``isawaitable`` branch tolerates both production
+            # (Future) and test (``providers.Object``) shapes.
             factory = container.identity.identity_unit_of_work_factory()
+            if inspect.isawaitable(factory):
+                factory = await factory
             async with factory() as uow:
                 snap = await uow.access_tokens.get_by_token(token)
             if snap is not None and snap.current_profile_id is not None:

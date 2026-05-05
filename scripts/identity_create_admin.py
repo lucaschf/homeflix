@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import getpass
+import inspect
 import sys
 
 from pwdlib import PasswordHash
@@ -79,7 +80,16 @@ async def _bootstrap_admin() -> None:
     await container.infrastructure.init_resources()
 
     try:
+        # ``identity_unit_of_work_factory`` and ``create_profile`` are
+        # ``providers.Singleton`` / ``providers.Factory`` that
+        # transitively depend on ``infrastructure.session_factory``
+        # (a ``providers.Resource``). Invocation returns a Future
+        # under that wiring; ``isawaitable`` keeps the path tolerant
+        # of test wiring that overrides the resource as a synchronous
+        # ``providers.Object``.
         uow_factory = container.identity.identity_unit_of_work_factory()
+        if inspect.isawaitable(uow_factory):
+            uow_factory = await uow_factory
         async with uow_factory() as uow:
             existing = await uow.users.find_by_email(email)
             if existing is not None:
@@ -100,6 +110,8 @@ async def _bootstrap_admin() -> None:
             raise RuntimeError("user id was not assigned during save")
 
         create_profile = container.identity.create_profile()
+        if inspect.isawaitable(create_profile):
+            create_profile = await create_profile
         profile = await create_profile.execute(
             CreateProfileInput(user_id=saved.id.value, name=profile_name),
         )

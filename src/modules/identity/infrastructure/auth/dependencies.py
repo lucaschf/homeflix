@@ -14,6 +14,7 @@ This is FastAPI-native (not registered in the dependency-injector
 container) because FastAPI Users assumes its own dependency style.
 """
 
+import inspect
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -54,8 +55,18 @@ async def get_async_session(request: Request) -> AsyncGenerator[AsyncSession, No
     Reads the session factory from ``app.state.container`` so it
     picks up the same engine the dependency-injector resolved for
     every other repository in the app.
+
+    ``infrastructure.session_factory`` is a ``providers.Resource``
+    in production: invoking the provider returns a Future rather
+    than the cached factory. Tests override it as
+    ``providers.Object``, which returns the value synchronously.
+    The ``isawaitable`` branch covers both shapes so a single call
+    site works under prod and test wiring without forcing the test
+    conftest to mirror the async-Resource shape.
     """
     session_factory = request.app.state.container.infrastructure.session_factory()
+    if inspect.isawaitable(session_factory):
+        session_factory = await session_factory
     async with session_factory() as session:
         yield session
 
