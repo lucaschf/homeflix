@@ -1,5 +1,9 @@
 # Hierarquia de Exceções para Clean Architecture
 
+> ⚠️ **Em migração — ver [ADR-012](../adr/ADR-012-decentralized-error-http-mapping.md).**
+>
+> A propriedade `http_status` que aparece nos exemplos de código abaixo está sendo removida das classes de exceção. O projeto adotou um **registry descentralizado de mapeamento `error_code → http_status`** registrado por Bounded Context no bootstrap. Os exemplos refletem o estado pré-migração e serão atualizados em PRs subsequentes. Consulte ADR-012 para a abordagem atual e a §8 (HTTP Status Mapping) abaixo para o resumo do novo design.
+
 ## Sumário
 
 1. [Visão Geral](#visão-geral)
@@ -14,7 +18,7 @@
 5. [Handler Global (FastAPI)](#handler-global-fastapi)
 6. [Exemplos de Uso](#exemplos-de-uso)
 7. [Boas Práticas](#boas-práticas)
-8. [HTTP Status Mapper (Abordagem Purista)](#http-status-mapper-abordagem-purista)
+8. [HTTP Status Mapping (Registry Descentralizado)](#http-status-mapping-registry-descentralizado)
 9. [Internacionalização (i18n)](#internacionalização-i18n)
 10. [Considerações de Performance](#considerações-de-performance)
 11. [Testes](#testes)
@@ -85,14 +89,16 @@ Cada camada da Clean Architecture possui sua própria base de exceções:
 - Campo `internal_message` disponível apenas para logs
 - `exception_id` permite correlação sem expor informações sensíveis
 
-### 4. Trade-off Pragmático
+### 4. Domain Puro de HTTP (decisão atual — ADR-012)
 
-O mapeamento `http_status` nas exceções é um trade-off consciente:
+> **Histórico**: A versão anterior deste documento adotava o atributo `http_status` na própria classe de exceção como trade-off pragmático ("evita um mapeador externo cheio de condicionais"). Essa decisão foi revisitada e invertida — ver [ADR-012](../adr/ADR-012-decentralized-error-http-mapping.md).
 
-- **Purista**: O domínio não deveria conhecer HTTP
-- **Pragmático**: Evita criar um mapeador externo cheio de condicionais
+O domínio não conhece HTTP. O mapeamento `error_code → http_status` vive em um **registry descentralizado** em `building_blocks/presentation/error_mapping.py`, populado por:
 
-Se o projeto crescer muito ou virar uma biblioteca compartilhada, considere extrair para um mapper externo.
+- `GENERIC_HTTP_STATUSES` — codes transversais (`RESOURCE_NOT_FOUND`, `DOMAIN_VALIDATION_ERROR`, etc.) auto-registrados no import.
+- `{BC}_HTTP_STATUSES` — codes específicos do BC, registrados via `bootstrap.setup()` chamado no composition root antes de `register_exception_handlers`.
+
+O handler global resolve o status via `resolve_http_status(exc.code)`. Os detalhes — estrutura, regras, plano de migração e teste de cobertura — estão em ADR-012.
 
 ---
 
@@ -1906,373 +1912,103 @@ raise BusinessRuleViolationException(
 
 ---
 
-## HTTP Status Mapper (Abordagem Purista)
+## HTTP Status Mapping (Registry Descentralizado)
 
-Como discutido nos [Princípios de Design](#princípios-de-design), manter `http_status` nas exceções é um trade-off pragmático. Se você preferir uma abordagem purista onde o domínio não conhece HTTP, use um mapper externo.
+> **Decisão:** [ADR-012](../adr/ADR-012-decentralized-error-http-mapping.md). Esta seção é o resumo prático; o ADR é a fonte da verdade.
 
-### Quando usar o Mapper Externo?
+O HomeFlix mantém o domínio puro de HTTP. O mapeamento `error_code → http_status` vive em um **registry descentralizado** em `building_blocks/presentation/error_mapping.py`. Cada Bounded Context com codes próprios declara seu mapping em `modules/{bc}/presentation/error_mapping.py` e o registra no bootstrap.
 
-| Cenário | Recomendação |
-|---------|--------------|
-| Projeto pequeno/médio | `http_status` na exceção (pragmático) |
-| Biblioteca compartilhada entre projetos | Mapper externo |
-| Múltiplos protocolos (HTTP, gRPC, GraphQL) | Mapper externo |
-| Domínio precisa ser 100% puro | Mapper externo |
+### Estrutura
 
-### Implementação
+```
+src/
+├── building_blocks/
+│   └── presentation/
+│       └── error_mapping.py        # _REGISTRY + GENERIC_HTTP_STATUSES + resolvers
+└── modules/
+    └── <bc>/
+        ├── bootstrap.py            # setup() registra o mapping do BC
+        └── presentation/
+            └── error_mapping.py    # {BC}_HTTP_STATUSES (codes específicos do BC)
+```
 
-#### 1. Remova `http_status` das Exceções
+### Componentes do registry
 
 ```python
-# core/exceptions/base.py
-@dataclass
-class CoreException(Exception):
-    message: str
-    code: str = "CORE_ERROR"
-    details: list[ExceptionDetail] = field(default_factory=list)
-    exception_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    severity: Severity = Severity.MEDIUM
-    tags: dict[str, Any] = field(default_factory=dict)
-    
-    # Removido: http_status property
-    
-    def __post_init__(self):
-        super().__init__(self.message)
-    
-    def to_dict(self, include_internal: bool = False) -> dict[str, Any]:
-        # ... mesmo código anterior
-        pass
+# src/building_blocks/presentation/error_mapping.py
+_REGISTRY: dict[str, int] = {}
+
+GENERIC_HTTP_STATUSES: dict[str, int] = {
+    "DOMAIN_VALIDATION_ERROR": 422,
+    "RESOURCE_NOT_FOUND": 404,
+    "FORBIDDEN_OPERATION": 403,
+    "UNAUTHORIZED_OPERATION": 401,
+    "GATEWAY_TIMEOUT": 504,
+    "GATEWAY_UNAVAILABLE": 503,
+    # ... codes transversais auto-registrados no import
+}
+
+
+def register_http_statuses(mapping: dict[str, int]) -> None:
+    """Idempotente para valores iguais; levanta em conflito real."""
+
+
+def resolve_http_status(code: str, default: int = 500) -> int: ...
+def resolve_error_type(http_status: int) -> str: ...
+
+
+register_http_statuses(GENERIC_HTTP_STATUSES)  # auto-register no import
 ```
 
-#### 2. Crie o Mapper
+### Bootstrap por BC
 
 ```python
-# api/exception_mapper.py
-from typing import Type
-from core.exceptions import (
-    CoreException,
-    # Domain
-    DomainException,
-    DomainValidationException,
-    BusinessRuleViolationException,
-    DomainNotFoundException,
-    DomainConflictException,
-    # Application
-    ApplicationException,
-    UseCaseValidationException,
-    UnauthorizedOperationException,
-    ForbiddenOperationException,
-    ResourceNotFoundException,
-    # Infrastructure
-    InfrastructureException,
-    GatewayException,
-    GatewayTimeoutException,
-    GatewayUnavailableException,
-    GatewayRateLimitException,
-    GatewayBadResponseException,
-    RepositoryException,
-    DatabaseConnectionException,
-    DataIntegrityException,
-)
+# src/modules/identity/presentation/error_mapping.py
+IDENTITY_HTTP_STATUSES: dict[str, int] = {
+    "PROFILE_NOT_FOUND": 404,
+    "PROFILE_OWNERSHIP_VIOLATION": 403,
+    "NO_ACTIVE_SESSION": 401,
+    "CANNOT_DELETE_LAST_PROFILE": 409,
+    "NO_ACTIVE_PROFILE": 409,
+}
 
 
-class HTTPStatusMapper:
-    """
-    Mapeia exceções do domínio para códigos HTTP.
-    
-    Mantém o domínio puro, sem conhecimento de protocolos de transporte.
-    O mapeamento é feito na camada de Interface Adapters (API).
-    
-    Example:
-        >>> mapper = HTTPStatusMapper()
-        >>> status = mapper.get_status(some_exception)
-        >>> # ou
-        >>> status = mapper.get_status_by_type(DomainValidationException)
-    """
-    
-    # Mapeamento de tipo de exceção -> HTTP status
-    _STATUS_MAP: dict[Type[CoreException], int] = {
-        # Domain
-        DomainException: 422,
-        DomainValidationException: 422,
-        BusinessRuleViolationException: 422,
-        DomainNotFoundException: 404,
-        DomainConflictException: 409,
-        
-        # Application
-        ApplicationException: 400,
-        UseCaseValidationException: 400,
-        UnauthorizedOperationException: 401,
-        ForbiddenOperationException: 403,
-        ResourceNotFoundException: 404,
-        
-        # Infrastructure
-        InfrastructureException: 502,
-        GatewayException: 502,
-        GatewayTimeoutException: 504,
-        GatewayUnavailableException: 503,
-        GatewayRateLimitException: 429,
-        GatewayBadResponseException: 502,
-        RepositoryException: 502,
-        DatabaseConnectionException: 503,
-        DataIntegrityException: 409,
-    }
-    
-    # Status padrão para exceções não mapeadas
-    DEFAULT_STATUS = 500
-    
-    def get_status(self, exception: CoreException) -> int:
-        """
-        Obtém o HTTP status para uma instância de exceção.
-        
-        Percorre a hierarquia de classes (MRO) para encontrar
-        o mapeamento mais específico.
-        
-        Args:
-            exception: Instância da exceção
-        
-        Returns:
-            Código HTTP correspondente
-        """
-        return self.get_status_by_type(type(exception))
-    
-    def get_status_by_type(self, exception_type: Type[CoreException]) -> int:
-        """
-        Obtém o HTTP status para um tipo de exceção.
-        
-        Args:
-            exception_type: Classe da exceção
-        
-        Returns:
-            Código HTTP correspondente
-        """
-        # Busca direta
-        if exception_type in self._STATUS_MAP:
-            return self._STATUS_MAP[exception_type]
-        
-        # Busca na hierarquia (MRO - Method Resolution Order)
-        for base_class in exception_type.__mro__:
-            if base_class in self._STATUS_MAP:
-                return self._STATUS_MAP[base_class]
-        
-        return self.DEFAULT_STATUS
-    
-    def register(self, exception_type: Type[CoreException], status: int) -> None:
-        """
-        Registra um novo mapeamento.
-        
-        Útil para exceções customizadas do projeto.
-        
-        Args:
-            exception_type: Classe da exceção
-            status: Código HTTP
-        
-        Example:
-            >>> mapper.register(MyCustomException, 418)
-        """
-        self._STATUS_MAP[exception_type] = status
-    
-    def register_many(self, mappings: dict[Type[CoreException], int]) -> None:
-        """
-        Registra múltiplos mapeamentos de uma vez.
-        
-        Args:
-            mappings: Dicionário tipo -> status
-        """
-        self._STATUS_MAP.update(mappings)
+# src/modules/identity/bootstrap.py
+def setup() -> None:
+    from src.building_blocks.presentation.error_mapping import register_http_statuses
+    from src.modules.identity.presentation.error_mapping import IDENTITY_HTTP_STATUSES
 
-
-# Instância singleton para uso global
-http_status_mapper = HTTPStatusMapper()
+    register_http_statuses(IDENTITY_HTTP_STATUSES)
 ```
 
-#### 3. Atualize o Handler
+O composition root chama `_bootstrap_modules()` **antes** de `register_exception_handlers(app)`. BCs sem codes próprios (que reutilizam apenas codes genéricos via `ResourceNotFoundException.for_resource(...)` etc.) não precisam de `bootstrap.py` ou `error_mapping.py`.
+
+### Handler
 
 ```python
-# api/exception_handlers.py
-import structlog
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from core.exceptions import CoreException, Severity
-from api.exception_mapper import http_status_mapper
-
-logger = structlog.get_logger()
-
-
-async def core_exception_handler(request: Request, exc: CoreException) -> JSONResponse:
-    """
-    Handler global usando mapper externo.
-    """
-    # Obtém status via mapper (não da exceção)
-    http_status = http_status_mapper.get_status(exc)
-    
-    # Log completo
-    log_data = exc.to_dict(include_internal=True)
-    log_data["path"] = request.url.path
-    log_data["method"] = request.method
-    log_data["http_status"] = http_status
-    
-    if exc.severity in (Severity.HIGH, Severity.CRITICAL):
-        logger.error("exception_raised", **log_data)
-    else:
-        logger.warning("exception_raised", **log_data)
-    
-    # Response
-    return JSONResponse(
-        status_code=http_status,
-        content=exc.to_dict(include_internal=False),
-        headers={"X-Request-ID": exc.exception_id}
-    )
+# src/building_blocks/presentation/exception_handlers.py
+async def core_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    exc = cast(CoreException, exc)
+    http_status = resolve_http_status(exc.code)
+    error_type = resolve_error_type(http_status)
+    # ... log + serialize
+    return JSONResponse(status_code=http_status, content=exc.to_dict(error_type=error_type))
 ```
 
-#### 4. Registrando Exceções Customizadas
+### Regras
 
-```python
-# main.py
-from api.exception_mapper import http_status_mapper
-from my_project.exceptions import (
-    PaymentDeclinedException,
-    QuotaExceededException,
-)
+1. Nenhuma classe em `domain/`, `application/` ou `infrastructure/` declara `http_status`. A camada de transporte vive 100% em `presentation/`.
+2. Repetir entradas no `{BC}_HTTP_STATUSES` para codes que herdam de bases (ex.: `PROFILE_NOT_FOUND`) — o registry é flat e indexado por code, não por classe.
+3. `register_http_statuses` é idempotente quando o mesmo code é registrado com o mesmo status, mas levanta em conflito real (mesmo code, status diferente).
+4. Teste de cobertura em `tests/building_blocks/unit/presentation/test_error_mapping_coverage.py` itera todas as subclasses de `CoreException` e garante que cada `code` tem entrada no registry — sem isso, codes esquecidos caem em 500 silenciosamente.
 
-# Registra exceções específicas do projeto
-http_status_mapper.register(PaymentDeclinedException, 402)  # Payment Required
-http_status_mapper.register(QuotaExceededException, 429)
+### Migração
 
-# Ou em lote
-http_status_mapper.register_many({
-    PaymentDeclinedException: 402,
-    QuotaExceededException: 429,
-})
-```
+A inversão da decisão acontece em 3 PRs sequenciais (ver ADR-012 §Migração):
 
-### Mapper para Múltiplos Protocolos
-
-Se você precisa suportar HTTP, gRPC e GraphQL, pode criar mappers específicos:
-
-```python
-# api/mappers/__init__.py
-from .http_mapper import HTTPStatusMapper
-from .grpc_mapper import GRPCStatusMapper
-from .graphql_mapper import GraphQLErrorMapper
-
-__all__ = ["HTTPStatusMapper", "GRPCStatusMapper", "GraphQLErrorMapper"]
-```
-
-```python
-# api/mappers/grpc_mapper.py
-from grpc import StatusCode
-from typing import Type
-from core.exceptions import (
-    CoreException,
-    DomainNotFoundException,
-    UnauthorizedOperationException,
-    ForbiddenOperationException,
-    GatewayUnavailableException,
-    GatewayTimeoutException,
-    # ...
-)
-
-
-class GRPCStatusMapper:
-    """Mapeia exceções para códigos gRPC."""
-    
-    _STATUS_MAP: dict[Type[CoreException], StatusCode] = {
-        DomainNotFoundException: StatusCode.NOT_FOUND,
-        UnauthorizedOperationException: StatusCode.UNAUTHENTICATED,
-        ForbiddenOperationException: StatusCode.PERMISSION_DENIED,
-        GatewayUnavailableException: StatusCode.UNAVAILABLE,
-        GatewayTimeoutException: StatusCode.DEADLINE_EXCEEDED,
-        # ...
-    }
-    
-    DEFAULT_STATUS = StatusCode.INTERNAL
-    
-    def get_status(self, exception: CoreException) -> StatusCode:
-        for base_class in type(exception).__mro__:
-            if base_class in self._STATUS_MAP:
-                return self._STATUS_MAP[base_class]
-        return self.DEFAULT_STATUS
-
-
-grpc_status_mapper = GRPCStatusMapper()
-```
-
-```python
-# api/mappers/graphql_mapper.py
-from typing import Type
-from core.exceptions import CoreException, UnauthorizedOperationException, ForbiddenOperationException
-
-
-class GraphQLErrorMapper:
-    """
-    Mapeia exceções para extensões GraphQL.
-    
-    GraphQL sempre retorna 200, mas usa 'extensions' para metadados.
-    """
-    
-    _EXTENSIONS_MAP: dict[Type[CoreException], dict] = {
-        UnauthorizedOperationException: {
-            "code": "UNAUTHENTICATED",
-            "http_status": 401,
-        },
-        ForbiddenOperationException: {
-            "code": "FORBIDDEN", 
-            "http_status": 403,
-        },
-        # ...
-    }
-    
-    def get_extensions(self, exception: CoreException) -> dict:
-        for base_class in type(exception).__mro__:
-            if base_class in self._EXTENSIONS_MAP:
-                return {
-                    **self._EXTENSIONS_MAP[base_class],
-                    "request_id": exception.exception_id,
-                }
-        
-        return {
-            "code": exception.code,
-            "request_id": exception.exception_id,
-        }
-
-
-graphql_error_mapper = GraphQLErrorMapper()
-```
-
-### Estrutura de Pastas Atualizada
-
-```
-project/
-├── core/
-│   └── exceptions/
-│       ├── __init__.py
-│       ├── base.py              # SEM http_status
-│       ├── domain.py
-│       ├── application.py
-│       └── infrastructure.py
-│
-├── api/
-│   ├── mappers/
-│   │   ├── __init__.py
-│   │   ├── http_mapper.py       # HTTPStatusMapper
-│   │   ├── grpc_mapper.py       # GRPCStatusMapper (opcional)
-│   │   └── graphql_mapper.py    # GraphQLErrorMapper (opcional)
-│   ├── exception_handlers.py
-│   └── main.py
-│
-└── ...
-```
-
-### Trade-offs
-
-| Abordagem | Prós | Contras |
-|-----------|------|---------|
-| `http_status` na exceção | Simples, menos código, fácil manutenção | Domínio conhece HTTP |
-| Mapper externo | Domínio puro, suporta múltiplos protocolos | Mais arquivos, mapeamento pode ficar dessincronizado |
-
-**Recomendação**: Comece com `http_status` na exceção. Migre para mapper externo apenas se precisar de múltiplos protocolos ou se o projeto crescer a ponto de virar uma biblioteca compartilhada.
+1. Introduzir o registry, manter `http_status` property como fonte da verdade. Adicionar test de cobertura.
+2. Inverter handler para `resolve_http_status(exc.code)`.
+3. Remover `http_status` de todas as exception classes e refatorar testes.
 
 ---
 
@@ -4149,35 +3885,6 @@ def configure_exception_handlers(app: FastAPI) -> None:
         Exception,
         unhandled_exception_handler
     )
-```
-
-#### Configuração do HTTP Status Mapper (Abordagem Purista)
-
-```python
-# api/config/mapper_config.py
-"""
-Configuração do HTTP Status Mapper.
-Usar apenas se optar pela abordagem purista.
-"""
-from api.mappers.http_mapper import http_status_mapper
-from my_project.exceptions import (
-    PaymentDeclinedException,
-    QuotaExceededException,
-    BiometricValidationException,
-)
-
-
-def configure_http_mapper() -> None:
-    """
-    Registra mapeamentos customizados de exceção -> HTTP status.
-    
-    Usar apenas se optar por remover http_status das exceções.
-    """
-    http_status_mapper.register_many({
-        PaymentDeclinedException: 402,      # Payment Required
-        QuotaExceededException: 429,        # Too Many Requests
-        BiometricValidationException: 422,  # Unprocessable Entity
-    })
 ```
 
 #### Middleware de Correlation ID
@@ -6076,116 +5783,14 @@ class TestIntegration:
         assert body_pt["error"]["message"] != body_en["error"]["message"]
 ```
 
-### Testes do HTTP Status Mapper
+### Testes do Registry de HTTP Status
 
-```python
-# tests/unit/api/test_exception_mapper.py
-import pytest
-from core.exceptions import (
-    CoreException,
-    DomainException,
-    DomainValidationException,
-    BusinessRuleViolationException,
-    DomainNotFoundException,
-    ApplicationException,
-    UseCaseValidationException,
-    UnauthorizedOperationException,
-    InfrastructureException,
-    GatewayTimeoutException,
-    DatabaseConnectionException,
-)
-from api.exception_mapper import HTTPStatusMapper, http_status_mapper
+Ver [ADR-012](../adr/ADR-012-decentralized-error-http-mapping.md#notas-de-implementação) para o teste de cobertura que itera todas as subclasses de `CoreException` e garante que cada `code` tem entrada no registry. Esse teste é o guard principal contra codes esquecidos caindo em 500 silenciosamente.
 
+Testes adicionais:
 
-class TestHTTPStatusMapper:
-    def test_maps_domain_validation_to_422(self):
-        exc = DomainValidationException(message="Invalid")
-        
-        status = http_status_mapper.get_status(exc)
-        
-        assert status == 422
-    
-    def test_maps_not_found_to_404(self):
-        exc = DomainNotFoundException(message="Not found")
-        
-        status = http_status_mapper.get_status(exc)
-        
-        assert status == 404
-    
-    def test_maps_unauthorized_to_401(self):
-        exc = UnauthorizedOperationException(message="Unauthorized")
-        
-        status = http_status_mapper.get_status(exc)
-        
-        assert status == 401
-    
-    def test_maps_gateway_timeout_to_504(self):
-        exc = GatewayTimeoutException(message="Timeout", gateway_name="OCR")
-        
-        status = http_status_mapper.get_status(exc)
-        
-        assert status == 504
-    
-    def test_maps_db_connection_to_503(self):
-        exc = DatabaseConnectionException(message="Connection failed")
-        
-        status = http_status_mapper.get_status(exc)
-        
-        assert status == 503
-    
-    def test_falls_back_to_parent_class_mapping(self):
-        """Exceção customizada deve usar mapeamento da classe pai."""
-        
-        @dataclass
-        class CustomDomainException(DomainException):
-            pass
-        
-        exc = CustomDomainException(message="Custom")
-        
-        status = http_status_mapper.get_status(exc)
-        
-        assert status == 422  # DomainException default
-    
-    def test_returns_500_for_unknown_exception(self):
-        exc = CoreException(message="Unknown")
-        
-        status = http_status_mapper.get_status(exc)
-        
-        assert status == 500
-    
-    def test_register_custom_mapping(self):
-        mapper = HTTPStatusMapper()
-        
-        @dataclass
-        class PaymentDeclinedException(ApplicationException):
-            pass
-        
-        mapper.register(PaymentDeclinedException, 402)
-        
-        exc = PaymentDeclinedException(message="Payment declined")
-        status = mapper.get_status(exc)
-        
-        assert status == 402
-    
-    def test_register_many(self):
-        mapper = HTTPStatusMapper()
-        
-        @dataclass
-        class ExceptionA(CoreException):
-            pass
-        
-        @dataclass
-        class ExceptionB(CoreException):
-            pass
-        
-        mapper.register_many({
-            ExceptionA: 418,
-            ExceptionB: 451,
-        })
-        
-        assert mapper.get_status(ExceptionA(message="A")) == 418
-        assert mapper.get_status(ExceptionB(message="B")) == 451
-```
+- `tests/building_blocks/unit/presentation/test_error_mapping.py` — `register_http_statuses` é idempotente para valores iguais e levanta em conflito real.
+- `tests/modules/{bc}/unit/presentation/test_error_mapping.py` — cada BC com mapping próprio valida que `{BC}_HTTP_STATUSES` cobre todos os codes do BC.
 
 ### Executando os Testes
 
