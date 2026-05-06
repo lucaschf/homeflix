@@ -130,6 +130,24 @@ Cobre:
 
 Consultar quando: criar feature que toca dados pessoais (precisa de `profile_id` no Input). Adicionar autorização/role check. Decidir como passar contexto de request a um use case. Implementar endpoint que requer login. Adicionar novo prefixo de ID ao registro.
 
+### Error → HTTP Status Mapping (registry descentralizado)
+
+→ **ADR-012** (`docs/adr/ADR-012-decentralized-error-http-mapping.md`)
+
+Cobre:
+- Por que `http_status` foi removido das classes de exceção (`domain/`, `application/`, `infrastructure/` ficam puras de HTTP)
+- Registry em `building_blocks/presentation/error_mapping.py` com `_REGISTRY: dict[code, status]`, `register_http_statuses()`, `resolve_http_status()`
+- `GENERIC_HTTP_STATUSES` auto-registrado no import (codes transversais de building_blocks)
+- Por BC com codes próprios: `modules/{bc}/presentation/error_mapping.py` + `modules/{bc}/bootstrap.py` chamado no composition root
+- BCs sem codes próprios não precisam de bootstrap (apenas `identity` tem codes próprios hoje)
+- Plano de migração em 3 PRs sequenciais (introduzir registry → inverter handler → remover property)
+- Test de cobertura iterando subclasses de `CoreException` para guardar contra codes esquecidos (500 silencioso)
+- Inverte trade-off documentado em `docs/standards/exception-hierarchy-clean-architecture.md` §4
+
+Consultar quando: criar exceção nova com code próprio (precisa entrada no `{BC}_HTTP_STATUSES`). Adicionar BC novo (precisa criar `bootstrap.py` se tiver codes próprios). Diagnosticar resposta 500 em endpoint que deveria ser 404/409/etc (provável code não registrado). Decidir se um status custom merece subclasse nova ou só entrada no registry.
+
+⚠️ Migração em andamento — pode coexistir `http_status` property em algumas classes durante a transição. Verificar status atual no PR mais recente que toca `building_blocks/presentation/error_mapping.py`.
+
 ### Authentication Strategy / Session Storage / Cookie
 
 → **ADR-011** (`docs/adr/ADR-011-authentication-strategy.md`)
@@ -169,6 +187,10 @@ Consultar quando: implementar login/logout/session. Tocar config de cookies. Mud
 | Token JWT armazenado em `localStorage` no frontend ou retornado em response body | ADR-011 |
 | `cookie_httponly=False` ou `cookie_samesite="none"` sem justificativa registrada | ADR-011 |
 | Blacklist de JWT, refresh token rotation, `exp`/`iat` claims customizados | ADR-011 |
+| `@property def http_status(self) -> int` em classe de exceção | ADR-012 (será removido — usar registry) |
+| Code novo de exceção sem entrada em `error_mapping.py` do BC | ADR-012 |
+| Endpoint retornando 500 em vez de 4xx esperado | ADR-012 (verificar registry) |
+| `building_blocks/presentation/error_mapping.py` referenciando code de módulo | ADR-012 (cada BC declara seu próprio mapping) |
 
 ## Por pergunta comum
 
@@ -194,12 +216,16 @@ Consultar quando: implementar login/logout/session. Tocar config de cookies. Mud
 
 **"Como deslogo um usuário/dispositivo?"** → ADR-011 (`DELETE FROM access_tokens WHERE token = ?` ou `WHERE user_id = ?`)
 
+**"Onde declaro o HTTP status de uma exceção nova?"** → ADR-012 (no `{BC}_HTTP_STATUSES` do BC, não na classe)
+
+**"Posso colocar `http_status` como property na exceção?"** → Não. ADR-012.
+
 ## Adicionando novo ADR
 
 Quando você (ou o usuário) tomar uma decisão arquitetural significativa que não está coberta:
 
 1. Use `docs/adr/TEMPLATE.md` como base
-2. Numere sequencialmente (próximo: ADR-012 ou superior)
+2. Numere sequencialmente (próximo: ADR-013 ou superior)
 3. Status inicial: `Proposto` → após implementação e validação: `Aceito`
 4. Atualize **este índice** (`adr_index.md`) com o novo tópico
 5. Se substitui ADR existente, marque o antigo como `Substituído` e referencie

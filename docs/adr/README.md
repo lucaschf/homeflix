@@ -16,15 +16,12 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-004](./ADR-004-dependency-injection.md) | Injeção de Dependências com dependency-injector | ✅ Aceito | 2025-01-28 |
 | [ADR-005](./ADR-005-library-as-configuration-entity.md) | Library como Entidade de Configuração | ✅ Aceito | 2026-02-03 |
 | [ADR-006](./ADR-006-media-file-variants.md) | Variantes de Arquivo de Mídia | ✅ Aceito | 2026-02-03 |
-
-## ADRs Planejados
-
-Os seguintes ADRs serão criados conforme o projeto avança:
-
-- **ADR-007**: Streaming de Vídeo (HTTP Range Requests vs HLS)
-- **ADR-008**: Cache Strategy
-- **ADR-009**: Background Jobs (Scan, Metadata Fetch)
-- **ADR-010**: Estratégia de Testes (Unit, Integration, E2E)
+| [ADR-007](./ADR-007-immutable-entities-with-convention.md) | Entidades Imutáveis com Convenção `with_*` | ✅ Aceito | 2026-02-17 |
+| [ADR-008](./ADR-008-screaming-architecture.md) | Screaming Architecture com Módulos | ✅ Aceito | 2026-04-02 |
+| [ADR-009](./ADR-009-cross-bc-read-ports.md) | Cross-BC Read Ports + ACL | ✅ Aceito | 2026-04-18 |
+| [ADR-010](./ADR-010-identity-bounded-context.md) | Identity Bounded Context | ✅ Aceito | 2026-05-03 |
+| [ADR-011](./ADR-011-authentication-strategy.md) | Authentication Strategy | ✅ Aceito | 2026-05-03 |
+| [ADR-012](./ADR-012-decentralized-error-http-mapping.md) | Registry Descentralizado de Error HTTP Mapping | ✅ Aceito | 2026-05-06 |
 
 ## Como Criar um Novo ADR
 
