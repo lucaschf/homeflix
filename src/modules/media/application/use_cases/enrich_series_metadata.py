@@ -1,0 +1,416 @@
+"""Use case for enriching a series with external metadata."""
+
+import logging
+from collections.abc import Callable
+from datetime import date
+from typing import Any
+
+from src.building_blocks.application.errors import ResourceNotFoundException
+from src.modules.media.application.dtos.enrichment_dtos import (
+    EnrichMediaInput,
+    EnrichMediaOutput,
+)
+from src.modules.media.application.ports import (
+    EpisodeMetadata,
+    MediaMetadata,
+    MetadataProvider,
+    SeasonMetadata,
+)
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.domain.entities import Episode, Season, Series
+from src.modules.media.domain.value_objects import (
+    AirDate,
+    CastMember,
+    ContentRating,
+    Duration,
+    Genre,
+    ImageUrl,
+    ImdbId,
+    SeriesId,
+    Title,
+    TmdbId,
+    Year,
+)
+
+
+class EnrichSeriesMetadataUseCase:
+    """Enrich a series entity with metadata from external providers.
+
+    Searches the primary provider first, falls back to the secondary.
+    Enriches series-level, season-level, and episode-level metadata.
+
+    Args:
+        uow_factory: Factory that opens a fresh media Unit of Work.
+        primary_provider: Primary metadata provider (e.g., TMDB).
+        fallback_provider: Optional fallback provider (e.g., OMDb).
+    """
+
+    def __init__(
+        self,
+        uow_factory: MediaUnitOfWorkFactory,
+        primary_provider: MetadataProvider,
+        fallback_provider: MetadataProvider | None = None,
+    ) -> None:
+        self._uow_factory = uow_factory
+        self._primary = primary_provider
+        self._fallback = fallback_provider
+
+    async def execute(self, input_dto: EnrichMediaInput) -> EnrichMediaOutput:
+        """Execute series metadata enrichment.
+
+        Args:
+            input_dto: Input with series ID and force flag.
+
+        Returns:
+            Enrichment result with success/failure status.
+        """
+        async with self._uow_factory() as uow:
+            series = await uow.series.find_by_id(SeriesId(input_dto.media_id))
+            if not series:
+                raise ResourceNotFoundException.for_resource("Series", input_dto.media_id)
+
+            if series.tmdb_id and not input_dto.force:
+                return EnrichMediaOutput(media_id=input_dto.media_id, enriched=False, provider=None)
+
+            metadata, provider_name = await self._fetch_metadata(series)
+            if not metadata:
+                return EnrichMediaOutput(
+                    media_id=input_dto.media_id,
+                    enriched=False,
+                    error="No metadata found from any provider",
+                )
+
+            # Re-fetch with localization if provider supports it
+            if metadata.tmdb_id and hasattr(self._primary, "get_series_localized"):
+                get_localized = self._primary.get_series_localized
+                localized_meta: MediaMetadata | None = await get_localized(metadata.tmdb_id)
+                if localized_meta is not None:
+                    metadata = localized_meta
+
+            series = _apply_series_metadata(series, metadata)
+            await uow.series.save(series)
+
+        return EnrichMediaOutput(media_id=input_dto.media_id, enriched=True, provider=provider_name)
+
+    async def _fetch_metadata(self, series: Series) -> tuple[MediaMetadata | None, str | None]:
+        """Try primary provider, then fallback.
+
+        Searches with original title first, then retries with a
+        cleaned title and without year for better TMDB matching.
+        """
+        if series.tmdb_id:
+            metadata = await self._primary.get_series_by_id(series.tmdb_id.value)
+            if metadata:
+                return metadata, "tmdb"
+
+        title = series.title.value
+        year = series.start_year.value
+
+        # Try with original title + year
+        metadata = await self._primary.search_series(title, year)
+        if metadata:
+            return metadata, "tmdb"
+
+        # Retry with cleaned title and no year
+        clean = _clean_series_title(title)
+        if clean != title:
+            metadata = await self._primary.search_series(clean)
+            if metadata:
+                return metadata, "tmdb"
+
+        # Retry with just title, no year
+        metadata = await self._primary.search_series(title)
+        if metadata:
+            return metadata, "tmdb"
+
+        if self._fallback:
+            metadata = await self._fallback.search_series(clean, year)
+            if metadata:
+                return metadata, "omdb"
+
+        _logger.warning("No metadata found for series %r", title)
+        return None, None
+
+
+def _apply_localized(
+    updates: dict[str, object],
+    existing: dict[str, dict[str, object]],
+    metadata: MediaMetadata,
+) -> None:
+    """Apply localized metadata overrides from provider."""
+    if not metadata.localized:
+        return
+    localized: dict[str, dict[str, object]] = {}
+    for lang, fields in metadata.localized.items():
+        loc_entry: dict[str, object] = {}
+        if fields.title:
+            loc_entry["title"] = fields.title
+        if fields.synopsis:
+            loc_entry["synopsis"] = fields.synopsis
+        if fields.genres:
+            loc_entry["genres"] = fields.genres
+        if fields.logo_url:
+            loc_entry["logo_path"] = fields.logo_url
+        if loc_entry:
+            localized[lang] = loc_entry
+    if localized:
+        updates["localized"] = {**existing, **localized}
+
+
+def _set_if_missing(
+    updates: dict[str, object],
+    metadata: MediaMetadata,
+    entity: Series,
+    field_map: dict[str, tuple[str, Callable[[Any], Any] | None]],
+) -> None:
+    """Set fields in updates only if metadata has a value and entity doesn't."""
+    for meta_attr, (entity_attr, converter) in field_map.items():
+        meta_val = getattr(metadata, meta_attr, None)
+        entity_val = getattr(entity, entity_attr, None)
+        if meta_val and not entity_val:
+            updates[entity_attr] = converter(meta_val) if converter is not None else meta_val
+
+
+def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
+    """Apply metadata fields to a series entity."""
+    updates: dict[str, object] = {}
+
+    # Always-overwrite fields
+    if metadata.tmdb_id:
+        updates["tmdb_id"] = TmdbId(metadata.tmdb_id)
+    if metadata.imdb_id:
+        updates["imdb_id"] = ImdbId(metadata.imdb_id)
+    if metadata.original_title:
+        updates["original_title"] = Title(metadata.original_title)
+    if metadata.year:
+        updates["start_year"] = Year(metadata.year)
+    if metadata.end_year:
+        updates["end_year"] = Year(metadata.end_year)
+
+    # Don't-overwrite fields (only set if not already present)
+    _set_if_missing(
+        updates,
+        metadata,
+        series,
+        {
+            "synopsis": ("synopsis", None),
+            "genres": ("genres", lambda v: [Genre(g) for g in v]),
+            "poster_url": ("poster_path", ImageUrl),
+            "backdrop_url": ("backdrop_path", ImageUrl),
+            "logo_url": ("logo_path", ImageUrl),
+            "content_rating": ("content_rating", ContentRating),
+            "trailer_url": ("trailer_url", None),
+        },
+    )
+
+    # Cast: same fill-if-empty rule as the rest of the don't-overwrite
+    # block, but built outside ``_set_if_missing`` because the
+    # provider DTO uses a different field name (``cast`` ↔ ``cast``)
+    # AND a per-element converter from ``CreditPerson`` to the
+    # domain ``CastMember`` VO.
+    if metadata.cast and not series.cast:
+        updates["cast"] = [
+            CastMember(
+                name=p.name,
+                profile_path=p.profile_url,
+                role=p.role,
+                tmdb_id=p.tmdb_id,
+            )
+            for p in metadata.cast
+        ]
+
+    _apply_localized(updates, series.localized, metadata)
+
+    if updates:
+        series = series.with_updates(**updates)
+
+    # Enrich seasons and episodes
+    if metadata.seasons:
+        series = _enrich_seasons(series, metadata.seasons)
+
+    return series
+
+
+def _enrich_seasons(series: Series, season_metas: list[SeasonMetadata]) -> Series:
+    """Enrich existing seasons with metadata."""
+    meta_by_num = {s.season_number: s for s in season_metas}  # int keys from API
+
+    new_seasons = []
+    for season in series.seasons:
+        meta = meta_by_num.get(season.season_number.value)
+        enriched = _apply_season_metadata(season, meta) if meta else season
+        new_seasons.append(enriched)
+
+    return series.with_updates(seasons=new_seasons)
+
+
+def _apply_season_metadata(season: Season, meta: SeasonMetadata) -> Season:
+    """Apply metadata to a season and its episodes."""
+    updates: dict[str, object] = {}
+
+    if meta.title and not season.title:
+        updates["title"] = Title(meta.title)
+    if meta.synopsis and not season.synopsis:
+        updates["synopsis"] = meta.synopsis
+    if meta.air_date and not season.air_date:
+        parsed = _parse_date(meta.air_date)
+        if parsed:
+            updates["air_date"] = AirDate(parsed)
+
+    if updates:
+        season = season.with_updates(**updates)
+
+    # Enrich episodes — track TMDB index separately to handle multi-segment files
+    if meta.episodes:
+        ep_by_num = {e.episode_number: e for e in meta.episodes}  # int keys from API
+        sorted_episodes = sorted(season.episodes, key=lambda e: e.episode_number.value)
+        tmdb_idx = 1  # TMDB episode numbering starts at 1
+        new_episodes = []
+        for ep in sorted_episodes:
+            segment_count = _detect_multi_episode(ep.title.value)
+            if segment_count > 1:
+                enriched_ep = _apply_multi_episode_metadata(
+                    ep, ep_by_num, segment_count, tmdb_start=tmdb_idx
+                )
+            else:
+                ep_meta = ep_by_num.get(tmdb_idx)
+                enriched_ep = _apply_episode_metadata(ep, ep_meta) if ep_meta else ep
+            new_episodes.append(enriched_ep)
+            tmdb_idx += segment_count
+        season = season.with_updates(episodes=new_episodes)
+
+    return season
+
+
+def _detect_multi_episode(title: str) -> int:
+    """Detect how many episodes are in a single file based on title.
+
+    Counts segments separated by `` - `` in the episode title.
+    Titles like "Downtown as Fruits - Eugene's Bike" have 2 segments.
+
+    Returns:
+        Number of episodes detected (1 = single, 2+ = multi).
+    """
+    # Skip titles that are just generic "Episode N" from the scanner
+    if title.startswith("Episode "):
+        return 1
+    parts = [p.strip() for p in title.split(" - ") if p.strip()]
+    # Cap at 4 to avoid false positives from stylized titles
+    return min(max(len(parts), 1), 4)
+
+
+def _apply_multi_episode_metadata(
+    episode: Episode,
+    ep_by_num: dict[int, EpisodeMetadata],
+    segment_count: int,
+    tmdb_start: int | None = None,
+) -> Episode:
+    """Apply combined metadata from multiple TMDB episodes to a multi-segment file.
+
+    Concatenates titles with ``/``, joins synopses, sums durations,
+    and uses the first episode's thumbnail.
+
+    Args:
+        episode: The local episode entity.
+        ep_by_num: TMDB episodes keyed by episode number.
+        segment_count: Number of TMDB episodes in this file.
+        tmdb_start: Starting TMDB episode number (if None, uses episode.episode_number).
+    """
+    start = tmdb_start if tmdb_start is not None else episode.episode_number.value
+    metas = [ep_by_num.get(start + i) for i in range(segment_count)]
+    present = [m for m in metas if m is not None]
+
+    if not present:
+        return episode
+
+    updates: dict[str, object] = {}
+
+    # Concatenate titles from all segments (only if local title is from scanner)
+    titles = [m.title for m in present if m.title]
+    if titles and " / " not in episode.title.value:
+        updates["title"] = Title(" / ".join(titles))
+
+    # Synopsis: combine with separator
+    synopses = [m.synopsis for m in present if m.synopsis]
+    if synopses and not episode.synopsis:
+        updates["synopsis"] = " ◆ ".join(synopses)
+
+    # Sum durations from all segments
+    total_duration = sum(m.duration_seconds or 0 for m in present)
+    if total_duration and episode.duration.value == 0:
+        updates["duration"] = Duration(total_duration)
+
+    # Thumbnail: first available
+    first_still = next((m.still_url for m in present if m.still_url), None)
+    if first_still and not episode.thumbnail_path:
+        updates["thumbnail_path"] = ImageUrl(first_still)
+
+    # Air date: first available
+    first_date = next((m.air_date for m in present if m.air_date), None)
+    if first_date and not episode.air_date:
+        parsed = _parse_date(first_date)
+        if parsed:
+            updates["air_date"] = AirDate(parsed)
+
+    if updates:
+        episode = episode.with_updates(**updates)
+
+    return episode
+
+
+def _apply_episode_metadata(episode: Episode, meta: EpisodeMetadata) -> Episode:
+    """Apply metadata from a single TMDB episode."""
+    updates: dict[str, object] = {}
+
+    if meta.title and episode.title.value.startswith("Episode "):
+        updates["title"] = Title(meta.title)
+    if meta.synopsis and not episode.synopsis:
+        updates["synopsis"] = meta.synopsis
+    if meta.air_date and not episode.air_date:
+        parsed = _parse_date(meta.air_date)
+        if parsed:
+            updates["air_date"] = AirDate(parsed)
+    if meta.duration_seconds and episode.duration.value == 0:
+        updates["duration"] = Duration(meta.duration_seconds)
+    if meta.still_url and not episode.thumbnail_path:
+        updates["thumbnail_path"] = ImageUrl(meta.still_url)
+
+    if updates:
+        episode = episode.with_updates(**updates)
+
+    return episode
+
+
+_logger = logging.getLogger(__name__)
+
+
+def _clean_series_title(title: str) -> str:
+    """Remove common noise from a series title for better TMDB search."""
+    import re
+
+    patterns = [
+        r"\b(?:4K|UHD|FHD|HD|SD)\b",
+        r"\b(?:BluRay|BDRip|BRRip|WEB-?DL|WEB-?Rip|HDTV|DVDRip|REMUX)\b",
+        r"\b(?:HEVC|H\.?265|H\.?264|x264|x265|AV1|VP9|MPEG4)\b",
+        r"\b(?:DTS(?:-HD)?(?:\.?MA)?|TrueHD|Atmos|AAC|AC3|FLAC|EAC3)\b",
+        r"\[.*?\]",
+        r"\(.*?\)",
+    ]
+    result = title
+    for pattern in patterns:
+        result = re.sub(pattern, "", result, flags=re.IGNORECASE)
+
+    result = re.sub(r"\s+", " ", result).strip().strip("-._")
+    return result or title
+
+
+def _parse_date(value: str) -> date | None:
+    """Safely parse an ISO date string, returning None on failure."""
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        _logger.warning("Could not parse date: %s", value)
+        return None
+
+
+__all__ = ["EnrichSeriesMetadataUseCase"]

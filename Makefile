@@ -48,19 +48,20 @@ setup: install-dev pc-install
 # =============================================================================
 
 dev:
-	poetry run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+	poetry run uvicorn src.main:app --reload --host 0.0.0.0 --port 8005
 
 test:
 	poetry run pytest
 
 test-unit:
-	poetry run pytest tests/unit -v
+	poetry run pytest tests/building_blocks/unit tests/shared_kernel/unit tests/modules/*/unit -v
 
 test-cov:
 	poetry run pytest --cov=src --cov-report=html --cov-report=term-missing
 
 lint:
 	poetry run ruff check src tests
+	poetry run ruff format --check src tests
 
 format:
 	poetry run ruff check --fix src tests

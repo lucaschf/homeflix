@@ -1,8 +1,8 @@
 # ADR-003: Estrutura de Pacotes e Organização do Projeto
 
-**Status:** Aceito  
-**Data:** 2025-01-28  
-**Deciders:** Lucas  
+**Status:** Substituído por [ADR-008](ADR-008-screaming-architecture.md)
+**Data:** 2025-01-28
+**Deciders:** Lucas
 **Technical Story:** Definir organização de pastas seguindo Clean Architecture
 
 ---
@@ -173,7 +173,7 @@ application/shared/
 
 ```
 domain/shared/exceptions/          # DomainException
-application/shared/exceptions/     # ApplicationException  
+application/shared/exceptions/     # ApplicationException
 infrastructure/exceptions/         # InfrastructureException
 presentation/exceptions/           # PresentationException
 ```

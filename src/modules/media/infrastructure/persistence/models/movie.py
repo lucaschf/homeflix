@@ -1,9 +1,14 @@
 """Movie ORM model."""
 
-from sqlalchemy import BigInteger, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from typing import TYPE_CHECKING
 
-from src.infrastructure.persistence.models.base import Base
+from sqlalchemy import BigInteger, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from src.infrastructure.persistence.base import Base
+
+if TYPE_CHECKING:
+    from src.modules.media.infrastructure.persistence.models.media_file import MediaFileModel
 
 
 class MovieModel(Base):
@@ -27,16 +32,24 @@ class MovieModel(Base):
         imdb_id: IMDb ID (e.g., "tt1234567").
     """
 
+    # Library scoping (lib_xxx prefixed external id; cross-BC string
+    # reference, no FK because the catalog and library tables live in
+    # different bounded contexts).
+    library_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+
     # Core info
     title: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
     original_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     duration: Mapped[int] = mapped_column(Integer, nullable=False)  # seconds
     synopsis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tagline: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Images
     poster_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     backdrop_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    logo_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    scrub_preview_path: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
     # Categorization (stored as comma-separated for simplicity)
     genres: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -51,9 +64,36 @@ class MovieModel(Base):
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # bytes
     resolution: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
+    # Credits (stored as JSON arrays of names)
+    cast: Mapped[str | None] = mapped_column(Text, nullable=True)
+    directors: Mapped[str | None] = mapped_column(Text, nullable=True)
+    writers: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Classification (e.g., "PG-13", "R", "14")
+    content_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Trailer (YouTube URL)
+    trailer_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Collection / franchise on TMDB (denormalized as 3 columns since
+    # we don't have a Collection aggregate of our own yet)
+    collection_tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    collection_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    collection_parts_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Localized metadata (JSON: {"pt-BR": {"title": "...", "synopsis": "...", "genres": [...]}})
+    localized: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # External IDs for metadata enrichment
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+
+    # Relationships
+    file_variants: Mapped[list["MediaFileModel"]] = relationship(
+        "MediaFileModel",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         """Return string representation."""

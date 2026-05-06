@@ -1,0 +1,977 @@
+"""HLS segment generation and caching service.
+
+Supports progressive playback: FFmpeg runs in the background and
+the playlist is returned as soon as the first segments are ready.
+hls.js treats a playlist without ``#EXT-X-ENDLIST`` as a live stream
+and keeps polling for new segments until the tag appears.
+
+Multi-track support generates a master playlist with separate audio
+renditions and WebVTT subtitle tracks via ``#EXT-X-MEDIA`` tags.
+
+Cache structure per file::
+
+    <path_hash>/
+    ├── master.m3u8           # Multivariant playlist (built by Python)
+    ├── video/
+    │   ├── playlist.m3u8     # Video + default audio
+    │   └── segment_0000.ts
+    ├── audio_1/
+    │   ├── playlist.m3u8     # Audio-only alternative track
+    │   └── segment_0000.ts
+    ├── sub_0/
+    │   ├── playlist.m3u8     # WebVTT wrapper playlist
+    │   └── sub.vtt
+    └── tracks.json           # Cached probe result
+
+Scrub-preview sprites used to live in ``thumbnails/`` here too. They
+are now persisted next to each media file by ``ThumbnailBackfillJob``
+and served by the id-based ``/scrub-preview/`` routes — this service
+no longer touches them.
+"""
+
+import asyncio
+import hashlib
+import json
+import logging
+import shutil
+import subprocess
+import threading
+import time
+from pathlib import Path
+from typing import Any
+
+from src.modules.media.application.ports.hls_playlist_port import HlsPlaylistPort
+from src.modules.media.application.ports.media_probe_port import ProbeResult
+from src.modules.media.infrastructure.streaming._subprocess import (
+    SUBPROCESS_TEXT_KWARGS,
+    with_ffmpeg_threads,
+)
+from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
+from src.shared_kernel.value_objects.tracks import SubtitleTrack
+
+_logger = logging.getLogger(__name__)
+
+_SEGMENT_DURATION = 10  # seconds per segment
+_POLL_INTERVAL = 0.5  # seconds between readiness checks
+_POLL_TIMEOUT = 120  # max seconds to wait for first segment
+_BROWSER_SAFE_CODECS = {"h264"}
+
+# Number of segments ffmpeg must produce before ensure_playlist returns.
+# The transcode always starts at t=0, so one segment is enough to give
+# hls.js something to render; the rest stream in as they're written.
+_MIN_SEGMENTS_FRESH = 1
+
+# Idle eviction defaults: kill ffmpeg after this many seconds with no
+# segment requests. Trade-off: short timeout frees CPU faster after the
+# user navigates away, but a paused user beyond this window will see the
+# next segment fail and the player rebuffer when they resume.
+_DEFAULT_IDLE_TIMEOUT = 30.0
+_EVICTION_INTERVAL = 10.0
+
+
+_VIDEO_DIR = "video"
+
+# -- Module helpers -----------------------------------------------------------
+
+
+def _primary_audio_index(probe: ProbeResult) -> int:
+    """Get the index of the primary audio track (first one, always index 0)."""
+    return probe.audio_tracks[0].index if probe.audio_tracks else 0
+
+
+class HlsService(HlsPlaylistPort):
+    """Generate and cache HLS segments for video files.
+
+    Args:
+        cache_dir: Directory to store generated HLS files.
+        probe_service: Service to discover audio/subtitle tracks.
+        idle_timeout: Seconds without segment requests before a running
+            ffmpeg process is considered idle and killed. Defaults to 30s.
+        enable_eviction: Whether to start the background eviction daemon.
+            Defaults to False so unit tests don't leak threads — production
+            code should pass True via the DI container.
+        ffmpeg_threads: Maximum worker threads each ffmpeg invocation may
+            use. ``None`` keeps ffmpeg's default (all cores). Applied via
+            ``-threads N`` on every transcoding and subtitle-extraction
+            command.
+    """
+
+    def __init__(
+        self,
+        cache_dir: str = "./hls_cache",
+        probe_service: MediaProbeService | None = None,
+        idle_timeout: float = _DEFAULT_IDLE_TIMEOUT,
+        enable_eviction: bool = False,
+        max_cache_size_mb: int = 5120,
+        ffmpeg_threads: int | None = None,
+    ) -> None:
+        self._cache_dir = Path(cache_dir)
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._probe = probe_service or MediaProbeService()
+        self._max_cache_bytes = max_cache_size_mb * 1024 * 1024
+        self._ffmpeg_threads = ffmpeg_threads
+        self._processes: dict[str, list[subprocess.Popen[bytes]]] = {}
+        # path_hash → monotonic timestamp of the most recent activity
+        # (playlist request OR segment fetch). The eviction loop reads
+        # this to decide which ffmpeg processes are idle.
+        self._last_access: dict[str, float] = {}
+        # path_hash → {subtitle_index: Event}. Set when a subtitle's
+        # background extraction finishes (success or failure). The file
+        # route uses these to block its response until the requested
+        # subtitle is on disk, instead of returning a premature 404.
+        self._subtitle_events: dict[str, dict[int, threading.Event]] = {}
+        self._lock = threading.Lock()
+        self._idle_timeout = idle_timeout
+        if enable_eviction:
+            self._start_eviction_thread()
+
+    def _start_eviction_thread(self) -> None:
+        """Spawn a daemon thread that periodically evicts idle processes."""
+        thread = threading.Thread(
+            target=self._eviction_loop,
+            daemon=True,
+            name="hls-eviction",
+        )
+        thread.start()
+
+    def _eviction_loop(self) -> None:
+        """Background loop: wake up periodically and evict idle ffmpegs + LRU cache."""
+        while True:
+            time.sleep(_EVICTION_INTERVAL)
+            try:
+                self.evict_idle()
+                self.evict_lru()
+            except Exception:
+                _logger.exception("HLS eviction loop error")
+
+    def _touch_access(self, path_hash: str) -> None:
+        """Record that this cache bucket was just used."""
+        with self._lock:
+            self._last_access[path_hash] = time.monotonic()
+
+    def evict_idle(self) -> list[str]:
+        """Kill ffmpeg processes that haven't seen activity recently.
+
+        Returns the list of evicted path_hashes (useful for tests).
+        """
+        now = time.monotonic()
+        with self._lock:
+            stale = [
+                ph
+                for ph, last in self._last_access.items()
+                if now - last > self._idle_timeout and ph in self._processes
+            ]
+        evicted: list[str] = []
+        for path_hash in stale:
+            idle_for = now - self._last_access.get(path_hash, now)
+            _logger.info("Evicting idle ffmpeg for %s (idle %.0fs)", path_hash, idle_for)
+            self._kill_processes(path_hash)
+            with self._lock:
+                self._last_access.pop(path_hash, None)
+            evicted.append(path_hash)
+        return evicted
+
+    def evict_lru(self) -> list[str]:
+        """Delete the least-recently-used cache buckets until total size is within the limit.
+
+        Scans all subdirectories under ``cache_dir``, sums their sizes,
+        and deletes the ones with the oldest ``_last_access`` timestamp
+        (or oldest filesystem mtime if the hash isn't tracked in memory)
+        until the total drops below ``max_cache_size_mb``.
+
+        Active buckets (those with running ffmpeg processes) are skipped
+        to avoid deleting segments a player is currently reading.
+
+        Returns the list of evicted path_hashes (useful for tests).
+        """
+        if self._max_cache_bytes <= 0:
+            return []
+
+        # Scan disk: collect (path_hash, size_bytes, last_access_time)
+        buckets: list[tuple[str, int, float]] = []
+        total_size = 0
+        for entry in self._cache_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            path_hash = entry.name
+            size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+            total_size += size
+            # Prefer in-memory access time; fall back to directory mtime
+            with self._lock:
+                access_time = self._last_access.get(path_hash, entry.stat().st_mtime)
+            buckets.append((path_hash, size, access_time))
+
+        if total_size <= self._max_cache_bytes:
+            return []
+
+        # Sort by access time ascending — oldest first
+        buckets.sort(key=lambda b: b[2])
+
+        evicted: list[str] = []
+        for path_hash, size, _ in buckets:
+            if total_size <= self._max_cache_bytes:
+                break
+            # Don't evict buckets with active ffmpeg processes
+            with self._lock:
+                if path_hash in self._processes:
+                    continue
+            bucket_path = self._cache_dir / path_hash
+            _logger.info(
+                "LRU evicting cache bucket %s (%.1f MB)",
+                path_hash,
+                size / (1024 * 1024),
+            )
+            shutil.rmtree(bucket_path, ignore_errors=True)
+            with self._lock:
+                self._last_access.pop(path_hash, None)
+            total_size -= size
+            evicted.append(path_hash)
+        return evicted
+
+    # -- Public API ------------------------------------------------------------
+
+    def get_path_hash(self, file_path: str) -> str:
+        """Get the hash key for a source file.
+
+        Args:
+            file_path: Absolute path to the source video file.
+
+        Returns:
+            Hex MD5 digest uniquely identifying the cache bucket for
+            this file. One bucket per file regardless of resume offset —
+            playback positions are handled client-side via the native
+            ``HTMLMediaElement.currentTime`` seek once the manifest
+            loads.
+        """
+        return hashlib.md5(file_path.encode()).hexdigest()
+
+    def get_file_by_hash(self, path_hash: str, relative_path: str) -> Path | None:
+        """Get any file from cache by hash + relative path.
+
+        Includes path traversal protection via ``Path.is_relative_to``.
+        Touches the access timestamp on hit so the eviction loop knows
+        the cache is still being consumed by a player.
+        """
+        cache_root = (self._cache_dir / path_hash).resolve()
+        target = (cache_root / relative_path).resolve()
+
+        try:
+            target.relative_to(cache_root)
+        except ValueError:
+            return None
+
+        if not target.is_file():
+            return None
+        self._touch_access(path_hash)
+        return target
+
+    def is_complete(self, path_hash: str) -> bool:
+        """Check if generation is fully complete."""
+        video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
+        if not video_playlist.is_file():
+            flat = self._cache_dir / path_hash / "playlist.m3u8"
+            if not flat.is_file():
+                return False
+            try:
+                return "#EXT-X-ENDLIST" in flat.read_text(encoding="utf-8")
+            except OSError:
+                return False
+        try:
+            return "#EXT-X-ENDLIST" in video_playlist.read_text(encoding="utf-8")
+        except OSError:
+            return False
+
+    def get_master_playlist(self, path_hash: str) -> str | None:
+        """Get master playlist content, falling back to legacy flat playlist.
+
+        Touches access time on hit so the player attaching to a still-warm
+        cache resets the idle timer immediately.
+        """
+        for name in ("master.m3u8", "playlist.m3u8"):
+            path = self._cache_dir / path_hash / name
+            if path.is_file():
+                try:
+                    content = path.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                self._touch_access(path_hash)
+                return content
+        return None
+
+    def wait_for_subtitle(
+        self,
+        path_hash: str,
+        sub_index: int,
+        timeout: float,
+    ) -> bool:
+        """Block until a specific subtitle has finished extracting.
+
+        Args:
+            path_hash: Cache bucket hash returned by ``get_path_hash``.
+            sub_index: Track index used to build ``sub_<index>/`` on disk.
+            timeout: Max seconds to block. Should be longer than the
+                worst-case ffmpeg subtitle extraction so the player gets
+                the .vtt instead of a 404.
+
+        Returns:
+            ``True`` if the readiness event fired (extraction is done),
+            or if the subtitle isn't being tracked at all (caller should
+            fall through to a normal filesystem lookup). ``False`` only
+            when the timeout elapsed before extraction completed.
+        """
+        with self._lock:
+            event = self._subtitle_events.get(path_hash, {}).get(sub_index)
+        if event is None:
+            return True
+        return event.wait(timeout)
+
+    def get_cached_tracks(self, path_hash: str) -> dict[str, Any] | None:
+        """Get cached probe result from tracks.json."""
+        tracks_file = self._cache_dir / path_hash / "tracks.json"
+        if not tracks_file.is_file():
+            return None
+        try:
+            data: dict[str, Any] = json.loads(tracks_file.read_text(encoding="utf-8"))
+            return data
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    async def ensure_playlist(self, file_path: str) -> str:
+        """Start generation and wait until the first segments are ready.
+
+        Args:
+            file_path: Absolute path to the source video file.
+
+        Returns:
+            The path hash for this file. Always the same hash for a
+            given path — resume positions are applied client-side after
+            the full manifest loads, so a single cache bucket per file
+            is reused across every session.
+
+        Raises:
+            RuntimeError: If FFmpeg is not available, fails, or times out.
+            FileNotFoundError: If the source file does not exist.
+        """
+        path_hash = self.get_path_hash(file_path)
+        # Touch immediately so the eviction loop never kills a process
+        # that the user just asked for, even if no segments have been
+        # served yet (e.g. while waiting for ffmpeg to start).
+        self._touch_access(path_hash)
+
+        if self.is_complete(path_hash):
+            return path_hash
+
+        if not shutil.which("ffmpeg"):
+            msg = "FFmpeg is required for HLS streaming but was not found"
+            raise RuntimeError(msg)
+
+        source = Path(file_path)
+        if not source.is_file():
+            msg = f"Source file not found: {file_path}"
+            raise FileNotFoundError(msg)
+
+        await asyncio.to_thread(self._start_generation, file_path)
+
+        video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
+        attempts = int(_POLL_TIMEOUT / _POLL_INTERVAL)
+        for _ in range(attempts):
+            if video_playlist.is_file():
+                try:
+                    content = video_playlist.read_text(encoding="utf-8")
+                    # Count #EXTINF directives — these are only added by
+                    # ffmpeg AFTER a segment is fully written and renamed,
+                    # so anything counted here is safe to serve.
+                    extinf_count = content.count("#EXTINF:")
+                    if extinf_count >= _MIN_SEGMENTS_FRESH:
+                        return path_hash
+                except OSError:
+                    pass
+
+            main_proc = self._get_main_process(path_hash)
+            if main_proc and main_proc.poll() is not None:
+                self._handle_generation_failure(path_hash, main_proc)
+
+            await asyncio.sleep(_POLL_INTERVAL)
+
+        msg = f"Timeout waiting for HLS segments ({_POLL_TIMEOUT}s)"
+        raise RuntimeError(msg)
+
+    def probe_tracks(self, file_path: str) -> ProbeResult:
+        """Probe a file for tracks, using cache when available."""
+        path_hash = self.get_path_hash(file_path)
+        cached = self.get_cached_tracks(path_hash)
+        if cached:
+            return self._deserialize_probe(cached)
+        return self._probe.probe(file_path)
+
+    def clear_cache(self, file_path: str | None = None) -> None:
+        """Clear cached HLS segments.
+
+        Args:
+            file_path: Clear cache for specific file, or all if ``None``.
+        """
+        if file_path:
+            path_hash = self.get_path_hash(file_path)
+            self._kill_processes(path_hash)
+            shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
+        else:
+            with self._lock:
+                for path_hash in list(self._processes):
+                    self._kill_processes(path_hash)
+            shutil.rmtree(self._cache_dir, ignore_errors=True)
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # -- Private: process management -------------------------------------------
+
+    def _get_main_process(self, path_hash: str) -> subprocess.Popen[bytes] | None:
+        """Get the main (video) FFmpeg process for a generation, if any."""
+        with self._lock:
+            procs = self._processes.get(path_hash, [])
+        return procs[0] if procs else None
+
+    def _kill_processes(self, path_hash: str) -> None:
+        """Kill all running FFmpeg processes for a path hash.
+
+        Also releases any waiters parked on subtitle readiness events for
+        this bucket so they don't block their full timeout after we've
+        already torn down the cache.
+        """
+        with self._lock:
+            for proc in self._processes.pop(path_hash, []):
+                if proc.poll() is None:
+                    proc.kill()
+            self._last_access.pop(path_hash, None)
+            events = self._subtitle_events.pop(path_hash, {})
+        for event in events.values():
+            event.set()
+
+    def _handle_generation_failure(
+        self,
+        path_hash: str,
+        proc: subprocess.Popen[bytes],
+    ) -> None:
+        """Log error, clean up cache, and raise for a failed FFmpeg process."""
+        stderr = proc.stderr.read().decode() if proc.stderr else ""
+        _logger.error("FFmpeg exited with code %d: %s", proc.returncode, stderr)
+        shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
+        msg = f"FFmpeg failed (exit {proc.returncode}): {stderr}"
+        raise RuntimeError(msg)
+
+    # -- Private: generation ---------------------------------------------------
+
+    def _start_generation(self, file_path: str) -> str:
+        """Start all FFmpeg processes for multi-track HLS generation.
+
+        Always transcodes from t=0 into a single per-file bucket. Resume
+        positions are applied client-side via ``video.currentTime`` once
+        the event-style playlist starts populating — this keeps the
+        cache reusable across sessions and lets the browser seek freely
+        in either direction.
+
+        Args:
+            file_path: Absolute path to the source video file.
+        """
+        source = self._validate_source(file_path)
+        safe_path = str(source)
+        path_hash = self.get_path_hash(file_path)
+
+        if self.is_complete(path_hash):
+            return path_hash
+
+        # Probe outside the lock (potentially slow I/O)
+        probe_result = self._probe.probe(safe_path)
+
+        # Pick the subtitles we'll actually try to convert. Image-based
+        # tracks (PGS, VOBSUB) and externals without a resolved file path
+        # are filtered out so we don't create dangling readiness events
+        # the file route would block on indefinitely.
+        text_subs: list[SubtitleTrack] = [
+            s
+            for s in probe_result.all_subtitles
+            if s.is_text_based and (not s.is_external or s.file_path is not None)
+        ]
+
+        with self._lock:
+            # Re-check after acquiring lock
+            if self.is_complete(path_hash):
+                return path_hash
+
+            running = [p for p in self._processes.get(path_hash, []) if p.poll() is None]
+            if running:
+                return path_hash
+            self._processes.pop(path_hash, None)
+
+            # Clean stale cache
+            output_dir = self._cache_dir / path_hash
+            if output_dir.exists():
+                _logger.info("Cleaning stale cache for %s", path_hash)
+                shutil.rmtree(output_dir, ignore_errors=True)
+
+            output_dir.mkdir(parents=True, exist_ok=True)
+            self._save_probe_cache(output_dir, probe_result)
+
+            procs: list[subprocess.Popen[bytes]] = []
+
+            # 1. Main: video + default audio (always first in list)
+            video_dir = output_dir / _VIDEO_DIR
+            video_dir.mkdir()
+            cmd = with_ffmpeg_threads(
+                self._build_video_cmd(safe_path, video_dir, probe_result),
+                self._ffmpeg_threads,
+            )
+            _logger.info("Starting video HLS for %s", safe_path)
+            procs.append(self._spawn_ffmpeg(cmd))
+
+            # 2. Additional audio tracks (audio-only HLS)
+            primary_audio_idx = _primary_audio_index(probe_result)
+            for track in probe_result.audio_tracks:
+                if track.index == primary_audio_idx:
+                    continue
+                audio_dir = output_dir / f"audio_{track.index}"
+                audio_dir.mkdir()
+                cmd = with_ffmpeg_threads(
+                    self._build_audio_cmd(safe_path, audio_dir, track.index),
+                    self._ffmpeg_threads,
+                )
+                _logger.info(
+                    "Starting audio HLS for track %d (%s) of %s",
+                    track.index,
+                    track.language.value,
+                    safe_path,
+                )
+                procs.append(self._spawn_ffmpeg(cmd))
+
+            # 3. Build master playlist now — it references sub_N/playlist.m3u8
+            # paths that get filled in by the background subtitle extraction
+            # below. The player only fetches those URIs when the user enables
+            # a subtitle (all entries are emitted as DEFAULT=NO,AUTOSELECT=NO),
+            # so racing them against playback start is safe.
+            self._build_master_playlist(output_dir, probe_result)
+
+            # 4. Pre-create per-subtitle readiness events. They MUST be
+            # registered before _start_generation returns so the file
+            # route can find them the instant the player picks a track.
+            if text_subs:
+                self._subtitle_events[path_hash] = {
+                    sub.index: threading.Event() for sub in text_subs
+                }
+
+            self._processes[path_hash] = procs
+            self._last_access[path_hash] = time.monotonic()
+
+        # 5. Extract each subtitle in its own background thread. Running
+        # them in parallel (instead of one big serial thread) means a
+        # user-selected subtitle only waits for its own ffmpeg, not for
+        # every other track that happens to be earlier in the list.
+        for sub in text_subs:
+            threading.Thread(
+                target=self._extract_one_subtitle,
+                args=(safe_path, output_dir, sub, path_hash),
+                daemon=True,
+                name=f"hls-sub-{path_hash[:8]}-{sub.index}",
+            ).start()
+
+        return path_hash
+
+    @staticmethod
+    def _spawn_ffmpeg(cmd: list[str]) -> subprocess.Popen[bytes]:
+        """Spawn an FFmpeg subprocess.
+
+        All arguments are built internally from validated paths,
+        not from user-controlled input.
+        """
+        return subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+
+    # -- Private: FFmpeg commands ----------------------------------------------
+
+    @staticmethod
+    def _probe_video_codec(file_path: str) -> str | None:
+        """Detect video codec using ffprobe."""
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=codec_name",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    file_path,
+                ],
+                **SUBPROCESS_TEXT_KWARGS,
+                check=False,
+                timeout=10,
+            )
+            codec = result.stdout.strip().lower()
+            return codec if codec else None
+        except Exception:
+            return None
+
+    def _build_video_cmd(
+        self,
+        file_path: str,
+        output_dir: Path,
+        probe: ProbeResult,
+    ) -> list[str]:
+        """Build FFmpeg command for video + default audio.
+
+        Always transcodes (or remuxes, for already-H.264 sources) from
+        the beginning of the file. Resume positions are a client-side
+        concern — the player calls ``video.currentTime`` once the
+        event-style playlist starts populating.
+        """
+        codec = self._probe_video_codec(file_path)
+        needs_transcode = codec not in _BROWSER_SAFE_CODECS
+
+        if needs_transcode:
+            _logger.info("Source codec %s — transcoding to H.264", codec)
+            video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
+        else:
+            _logger.info("Source codec %s — copying", codec)
+            video_args = ["-c:v", "copy"]
+
+        primary_idx = _primary_audio_index(probe)
+        audio_map = f"0:a:{primary_idx}"
+
+        return [
+            "ffmpeg",
+            "-i",
+            file_path,
+            "-map",
+            "0:v:0",
+            "-map",
+            audio_map,
+            "-sn",
+            *video_args,
+            "-c:a",
+            "aac",
+            "-ac",
+            "2",
+            "-ar",
+            "48000",
+            "-hls_time",
+            str(_SEGMENT_DURATION),
+            "-hls_list_size",
+            "0",
+            "-hls_playlist_type",
+            "event",
+            # temp_file: write each segment to .ts.tmp and rename to .ts
+            # only after it's fully written. Prevents the player from
+            # racing the encoder and grabbing partial bytes.
+            "-hls_flags",
+            "temp_file",
+            "-hls_segment_filename",
+            str(output_dir / "segment_%04d.ts"),
+            "-loglevel",
+            "error",
+            "-y",
+            str(output_dir / "playlist.m3u8"),
+        ]
+
+    @staticmethod
+    def _build_audio_cmd(
+        file_path: str,
+        output_dir: Path,
+        audio_index: int,
+    ) -> list[str]:
+        """Build FFmpeg command for audio-only HLS track."""
+        return [
+            "ffmpeg",
+            "-i",
+            file_path,
+            "-map",
+            f"0:a:{audio_index}",
+            "-vn",
+            "-sn",
+            "-c:a",
+            "aac",
+            "-ac",
+            "2",
+            "-ar",
+            "48000",
+            "-hls_time",
+            str(_SEGMENT_DURATION),
+            "-hls_list_size",
+            "0",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "temp_file",
+            "-hls_segment_filename",
+            str(output_dir / "segment_%04d.ts"),
+            "-loglevel",
+            "error",
+            "-y",
+            str(output_dir / "playlist.m3u8"),
+        ]
+
+    # -- Private: subtitle extraction ------------------------------------------
+
+    def _extract_one_subtitle(
+        self,
+        file_path: str,
+        output_dir: Path,
+        track: SubtitleTrack,
+        path_hash: str,
+    ) -> None:
+        """Extract a single text-based subtitle to WebVTT.
+
+        Runs ffmpeg synchronously and signals the readiness Event for
+        this track in ``self._subtitle_events`` from a ``finally``
+        block, so any route handler waiting on it always unblocks (even
+        on ffmpeg failure or timeout) and gets a chance to respond —
+        typically with a 404 if extraction never produced a file.
+
+        The source is read from the beginning; subtitle timestamps are
+        in source time, which matches the HLS stream (also from t=0)
+        and the player's ``video.currentTime``.
+        """
+        try:
+            sub_dir = output_dir / f"sub_{track.index}"
+            sub_dir.mkdir(exist_ok=True)
+            vtt_path = sub_dir / "sub.vtt"
+
+            if track.is_external:
+                if track.file_path is None:
+                    return
+                input_arg = track.file_path.value
+                log_label = f"external subtitle {input_arg}"
+                try:
+                    subprocess.run(
+                        with_ffmpeg_threads(
+                            [
+                                "ffmpeg",
+                                "-i",
+                                input_arg,
+                                "-c:s",
+                                "webvtt",
+                                "-loglevel",
+                                "error",
+                                "-y",
+                                str(vtt_path),
+                            ],
+                            self._ffmpeg_threads,
+                        ),
+                        **SUBPROCESS_TEXT_KWARGS,
+                        check=False,
+                        timeout=120,
+                    )
+                except subprocess.TimeoutExpired:
+                    _logger.warning("Extraction timed out for %s", log_label)
+                    return
+            else:
+                log_label = f"subtitle track {track.index}"
+                try:
+                    subprocess.run(
+                        with_ffmpeg_threads(
+                            [
+                                "ffmpeg",
+                                "-i",
+                                file_path,
+                                "-map",
+                                f"0:s:{track.index}",
+                                "-c:s",
+                                "webvtt",
+                                "-loglevel",
+                                "error",
+                                "-y",
+                                str(vtt_path),
+                            ],
+                            self._ffmpeg_threads,
+                        ),
+                        **SUBPROCESS_TEXT_KWARGS,
+                        check=False,
+                        timeout=120,
+                    )
+                except subprocess.TimeoutExpired:
+                    _logger.warning("Extraction timed out for %s", log_label)
+                    return
+
+            if vtt_path.is_file():
+                _write_subtitle_playlist(sub_dir)
+                _logger.info("Extracted %s to %s", log_label, vtt_path)
+            else:
+                _logger.warning("Failed to extract %s", log_label)
+        finally:
+            with self._lock:
+                event = self._subtitle_events.get(path_hash, {}).get(track.index)
+            if event is not None:
+                event.set()
+
+    # -- Private: master playlist ----------------------------------------------
+
+    @staticmethod
+    def _build_master_playlist(output_dir: Path, probe: ProbeResult) -> None:
+        """Generate master.m3u8 with audio renditions and subtitle tracks."""
+        lines = ["#EXTM3U", "#EXT-X-VERSION:3"]
+
+        has_alt_audio = len(probe.audio_tracks) > 1
+        audio_group = 'AUDIO="audio"' if has_alt_audio else ""
+        text_subs = [s for s in probe.all_subtitles if s.is_text_based]
+        sub_group = 'SUBTITLES="subs"' if text_subs else ""
+
+        primary_idx = _primary_audio_index(probe)
+        if has_alt_audio:
+            for track in probe.audio_tracks:
+                is_primary = track.index == primary_idx
+                name = track.title or f"{track.language.value.upper()} ({track.channel_layout})"
+                if is_primary:
+                    lines.append(
+                        f'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",'
+                        f'NAME="{name}",LANGUAGE="{track.language.value}",'
+                        f"DEFAULT=YES,AUTOSELECT=YES"
+                    )
+                else:
+                    lines.append(
+                        f'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",'
+                        f'NAME="{name}",LANGUAGE="{track.language.value}",'
+                        f"DEFAULT=NO,AUTOSELECT=NO,"
+                        f'URI="audio_{track.index}/playlist.m3u8"'
+                    )
+
+        for sub in text_subs:
+            sub_name = sub.title or f"{sub.language.value.upper()}"
+            is_forced = "YES" if sub.is_forced else "NO"
+            lines.append(
+                f'#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",'
+                f'NAME="{sub_name}",LANGUAGE="{sub.language.value}",'
+                f"DEFAULT=NO,AUTOSELECT=NO,FORCED={is_forced},"
+                f'URI="sub_{sub.index}/playlist.m3u8"'
+            )
+
+        groups = ",".join(filter(None, [audio_group, sub_group]))
+        stream_inf = "#EXT-X-STREAM-INF:BANDWIDTH=5000000"
+        if groups:
+            stream_inf += f",{groups}"
+        lines.append(stream_inf)
+        lines.append("video/playlist.m3u8")
+
+        master_path = output_dir / "master.m3u8"
+        master_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        _logger.info("Master playlist written to %s", master_path)
+
+    # -- Private: probe cache --------------------------------------------------
+
+    @staticmethod
+    def _save_probe_cache(output_dir: Path, probe: ProbeResult) -> None:
+        """Save probe result as JSON for the tracks API."""
+        data = {
+            "resolution": probe.resolution,
+            "audio_tracks": [
+                {
+                    "index": t.index,
+                    "language": t.language.value,
+                    "codec": t.codec,
+                    "channels": t.channels,
+                    "title": t.title,
+                    "is_default": t.is_default,
+                    "bitrate": t.bitrate,
+                }
+                for t in probe.audio_tracks
+            ],
+            "subtitle_tracks": [
+                {
+                    "index": t.index,
+                    "language": t.language.value,
+                    "format": t.format,
+                    "title": t.title,
+                    "is_default": t.is_default,
+                    "is_forced": t.is_forced,
+                    "is_external": t.is_external,
+                    "is_image_based": t.is_image_based,
+                }
+                for t in probe.all_subtitles
+            ],
+        }
+        (output_dir / "tracks.json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _deserialize_probe(data: dict[str, Any]) -> ProbeResult:
+        """Reconstruct ProbeResult from cached JSON."""
+        from src.shared_kernel.value_objects.language_code import LanguageCode
+        from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
+
+        audio = [
+            AudioTrack(
+                index=t["index"],
+                language=LanguageCode(t["language"]),
+                codec=t["codec"],
+                channels=t["channels"],
+                title=t.get("title"),
+                is_default=t["is_default"],
+                bitrate=t.get("bitrate"),
+            )
+            for t in data.get("audio_tracks", [])
+        ]
+        subs = [
+            SubtitleTrack(
+                index=t["index"],
+                language=LanguageCode(t["language"]),
+                format=t["format"],
+                title=t.get("title"),
+                is_default=t.get("is_default", False),
+                is_forced=t.get("is_forced", False),
+                is_external=t.get("is_external", False),
+            )
+            for t in data.get("subtitle_tracks", [])
+            if not t.get("is_external", False)
+        ]
+        ext = [
+            SubtitleTrack(
+                index=t["index"],
+                language=LanguageCode(t["language"]),
+                format=t["format"],
+                title=t.get("title"),
+                is_default=t.get("is_default", False),
+                is_forced=t.get("is_forced", False),
+                is_external=True,
+                file_path=None,
+            )
+            for t in data.get("subtitle_tracks", [])
+            if t.get("is_external", False)
+        ]
+        return ProbeResult(
+            audio_tracks=audio,
+            subtitle_tracks=subs,
+            external_subtitles=ext,
+            resolution=data.get("resolution"),
+        )
+
+    # -- Private: validation ---------------------------------------------------
+
+    @staticmethod
+    def _validate_source(file_path: str) -> Path:
+        """Resolve and validate that file_path is an existing file."""
+        resolved = Path(file_path).resolve()
+        if not resolved.is_file():
+            msg = f"Source file not found: {file_path}"
+            raise FileNotFoundError(msg)
+        return resolved
+
+
+def _write_subtitle_playlist(sub_dir: Path) -> None:
+    """Write a simple HLS playlist wrapping a single VTT file."""
+    playlist = sub_dir / "playlist.m3u8"
+    playlist.write_text(
+        "#EXTM3U\n"
+        "#EXT-X-VERSION:3\n"
+        "#EXT-X-TARGETDURATION:99999\n"
+        "#EXT-X-PLAYLIST-TYPE:VOD\n"
+        "#EXTINF:99999,\n"
+        "sub.vtt\n"
+        "#EXT-X-ENDLIST\n",
+        encoding="utf-8",
+    )
+
+
+__all__ = ["HlsService"]

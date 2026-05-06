@@ -12,6 +12,7 @@ from src.building_blocks.domain.errors import (
     ExceptionDetail,
     Severity,
 )
+from src.building_blocks.domain.events import DomainEvent
 from src.building_blocks.domain.external_id import (
     BASE62_ALPHABET,
     RANDOM_PART_LENGTH,
@@ -36,6 +37,7 @@ __all__ = [
     "DateValueObject",
     "DomainConflictException",
     "DomainEntity",
+    "DomainEvent",
     "DomainException",
     "DomainModel",
     "DomainNotFoundException",

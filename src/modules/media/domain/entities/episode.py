@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import date  # noqa: TCH003 - Pydantic needs this at runtime
+from typing import Self
 
 from pydantic import Field, field_validator
 
 from src.building_blocks.domain import DomainEntity
+from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixin
+from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
+    AirDate,
     Duration,
     EpisodeId,
-    FilePath,
+    EpisodeNumber,
+    ImageUrl,
+    IntroMarker,
     MediaFile,
+    SeasonNumber,
     SeriesId,
     Title,
 )
@@ -45,8 +51,8 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
 
     # Relationship
     series_id: SeriesId
-    season_number: int = Field(ge=0)  # 0 for specials
-    episode_number: int = Field(ge=1)
+    season_number: SeasonNumber
+    episode_number: EpisodeNumber
 
     # Content info
     title: Title
@@ -55,10 +61,14 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
 
     # File variants
     files: list[MediaFile] = Field(default_factory=list)
-    thumbnail_path: FilePath | None = None
+    thumbnail_path: ImageUrl | None = None
+    scrub_preview_path: ImageUrl | None = None
 
     # Metadata
-    air_date: date | None = None
+    air_date: AirDate | None = None
+
+    # Skip-intro support
+    intro: IntroMarker | None = None
 
     # noinspection PyNestedDecorators
     @field_validator("id", mode="before")
@@ -68,6 +78,44 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
         if v is None:
             return None
         return EpisodeId(v) if isinstance(v, str) else v
+
+    def with_intro_marker(self, marker: IntroMarker) -> Self:
+        """Return a copy with the intro marker set.
+
+        Args:
+            marker: The intro marker to attach to this episode.
+
+        Returns:
+            A new Episode with the marker applied, or ``self`` if the
+            same marker is already in place.
+
+        Raises:
+            BusinessRuleViolationException: If ``marker.end_seconds``
+                exceeds the episode's duration.
+        """
+        if marker.end_seconds > self.duration.value:
+            raise BusinessRuleViolationException(
+                message="Intro end_seconds cannot exceed episode duration",
+                rule_code=MediaRuleCodes.INTRO_EXCEEDS_DURATION,
+                tags={
+                    "episode_duration": self.duration.value,
+                    "intro_end_seconds": marker.end_seconds,
+                },
+            )
+        if self.intro == marker:
+            return self
+        return self.with_updates(intro=marker)
+
+    def with_intro_cleared(self) -> Self:
+        """Return a copy with the intro marker removed.
+
+        Returns:
+            A new Episode with ``intro`` set to ``None``, or ``self`` if
+            it was already absent.
+        """
+        if self.intro is None:
+            return self
+        return self.with_updates(intro=None)
 
 
 __all__ = ["Episode"]

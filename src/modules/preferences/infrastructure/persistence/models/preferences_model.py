@@ -1,0 +1,33 @@
+"""User preferences ORM model."""
+
+from sqlalchemy import Float, String
+from sqlalchemy.orm import Mapped, mapped_column
+
+from src.infrastructure.persistence.base import Base
+
+
+class PreferencesModel(Base):
+    """SQLAlchemy model for per-profile playback preferences.
+
+    Singleton-per-profile design: there's exactly one row per
+    ``profile_id``. The unique index on ``profile_id`` enforces it
+    at the DB level so a race between two concurrent first-saves
+    can't materialise two rows.
+
+    Maps to the ``preferences`` table.
+    """
+
+    profile_id: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    audio_lang: Mapped[str] = mapped_column(String(10), nullable=False, default="pt-BR")
+    subtitle_lang: Mapped[str] = mapped_column(String(10), nullable=False, default="pt-BR")
+    subtitle_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="foreignOnly")
+    default_quality: Mapped[str] = mapped_column(String(20), nullable=False, default="best")
+    speed: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+
+
+__all__ = ["PreferencesModel"]

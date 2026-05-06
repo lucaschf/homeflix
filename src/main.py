@@ -12,9 +12,59 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.building_blocks.presentation import RequestContextMiddleware
+from src.building_blocks.presentation.exception_handlers import register_exception_handlers
 from src.config.containers import ApplicationContainer
 from src.config.logging import get_logger, setup_logging
 from src.config.settings import get_settings
+from src.modules.catalog_requests.presentation.routes import catalog_request_router
+from src.modules.collections.presentation.routes import custom_list_router, watchlist_router
+from src.modules.identity.infrastructure.auth import auth_backend, fastapi_users
+from src.modules.identity.presentation.routes import profile_router, users_router
+from src.modules.library.presentation.routes.library_routes import (
+    router as library_router,
+)
+from src.modules.media.presentation.routes import (
+    catalog_router,
+    collection_router,
+    enrichment_router,
+    featured_router,
+    movie_router,
+    people_router,
+    scan_router,
+    search_router,
+    series_router,
+    stream_router,
+)
+from src.modules.preferences.presentation.routes.preferences_routes import (
+    router as preferences_router,
+)
+from src.modules.watch_progress.presentation.routes import progress_router
+
+#: Module paths whose ``@inject``-decorated callables are wired to the
+#: dependency-injector container. Extracted as a module constant so e2e
+#: tests can build a container with the same wiring without copying the
+#: list (drift between the two would mean tests miss DI-resolved deps).
+WIRED_ROUTE_MODULES: tuple[str, ...] = (
+    "src.modules.media.presentation.routes.catalog_routes",
+    "src.modules.media.presentation.routes.collection_routes",
+    "src.modules.media.presentation.routes.search_routes",
+    "src.modules.media.presentation.routes.enrichment_routes",
+    "src.modules.media.presentation.routes.featured_routes",
+    "src.modules.media.presentation.routes.movie_routes",
+    "src.modules.media.presentation.routes.people_routes",
+    "src.modules.media.presentation.routes.scan_routes",
+    "src.modules.media.presentation.routes.series_routes",
+    "src.modules.media.presentation.routes.stream_routes",
+    "src.modules.watch_progress.presentation.routes.progress_routes",
+    "src.modules.collections.presentation.routes.watchlist_routes",
+    "src.modules.collections.presentation.routes.custom_list_routes",
+    "src.modules.catalog_requests.presentation.routes.catalog_request_routes",
+    "src.modules.library.presentation.routes.library_routes",
+    "src.modules.preferences.presentation.routes.preferences_routes",
+    "src.modules.identity.presentation.routes.profile_routes",
+    "src.modules.identity.presentation.routes.users_routes",
+)
 
 
 def create_container() -> ApplicationContainer:
@@ -47,7 +97,40 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     # Initialize DI container
-    app.state.container = create_container()
+    container = create_container()
+    container.wire(modules=list(WIRED_ROUTE_MODULES))
+    app.state.container = container
+
+    # Initialize database
+    await container.infrastructure.init_resources()
+
+    # Subscribe domain event handlers
+    _subscribe_event_handlers(container)
+
+    # Start background scheduler (library scans + thumbnail backfill +
+    # intro detection). The provider depends on the session_factory
+    # Resource, so it resolves asynchronously — must be awaited. Always
+    # pin a slot on app.state so the shutdown handler can do a single
+    # truthy check.
+    app.state.scheduler = None
+    if settings.scheduler_enabled:
+        scheduler = await container.library_scan_scheduler()
+        await scheduler.start()
+        if settings.thumbnail_backfill_enabled:
+            backfill_job = await container.thumbnail_backfill_job()
+            scheduler.add_interval_job(
+                backfill_job.run,
+                minutes=settings.thumbnail_backfill_interval_minutes,
+                job_id="homeflix:thumbnail-backfill",
+            )
+        if settings.intro_detection_enabled:
+            intro_job = await container.intro_detection_job()
+            scheduler.add_interval_job(
+                intro_job.run,
+                minutes=settings.intro_detection_interval_minutes,
+                job_id="homeflix:intro-detection",
+            )
+        app.state.scheduler = scheduler
 
     logger.info("Application ready")
 
@@ -55,8 +138,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Shutdown
     logger.info("Application shutting down")
-
+    if app.state.scheduler:
+        await app.state.scheduler.stop()
+    await container.infrastructure.shutdown_resources()
     logger.info("Application stopped")
+
+
+def _subscribe_event_handlers(container: ApplicationContainer) -> None:
+    """Wire domain event handlers to the event bus.
+
+    Centralises event handler registration so it stays alongside
+    the rest of the container configuration.
+    """
+    from src.modules.media.application.event_handlers import OnMediaCreatedHandler
+    from src.modules.media.domain.events import MediaCreatedEvent
+
+    event_bus = container.infrastructure.event_bus()
+    handler = OnMediaCreatedHandler(
+        enrich_movie_factory=container.media.enrich_movie_metadata,
+        enrich_series_factory=container.media.enrich_series_metadata,
+    )
+    event_bus.subscribe(MediaCreatedEvent, handler)
 
 
 def create_app() -> FastAPI:
@@ -81,6 +183,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Request correlation + timing — must run before routes so the
+    # request_id is bound while handlers execute.
+    app.add_middleware(RequestContextMiddleware)
+
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -90,8 +196,38 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Register health check routes
+    # Translate typed exceptions into the standard v3 error envelope
+    register_exception_handlers(app)
+
+    # Register routes
     register_health_routes(app)
+    app.include_router(catalog_router)
+    app.include_router(collection_router)
+    app.include_router(search_router)
+    app.include_router(enrichment_router)
+    app.include_router(featured_router)
+    app.include_router(movie_router)
+    app.include_router(people_router)
+    app.include_router(scan_router)
+    app.include_router(series_router)
+    app.include_router(stream_router)
+    app.include_router(progress_router)
+    app.include_router(watchlist_router)
+    app.include_router(custom_list_router)
+    app.include_router(catalog_request_router)
+    app.include_router(library_router)
+    app.include_router(preferences_router)
+
+    # Identity — FastAPI Users built-in cookie auth (login/logout) plus
+    # the custom users / profiles surface that returns prefixed external
+    # IDs and routes through the IdentityContainer use cases.
+    app.include_router(
+        fastapi_users.get_auth_router(auth_backend),
+        prefix="/api/v1/auth/cookie",
+        tags=["Auth"],
+    )
+    app.include_router(users_router)
+    app.include_router(profile_router)
 
     return app
 
@@ -99,7 +235,7 @@ def create_app() -> FastAPI:
 def register_health_routes(app: FastAPI) -> None:
     """Register health check endpoints."""
 
-    @app.get("/health", tags=["Health"])
+    @app.get("/health", tags=["Health"])  # type: ignore[misc]
     async def health_check() -> dict[str, Any]:
         """Basic health check endpoint."""
         return {
@@ -108,7 +244,7 @@ def register_health_routes(app: FastAPI) -> None:
             "version": "0.1.0",
         }
 
-    @app.get("/health/ready", tags=["Health"])
+    @app.get("/health/ready", tags=["Health"])  # type: ignore[misc]
     async def readiness_check() -> dict[str, Any]:
         """Readiness check - verifies all dependencies are available."""
         checks = {
@@ -124,7 +260,7 @@ def register_health_routes(app: FastAPI) -> None:
             "checks": checks,
         }
 
-    @app.get("/", tags=["Root"])
+    @app.get("/", tags=["Root"])  # type: ignore[misc]
     async def root() -> dict[str, str]:
         """Root endpoint with API information."""
         return {

@@ -1,0 +1,90 @@
+"""Watchlist REST API routes."""
+
+from dataclasses import asdict
+from typing import Any
+
+from dependency_injector.wiring import Provide, inject
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
+
+from src.building_blocks.presentation import api_list, api_single
+from src.config.containers import ApplicationContainer
+from src.modules.collections.application.dtos import (
+    CheckWatchlistInput,
+    GetWatchlistInput,
+    ToggleWatchlistInput,
+)
+from src.modules.collections.application.use_cases import (
+    CheckWatchlistUseCase,
+    GetWatchlistUseCase,
+    ToggleWatchlistUseCase,
+)
+from src.modules.collections.presentation.dependencies import resolve_profile_id
+from src.shared_kernel.value_objects import CollectionMediaType
+
+router = APIRouter(prefix="/api/v1/watchlist", tags=["Watchlist"])
+
+
+# -- Schemas -------------------------------------------------------------------
+
+
+class ToggleWatchlistRequest(BaseModel):
+    """Request body for toggling a watchlist item."""
+
+    media_id: str
+    media_type: CollectionMediaType
+
+
+# -- Endpoints -----------------------------------------------------------------
+
+
+@router.post("/toggle")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def toggle_watchlist(
+    body: ToggleWatchlistRequest,
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: ToggleWatchlistUseCase = Depends(
+        Provide[ApplicationContainer.collections.toggle_watchlist],
+    ),
+) -> dict[str, Any]:
+    """Add or remove a media item from the caller's watchlist."""
+    result = await use_case.execute(
+        ToggleWatchlistInput(
+            profile_id=profile_id,
+            media_id=body.media_id,
+            media_type=body.media_type,
+        ),
+    )
+    return api_single("watchlist", asdict(result))
+
+
+@router.get("")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def get_watchlist(
+    limit: int = Query(100, ge=1, le=500),
+    lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: GetWatchlistUseCase = Depends(
+        Provide[ApplicationContainer.collections.get_watchlist],
+    ),
+) -> dict[str, Any]:
+    """List items in the caller's watchlist."""
+    items = await use_case.execute(GetWatchlistInput(profile_id=profile_id, limit=limit, lang=lang))
+    return api_list([asdict(item) for item in items])
+
+
+@router.get("/check/{media_id}")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def check_watchlist(
+    media_id: str,
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: CheckWatchlistUseCase = Depends(
+        Provide[ApplicationContainer.collections.check_watchlist],
+    ),
+) -> dict[str, Any]:
+    """Check if a media item is in the caller's watchlist."""
+    in_list = await use_case.execute(CheckWatchlistInput(profile_id=profile_id, media_id=media_id))
+    return api_single("watchlist", {"in_list": in_list})
+
+
+__all__ = ["router"]

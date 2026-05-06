@@ -12,31 +12,69 @@ HomeFlix is a self-hosted media server that allows you to:
 
 - 📁 Scan and organize your local video library
 - 🎯 Auto-fetch metadata from TMDB/OMDb
-- ▶️ Stream videos in your browser with subtitle support
-- 📊 Track watch progress across devices
-- 📋 Create watchlists and custom collections
+- ▶️ Stream videos in your browser with multi-audio / multi-subtitle support
+- 📊 Track watch progress per profile across devices
+- 👪 Share the household with multiple profiles (kids flag, library ACLs, custom avatars)
+- 📋 Create watchlists and custom collections per profile
+- ⏭️ Skip intros automatically (Chromaprint fingerprinting) and scrub with thumbnail trickplay
+- 🔍 Full-text search across the catalog
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
 | Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0, Pydantic v2 |
-| Frontend | React 18+, TypeScript, TanStack Query, Video.js |
+| Frontend | React 18+, TypeScript, TanStack Query, MUI, hls.js |
 | Database | SQLite (dev) / PostgreSQL (prod) |
 | External APIs | TMDB, OMDb |
 
 ## Architecture
 
-This project follows **Clean Architecture** with **Domain-Driven Design** principles.
+This project follows **Screaming Architecture** with **Clean Architecture** and **DDD** principles (see [ADR-008](docs/adr/ADR-008.md)).
 
 ```
 src/
-├── domain/           # Business rules (entities, value objects)
-├── application/      # Use cases and orchestration
-├── infrastructure/   # External services (DB, APIs, filesystem)
-├── presentation/     # REST API (FastAPI)
-├── config/           # Settings and DI
-└── i18n/             # Internationalization (en, pt-BR)
+├── building_blocks/      # Domain-agnostic base (Entity, ValueObject, errors, event bus)
+├── shared_kernel/        # Cross-module value objects (FilePath, LanguageCode, AudioTrack)
+├── modules/
+│   ├── media/             # Bounded Context: Media Catalog
+│   ├── library/           # Bounded Context: Library Configuration
+│   ├── watch_progress/    # Bounded Context: Watch Progress
+│   ├── collections/       # Bounded Context: Watchlists & Custom Lists
+│   ├── preferences/       # Bounded Context: Playback Preferences
+│   ├── identity/          # Bounded Context: Users, Profiles, Sessions, ACL
+│   └── catalog_requests/  # Bounded Context: Missing-title requests
+├── infrastructure/       # Shared infra (database, scheduler, Base model)
+├── config/               # Settings, DI containers
+└── main.py
+```
+
+Each module follows the same internal layout — `domain/` (entities,
+value objects, repository interfaces, domain services), `application/`
+(use cases, DTOs, event handlers, ports), `infrastructure/`
+(persistence, external integrations) and `presentation/` (FastAPI
+routes + Pydantic schemas).
+
+### Dependency Rule
+
+Arrows indicate **allowed import directions** — a module may only import from what it points to:
+
+```
+modules → shared_kernel → building_blocks
+Presentation → Application → Domain ← Infrastructure
+```
+
+- Modules do not import from each other (cross-module communication via domain events)
+- Domain has no outward dependencies — Infrastructure depends on Domain (not the reverse), implementing its interfaces
+- Application depends on interfaces defined in Domain
+- Infrastructure implements those interfaces
+
+**Example** — a media use case importing from each layer:
+
+```python
+from src.building_blocks.domain.entity import AggregateRoot          # building_blocks
+from src.shared_kernel.value_objects.file_path import FilePath        # shared_kernel
+from src.modules.media.domain.repositories import MovieRepository    # own domain
 ```
 
 ## Quick Start
@@ -45,8 +83,7 @@ src/
 
 - Python 3.12+
 - [Poetry](https://python-poetry.org/docs/#installation)
-- Node.js 20+ (for frontend, later)
-- FFmpeg (for thumbnails, later)
+- FFmpeg (for streaming/thumbnails)
 
 ### Installation
 
@@ -54,9 +91,6 @@ src/
 # Clone the repository
 git clone https://github.com/lucaschf/homeflix.git
 cd homeflix
-
-# Install Poetry (if not installed)
-curl -sSL https://install.python-poetry.org | python3 -
 
 # Full setup (dependencies + pre-commit hooks)
 make setup
@@ -71,7 +105,6 @@ make migrate
 
 # Start the server
 make dev
-# Or: poetry run uvicorn src.main:app --reload
 ```
 
 ### Configuration
@@ -102,104 +135,82 @@ OMDB_API_KEY=your_api_key_here
 
 Once running, access the interactive API docs:
 
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- Swagger UI: http://localhost:8005/docs
+- ReDoc: http://localhost:8005/redoc
 
 ## Development
 
 ```bash
-# Run development server
-make dev
-
-# Run tests
-make test
-
-# Run tests with coverage
-make test-cov
-
-# Run linter
-make lint
-
-# Format code
-make format
-
-# Type checking
-make typecheck
-
-# Run pre-commit on all files
-make pre-commit
-
-# Generate migration
-make migration message="description"
+make dev            # Run development server (port 8005)
+make test           # Run all tests
+make test-unit      # Run unit tests only
+make test-cov       # Run tests with coverage
+make lint           # Run linter
+make format         # Format code
+make typecheck      # Type checking (mypy)
+make pre-commit     # Run pre-commit on all files
+make migration message="description"  # Generate migration
+make migrate        # Apply migrations
 ```
 
 ## Contributing
 
-1. Create a feature branch from `main`
+1. Create a feature branch from `develop`
 2. Make your changes (pre-commit hooks will run automatically)
 3. Write tests for new functionality
 4. Ensure all tests pass: `make test`
-5. Submit a pull request
+5. Submit a pull request to `develop`
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
-- `feat: add new feature`
-- `fix: resolve bug`
-- `docs: update documentation`
-- `refactor: improve code structure`
-- `test: add tests`
+- `feat(media): add new feature`
+- `fix(progress): resolve bug`
+- `refactor(domain): improve code structure`
+- `test(collections): add tests`
 
 ## Documentation
 
 - [Requirements](docs/homeflix-requirements.md) - Full feature specifications
+- [Roadmap](docs/roadmap.md) - Feature prioritization and next steps
 - [ADRs](docs/adr/) - Architecture Decision Records
 - [API Standards](docs/standards/) - Response format, exceptions, i18n
 
 ## Project Status
 
-🚧 **Phase 1: Foundation** - In Progress
+**Phases 1–4 shipped.** HomeFlix is a working multi-user household
+streaming server with profile ACLs, automatic intro detection,
+trickplay scrub thumbnails, and a scheduled scan/enrichment pipeline.
 
-### Completed
+- 77 REST API endpoints across 7 bounded contexts
+- 2 200+ tests
+- Responsive React frontend with HLS player and per-profile UI
 
-- [x] Project structure with Clean Architecture layers
-- [x] Domain layer
-  - [x] Base models (DomainModel, ValueObject, DomainEntity, AggregateRoot)
-  - [x] Generic entities with typed IDs (Generic[IdT])
-  - [x] Exception hierarchy (DomainException, DomainValidationException, BusinessRuleViolationException)
-  - [x] Media entities (Movie, Series, Season, Episode)
-  - [x] Value objects (Title, Year, Duration, FilePath, Genre, Resolution)
-  - [x] External IDs with prefixes (MovieId, SeriesId, SeasonId, EpisodeId)
-  - [x] Repository interfaces (MovieRepository, SeriesRepository)
-  - [x] Library bounded context (ADR-005)
-    - [x] Library entity with path and metadata provider configuration
-    - [x] Value objects (LibraryId, LibraryName, LanguageCode, AudioTrack, SubtitleTrack)
-    - [x] LibrarySettings for playback preferences
-    - [x] TrackSelector domain service
-    - [x] LibraryRepository interface
-- [x] Application layer
-  - [x] Exception hierarchy (ApplicationException, ResourceNotFoundException)
-  - [x] Use cases (GetMovieById, GetSeriesById, ListMovies, ListSeries)
-  - [x] DTOs for movies and series
-- [x] Infrastructure layer
-  - [x] Exception hierarchy (InfrastructureException, GatewayException, RepositoryException)
-  - [x] Async database connection manager (SQLite/PostgreSQL)
-  - [x] SQLAlchemy ORM models with soft delete support
-  - [x] Entity-to-ORM bidirectional mappers
-  - [x] Repository implementations (MovieRepository, SeriesRepository)
-- [x] Configuration and settings
-- [x] FastAPI main application
-- [x] Pre-commit hooks (ruff, mypy)
-- [x] CI pipeline
-- [x] Full mypy type checking (0 errors)
+### Modules
 
-### Next Steps
+| Module | Scope | Highlights |
+|--------|-------|------------|
+| **Media Catalog** | Movies, Series, Seasons, Episodes | File variants (ADR-006), HLS streaming, multi-audio/subtitle, FTS5 search, TMDB enrichment, filesystem scanner, intro markers, trickplay sprites |
+| **Library** | Media source configuration | CRUD, metadata providers, scan settings, TrackSelector service (ADR-005) |
+| **Watch Progress** | Playback tracking, scoped per profile | Save/resume, continue watching, auto-complete at 90% |
+| **Collections** | Watchlist & Custom Lists, scoped per profile | Toggle watchlist, up to 10 custom lists with ordering |
+| **Preferences** | Playback settings, scoped per profile | Audio/subtitle language, subtitle mode, quality, speed |
+| **Identity** | Users, Profiles, Sessions, ACL | FastAPI Users + cookie auth (ADR-011), prefixed external IDs (ADR-002), Profile aggregate with `allowed_library_ids`, avatar upload (Pillow → WebP), bootstrap admin CLI |
+| **Catalog Requests** | Missing-title tracking | Mark titles seen on TMDB but absent locally; auto-fulfilled when scanner picks them up |
 
-- [ ] MediaFile variants with multiple resolutions (ADR-006)
-- [ ] Database migrations (Alembic)
-- [ ] REST API endpoints
-- [ ] Media file scanning
-- [ ] TMDB/OMDb integration
+### Frontend ([homeflix-web](https://github.com/lucaschf/homeflix-web))
 
-See [homeflix-requirements.md](docs/homeflix-requirements.md) for the complete roadmap.
+- Login, profile picker, profile management (HBO/Netflix-inspired), avatar upload, account menu chip
+- Hero carousel, genre browsing, full-text search with recent history
+- HLS player: multi-audio, multi-subtitle with smart modes, quality selector, playback speed, keyboard shortcuts, auto-advance, skip-intro button, scrub thumbnails
+- Continue watching, watchlist, custom lists, settings
+- i18n (pt-BR + en), responsive mobile-first design
+
+### What's Next
+
+See [docs/roadmap.md](docs/roadmap.md) for the full roadmap. Open work:
+
+- **Phase 2**: Docker & Compose, primitive obsession cleanup, subtitle appearance fix
+- **Phase 3**: Hardware transcoding (VAAPI / NVENC) — depends on Docker
+- **Phase 5**: Webhooks / outbox pattern, Prometheus metrics
 
 ## License
 

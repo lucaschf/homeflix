@@ -1,7 +1,12 @@
 """Base classes for Domain Entities and Aggregate Roots."""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
-from typing import Any, ClassVar, Generic, Self, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Self, TypeVar
+
+if TYPE_CHECKING:
+    from src.building_blocks.domain.events import DomainEvent
 
 from pydantic import ConfigDict, Field, PrivateAttr, ValidationError
 
@@ -75,13 +80,13 @@ class AggregateRoot(DomainEntity[IdT]):
     Includes domain events collection.
     """
 
-    _events: list[Any] = PrivateAttr(default_factory=list)
+    _events: list[DomainEvent] = PrivateAttr(default_factory=list)
 
-    def add_event(self, event: Any) -> None:
+    def add_event(self, event: DomainEvent) -> None:
         """Add a domain event."""
         self._events.append(event)
 
-    def pull_events(self) -> list[Any]:
+    def pull_events(self) -> list[DomainEvent]:
         """Retrieve and clear all pending domain events."""
         events = self._events[:]
         self._events.clear()
@@ -95,6 +100,19 @@ class AggregateRoot(DomainEntity[IdT]):
     def has_pending_events(self) -> bool:
         """Return True if there are pending domain events."""
         return len(self._events) > 0
+
+    def with_updates(self, **kwargs: Any) -> Self:
+        """Create a new instance with updates, moving pending events.
+
+        Overrides DomainEntity.with_updates to ensure domain events
+        survive immutable model transitions. Events are moved (not copied)
+        to the new instance — the old instance is cleared to prevent
+        double-dispatch if it is accidentally retained.
+        """
+        new_instance = super().with_updates(**kwargs)
+        new_instance._events = self._events[:]
+        self._events.clear()
+        return new_instance
 
 
 __all__ = ["AggregateRoot", "DomainEntity", "utc_now"]

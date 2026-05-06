@@ -8,8 +8,20 @@ from pydantic import Field, field_validator, model_validator
 
 from src.building_blocks.domain import AggregateRoot
 from src.building_blocks.domain.errors import BusinessRuleViolationException
+from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.rule_codes import MediaRuleCodes
-from src.modules.media.domain.value_objects import FilePath, Genre, SeriesId, Title, Year
+from src.modules.media.domain.value_objects import (
+    CastMember,
+    ContentRating,
+    Genre,
+    ImageUrl,
+    ImdbId,
+    SeasonNumber,
+    SeriesId,
+    Title,
+    TmdbId,
+    Year,
+)
 
 if TYPE_CHECKING:
     from src.modules.media.domain.entities.season import Season
@@ -31,6 +43,13 @@ class Series(AggregateRoot[SeriesId]):
     # Identity
     id: SeriesId | None = Field(default=None)
 
+    # Library scoping (the lib_xxx external id of the owning Library;
+    # held as ``str`` because Library lives in another bounded context
+    # and ADR-008 forbids the cross-BC import). Episodes inherit
+    # scoping through their parent Series — they do not carry their
+    # own ``library_id``.
+    library_id: str
+
     # Core info
     title: Title
     original_title: Title | None = None
@@ -39,15 +58,27 @@ class Series(AggregateRoot[SeriesId]):
     synopsis: str | None = Field(default=None, max_length=10000)
 
     # Images
-    poster_path: FilePath | None = None
-    backdrop_path: FilePath | None = None
+    poster_path: ImageUrl | None = None
+    backdrop_path: ImageUrl | None = None
+    logo_path: ImageUrl | None = None
 
     # Categorization
     genres: list[Genre] = Field(default_factory=list)
+    content_rating: ContentRating | None = None
+    trailer_url: str | None = None
+
+    # Credits (top-billed cast pulled from TMDB during enrichment).
+    # Mirrors Movie.cast so the detail page can render the same
+    # actor cards on series and movies, and so the actor browse page
+    # can later filter on series cast as well.
+    cast: list[CastMember] = Field(default_factory=list)
+
+    # Localized metadata
+    localized: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
     # External IDs
-    tmdb_id: int | None = None
-    imdb_id: str | None = Field(default=None, pattern=r"^tt\d{7,}$")
+    tmdb_id: TmdbId | None = None
+    imdb_id: ImdbId | None = None
 
     # Composition
     seasons: list[Season] = Field(default_factory=list)
@@ -61,6 +92,40 @@ class Series(AggregateRoot[SeriesId]):
             return None
 
         return SeriesId(v) if isinstance(v, str) else v
+
+    # -- Localized accessors ---------------------------------------------------
+
+    def get_title(self, lang: str = "en") -> str:
+        """Get title in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        return str(loc.get("title") or self.title.value)
+
+    def get_synopsis(self, lang: str = "en") -> str | None:
+        """Get synopsis in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        return str(loc["synopsis"]) if loc.get("synopsis") else self.synopsis
+
+    def get_genres(self, lang: str = "en") -> list[str]:
+        """Get genres in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        loc_genres = loc.get("genres")
+        if loc_genres and isinstance(loc_genres, list):
+            return [str(g) for g in loc_genres]
+        return [g.value for g in self.genres]
+
+    def get_logo_path(self, lang: str = "en") -> str | None:
+        """Get title-logo URL for the requested language.
+
+        Falls back to ``self.logo_path`` (the language at enrich time,
+        typically en) when the language has no localized override —
+        mirroring how ``get_title`` / ``get_synopsis`` behave so the
+        UI sees a consistent "best available" graphic per language.
+        """
+        loc = self.localized.get(lang, {})
+        loc_logo = loc.get("logo_path")
+        if loc_logo:
+            return str(loc_logo)
+        return self.logo_path.value if self.logo_path else None
 
     @model_validator(mode="after")
     def validate_year_range(self) -> Series:
@@ -117,7 +182,7 @@ class Series(AggregateRoot[SeriesId]):
             return self
         return self.with_updates(seasons=[*self.seasons, season])
 
-    def get_season(self, season_number: int) -> Season | None:
+    def get_season(self, season_number: SeasonNumber | int) -> Season | None:
         """Find a season by its number.
 
         Args:
@@ -126,8 +191,13 @@ class Series(AggregateRoot[SeriesId]):
         Returns:
             The Season if found, None otherwise.
         """
+        needle = (
+            season_number
+            if isinstance(season_number, SeasonNumber)
+            else SeasonNumber(season_number)
+        )
         return next(
-            (season for season in self.seasons if season.season_number == season_number),
+            (season for season in self.seasons if season.season_number == needle),
             None,
         )
 
@@ -136,6 +206,7 @@ class Series(AggregateRoot[SeriesId]):
         cls,
         title: str | Title,
         start_year: int | Year,
+        library_id: str,
         **kwargs: Any,
     ) -> Series:
         """Factory method with automatic ID generation.
@@ -143,6 +214,7 @@ class Series(AggregateRoot[SeriesId]):
         Args:
             title: Series title.
             start_year: First season year.
+            library_id: External id (``lib_xxx``) of the owning Library.
             **kwargs: Additional optional fields.
 
         Returns:
@@ -155,12 +227,15 @@ class Series(AggregateRoot[SeriesId]):
         if isinstance(start_year, int):
             start_year = Year(start_year)
 
-        return cls(
+        series = cls(
             id=series_id,
+            library_id=library_id,
             title=title,
             start_year=start_year,
             **kwargs,
         )
+        series.add_event(MediaCreatedEvent(media_id=str(series_id), media_type="series"))
+        return series
 
 
 __all__ = ["Series"]

@@ -8,14 +8,21 @@ from pydantic import Field, field_validator
 
 from src.building_blocks.domain import AggregateRoot
 from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixin
+from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.value_objects import (
+    CastMember,
+    Collection,
+    ContentRating,
     Duration,
     FilePath,
     Genre,
+    ImageUrl,
+    ImdbId,
     MediaFile,
     MovieId,
     Resolution,
     Title,
+    TmdbId,
     Year,
 )
 
@@ -40,16 +47,24 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     # Identity
     id: MovieId | None = Field(default=None)
 
+    # Library scoping (the lib_xxx external id of the owning Library;
+    # held as ``str`` because Library lives in another bounded context
+    # and ADR-008 forbids the cross-BC import).
+    library_id: str
+
     # Core info
     title: Title
     original_title: Title | None = None
     year: Year
     duration: Duration
     synopsis: str | None = Field(default=None, max_length=10000)
+    tagline: str | None = Field(default=None, max_length=500)
 
     # Images
-    poster_path: FilePath | None = None
-    backdrop_path: FilePath | None = None
+    poster_path: ImageUrl | None = None
+    backdrop_path: ImageUrl | None = None
+    logo_path: ImageUrl | None = None
+    scrub_preview_path: ImageUrl | None = None
 
     # Categorization
     genres: list[Genre] = Field(default_factory=list)
@@ -57,9 +72,26 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     # File variants
     files: list[MediaFile] = Field(default_factory=list)
 
+    # Credits
+    cast: list[CastMember] = Field(default_factory=list)
+    directors: list[str] = Field(default_factory=list)
+    writers: list[str] = Field(default_factory=list)
+
+    # Classification
+    content_rating: ContentRating | None = None
+
+    # Trailer
+    trailer_url: str | None = None
+
+    # Collection / franchise on TMDB (Alien Collection, MCU, ...)
+    collection: Collection | None = None
+
+    # Localized metadata: {"pt-BR": {"title": "...", "synopsis": "...", "genres": [...]}}
+    localized: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
     # External IDs for metadata enrichment
-    tmdb_id: int | None = None
-    imdb_id: str | None = Field(default=None, pattern=r"^tt\d{7,}$")
+    tmdb_id: TmdbId | None = None
+    imdb_id: ImdbId | None = None
 
     # noinspection PyNestedDecorators
     @field_validator("id", mode="before")
@@ -76,6 +108,45 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     def convert_genres(cls, v: list[Any] | None) -> list[Genre]:
         """Convert string list to Genre list."""
         return [] if v is None else [Genre(g) if isinstance(g, str) else g for g in v]
+
+    # ── localized accessors ────────────────────────────────────────────
+
+    def get_title(self, lang: str = "en") -> str:
+        """Get title in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        return str(loc.get("title") or self.title.value)
+
+    def get_synopsis(self, lang: str = "en") -> str | None:
+        """Get synopsis in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        return str(loc["synopsis"]) if loc.get("synopsis") else self.synopsis
+
+    def get_tagline(self, lang: str = "en") -> str | None:
+        """Get tagline in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        return str(loc["tagline"]) if loc.get("tagline") else self.tagline
+
+    def get_genres(self, lang: str = "en") -> list[str]:
+        """Get genres in the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        loc_genres = loc.get("genres")
+        if loc_genres and isinstance(loc_genres, list):
+            return [str(g) for g in loc_genres]
+        return [g.value for g in self.genres]
+
+    def get_logo_path(self, lang: str = "en") -> str | None:
+        """Get title-logo URL for the requested language.
+
+        Falls back to ``self.logo_path`` (the language at enrich time,
+        typically en) when the language has no localized override —
+        mirroring how ``get_title`` / ``get_synopsis`` behave so the
+        UI sees a consistent "best available" graphic per language.
+        """
+        loc = self.localized.get(lang, {})
+        loc_logo = loc.get("logo_path")
+        if loc_logo:
+            return str(loc_logo)
+        return self.logo_path.value if self.logo_path else None
 
     # ── genre helpers ─────────────────────────────────────────────────
 
@@ -105,6 +176,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
         file_path: str | FilePath,
         file_size: int,
         resolution: str | Resolution,
+        library_id: str,
         **kwargs: Any,
     ) -> Movie:
         """Factory method with automatic ID generation.
@@ -116,6 +188,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
             file_path: Path to the video file.
             file_size: File size in bytes.
             resolution: Video resolution.
+            library_id: External id (``lib_xxx``) of the owning Library.
             **kwargs: Additional optional fields.
 
         Returns:
@@ -141,14 +214,17 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
             is_primary=True,
         )
 
-        return cls(
+        movie = cls(
             id=movie_id,
+            library_id=library_id,
             title=title,
             year=year,
             duration=duration,
             files=[file],
             **kwargs,
         )
+        movie.add_event(MediaCreatedEvent(media_id=str(movie_id), media_type="movie"))
+        return movie
 
 
 __all__ = ["Movie"]

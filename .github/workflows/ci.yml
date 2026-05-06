@@ -109,13 +109,14 @@ jobs:
         run: poetry install --with dev --no-interaction
 
       - name: Run tests with coverage
+        # Coverage threshold (fail_under = 80) is enforced via
+        # [tool.coverage.report] in pyproject.toml.
         run: |
           poetry run pytest tests/ \
             -v \
             --cov=src \
             --cov-report=xml \
-            --cov-report=term-missing \
-            --cov-fail-under=50
+            --cov-report=term-missing
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

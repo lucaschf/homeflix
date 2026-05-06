@@ -1,14 +1,32 @@
 """SQLAlchemy implementation of SeriesRepository."""
 
 from collections.abc import Sequence
+from datetime import datetime
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import distinct, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.building_blocks.application.pagination import (
+    PaginatedResult,
+    Pagination,
+    decode_cursor,
+    encode_cursor,
+)
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
-from src.modules.media.domain.value_objects import EpisodeId, FilePath, SeasonId, SeriesId
+from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.modules.media.domain.value_objects import (
+    EpisodeId,
+    FilePath,
+    Genre,
+    IntroDetectionState,
+    IntroMarker,
+    SeasonId,
+    SeriesId,
+    Title,
+)
 from src.modules.media.infrastructure.persistence.mappers import (
     EpisodeMapper,
     SeasonMapper,
@@ -16,8 +34,16 @@ from src.modules.media.infrastructure.persistence.mappers import (
 )
 from src.modules.media.infrastructure.persistence.models import (
     EpisodeModel,
+    MediaFileModel,
     SeasonModel,
     SeriesModel,
+)
+from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
+    fetch_genre_paginated_page,
+    fetch_genre_rows,
+)
+from src.modules.media.infrastructure.persistence.repositories._path_prefix_helpers import (
+    build_path_prefix_filters,
 )
 
 
@@ -40,11 +66,26 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         """
         self._session = session
 
-    async def find_by_id(self, series_id: SeriesId) -> Series | None:
+    @staticmethod
+    def _series_load_options() -> list[Any]:
+        """Return common eager-loading options for series queries."""
+        return [
+            selectinload(SeriesModel.seasons)
+            .selectinload(SeasonModel.episodes)
+            .selectinload(EpisodeModel.file_variants),
+        ]
+
+    async def find_by_id(
+        self,
+        series_id: SeriesId,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Series | None:
         """Find a series by its ID (includes seasons and episodes).
 
         Args:
             series_id: The series' external ID.
+            allowed_library_ids: Optional per-profile ACL filter.
 
         Returns:
             The Series if found, None otherwise.
@@ -55,11 +96,11 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 SeriesModel.external_id == str(series_id),
                 SeriesModel.deleted_at.is_(None),
             )
-            .options(
-                selectinload(SeriesModel.seasons).selectinload(SeasonModel.episodes),
-            )
+            .options(*self._series_load_options())
             .execution_options(populate_existing=True)
         )
+        if allowed_library_ids is not None:
+            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
 
@@ -81,9 +122,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         stmt = (
             select(SeriesModel)
             .where(SeriesModel.external_id == str(series.id))
-            .options(
-                selectinload(SeriesModel.seasons).selectinload(SeasonModel.episodes),
-            )
+            .options(*self._series_load_options())
             .execution_options(populate_existing=True)
         )
         result = await self._session.execute(stmt)
@@ -146,9 +185,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         stmt = (
             select(SeriesModel)
             .where(SeriesModel.deleted_at.is_(None))
-            .options(
-                selectinload(SeriesModel.seasons).selectinload(SeasonModel.episodes),
-            )
+            .options(*self._series_load_options())
             .order_by(SeriesModel.title)
         )
         result = await self._session.execute(stmt)
@@ -156,8 +193,289 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         return [SeriesMapper.to_entity(model) for model in models]
 
+    async def list_paginated(
+        self,
+        cursor: str | None,
+        limit: int,
+        *,
+        include_total: bool = False,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> PaginatedResult[Series]:
+        """List series in a single cursor-paginated page.
+
+        Sorted by ``id DESC`` so the most recently inserted rows appear
+        first — see the building-block docstring and the matching
+        ``MovieRepository.list_paginated`` for the full justification.
+        Soft-deleted rows are filtered out the same way as ``list_all``.
+        Fetches ``limit + 1`` rows to detect ``has_more`` cheaply
+        without an extra query. The full season / episode hierarchy is
+        loaded via the same options as ``list_all``; if that turns out
+        to be a perf issue we'll add a shallow variant later.
+        """
+        decoded = decode_cursor(cursor)
+
+        stmt = (
+            select(SeriesModel)
+            .where(SeriesModel.deleted_at.is_(None))
+            .options(*self._series_load_options())
+        )
+
+        if allowed_library_ids is not None:
+            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+
+        if decoded is not None:
+            stmt = stmt.where(SeriesModel.id < decoded.id)
+
+        stmt = stmt.order_by(SeriesModel.id.desc()).limit(limit + 1)
+
+        result = await self._session.execute(stmt)
+        models = list(result.scalars().all())
+
+        has_more = len(models) > limit
+        if has_more:
+            models = models[:limit]
+
+        next_cursor: str | None = None
+        if has_more and models:
+            next_cursor = encode_cursor(models[-1].id)
+
+        total_count: int | None = None
+        if include_total:
+            count_stmt = (
+                select(func.count())
+                .select_from(SeriesModel)
+                .where(SeriesModel.deleted_at.is_(None))
+            )
+            if allowed_library_ids is not None:
+                count_stmt = count_stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+            total_count = (await self._session.execute(count_stmt)).scalar_one()
+
+        return PaginatedResult(
+            items=[SeriesMapper.to_entity(m) for m in models],
+            pagination=Pagination(next_cursor=next_cursor, has_more=has_more),
+            total_count=total_count,
+        )
+
+    async def list_recently_added(
+        self,
+        limit: int,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[Series]:
+        """Return the top ``limit`` non-deleted series, newest first.
+
+        Same ``id DESC`` ordering as ``list_paginated`` — see the
+        matching ``MovieRepository.list_recently_added`` for the full
+        justification. The series hierarchy (seasons/episodes/file
+        variants) is eager-loaded via the same options as ``list_all``
+        so callers don't N+1 when rendering the carousel.
+        """
+        stmt = (
+            select(SeriesModel)
+            .where(SeriesModel.deleted_at.is_(None))
+            .options(*self._series_load_options())
+        )
+        if allowed_library_ids is not None:
+            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+        stmt = stmt.order_by(SeriesModel.id.desc()).limit(limit)
+        result = await self._session.execute(stmt)
+        return [SeriesMapper.to_entity(m) for m in result.scalars().all()]
+
+    async def list_genre_rows(
+        self,
+        lang: str,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[GenreRow]:
+        """Project the genre columns of every non-deleted series row."""
+        return await fetch_genre_rows(
+            self._session,
+            SeriesModel,
+            lang,
+            allowed_library_ids=allowed_library_ids,
+        )
+
+    async def list_paginated_by_genre(
+        self,
+        genre: Genre,
+        cursor: str | None,
+        limit: int,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> PaginatedResult[Series]:
+        """List series for a single genre, paginated and sorted by title.
+
+        Delegates the SQL boilerplate to the shared
+        ``fetch_genre_paginated_page`` helper so this method and its
+        movie counterpart stay in lockstep. The full season / episode
+        hierarchy is loaded via the existing ``_series_load_options``
+        because consumers may want to render episode counts on the
+        carousel card.
+        """
+        return await fetch_genre_paginated_page(
+            session=self._session,
+            model=SeriesModel,
+            mapper_to_entity=SeriesMapper.to_entity,
+            options=list(self._series_load_options()),
+            genre=genre,
+            cursor=cursor,
+            limit=limit,
+            allowed_library_ids=allowed_library_ids,
+        )
+
+    async def find_random(
+        self,
+        limit: int,
+        *,
+        with_backdrop: bool = False,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[Series]:
+        """Return random series."""
+        from sqlalchemy.sql.expression import func
+
+        stmt = (
+            select(SeriesModel)
+            .where(SeriesModel.deleted_at.is_(None))
+            .options(*self._series_load_options())
+        )
+        if with_backdrop:
+            stmt = stmt.where(
+                SeriesModel.backdrop_path.is_not(None),
+                SeriesModel.backdrop_path != "",
+            )
+        if allowed_library_ids is not None:
+            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+        stmt = stmt.order_by(func.random()).limit(limit)
+        result = await self._session.execute(stmt)
+        return [SeriesMapper.to_entity(m) for m in result.scalars().all()]
+
+    async def find_by_title(
+        self,
+        title: Title,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Series | None:
+        """Find a series by its title (case-insensitive).
+
+        Args:
+            title: The series title to search for.
+            allowed_library_ids: Optional per-profile ACL filter.
+
+        Returns:
+            The Series if found, None otherwise.
+        """
+        stmt = (
+            select(SeriesModel)
+            .where(
+                SeriesModel.title.ilike(title.value),
+                SeriesModel.deleted_at.is_(None),
+            )
+            .options(*self._series_load_options())
+            .execution_options(populate_existing=True)
+        )
+        if allowed_library_ids is not None:
+            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+
+        return None if model is None else SeriesMapper.to_entity(model)
+
+    async def find_by_ids(
+        self,
+        series_ids: Sequence[SeriesId],
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> dict[str, Series]:
+        """Find multiple series by their IDs in a single query."""
+        if not series_ids:
+            return {}
+
+        ext_ids = [str(sid) for sid in series_ids]
+        stmt = (
+            select(SeriesModel)
+            .where(
+                SeriesModel.external_id.in_(ext_ids),
+                SeriesModel.deleted_at.is_(None),
+            )
+            .options(*self._series_load_options())
+            .execution_options(populate_existing=True)
+        )
+        if allowed_library_ids is not None:
+            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+        result = await self._session.execute(stmt)
+        return {
+            model.external_id: SeriesMapper.to_entity(model) for model in result.scalars().all()
+        }
+
+    async def find_by_tmdb_ids(
+        self,
+        tmdb_ids: Sequence[int],
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> dict[int, Series]:
+        """Find series whose ``tmdb_id`` matches any of ``tmdb_ids``.
+
+        Used by ``GetRelatedSeries`` to resolve the subset of TMDB's
+        recommendation list that exists locally. Returning a dict
+        keyed by ``tmdb_id`` lets the caller preserve TMDB's
+        relevance ordering by iterating the request list.
+        """
+        if not tmdb_ids:
+            return {}
+        stmt = (
+            select(SeriesModel)
+            .where(
+                SeriesModel.tmdb_id.in_(tmdb_ids),
+                SeriesModel.deleted_at.is_(None),
+            )
+            .options(*self._series_load_options())
+            .execution_options(populate_existing=True)
+        )
+        if allowed_library_ids is not None:
+            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+        result = await self._session.execute(stmt)
+        return {
+            model.tmdb_id: SeriesMapper.to_entity(model)
+            for model in result.scalars().all()
+            if model.tmdb_id is not None
+        }
+
+    async def find_by_episode_id(
+        self,
+        episode_id: EpisodeId,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Series | None:
+        """Find a series containing an episode with this ID.
+
+        Args:
+            episode_id: The episode's external ID.
+            allowed_library_ids: Optional per-profile ACL filter
+                forwarded to the inner ``find_by_id`` lookup.
+
+        Returns:
+            The Series if found, None otherwise.
+        """
+        stmt = select(EpisodeModel).where(
+            EpisodeModel.external_id == str(episode_id),
+            EpisodeModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        episode_model = result.scalar_one_or_none()
+
+        if episode_model is None:
+            return None
+
+        return await self.find_by_id(
+            SeriesId(episode_model.series_external_id),
+            allowed_library_ids=allowed_library_ids,
+        )
+
     async def find_by_file_path(self, file_path: FilePath) -> Series | None:
-        """Find a series containing an episode with this file path (excluding soft-deleted).
+        """Find a series containing an episode with this file path.
+
+        Searches both the file_variants table and the flat column
+        for backward compatibility.
 
         Args:
             file_path: The absolute file path.
@@ -165,19 +483,208 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         Returns:
             The Series if found, None otherwise.
         """
-        # Find episode with this file path (not soft-deleted)
-        episode_stmt = select(EpisodeModel).where(
-            EpisodeModel.file_path == str(file_path),
-            EpisodeModel.deleted_at.is_(None),
+        # Search in file_variants table
+        stmt = (
+            select(EpisodeModel)
+            .join(MediaFileModel, MediaFileModel.episode_id == EpisodeModel.id)
+            .where(
+                MediaFileModel.file_path == str(file_path),
+                EpisodeModel.deleted_at.is_(None),
+            )
         )
-        episode_result = await self._session.execute(episode_stmt)
-        episode_model = episode_result.scalar_one_or_none()
+        result = await self._session.execute(stmt)
+        episode_model = result.scalar_one_or_none()
+
+        if episode_model is None:
+            # Fallback to flat column
+            stmt = select(EpisodeModel).where(
+                EpisodeModel.file_path == str(file_path),
+                EpisodeModel.deleted_at.is_(None),
+            )
+            result = await self._session.execute(stmt)
+            episode_model = result.scalar_one_or_none()
 
         if episode_model is None:
             return None
 
         # Load the full series
         return await self.find_by_id(SeriesId(episode_model.series_external_id))
+
+    async def find_episode_by_id(self, episode_id: EpisodeId) -> Episode | None:
+        """Return a single episode by external id, detached from its series."""
+        stmt = (
+            select(EpisodeModel)
+            .where(
+                EpisodeModel.external_id == str(episode_id),
+                EpisodeModel.deleted_at.is_(None),
+            )
+            .options(selectinload(EpisodeModel.file_variants))
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return None if model is None else EpisodeMapper.to_entity(model)
+
+    async def find_episodes_missing_scrub_preview(self, limit: int) -> Sequence[Episode]:
+        """Return up to ``limit`` episodes whose ``scrub_preview_path`` is null.
+
+        Returns detached ``Episode`` entities (no parent ``Series``
+        loaded) — the backfill job only needs the file path and id.
+        ``file_variants`` is eager-loaded so the resulting entity
+        exposes ``primary_file.file_path`` without a lazy round-trip.
+        """
+        stmt = (
+            select(EpisodeModel)
+            .where(
+                EpisodeModel.deleted_at.is_(None),
+                EpisodeModel.scrub_preview_path.is_(None),
+            )
+            .options(selectinload(EpisodeModel.file_variants))
+            .order_by(EpisodeModel.id.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [EpisodeMapper.to_entity(model) for model in result.scalars().all()]
+
+    async def update_episode_scrub_preview_path(
+        self,
+        episode_id: EpisodeId,
+        path: str | None,
+    ) -> bool:
+        """Update only the ``scrub_preview_path`` column of an episode row.
+
+        Direct UPDATE on the episodes table — far cheaper than loading
+        the full ``Series`` aggregate just to mutate one column on one
+        child. Soft-deleted rows are excluded so a backfill job that
+        races a delete cannot resurrect a tombstoned episode.
+        """
+        stmt = (
+            update(EpisodeModel)
+            .where(
+                EpisodeModel.external_id == str(episode_id),
+                EpisodeModel.deleted_at.is_(None),
+            )
+            .values(scrub_preview_path=path)
+        )
+        result = await self._session.execute(stmt)
+        return bool(result.rowcount)
+
+    async def find_seasons_pending_intro_detection(self, limit: int) -> Sequence[Season]:
+        """Return seasons in NOT_STARTED/INSUFFICIENT_EPISODES with episodes loaded.
+
+        Episodes (and their file_variants) are eager-loaded so the
+        detection job can iterate file paths without N+1 queries.
+        Soft-deleted rows are filtered out at both levels.
+        """
+        eligible_states = (
+            IntroDetectionState.NOT_STARTED.value,
+            IntroDetectionState.INSUFFICIENT_EPISODES.value,
+        )
+        stmt = (
+            select(SeasonModel)
+            .where(
+                SeasonModel.deleted_at.is_(None),
+                SeasonModel.intro_detection_state.in_(eligible_states),
+            )
+            .options(selectinload(SeasonModel.episodes).selectinload(EpisodeModel.file_variants))
+            .order_by(SeasonModel.id.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [SeasonMapper.to_entity(model) for model in result.scalars().all()]
+
+    async def update_season_intro_detection(
+        self,
+        season_id: SeasonId,
+        state: IntroDetectionState,
+        *,
+        attempted_at: datetime | None = None,
+        error: str | None = None,
+    ) -> bool:
+        """Direct UPDATE of intro-detection columns on the seasons row.
+
+        ``attempted_at`` is left untouched when ``None`` so transient
+        transitions (e.g. claiming a season as IN_PROGRESS) do not
+        overwrite the timestamp from the previous successful run.
+        ``error`` is always written through — pass ``None`` to clear.
+        """
+        values: dict[str, Any] = {
+            "intro_detection_state": state.value,
+            "intro_detection_error": error,
+        }
+        if attempted_at is not None:
+            values["intro_detection_attempted_at"] = attempted_at
+
+        stmt = (
+            update(SeasonModel)
+            .where(
+                SeasonModel.external_id == str(season_id),
+                SeasonModel.deleted_at.is_(None),
+            )
+            .values(**values)
+        )
+        result = await self._session.execute(stmt)
+        return bool(result.rowcount)
+
+    async def update_episode_intro(
+        self,
+        episode_id: EpisodeId,
+        marker: IntroMarker | None,
+    ) -> bool:
+        """Direct UPDATE of the 5 intro columns on the episodes row.
+
+        Used by the auto-detection job and the manual-edit endpoint to
+        avoid round-tripping the parent ``Series`` aggregate. Passing
+        ``None`` clears all five columns atomically.
+        """
+        if marker is None:
+            values: dict[str, Any] = {
+                "intro_start_seconds": None,
+                "intro_end_seconds": None,
+                "intro_source": None,
+                "intro_confidence": None,
+                "intro_detected_at": None,
+            }
+        else:
+            values = {
+                "intro_start_seconds": marker.start_seconds,
+                "intro_end_seconds": marker.end_seconds,
+                "intro_source": marker.source.value,
+                "intro_confidence": marker.confidence,
+                "intro_detected_at": marker.detected_at,
+            }
+
+        stmt = (
+            update(EpisodeModel)
+            .where(
+                EpisodeModel.external_id == str(episode_id),
+                EpisodeModel.deleted_at.is_(None),
+            )
+            .values(**values)
+        )
+        result = await self._session.execute(stmt)
+        return bool(result.rowcount)
+
+    async def count_under_paths(self, paths: Sequence[str]) -> int:
+        """Count distinct series with at least one episode under ``paths``.
+
+        One SELECT against ``episodes``, DISTINCT by ``series_id`` so a
+        series with ten matching episodes still counts as one. See
+        ``_path_prefix_helpers.build_path_prefix_filters`` for the
+        normalization rules shared with the movie repo.
+        """
+        prefix_filters = build_path_prefix_filters(EpisodeModel.file_path, paths)
+        if not prefix_filters:
+            return 0
+        # DISTINCT on series_external_id (not series_id — episodes
+        # reference the series via the public external id, not the
+        # internal autoincrement pk).
+        stmt = select(func.count(distinct(EpisodeModel.series_external_id))).where(
+            EpisodeModel.deleted_at.is_(None),
+            EpisodeModel.file_path.is_not(None),
+            or_(*prefix_filters),
+        )
+        result = await self._session.execute(stmt)
+        return int(result.scalar_one())
 
     def _ensure_ids(self, series: Series) -> Series:
         """Ensure all entities have IDs, generating them if needed.
@@ -235,10 +742,13 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         await self._session.flush()
 
-        # Reload and return (series.id is guaranteed to exist after _ensure_ids)
-        assert series.id is not None
+        # Reload and return (series.id is guaranteed to exist after _ensure_ids).
+        # Transaction commit is the Unit of Work's responsibility.
+        if series.id is None:
+            raise RuntimeError("Series id must be assigned before reload")
         result = await self.find_by_id(series.id)
-        assert result is not None
+        if result is None:
+            raise RuntimeError(f"Series {series.id} disappeared between flush and reload")
         return result
 
     async def _update_series(
@@ -288,10 +798,13 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         await self._session.flush()
 
-        # Reload and return (series.id is guaranteed to exist)
-        assert series.id is not None
+        # Reload and return (series.id is guaranteed to exist).
+        # Transaction commit is the Unit of Work's responsibility.
+        if series.id is None:
+            raise RuntimeError("Series id must be assigned before reload")
         result = await self.find_by_id(series.id)
-        assert result is not None
+        if result is None:
+            raise RuntimeError(f"Series {series.id} disappeared between flush and reload")
         return result
 
     async def _update_season_episodes(
@@ -321,6 +834,79 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         # Soft delete removed episodes
         for episode_model in existing_episodes.values():
             episode_model.soft_delete()
+
+    async def search(
+        self,
+        query: str,
+        *,
+        genre: str | None = None,
+        year_min: int | None = None,
+        year_max: int | None = None,
+        limit: int = 20,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> list[tuple[Series, float]]:
+        """Full-text search using FTS5.
+
+        Same pattern as ``SQLAlchemyMovieRepository.search`` — queries
+        ``series_fts``, joins back to ``series``, applies filters.
+        """
+        from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
+            _prepare_fts_query,
+        )
+
+        fts_query = _prepare_fts_query(query)
+        if not fts_query:
+            return []
+
+        sql = """
+            SELECT series_fts.rowid, bm25(series_fts) AS rank
+            FROM series_fts
+            WHERE series_fts MATCH :query
+            ORDER BY rank
+            LIMIT :limit
+        """
+        fts_result = await self._session.execute(
+            text(sql),
+            {"query": fts_query, "limit": limit * 2},
+        )
+        fts_rows = fts_result.fetchall()
+        if not fts_rows:
+            return []
+
+        rowid_to_rank = {row[0]: row[1] for row in fts_rows}
+
+        # Load only the root ``SeriesModel`` rows. ``SearchCatalogUseCase``
+        # builds ``SearchItemOutput`` from root columns + ``localized`` JSON
+        # only — it never touches ``series.seasons``. Skipping the
+        # season → episode → file_variants chain avoids fanning out into
+        # potentially thousands of rows per search (e.g. a 10-season,
+        # 22-episode series with multi-resolution variants) just to be
+        # discarded by the use case. Also keeps ``EpisodeMapper`` from
+        # lazy-loading ``file_variants`` outside the session greenlet.
+        stmt = select(SeriesModel).where(
+            SeriesModel.id.in_(rowid_to_rank.keys()),
+            SeriesModel.deleted_at.is_(None),
+        )
+        if genre:
+            delimited = "," + SeriesModel.genres + ","
+            stmt = stmt.where(delimited.contains(f",{genre},"))
+        if year_min is not None:
+            stmt = stmt.where(SeriesModel.start_year >= year_min)
+        if year_max is not None:
+            stmt = stmt.where(SeriesModel.start_year <= year_max)
+        if allowed_library_ids is not None:
+            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+
+        result = await self._session.execute(stmt)
+        models = result.scalars().unique().all()
+
+        hits = [
+            (SeriesMapper.to_entity(m, include_seasons=False), rowid_to_rank[m.id])
+            for m in models
+            if m.id in rowid_to_rank
+        ]
+        hits.sort(key=lambda h: h[1])
+        return hits[:limit]
 
 
 __all__ = ["SQLAlchemySeriesRepository"]

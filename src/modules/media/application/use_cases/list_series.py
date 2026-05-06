@@ -1,76 +1,87 @@
-"""ListSeriesUseCase - List all series in the library."""
+"""ListSeriesUseCase - List series in the library, paginated."""
 
 from src.modules.media.application.dtos.series_dtos import (
     ListSeriesInput,
     ListSeriesOutput,
-    SeriesSummaryOutput,
 )
-from src.modules.media.domain.entities import Series
-from src.modules.media.domain.repositories.series_repository import SeriesRepository
+from src.modules.media.application.ports.profile_library_access_port import (
+    ProfileLibraryAccessPort,
+)
+from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.use_cases._series_summary_helpers import to_series_summary
 
 
 class ListSeriesUseCase:
-    """List all series in the library.
+    """List one page of series using cursor-based pagination.
 
-    Returns a list of series summaries suitable for grid/list display.
-    Does not include full episode hierarchy for performance.
+    Delegates the page query to ``SeriesRepository.list_paginated`` and
+    converts the resulting ``Series`` entities into
+    ``SeriesSummaryOutput`` DTOs. The cursor is passed through
+    opaquely.
+
+    Per ADR-010, the page is restricted to the caller's
+    ``Profile.allowed_library_ids`` via ``ProfileLibraryAccessPort``. A
+    deny-all profile short-circuits to an empty page without opening
+    the UoW.
 
     Example:
-        >>> use_case = ListSeriesUseCase(series_repository)
-        >>> result = await use_case.execute(ListSeriesInput())
+        >>> use_case = ListSeriesUseCase(uow_factory, profile_library_access)
+        >>> result = await use_case.execute(ListSeriesInput(profile_id="prf_abc"))
         >>> len(result.series)
-        15
+        20
+        >>> result.has_more
+        True
     """
 
-    def __init__(self, series_repository: SeriesRepository) -> None:
+    def __init__(
+        self,
+        uow_factory: MediaUnitOfWorkFactory,
+        profile_library_access: ProfileLibraryAccessPort,
+    ) -> None:
         """Initialize the use case.
 
         Args:
-            series_repository: Repository for series persistence.
+            uow_factory: Factory that opens a fresh media Unit of Work.
+            profile_library_access: Port that resolves the caller's
+                allowed library_ids.
         """
-        self._series_repository = series_repository
+        self._uow_factory = uow_factory
+        self._profile_library_access = profile_library_access
 
     async def execute(self, input_dto: ListSeriesInput) -> ListSeriesOutput:
         """Execute the use case.
 
         Args:
-            input_dto: Contains optional limit.
+            input_dto: ``profile_id``, ``cursor`` (opaque), ``limit``,
+                ``include_total``, and ``lang``.
 
         Returns:
-            ListSeriesOutput with series summaries.
+            ``ListSeriesOutput`` with the page items, the next cursor,
+            ``has_more``, and an optional ``total_count`` (only when
+            ``include_total=True``).
         """
-        all_series = await self._series_repository.list_all()
+        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
+        if not allowed:
+            return ListSeriesOutput(
+                series=[],
+                next_cursor=None,
+                has_more=False,
+                total_count=0 if input_dto.include_total else None,
+            )
 
-        total_count = len(all_series)
-
-        if input_dto.limit is not None:
-            all_series = all_series[: input_dto.limit]
+        async with self._uow_factory() as uow:
+            page = await uow.series.list_paginated(
+                cursor=input_dto.cursor,
+                limit=input_dto.limit,
+                include_total=input_dto.include_total,
+                allowed_library_ids=allowed,
+            )
 
         return ListSeriesOutput(
-            series=[self._to_summary(s) for s in all_series],
-            total_count=total_count,
-        )
-
-    @staticmethod
-    def _to_summary(series: Series) -> SeriesSummaryOutput:
-        """Convert Series entity to summary output.
-
-        Args:
-            series: The Series entity to convert.
-
-        Returns:
-            SeriesSummaryOutput with essential fields.
-        """
-        return SeriesSummaryOutput(
-            id=str(series.id),
-            title=series.title.value,
-            start_year=series.start_year.value,
-            end_year=series.end_year.value if series.end_year else None,
-            is_ongoing=series.is_ongoing,
-            poster_path=series.poster_path.value if series.poster_path else None,
-            season_count=series.season_count,
-            total_episodes=series.total_episodes,
-            genres=[g.value for g in series.genres],
+            series=[to_series_summary(s, input_dto.lang) for s in page.items],
+            next_cursor=page.pagination.next_cursor,
+            has_more=page.pagination.has_more,
+            total_count=page.total_count,
         )
 
 

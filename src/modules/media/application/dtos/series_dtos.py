@@ -1,6 +1,16 @@
 """Series DTOs for application layer."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE
+
+if TYPE_CHECKING:
+    from src.modules.media.application.dtos.intro_dtos import IntroMarkerOutput
+    from src.modules.media.application.dtos.media_file_dtos import MediaFileOutput
+    from src.modules.media.application.dtos.movie_dtos import CastMemberOutput
 
 
 @dataclass(frozen=True)
@@ -18,6 +28,8 @@ class EpisodeOutput:
         file_size: File size in bytes (None if no primary file).
         resolution: Video resolution (None if no primary file).
         thumbnail_path: Path to thumbnail (optional).
+        scrub_preview_path: Absolute filesystem path to the scrub-preview
+            VTT, or ``None`` until the backfill job generates it.
         air_date: Original air date (optional, ISO format).
     """
 
@@ -30,8 +42,15 @@ class EpisodeOutput:
     file_path: str | None
     file_size: int | None
     resolution: str | None
+    files: list[MediaFileOutput]
     thumbnail_path: str | None
+    scrub_preview_path: str | None
     air_date: str | None
+    intro: IntroMarkerOutput | None = None
+    progress_percentage: float | None = None
+    position_seconds: int | None = None
+    watch_status: str | None = None
+    last_watched_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +94,10 @@ class SeriesOutput:
         synopsis: Series synopsis (optional).
         poster_path: Path to poster (optional).
         backdrop_path: Path to backdrop (optional).
+        logo_path: URL of the title-logo image (transparent PNG)
+            populated from TMDB during enrich, ``None`` if not
+            available. Used by the hero/detail UI to render the title
+            as a graphic.
         genres: List of genre strings.
         tmdb_id: TMDB external ID (optional).
         imdb_id: IMDB external ID (optional).
@@ -94,12 +117,16 @@ class SeriesOutput:
     synopsis: str | None
     poster_path: str | None
     backdrop_path: str | None
+    logo_path: str | None
     genres: list[str]
+    content_rating: str | None
+    trailer_url: str | None
     tmdb_id: int | None
     imdb_id: str | None
     season_count: int
     total_episodes: int
     seasons: list[SeasonOutput]
+    cast: list[CastMemberOutput]
     created_at: str
     updated_at: str
 
@@ -128,7 +155,9 @@ class SeriesSummaryOutput:
     start_year: int
     end_year: int | None
     is_ongoing: bool
+    synopsis: str | None
     poster_path: str | None
+    backdrop_path: str | None
     season_count: int
     total_episodes: int
     genres: list[str]
@@ -139,10 +168,18 @@ class GetSeriesByIdInput:
     """Input for GetSeriesByIdUseCase.
 
     Attributes:
+        profile_id: Caller's prefixed profile id. The use case looks
+            up the per-profile library ACL through
+            ``ProfileLibraryAccessPort`` and restricts the lookup to
+            those libraries — a row outside the ACL surfaces as
+            ``ResourceNotFoundException`` (404).
         series_id: External ID of the series (ser_xxx format).
+        lang: Language code for localized metadata.
     """
 
+    profile_id: str
     series_id: str
+    lang: str = "en"
 
 
 @dataclass(frozen=True)
@@ -150,10 +187,26 @@ class ListSeriesInput:
     """Input for ListSeriesUseCase.
 
     Attributes:
-        limit: Maximum number of series to return (optional, default: all).
+        profile_id: Caller's prefixed profile id. The use case
+            consults ``ProfileLibraryAccessPort`` and restricts the
+            page to libraries the profile may see; a deny-all profile
+            yields an empty page without opening a UoW.
+        cursor: Opaque pagination cursor from the previous page's
+            ``next_cursor``. ``None`` (or any invalid token) starts at
+            the first page.
+        limit: Page size. Routes clamp this to ``[1, MAX_PAGE_SIZE]``
+            before constructing the input.
+        include_total: When ``True`` the use case asks the repository
+            for an extra ``COUNT(*)`` so ``total_count`` is populated.
+            Defaults to ``False`` for performance.
+        lang: Language code for localized metadata.
     """
 
-    limit: int | None = None
+    profile_id: str
+    cursor: str | None = None
+    limit: int = DEFAULT_PAGE_SIZE
+    include_total: bool = False
+    lang: str = "en"
 
 
 @dataclass(frozen=True)
@@ -161,17 +214,61 @@ class ListSeriesOutput:
     """Output for ListSeriesUseCase.
 
     Attributes:
-        series: List of series summaries.
-        total_count: Total number of series in the library.
+        series: List of series summaries on this page.
+        next_cursor: Opaque token to pass back as ``cursor`` on the
+            next request, or ``None`` when there are no more pages.
+        has_more: Convenience flag — equivalent to
+            ``next_cursor is not None`` but explicit.
+        total_count: Total number of (non-deleted) series in the
+            library, or ``None`` when the caller did not request it
+            via ``include_total``.
     """
 
     series: list[SeriesSummaryOutput]
-    total_count: int
+    next_cursor: str | None
+    has_more: bool
+    total_count: int | None = None
+
+
+@dataclass(frozen=True)
+class ListRecentlyAddedSeriesInput:
+    """Input for ``ListRecentlyAddedSeriesUseCase``.
+
+    Attributes:
+        profile_id: Caller's prefixed profile id. The use case
+            consults ``ProfileLibraryAccessPort`` and restricts the
+            top-N to libraries the profile may see; a deny-all
+            profile yields an empty list without opening a UoW.
+        limit: Maximum number of series to return. Routes clamp this
+            to a sane upper bound before constructing the input.
+        lang: Language code for localized metadata.
+    """
+
+    profile_id: str
+    limit: int = 20
+    lang: str = "en"
+
+
+@dataclass(frozen=True)
+class ListRecentlyAddedSeriesOutput:
+    """Output for ``ListRecentlyAddedSeriesUseCase``.
+
+    Plain top-N projection — no cursor, no ``has_more``. Mirror of
+    ``ListRecentlyAddedMoviesOutput`` for the series side of the
+    home-page carousel.
+
+    Attributes:
+        series: List of series summaries, newest first.
+    """
+
+    series: list[SeriesSummaryOutput]
 
 
 __all__ = [
     "EpisodeOutput",
     "GetSeriesByIdInput",
+    "ListRecentlyAddedSeriesInput",
+    "ListRecentlyAddedSeriesOutput",
     "ListSeriesInput",
     "ListSeriesOutput",
     "SeasonOutput",

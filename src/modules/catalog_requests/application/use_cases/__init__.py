@@ -1,0 +1,17 @@
+"""Catalog Requests use cases."""
+
+from src.modules.catalog_requests.application.use_cases.list_catalog_requests import (
+    ListCatalogRequestsUseCase,
+)
+from src.modules.catalog_requests.application.use_cases.request_catalog_inclusion import (
+    RequestCatalogInclusionUseCase,
+)
+from src.modules.catalog_requests.application.use_cases.subscribe_catalog_notification import (
+    SubscribeCatalogNotificationUseCase,
+)
+
+__all__ = [
+    "ListCatalogRequestsUseCase",
+    "RequestCatalogInclusionUseCase",
+    "SubscribeCatalogNotificationUseCase",
+]

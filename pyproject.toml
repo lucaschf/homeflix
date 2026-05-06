@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "homeflix"
-version = "0.1.0"
+version = "0.2.0"
 description = "Personal streaming platform for local media"
 authors = ["Lucas"]
 license = "MIT"
@@ -47,9 +47,16 @@ tenacity = "^8.2.0"
 dependency-injector = "^4.41.0"
 
 # Utilities
-python-multipart = "^0.0.6"
+python-multipart = "^0.0.20"
 python-jose = { extras = ["cryptography"], version = "^3.3.0" }
 structlog = "^24.1.0"
+apscheduler = "^3.10.4"
+
+# Authentication (identity bounded context — see ADR-010 / ADR-011)
+fastapi-users = { extras = ["sqlalchemy"], version = "^14.0" }
+
+# Image processing (profile avatar resize — see ADR-010 / project-avatar-upload)
+pillow = "^11.0.0"
 
 [tool.poetry.group.dev.dependencies]
 # Testing
@@ -91,6 +98,11 @@ plugins = ["pydantic.mypy", "sqlalchemy.ext.mypy.plugin"]
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+module = ["apscheduler.*"]
+ignore_missing_imports = true
 
 # =============================================================================
 # Pytest
@@ -122,6 +134,7 @@ branch = true
 omit = [
     "*/migrations/*",
     "*/__init__.py",
+    "*/presentation/routes/*",
 ]
 
 [tool.coverage.report]

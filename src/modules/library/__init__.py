@@ -1,0 +1,1 @@
+"""Library management bounded context."""

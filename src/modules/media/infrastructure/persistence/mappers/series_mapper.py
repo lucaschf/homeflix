@@ -1,20 +1,40 @@
 """Mapper between Series/Season/Episode entities and ORM models."""
 
+import json
+
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
+    AirDate,
+    ContentRating,
     Duration,
     EpisodeId,
+    EpisodeNumber,
     FilePath,
     Genre,
+    ImageUrl,
+    ImdbId,
+    IntroDetectionState,
+    IntroMarker,
+    IntroMarkerSource,
     MediaFile,
     Resolution,
     SeasonId,
+    SeasonNumber,
     SeriesId,
     Title,
+    TmdbId,
     Year,
+)
+from src.modules.media.infrastructure.persistence.mappers.cast_serialization import (
+    deserialize_cast,
+    serialize_cast,
+)
+from src.modules.media.infrastructure.persistence.mappers.media_file_mapper import (
+    MediaFileMapper,
 )
 from src.modules.media.infrastructure.persistence.models import (
     EpisodeModel,
+    MediaFileModel,
     SeasonModel,
     SeriesModel,
 )
@@ -26,6 +46,9 @@ class EpisodeMapper:
     @staticmethod
     def to_model(entity: Episode, season_id: int) -> EpisodeModel:
         """Convert Episode entity to EpisodeModel.
+
+        Creates MediaFileModel instances for each file variant and
+        attaches them via the file_variants relationship.
 
         Args:
             entity: The domain Episode entity.
@@ -41,12 +64,12 @@ class EpisodeMapper:
             raise ValueError("Cannot map entity without ID to model")
 
         primary = entity.primary_file
-        return EpisodeModel(
+        model = EpisodeModel(
             external_id=str(entity.id),
             season_id=season_id,
             series_external_id=str(entity.series_id),
-            season_number=entity.season_number,
-            episode_number=entity.episode_number,
+            season_number=entity.season_number.value,
+            episode_number=entity.episode_number.value,
             title=entity.title.value,
             synopsis=entity.synopsis,
             duration=entity.duration.value,
@@ -54,12 +77,24 @@ class EpisodeMapper:
             file_size=primary.file_size if primary else None,
             resolution=primary.resolution.value if primary else None,
             thumbnail_path=entity.thumbnail_path.value if entity.thumbnail_path else None,
-            air_date=entity.air_date,
+            scrub_preview_path=entity.scrub_preview_path.value
+            if entity.scrub_preview_path
+            else None,
+            air_date=entity.air_date.value if entity.air_date else None,
+            **_intro_marker_to_columns(entity.intro),
         )
+
+        for file in entity.files:
+            model.file_variants.append(MediaFileMapper.to_model(file))
+
+        return model
 
     @staticmethod
     def to_entity(model: EpisodeModel) -> Episode:
         """Convert EpisodeModel to Episode entity.
+
+        Uses the file_variants relationship if loaded, otherwise
+        falls back to flat columns for backward compatibility.
 
         Args:
             model: The SQLAlchemy EpisodeModel.
@@ -68,7 +103,11 @@ class EpisodeMapper:
             Domain Episode entity with reconstructed value objects.
         """
         files: list[MediaFile] = []
-        if model.file_path:
+        if model.file_variants:
+            files = [
+                MediaFileMapper.to_entity(fv) for fv in model.file_variants if not fv.is_deleted
+            ]
+        elif model.file_path:
             files = [
                 MediaFile(
                     file_path=FilePath(model.file_path),
@@ -81,14 +120,18 @@ class EpisodeMapper:
         return Episode(
             id=EpisodeId(model.external_id),
             series_id=SeriesId(model.series_external_id),
-            season_number=model.season_number,
-            episode_number=model.episode_number,
+            season_number=SeasonNumber(model.season_number),
+            episode_number=EpisodeNumber(model.episode_number),
             title=Title(model.title),
             synopsis=model.synopsis,
             duration=Duration(model.duration),
             files=files,
-            thumbnail_path=FilePath(model.thumbnail_path) if model.thumbnail_path else None,
-            air_date=model.air_date,
+            thumbnail_path=ImageUrl(model.thumbnail_path) if model.thumbnail_path else None,
+            scrub_preview_path=ImageUrl(model.scrub_preview_path)
+            if model.scrub_preview_path
+            else None,
+            air_date=AirDate(model.air_date) if model.air_date else None,
+            intro=_intro_marker_from_columns(model),
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -96,6 +139,8 @@ class EpisodeMapper:
     @staticmethod
     def update_model(model: EpisodeModel, entity: Episode) -> EpisodeModel:
         """Update existing EpisodeModel with entity data.
+
+        Synchronizes file_variants with entity files.
 
         Args:
             model: The existing SQLAlchemy EpisodeModel.
@@ -105,8 +150,8 @@ class EpisodeMapper:
             The updated EpisodeModel.
         """
         primary = entity.primary_file
-        model.season_number = entity.season_number
-        model.episode_number = entity.episode_number
+        model.season_number = entity.season_number.value
+        model.episode_number = entity.episode_number.value
         model.title = entity.title.value
         model.synopsis = entity.synopsis
         model.duration = entity.duration.value
@@ -114,7 +159,15 @@ class EpisodeMapper:
         model.file_size = primary.file_size if primary else None
         model.resolution = primary.resolution.value if primary else None
         model.thumbnail_path = entity.thumbnail_path.value if entity.thumbnail_path else None
-        model.air_date = entity.air_date
+        model.scrub_preview_path = (
+            entity.scrub_preview_path.value if entity.scrub_preview_path else None
+        )
+        model.air_date = entity.air_date.value if entity.air_date else None
+
+        for column, value in _intro_marker_to_columns(entity.intro).items():
+            setattr(model, column, value)
+
+        _sync_episode_file_variants(model.file_variants, entity.files)
 
         return model
 
@@ -143,11 +196,14 @@ class SeasonMapper:
             external_id=str(entity.id),
             series_id=series_db_id,
             series_external_id=str(entity.series_id),
-            season_number=entity.season_number,
+            season_number=entity.season_number.value,
             title=entity.title.value if entity.title else None,
             synopsis=entity.synopsis,
             poster_path=entity.poster_path.value if entity.poster_path else None,
-            air_date=entity.air_date,
+            air_date=entity.air_date.value if entity.air_date else None,
+            intro_detection_state=entity.intro_detection_state.value,
+            intro_detection_attempted_at=entity.intro_detection_attempted_at,
+            intro_detection_error=entity.intro_detection_error,
         )
 
     @staticmethod
@@ -170,12 +226,15 @@ class SeasonMapper:
         return Season(
             id=SeasonId(model.external_id),
             series_id=SeriesId(model.series_external_id),
-            season_number=model.season_number,
+            season_number=SeasonNumber(model.season_number),
             title=Title(model.title) if model.title else None,
             synopsis=model.synopsis,
-            poster_path=FilePath(model.poster_path) if model.poster_path else None,
-            air_date=model.air_date,
+            poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
+            air_date=AirDate(model.air_date) if model.air_date else None,
             episodes=episode_list,
+            intro_detection_state=IntroDetectionState(model.intro_detection_state),
+            intro_detection_attempted_at=model.intro_detection_attempted_at,
+            intro_detection_error=model.intro_detection_error,
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -191,11 +250,14 @@ class SeasonMapper:
         Returns:
             The updated SeasonModel.
         """
-        model.season_number = entity.season_number
+        model.season_number = entity.season_number.value
         model.title = entity.title.value if entity.title else None
         model.synopsis = entity.synopsis
         model.poster_path = entity.poster_path.value if entity.poster_path else None
-        model.air_date = entity.air_date
+        model.air_date = entity.air_date.value if entity.air_date else None
+        model.intro_detection_state = entity.intro_detection_state.value
+        model.intro_detection_attempted_at = entity.intro_detection_attempted_at
+        model.intro_detection_error = entity.intro_detection_error
 
         return model
 
@@ -221,6 +283,7 @@ class SeriesMapper:
 
         return SeriesModel(
             external_id=str(entity.id),
+            library_id=entity.library_id,
             title=entity.title.value,
             original_title=entity.original_title.value if entity.original_title else None,
             start_year=entity.start_year.value,
@@ -228,9 +291,16 @@ class SeriesMapper:
             synopsis=entity.synopsis,
             poster_path=entity.poster_path.value if entity.poster_path else None,
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
+            logo_path=entity.logo_path.value if entity.logo_path else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
-            tmdb_id=entity.tmdb_id,
-            imdb_id=entity.imdb_id,
+            content_rating=entity.content_rating.value if entity.content_rating else None,
+            trailer_url=entity.trailer_url,
+            cast=serialize_cast(entity.cast),
+            localized=json.dumps(entity.localized, ensure_ascii=False)
+            if entity.localized
+            else None,
+            tmdb_id=entity.tmdb_id.value if entity.tmdb_id else None,
+            imdb_id=entity.imdb_id.value if entity.imdb_id else None,
         )
 
     @staticmethod
@@ -254,16 +324,22 @@ class SeriesMapper:
 
         return Series(
             id=SeriesId(model.external_id),
+            library_id=model.library_id,
             title=Title(model.title),
             original_title=Title(model.original_title) if model.original_title else None,
             start_year=Year(model.start_year),
             end_year=Year(model.end_year) if model.end_year else None,
             synopsis=model.synopsis,
-            poster_path=FilePath(model.poster_path) if model.poster_path else None,
-            backdrop_path=FilePath(model.backdrop_path) if model.backdrop_path else None,
+            poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
+            backdrop_path=ImageUrl(model.backdrop_path) if model.backdrop_path else None,
+            logo_path=ImageUrl(model.logo_path) if model.logo_path else None,
             genres=genre_list,
-            tmdb_id=model.tmdb_id,
-            imdb_id=model.imdb_id,
+            content_rating=ContentRating(model.content_rating) if model.content_rating else None,
+            trailer_url=model.trailer_url,
+            cast=deserialize_cast(model.cast),
+            localized=json.loads(model.localized) if model.localized else {},
+            tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
+            imdb_id=ImdbId(model.imdb_id) if model.imdb_id else None,
             seasons=season_list,
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -280,6 +356,9 @@ class SeriesMapper:
         Returns:
             The updated SeriesModel.
         """
+        # ``library_id`` is the immutable owning-library reference; it
+        # gets set once at creation time and never changes, so the
+        # update path leaves it alone.
         model.title = entity.title.value
         model.original_title = entity.original_title.value if entity.original_title else None
         model.start_year = entity.start_year.value
@@ -287,11 +366,99 @@ class SeriesMapper:
         model.synopsis = entity.synopsis
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
+        model.logo_path = entity.logo_path.value if entity.logo_path else None
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
-        model.tmdb_id = entity.tmdb_id
-        model.imdb_id = entity.imdb_id
+        model.content_rating = entity.content_rating.value if entity.content_rating else None
+        model.trailer_url = entity.trailer_url
+        model.cast = serialize_cast(entity.cast)
+        model.localized = (
+            json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None
+        )
+        model.tmdb_id = entity.tmdb_id.value if entity.tmdb_id else None
+        model.imdb_id = entity.imdb_id.value if entity.imdb_id else None
 
         return model
+
+
+def _intro_marker_to_columns(marker: IntroMarker | None) -> dict[str, object]:
+    """Explode an IntroMarker (or absence of one) into the 5 episode columns.
+
+    Args:
+        marker: The IntroMarker VO to persist, or ``None`` to clear it.
+
+    Returns:
+        A dict suitable for keyword-expansion into ``EpisodeModel`` or
+        ``setattr`` iteration on an existing model. All five columns
+        appear so callers can rely on a complete clear when ``marker``
+        is ``None``.
+    """
+    if marker is None:
+        return {
+            "intro_start_seconds": None,
+            "intro_end_seconds": None,
+            "intro_source": None,
+            "intro_confidence": None,
+            "intro_detected_at": None,
+        }
+
+    return {
+        "intro_start_seconds": marker.start_seconds,
+        "intro_end_seconds": marker.end_seconds,
+        "intro_source": marker.source.value,
+        "intro_confidence": marker.confidence,
+        "intro_detected_at": marker.detected_at,
+    }
+
+
+def _intro_marker_from_columns(model: EpisodeModel) -> IntroMarker | None:
+    """Reconstruct an IntroMarker from the 5 episode columns.
+
+    The intro is considered absent when ``intro_start_seconds`` is
+    ``NULL``; the other columns must be populated together when it is
+    set (a partially-populated row indicates schema corruption and
+    will surface as a Pydantic validation error here).
+
+    Args:
+        model: Source ORM model.
+
+    Returns:
+        The reconstructed VO, or ``None`` if no intro is persisted.
+    """
+    if model.intro_start_seconds is None:
+        return None
+
+    return IntroMarker(
+        start_seconds=model.intro_start_seconds,
+        end_seconds=model.intro_end_seconds,
+        source=IntroMarkerSource(model.intro_source),
+        confidence=model.intro_confidence,
+        detected_at=model.intro_detected_at,
+    )
+
+
+def _sync_episode_file_variants(
+    existing_models: list[MediaFileModel],
+    entity_files: list[MediaFile],
+) -> None:
+    """Synchronize ORM file_variants list with entity files.
+
+    Args:
+        existing_models: The ORM relationship list (mutable).
+        entity_files: The domain MediaFile list (source of truth).
+    """
+    existing_by_path = {m.file_path: m for m in existing_models}
+    entity_paths = {f.file_path.value for f in entity_files}
+
+    for file in entity_files:
+        path = file.file_path.value
+        if path in existing_by_path:
+            MediaFileMapper.update_model(existing_by_path[path], file)
+        else:
+            existing_models.append(MediaFileMapper.to_model(file))
+
+    to_remove = [m for m in existing_models if m.file_path not in entity_paths]
+    for m in to_remove:
+        existing_models.remove(m)
 
 
 __all__ = ["EpisodeMapper", "SeasonMapper", "SeriesMapper"]

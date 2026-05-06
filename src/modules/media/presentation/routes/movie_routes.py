@@ -1,0 +1,277 @@
+"""Movie REST API routes."""
+
+from typing import Any
+
+from dependency_injector.wiring import Provide, inject
+from fastapi import APIRouter, Depends
+
+from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from src.building_blocks.presentation import Pagination, api_list, api_single
+from src.config.containers import ApplicationContainer
+from src.modules.identity.infrastructure.auth import current_admin_user
+from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.media.application.dtos.media_file_dtos import (
+    AddFileVariantInput,
+    GetFileVariantsInput,
+    RemoveFileVariantInput,
+    SetPrimaryFileInput,
+)
+from src.modules.media.application.dtos.movie_dtos import (
+    DeleteMovieInput,
+    GetMovieByIdInput,
+    ListMoviesInput,
+    ListRecentlyAddedMoviesInput,
+)
+from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
+from src.modules.media.application.use_cases.delete_movie import DeleteMovieUseCase
+from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
+from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
+from src.modules.media.application.use_cases.get_related_movies import (
+    GetRelatedMoviesInput,
+    GetRelatedMoviesUseCase,
+)
+from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
+from src.modules.media.application.use_cases.list_recently_added_movies import (
+    ListRecentlyAddedMoviesUseCase,
+)
+from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
+from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
+from src.modules.media.presentation.dependencies import resolve_profile_id
+from src.modules.media.presentation.schemas import (
+    AddFileVariantRequest,
+    RemoveFileVariantRequest,
+    SetPrimaryFileRequest,
+)
+
+router = APIRouter(prefix="/api/v1/movies", tags=["Movies"])
+
+
+# ── Movie endpoints ─────────────────────────────────────────────────
+
+
+@router.get("")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def list_movies(
+    cursor: str | None = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+    include_count: bool = False,
+    lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: ListMoviesUseCase = Depends(
+        Provide[ApplicationContainer.media.list_movies],
+    ),
+) -> dict[str, Any]:
+    """List one cursor-paginated page of movies.
+
+    Query params:
+        cursor: Opaque token returned by the previous page's
+            ``metadata.pagination.next_cursor``. Omit on the first
+            request. Invalid / tampered cursors silently start over
+            from the beginning.
+        limit: Page size, clamped to ``[1, MAX_PAGE_SIZE]``. Defaults
+            to ``DEFAULT_PAGE_SIZE`` (20).
+        include_count: When ``true``, the response includes
+            ``metadata.total_count``. Defaults to ``false`` to skip
+            the extra ``COUNT(*)`` query that infinite-scroll
+            consumers don't need.
+        lang: Language code for localized metadata.
+    """
+    clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
+    result = await use_case.execute(
+        ListMoviesInput(
+            profile_id=profile_id,
+            cursor=cursor,
+            limit=clamped_limit,
+            include_total=include_count,
+            lang=lang,
+        )
+    )
+    extras: dict[str, Any] | None = (
+        {"total_count": result.total_count} if result.total_count is not None else None
+    )
+    return api_list(
+        [_dataclass_to_dict(m) for m in result.movies],
+        pagination=Pagination(has_more=result.has_more, next_cursor=result.next_cursor),
+        metadata_extras=extras,
+    )
+
+
+# Registered before ``/{movie_id}`` so the dynamic segment doesn't
+# swallow ``recently-added`` and dispatch to ``get_movie``.
+@router.get("/recently-added")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def list_recently_added_movies(
+    limit: int = 20,
+    lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: ListRecentlyAddedMoviesUseCase = Depends(
+        Provide[ApplicationContainer.media.list_recently_added_movies],
+    ),
+) -> dict[str, Any]:
+    """Return the top N most recently added movies for the home page.
+
+    Sorted by insertion order (newest first) — see
+    ``MovieRepository.list_recently_added`` for the ``id DESC``
+    justification. ``limit`` is clamped to ``[1, 50]`` so the home
+    carousel can't be coerced into pulling the full catalog.
+    """
+    clamped_limit = max(1, min(limit, 50))
+    result = await use_case.execute(
+        ListRecentlyAddedMoviesInput(profile_id=profile_id, limit=clamped_limit, lang=lang),
+    )
+    return api_list([_dataclass_to_dict(m) for m in result.movies])
+
+
+@router.get("/{movie_id}")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def get_movie(
+    movie_id: str,
+    lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: GetMovieByIdUseCase = Depends(
+        Provide[ApplicationContainer.media.get_movie_by_id],
+    ),
+) -> dict[str, Any]:
+    """Get a movie by ID."""
+    result = await use_case.execute(
+        GetMovieByIdInput(profile_id=profile_id, movie_id=movie_id, lang=lang)
+    )
+    return api_single("movie", _dataclass_to_dict(result))
+
+
+@router.get("/{movie_id}/related")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def get_related_movies(
+    movie_id: str,
+    lang: str = "en",
+    limit: int = 12,
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: GetRelatedMoviesUseCase = Depends(
+        Provide[ApplicationContainer.media.get_related_movies],
+    ),
+) -> dict[str, Any]:
+    """Return movies in the local catalog that TMDB recommends for ``movie_id``.
+
+    Best-effort polish for the "you might also like" carousel: the
+    response is an empty list whenever the movie has no TMDB id, the
+    provider returns nothing, or no recommendation overlaps with the
+    local catalog. The route never raises.
+    """
+    items = await use_case.execute(
+        GetRelatedMoviesInput(
+            profile_id=profile_id,
+            movie_id=movie_id,
+            lang=lang,
+            limit=max(1, min(limit, 30)),
+        ),
+    )
+    return api_list([_dataclass_to_dict(item) for item in items])
+
+
+@router.delete("/{movie_id}", status_code=204)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def delete_movie(
+    movie_id: str,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: DeleteMovieUseCase = Depends(
+        Provide[ApplicationContainer.media.delete_movie],
+    ),
+) -> None:
+    """Soft-delete a movie by ID.
+
+    The movie record is marked as deleted but not physically removed,
+    allowing for future recovery if needed.
+    """
+    await use_case.execute(DeleteMovieInput(movie_id=movie_id))
+
+
+# ── File variant endpoints ──────────────────────────────────────────
+
+
+@router.get("/{movie_id}/files")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def get_file_variants(
+    movie_id: str,
+    use_case: GetFileVariantsUseCase = Depends(
+        Provide[ApplicationContainer.media.get_file_variants],
+    ),
+) -> dict[str, Any]:
+    """List all file variants of a movie."""
+    result = await use_case.execute(GetFileVariantsInput(media_id=movie_id))
+    return api_list([_dataclass_to_dict(f) for f in result])
+
+
+@router.post("/{movie_id}/files", status_code=201)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def add_file_variant(
+    movie_id: str,
+    body: AddFileVariantRequest,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: AddFileVariantUseCase = Depends(
+        Provide[ApplicationContainer.media.add_file_variant],
+    ),
+) -> dict[str, Any]:
+    """Add a file variant to a movie."""
+    result = await use_case.execute(
+        AddFileVariantInput(
+            media_id=movie_id,
+            file_path=body.file_path,
+            file_size=body.file_size,
+            resolution=body.resolution,
+            video_codec=body.video_codec,
+            video_bitrate=body.video_bitrate,
+            hdr_format=body.hdr_format,
+            is_primary=body.is_primary,
+        ),
+    )
+    return api_single("media_file", _dataclass_to_dict(result))
+
+
+@router.delete("/{movie_id}/files", status_code=204)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def remove_file_variant(
+    movie_id: str,
+    body: RemoveFileVariantRequest,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: RemoveFileVariantUseCase = Depends(
+        Provide[ApplicationContainer.media.remove_file_variant],
+    ),
+) -> None:
+    """Remove a file variant from a movie."""
+    await use_case.execute(
+        RemoveFileVariantInput(media_id=movie_id, file_path=body.file_path),
+    )
+
+
+@router.put("/{movie_id}/files/primary")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def set_primary_file(
+    movie_id: str,
+    body: SetPrimaryFileRequest,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: SetPrimaryFileUseCase = Depends(
+        Provide[ApplicationContainer.media.set_primary_file],
+    ),
+) -> dict[str, Any]:
+    """Set a file variant as primary."""
+    result = await use_case.execute(
+        SetPrimaryFileInput(media_id=movie_id, file_path=body.file_path),
+    )
+    return api_list([_dataclass_to_dict(f) for f in result])
+
+
+def _dataclass_to_dict(obj: Any) -> dict[str, Any]:
+    """Convert a frozen dataclass to a dictionary.
+
+    Args:
+        obj: A frozen dataclass instance.
+
+    Returns:
+        Dictionary representation.
+    """
+    from dataclasses import asdict
+
+    return asdict(obj)
+
+
+__all__ = ["router"]
