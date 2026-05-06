@@ -9,15 +9,15 @@ from src.building_blocks.presentation import error_mapping
 
 @pytest.fixture(autouse=True)
 def _isolated_registry() -> Iterator[None]:
-    """Snapshot/restore ``_REGISTRY`` so mutations don't leak across tests.
+    """Snapshot/restore the registry so mutations don't leak across tests.
 
-    The snapshot is taken after module import, so ``GENERIC_HTTP_STATUSES``
-    is part of it and is restored intact between tests.
+    Uses ``error_mapping.isolated_registry()`` so the test depends only
+    on the public test-isolation primitive, not on the private
+    ``_REGISTRY`` dict. The snapshot includes ``GENERIC_HTTP_STATUSES``
+    (auto-registered at import) so generic codes are intact between tests.
     """
-    snapshot = dict(error_mapping._REGISTRY)
-    yield
-    error_mapping._REGISTRY.clear()
-    error_mapping._REGISTRY.update(snapshot)
+    with error_mapping.isolated_registry():
+        yield
 
 
 def _all_subclasses(cls: type) -> set[type]:
@@ -62,18 +62,44 @@ class TestRegisterHttpStatuses:
         assert error_mapping.resolve_http_status("CODE_A") == 418
         assert error_mapping.resolve_http_status("CODE_B") == 451
 
-    def test_should_not_apply_partial_batch_on_conflict(self) -> None:
+    def test_should_apply_batch_atomically_on_conflict(self) -> None:
+        """A conflict in any entry rolls the whole batch back."""
         error_mapping.register_http_statuses({"EXISTING": 418})
 
-        with pytest.raises(ValueError):
-            error_mapping.register_http_statuses({"BRAND_NEW": 451, "EXISTING": 999})
+        with pytest.raises(ValueError, match="Conflicting"):
+            error_mapping.register_http_statuses({"BRAND_NEW": 451, "EXISTING": 500})
 
-        # The batch raised on EXISTING; whether BRAND_NEW landed depends
-        # on dict iteration order. The contract we promise is "raises on
-        # conflict" — callers retrying after fixing the conflict can
-        # safely re-register due to idempotency. This test pins that
-        # the conflict actually surfaces (vs. silent overwrite).
+        # All-or-nothing: the offending entry raises, and no entry from
+        # the batch is applied. BRAND_NEW must NOT land regardless of
+        # the dict iteration order.
         assert error_mapping.resolve_http_status("EXISTING") == 418
+        assert error_mapping.resolve_http_status("BRAND_NEW", default=-1) == -1
+
+    def test_should_apply_batch_atomically_on_invalid_status(self) -> None:
+        """An out-of-range status in any entry rolls the whole batch back."""
+        with pytest.raises(ValueError, match=r"\[100, 599\]"):
+            error_mapping.register_http_statuses({"VALID": 418, "BAD": 999})
+
+        # Neither entry should land if any one is invalid.
+        assert error_mapping.resolve_http_status("VALID", default=-1) == -1
+        assert error_mapping.resolve_http_status("BAD", default=-1) == -1
+
+    @pytest.mark.parametrize("invalid_status", [-1, 0, 99, 600, 1000])
+    def test_should_raise_when_status_is_out_of_range(
+        self,
+        invalid_status: int,
+    ) -> None:
+        with pytest.raises(ValueError, match=r"\[100, 599\]"):
+            error_mapping.register_http_statuses({"BAD_CODE": invalid_status})
+
+    @pytest.mark.parametrize("valid_status", [100, 200, 404, 500, 599])
+    def test_should_accept_statuses_at_range_boundaries(
+        self,
+        valid_status: int,
+    ) -> None:
+        error_mapping.register_http_statuses({"BOUNDARY_CODE": valid_status})
+
+        assert error_mapping.resolve_http_status("BOUNDARY_CODE") == valid_status
 
 
 @pytest.mark.unit
@@ -98,6 +124,37 @@ class TestResolveErrorType:
 
     def test_should_fall_back_to_api_error_for_unmapped_status(self) -> None:
         assert error_mapping.resolve_error_type(999) == "api_error"
+
+
+@pytest.mark.unit
+class TestIsolatedRegistry:
+    """``isolated_registry`` snapshots and restores the registry."""
+
+    def test_should_restore_registry_after_context_exits(self) -> None:
+        with error_mapping.isolated_registry():
+            error_mapping.register_http_statuses({"SCOPED": 418})
+            assert error_mapping.resolve_http_status("SCOPED") == 418
+
+        assert error_mapping.resolve_http_status("SCOPED", default=-1) == -1
+
+    def test_should_restore_registry_when_block_raises(self) -> None:
+        try:
+            with error_mapping.isolated_registry():
+                error_mapping.register_http_statuses({"SCOPED": 418})
+                raise RuntimeError("simulated failure inside the block")
+        except RuntimeError:
+            pass
+
+        assert error_mapping.resolve_http_status("SCOPED", default=-1) == -1
+
+    def test_should_preserve_pre_existing_registrations(self) -> None:
+        # The autouse fixture has already taken a snapshot that includes
+        # GENERIC_HTTP_STATUSES; entering another context-manager scope
+        # must not lose those entries on exit.
+        with error_mapping.isolated_registry():
+            error_mapping.register_http_statuses({"SCOPED": 418})
+
+        assert error_mapping.resolve_http_status("RESOURCE_NOT_FOUND") == 404
 
 
 @pytest.mark.unit

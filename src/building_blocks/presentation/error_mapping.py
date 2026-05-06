@@ -11,6 +11,9 @@ property; a coverage test guards parity between the property and this
 registry. Subsequent PRs invert the handler and remove the property.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 _REGISTRY: dict[str, int] = {}
 
 _STATUS_TO_ERROR_TYPE: dict[int, str] = {
@@ -65,30 +68,66 @@ GENERIC_HTTP_STATUSES: dict[str, int] = {
 def register_http_statuses(mapping: dict[str, int]) -> None:
     """Register a batch of ``error_code → http_status`` entries.
 
+    Transactional: the batch is validated in full before any entry is
+    written. If any status is out of range or any code conflicts with
+    an existing different value, no entry from the batch is applied —
+    callers can fix the offending entry and retry without worrying that
+    earlier entries already landed.
+
     Idempotent for equal values (registering the same pair repeatedly is
     a no-op). Conflicts — same code, different status — raise instead
     of silently overwriting, since silent wins would mask bootstrap-order
     bugs and cross-BC code collisions.
 
     Args:
-        mapping: Dict of error code → HTTP status code.
+        mapping: Dict of error code → HTTP status code. Each status must
+            be a valid HTTP status code in the inclusive range [100, 599].
 
     Raises:
-        ValueError: If a code is already registered with a different
-            status. The exception lists both values so the caller can
+        ValueError: If any status is outside [100, 599], or if a code is
+            already registered with a different status. The exception
+            message identifies the offending entry so the caller can
             decide which BC owns the code.
 
     Example:
         >>> register_http_statuses({"PROFILE_NOT_FOUND": 404})
     """
+    # Phase 1 — validate every entry. No mutation until the batch is clean.
     for code, status in mapping.items():
+        if not 100 <= status <= 599:
+            raise ValueError(f"HTTP status for code {code!r} must be in [100, 599], got {status}")
         existing = _REGISTRY.get(code)
         if existing is not None and existing != status:
             raise ValueError(
                 f"Conflicting http_status registration for code {code!r}: "
                 f"already registered as {existing}, new value {status}"
             )
-        _REGISTRY[code] = status
+    # Phase 2 — commit. All entries pass validation so this is atomic
+    # from the caller's perspective.
+    _REGISTRY.update(mapping)
+
+
+@contextmanager
+def isolated_registry() -> Iterator[None]:
+    """Snapshot the registry on entry, restore the snapshot on exit.
+
+    Test-isolation primitive that lets a block mutate the registry
+    without leaking changes to subsequent code. Equivalent to a
+    save/restore around any number of ``register_http_statuses`` calls.
+
+    Example:
+        >>> with isolated_registry():
+        ...     register_http_statuses({"TEMP_CODE": 418})
+        ...     assert resolve_http_status("TEMP_CODE") == 418
+        >>> resolve_http_status("TEMP_CODE", default=-1)  # restored
+        -1
+    """
+    snapshot = dict(_REGISTRY)
+    try:
+        yield
+    finally:
+        _REGISTRY.clear()
+        _REGISTRY.update(snapshot)
 
 
 def resolve_http_status(code: str, default: int = 500) -> int:
@@ -128,6 +167,7 @@ register_http_statuses(GENERIC_HTTP_STATUSES)
 
 __all__ = [
     "GENERIC_HTTP_STATUSES",
+    "isolated_registry",
     "register_http_statuses",
     "resolve_error_type",
     "resolve_http_status",
