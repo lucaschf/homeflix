@@ -1,6 +1,6 @@
 # HomeFlix — Roadmap
 
-> Last updated: 2026-05-05
+> Last updated: 2026-05-06
 
 This roadmap captures **what comes next** after the Phase 1 foundation.
 Items are ordered so each tier builds on the previous one — both in
