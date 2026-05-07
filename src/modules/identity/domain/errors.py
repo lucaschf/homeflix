@@ -49,16 +49,12 @@ class CannotDeleteLastProfileError(ApplicationException):
     ``get_current_profile`` always has something to resolve. Raised by
     ``DeleteProfileUseCase``. Maps to HTTP 409 (conflict) — distinct
     from a generic 400 because the request is well-formed but conflicts
-    with a domain invariant.
+    with a domain invariant. Status registered in
+    ``modules/identity/presentation/error_mapping.py`` (ADR-012).
     """
 
     code: str = "CANNOT_DELETE_LAST_PROFILE"
     message_code: str = IdentityRuleCodes.CANNOT_DELETE_LAST_PROFILE
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 409 (Conflict)."""
-        return 409
 
 
 @dataclass
@@ -79,16 +75,12 @@ class NoActiveProfileSelectedError(ApplicationException):
 
     Returned as HTTP 409 (conflict) so the frontend can distinguish "not
     logged in" (401) from "logged in but profile picker required" (409).
-    Raised by ``get_current_profile``.
+    Raised by ``get_current_profile``. Status registered in
+    ``modules/identity/presentation/error_mapping.py`` (ADR-012).
     """
 
     code: str = "NO_ACTIVE_PROFILE"
     message_code: str = IdentityRuleCodes.NO_ACTIVE_PROFILE
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 409 (Conflict)."""
-        return 409
 
 
 __all__ = [

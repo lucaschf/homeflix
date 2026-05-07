@@ -5,10 +5,13 @@ Bounded Context with module-specific codes registers its own mapping at
 bootstrap; transversal codes (`RESOURCE_NOT_FOUND`, `GATEWAY_TIMEOUT`,
 etc.) live in ``GENERIC_HTTP_STATUSES`` and auto-register on import.
 
-This is the foundation step of the migration in ADR-012. During this PR
-the global handler still reads ``exc.http_status`` from the exception
-property; a coverage test guards parity between the property and this
-registry. Subsequent PRs invert the handler and remove the property.
+The global exception handler resolves both the response status and the
+v3 envelope ``type`` via this module — exception classes themselves
+carry no HTTP knowledge. A coverage test in
+``tests/building_blocks/unit/presentation/test_error_mapping.py``
+asserts every concrete ``CoreException`` subclass has an explicit
+registry entry, guarding against silent 500 fallbacks when a new
+code is added without a status mapping.
 """
 
 from collections.abc import Iterator

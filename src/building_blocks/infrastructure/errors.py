@@ -24,7 +24,8 @@ class InfrastructureException(CoreException):
     Attributes:
         internal_message: Technical details for logs only
 
-    Default HTTP status: 500 (Internal Server Error)
+    HTTP status: 500 (Internal Server Error), resolved by the registry
+    via ``code``. See ADR-012 / ``error_mapping.GENERIC_HTTP_STATUSES``.
     """
 
     code: str = "INFRASTRUCTURE_ERROR"
@@ -36,11 +37,6 @@ class InfrastructureException(CoreException):
         super().__post_init__()
         if self.internal_message:
             self.tags["internal_message"] = self.internal_message
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 500 (Internal Server Error)."""
-        return 500
 
 
 # =============================================================================
@@ -82,11 +78,6 @@ class GatewayTimeoutException(GatewayException):
     code: str = "GATEWAY_TIMEOUT"
     message_code: str = "SERVICE_TIMEOUT"
 
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 504 (Gateway Timeout)."""
-        return 504
-
 
 @dataclass
 class GatewayUnavailableException(GatewayException):
@@ -103,11 +94,6 @@ class GatewayUnavailableException(GatewayException):
 
     code: str = "GATEWAY_UNAVAILABLE"
     message_code: str = "SERVICE_UNAVAILABLE"
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 503 (Service Unavailable)."""
-        return 503
 
 
 @dataclass
@@ -129,11 +115,6 @@ class GatewayRateLimitException(GatewayException):
     code: str = "GATEWAY_RATE_LIMIT"
     message_code: str = "RATE_LIMIT_EXCEEDED"
     retry_after_seconds: int = 60
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 429 (Too Many Requests)."""
-        return 429
 
     def __post_init__(self) -> None:
         """Initialize and add retry_after_seconds to tags and message_params."""
@@ -157,11 +138,6 @@ class GatewayBadResponseException(GatewayException):
 
     code: str = "GATEWAY_BAD_RESPONSE"
     message_code: str = "INVALID_GATEWAY_RESPONSE"
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 502 (Bad Gateway)."""
-        return 502
 
 
 @dataclass
@@ -187,11 +163,6 @@ class CircuitOpenException(GatewayException):
     code: str = "CIRCUIT_OPEN"
     message_code: str = "SERVICE_CIRCUIT_OPEN"
     circuit_timeout: int = 30
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 503 (Service Unavailable)."""
-        return 503
 
     def __post_init__(self) -> None:
         """Initialize and add circuit_timeout to tags."""
@@ -227,11 +198,6 @@ class DatabaseConnectionException(RepositoryException):
     message_code: str = "DATABASE_UNAVAILABLE"
     severity: Severity = Severity.CRITICAL
 
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 503 (Service Unavailable)."""
-        return 503
-
 
 @dataclass
 class DataIntegrityException(RepositoryException):
@@ -252,11 +218,6 @@ class DataIntegrityException(RepositoryException):
     code: str = "DATA_INTEGRITY_ERROR"
     message_code: str = "DATA_CONFLICT"
     constraint_name: str = ""
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 409 (Conflict)."""
-        return 409
 
     def __post_init__(self) -> None:
         """Initialize and add constraint_name to tags if set."""
@@ -302,11 +263,6 @@ class FileNotFoundException(FilesystemException):
 
     code: str = "FILE_NOT_FOUND"
     message_code: str = "FILE_NOT_FOUND"
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 404 (Not Found)."""
-        return 404
 
 
 @dataclass

@@ -8,6 +8,7 @@ from src.building_blocks.domain.errors import (
     DomainValidationException,
     Severity,
 )
+from src.building_blocks.presentation.error_mapping import resolve_http_status
 
 
 class TestDomainException:
@@ -18,20 +19,14 @@ class TestDomainException:
 
         assert exc.code == "DOMAIN_ERROR"
 
-    def test_should_have_http_status_422(self):
-        exc = DomainException(message="Domain error")
-
-        assert exc.http_status == 422
+    def test_code_should_resolve_to_http_status_422(self):
+        # HTTP status lives in the registry now (ADR-012), keyed by code.
+        assert resolve_http_status("DOMAIN_ERROR") == 422
 
     def test_should_have_medium_severity_by_default(self):
         exc = DomainException(message="Domain error")
 
         assert exc.severity == Severity.MEDIUM
-
-    def test_should_map_to_validation_error_type(self):
-        exc = DomainException(message="Domain error")
-
-        assert exc._get_error_type() == "validation_error"
 
 
 class TestDomainValidationException:
@@ -219,10 +214,8 @@ class TestDomainNotFoundException:
 
         assert exc.code == "DOMAIN_NOT_FOUND"
 
-    def test_should_have_http_status_404(self):
-        exc = DomainNotFoundException(message="Not found")
-
-        assert exc.http_status == 404
+    def test_code_should_resolve_to_http_status_404(self):
+        assert resolve_http_status("DOMAIN_NOT_FOUND") == 404
 
     def test_should_store_resource_info(self):
         exc = DomainNotFoundException(
@@ -244,11 +237,6 @@ class TestDomainNotFoundException:
         )
 
         assert exc.message_params == {"resource": "Movie", "id": "mov_abc123abc123"}
-
-    def test_should_map_to_not_found_error_type(self):
-        exc = DomainNotFoundException(message="Not found")
-
-        assert exc._get_error_type() == "not_found_error"
 
 
 class TestDomainNotFoundExceptionForEntity:
@@ -282,20 +270,13 @@ class TestDomainConflictException:
 
         assert exc.code == "DOMAIN_CONFLICT"
 
-    def test_should_have_http_status_409(self):
-        exc = DomainConflictException(message="Conflict")
-
-        assert exc.http_status == 409
+    def test_code_should_resolve_to_http_status_409(self):
+        assert resolve_http_status("DOMAIN_CONFLICT") == 409
 
     def test_should_have_default_message_code(self):
         exc = DomainConflictException(message="Conflict")
 
         assert exc.message_code == "CONFLICT"
-
-    def test_should_map_to_conflict_error_type(self):
-        exc = DomainConflictException(message="Conflict")
-
-        assert exc._get_error_type() == "conflict_error"
 
     def test_should_accept_custom_tags(self):
         exc = DomainConflictException(

@@ -142,15 +142,6 @@ class TestCoreExceptionCreation:
         assert str(exc) == "Error"
 
 
-class TestCoreExceptionHttpStatus:
-    """Tests for CoreException.http_status property."""
-
-    def test_default_http_status_should_be_500(self):
-        exc = CoreException(message="Error")
-
-        assert exc.http_status == 500
-
-
 class TestCoreExceptionToDict:
     """Tests for CoreException.to_dict() method."""
 
@@ -162,7 +153,10 @@ class TestCoreExceptionToDict:
 
         result = exc.to_dict()
 
-        assert result["type"] == "api_error"  # 500 maps to api_error
+        # ``type`` belongs to the v3 envelope and is set by the global
+        # exception handler from the registry (ADR-012). ``to_dict`` no
+        # longer pre-populates it.
+        assert "type" not in result
         assert result["message"] == "Something went wrong"
         assert result["code"] == "ERROR_CODE"
 
@@ -224,55 +218,6 @@ class TestCoreExceptionToDict:
 
         assert result["_internal"]["cause"] == "Original error"
         assert result["_internal"]["cause_type"] == "ValueError"
-
-
-class TestCoreExceptionGetErrorType:
-    """Tests for CoreException._get_error_type() method."""
-
-    def test_should_map_400_to_invalid_request_error(self):
-        class BadRequestException(CoreException):
-            @property
-            def http_status(self) -> int:
-                return 400
-
-        exc = BadRequestException(message="Bad request")
-        assert exc._get_error_type() == "invalid_request_error"
-
-    def test_should_map_404_to_not_found_error(self):
-        class NotFoundException(CoreException):
-            @property
-            def http_status(self) -> int:
-                return 404
-
-        exc = NotFoundException(message="Not found")
-        assert exc._get_error_type() == "not_found_error"
-
-    def test_should_map_422_to_validation_error(self):
-        class ValidationException(CoreException):
-            @property
-            def http_status(self) -> int:
-                return 422
-
-        exc = ValidationException(message="Validation failed")
-        assert exc._get_error_type() == "validation_error"
-
-    def test_should_map_409_to_conflict_error(self):
-        class ConflictException(CoreException):
-            @property
-            def http_status(self) -> int:
-                return 409
-
-        exc = ConflictException(message="Conflict")
-        assert exc._get_error_type() == "conflict_error"
-
-    def test_should_map_unknown_status_to_api_error(self):
-        class CustomException(CoreException):
-            @property
-            def http_status(self) -> int:
-                return 418  # I'm a teapot
-
-        exc = CustomException(message="I'm a teapot")
-        assert exc._get_error_type() == "api_error"
 
 
 class TestCoreExceptionWithTranslation:

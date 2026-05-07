@@ -43,5 +43,5 @@ class TestCurrentAdminUser:
         with pytest.raises(ForbiddenOperationException) as exc_info:
             await current_admin_user(user=user)
 
-        assert exc_info.value.http_status == 403
+        assert exc_info.value.code == "FORBIDDEN"
         assert exc_info.value.required_permission == "admin"
