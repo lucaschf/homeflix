@@ -5,6 +5,8 @@ translation path (status, body, handler selection) rather than calling
 the handlers directly with hand-rolled requests.
 """
 
+from dataclasses import dataclass
+
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -15,9 +17,11 @@ from src.building_blocks.application.errors import (
 )
 from src.building_blocks.domain.errors import (
     BusinessRuleViolationException,
+    CoreException,
     DomainValidationException,
 )
 from src.building_blocks.infrastructure.errors import GatewayTimeoutException
+from src.building_blocks.presentation import error_mapping
 from src.building_blocks.presentation.exception_handlers import (
     register_exception_handlers,
 )
@@ -246,6 +250,92 @@ class TestHttpExceptionTranslation:
             "message": "",
             "code": "CONFLICT_ERROR",
         }
+
+
+@pytest.mark.unit
+class TestRegistryDrivesCoreHandler:
+    """``core_exception_handler`` resolves status and type via the registry.
+
+    Builds a synthetic ``CoreException`` subclass whose ``http_status``
+    property disagrees with the registry on purpose, and asserts the
+    response uses the registry value. This pins the inversion done in
+    ADR-012 PR 2: the property is no longer the source of truth, so the
+    next migration step can remove it without changing observable HTTP
+    behavior.
+    """
+
+    def test_response_status_comes_from_registry_not_property(self) -> None:
+        @dataclass
+        class _ProbeError(CoreException):
+            code: str = "PR2_PROBE_CODE"
+
+            @property
+            def http_status(self) -> int:  # disagrees with registry on purpose
+                return 200
+
+        with error_mapping.isolated_registry():
+            error_mapping.register_http_statuses({"PR2_PROBE_CODE": 418})
+
+            app = _make_app()
+
+            @app.get("/foo")
+            async def _route() -> None:
+                raise _ProbeError(message="probe")
+
+            response = TestClient(app).get("/foo")
+
+        assert response.status_code == 418
+
+    def test_response_type_comes_from_registry_not_property(self) -> None:
+        @dataclass
+        class _ProbeError(CoreException):
+            code: str = "PR2_TYPE_PROBE"
+
+            @property
+            def http_status(self) -> int:  # would resolve to "validation_error"
+                return 422
+
+        with error_mapping.isolated_registry():
+            # Registry maps the code to 409, which translates to "conflict_error".
+            error_mapping.register_http_statuses({"PR2_TYPE_PROBE": 409})
+
+            app = _make_app()
+
+            @app.get("/foo")
+            async def _route() -> None:
+                raise _ProbeError(message="probe")
+
+            response = TestClient(app).get("/foo")
+
+        assert response.status_code == 409
+        assert response.json()["type"] == "conflict_error"
+
+    def test_unregistered_code_falls_back_to_500(self) -> None:
+        @dataclass
+        class _OrphanError(CoreException):
+            code: str = "NEVER_REGISTERED_CODE"
+
+            @property
+            def http_status(self) -> int:  # property says 404, registry has no entry
+                return 404
+
+        with error_mapping.isolated_registry():
+            # Deliberately do NOT register NEVER_REGISTERED_CODE.
+
+            app = _make_app()
+
+            @app.get("/foo")
+            async def _route() -> None:
+                raise _OrphanError(message="orphan")
+
+            response = TestClient(app).get("/foo")
+
+        # The registry default is 500 and the handler trusts it. The
+        # coverage test in test_error_mapping guards the codebase against
+        # ever shipping an unregistered code, so this fallback should
+        # never fire in production.
+        assert response.status_code == 500
+        assert response.json()["type"] == "api_error"
 
 
 @pytest.mark.unit

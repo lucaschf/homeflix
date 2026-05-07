@@ -19,24 +19,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 
 from src.building_blocks.domain.errors import CoreException, Severity
+from src.building_blocks.presentation.error_mapping import (
+    resolve_error_type,
+    resolve_http_status,
+)
 from src.config.logging import get_logger
-
-_STATUS_TO_ERROR_TYPE = {
-    400: "invalid_request_error",
-    401: "authentication_error",
-    403: "permission_error",
-    404: "not_found_error",
-    405: "invalid_request_error",
-    409: "conflict_error",
-    413: "request_too_large_error",
-    415: "invalid_request_error",
-    422: "validation_error",
-    429: "rate_limit_error",
-    500: "api_error",
-    502: "bad_gateway_error",
-    503: "service_unavailable_error",
-    504: "gateway_timeout_error",
-}
 
 # Keys a caller may supply via ``HTTPException(detail={...})`` — everything
 # else is dropped so an attacker-controlled or typo'd dict can't reshape
@@ -47,9 +34,15 @@ _ALLOWED_DETAIL_KEYS = frozenset({"message", "code", "param", "details"})
 async def core_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Translate typed domain/application/infra exceptions into HTTP.
 
+    HTTP status and error ``type`` are resolved through the registry
+    (ADR-012) keyed by ``exc.code``, not from the exception class. The
+    body comes from ``CoreException.to_dict()`` with the ``type`` field
+    overridden so the registry stays the single source of truth — this
+    matters once the ``http_status`` property is removed in the next
+    migration step. ``_internal`` is never serialized.
+
     Logging level is chosen from ``exc.severity`` so a 4xx doesn't look
-    like a 5xx in the logs. The payload uses ``CoreException.to_dict()``
-    — no sensitive ``_internal`` block is ever serialized.
+    like a 5xx in the logs.
 
     The ``Exception`` parameter type matches FastAPI's handler protocol;
     registration in ``register_exception_handlers`` guarantees this
@@ -57,15 +50,20 @@ async def core_exception_handler(request: Request, exc: Exception) -> JSONRespon
     ``cast`` instead of a runtime check.
     """
     exc = cast(CoreException, exc)
+    http_status = resolve_http_status(exc.code)
+    error_type = resolve_error_type(http_status)
+
     logger = get_logger().bind(
         exception_id=exc.exception_id,
         code=exc.code,
-        http_status=exc.http_status,
+        http_status=http_status,
         path=request.url.path,
     )
     _log_with_severity(logger, exc)
 
-    return JSONResponse(status_code=exc.http_status, content=exc.to_dict())
+    content = exc.to_dict()
+    content["type"] = error_type
+    return JSONResponse(status_code=http_status, content=content)
 
 
 async def request_validation_exception_handler(
@@ -106,7 +104,7 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
     see the same shape as typed exceptions.
     """
     exc = cast(StarletteHTTPException, exc)
-    error_type = _STATUS_TO_ERROR_TYPE.get(exc.status_code, "api_error")
+    error_type = resolve_error_type(exc.status_code)
 
     detail = exc.detail
     content: dict[str, Any] = {"type": error_type}
