@@ -37,10 +37,10 @@ async def core_exception_handler(request: Request, exc: Exception) -> JSONRespon
     HTTP status and error ``type`` are resolved through the registry
     (ADR-012) keyed by ``exc.code``, not from the exception class —
     domain code carries no HTTP knowledge. ``CoreException.to_dict()``
-    returns the body without ``type``; this handler prepends the
-    registry-resolved value so the JSON output keeps the v3 envelope
-    key order (type, message, code, …). ``_internal`` is never
-    serialized.
+    returns the body without ``type``; this handler appends the
+    registry-resolved value last so a future regression that lets
+    ``to_dict()`` emit ``type`` cannot override the registry. JSON key
+    order is irrelevant to consumers. ``_internal`` is never serialized.
 
     Logging level is chosen from ``exc.severity`` so a 4xx doesn't look
     like a 5xx in the logs.
@@ -62,7 +62,7 @@ async def core_exception_handler(request: Request, exc: Exception) -> JSONRespon
     )
     _log_with_severity(logger, exc)
 
-    content = {"type": error_type, **exc.to_dict()}
+    content = {**exc.to_dict(), "type": error_type}
     return JSONResponse(status_code=http_status, content=content)
 
 
