@@ -161,6 +161,19 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     event_bus.subscribe(MediaCreatedEvent, handler)
 
 
+def _bootstrap_modules() -> None:
+    """Run per-module bootstrap hooks (ADR-012).
+
+    Each Bounded Context with cross-cutting wiring exposes a
+    ``bootstrap.setup()`` invoked from here. Today this only covers the
+    error-code → HTTP-status registration; BCs without such concerns
+    are simply omitted from the list.
+    """
+    from src.modules.identity import bootstrap as identity_bootstrap
+
+    identity_bootstrap.setup()
+
+
 def create_app() -> FastAPI:
     """Application factory.
 
@@ -195,6 +208,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Bootstrap module-level cross-cutting wiring (ADR-012). Must run
+    # before the exception handlers are registered so the registry is
+    # populated by the time any handler resolves a status.
+    _bootstrap_modules()
 
     # Translate typed exceptions into the standard v3 error envelope
     register_exception_handlers(app)
