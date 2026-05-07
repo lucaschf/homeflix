@@ -109,38 +109,29 @@ class CoreException(Exception):
         if self.message_code is None:
             self.message_code = self.code
 
-    @property
-    def http_status(self) -> int:
-        """HTTP status code for this error.
-
-        Override in subclasses to map to appropriate status.
-        Default is 500 (Internal Server Error).
-        """
-        return 500
-
     def to_dict(self, include_internal: bool = False) -> dict[str, Any]:
-        """Serialize exception to API response format.
+        """Serialize exception to API response body.
 
-        Follows the API Response Standard REST v3.0 error format.
+        Returns the v3.0 envelope **without** the ``type`` field — that
+        comes from the registry (ADR-012) and is set by the global
+        exception handler. Domain code that builds a response should
+        compose ``{"type": resolve_error_type(...), **exc.to_dict()}``.
 
         Args:
             include_internal: If True, include sensitive data.
                               Use ONLY for logs, NEVER for HTTP response.
 
         Returns:
-            Dictionary with standardized error structure.
+            Dictionary with the message/code/details payload.
 
         Example output:
             {
-                "type": "validation_error",
                 "message": "Validation failed",
                 "code": "DOMAIN_VALIDATION_ERROR",
                 "details": [{"code": "...", "message": "...", "field": "..."}]
             }
         """
-        # Base error structure (v3.0 flat format)
         result: dict[str, Any] = {
-            "type": self._get_error_type(),
             "message": self.message,
             "code": self.code,
         }
@@ -164,28 +155,6 @@ class CoreException(Exception):
                 result["_internal"]["cause_type"] = type(self.__cause__).__name__
 
         return result
-
-    def _get_error_type(self) -> str:
-        """Get the error type for API response.
-
-        Maps to standard error types like 'validation_error',
-        'not_found_error', etc.
-        """
-        # Default mapping based on http_status
-        status_to_type = {
-            400: "invalid_request_error",
-            401: "authentication_error",
-            403: "permission_error",
-            404: "not_found_error",
-            409: "conflict_error",
-            422: "validation_error",
-            429: "rate_limit_error",
-            500: "api_error",
-            502: "bad_gateway_error",
-            503: "service_unavailable_error",
-            504: "gateway_timeout_error",
-        }
-        return status_to_type.get(self.http_status, "api_error")
 
     def with_translation(self, translated_message: str) -> "CoreException":
         """Create a copy with translated message.
@@ -243,16 +212,12 @@ class DomainException(CoreException):
     Use for errors that represent violations of domain rules,
     regardless of how the application was invoked (API, CLI, event).
 
-    Default HTTP status: 422 (Unprocessable Entity)
+    HTTP status: 422 (Unprocessable Entity), resolved by the registry
+    via ``code``. See ADR-012 / ``error_mapping.GENERIC_HTTP_STATUSES``.
     """
 
     code: str = "DOMAIN_ERROR"
     severity: Severity = Severity.MEDIUM
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 422 (Unprocessable Entity)."""
-        return 422
 
 
 @dataclass
@@ -466,11 +431,6 @@ class DomainNotFoundException(DomainException):
     resource_type: str = ""
     resource_id: str = ""
 
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 404 (Not Found)."""
-        return 404
-
     def __post_init__(self) -> None:
         """Initialize and add resource metadata to tags and message_params."""
         super().__post_init__()
@@ -525,11 +485,6 @@ class DomainConflictException(DomainException):
 
     code: str = "DOMAIN_CONFLICT"
     message_code: str = "CONFLICT"
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 409 (Conflict)."""
-        return 409
 
 
 __all__ = [

@@ -173,20 +173,16 @@ class TestGenericAutoRegistration:
 
 @pytest.mark.unit
 class TestRegistryCoverage:
-    """Guards against codes added to exception classes without a registry entry.
+    """Every concrete ``CoreException`` subclass has an explicit registry entry.
 
-    During the ADR-012 migration the global handler still reads
-    ``exc.http_status`` from the property; this test pins that the
-    registry mirrors every concrete exception's ``code → status`` pair,
-    so PR 2 (which inverts the handler to read from the registry) won't
-    silently regress to 500 for any existing code path.
-
-    PR 3 will repurpose this test to assert "every code has an entry"
-    once the property is gone — until then the parity check is the
-    stronger guarantee.
+    The handler resolves HTTP status via the registry alone (ADR-012);
+    a code without a registered status silently falls back to 500. This
+    test enumerates every shipped subclass and asserts each one is
+    registered, so adding a new exception without updating the BC's
+    ``error_mapping.py`` fails CI immediately rather than in production.
     """
 
-    def test_registry_mirrors_every_core_exception_subclass(self) -> None:
+    def test_every_core_exception_subclass_has_registry_entry(self) -> None:
         # Force-import error modules so their subclasses are visible
         # via ``CoreException.__subclasses__()``.
         import src.building_blocks.application.errors
@@ -202,22 +198,13 @@ class TestRegistryCoverage:
 
         sentinel = -1
         missing: list[tuple[str, str]] = []
-        mismatched: list[tuple[str, str, int, int]] = []
 
         for cls in {CoreException, *_all_subclasses(CoreException)}:
             instance = cls(message="probe")
             registered = error_mapping.resolve_http_status(instance.code, default=sentinel)
             if registered == sentinel:
                 missing.append((cls.__name__, instance.code))
-            elif registered != instance.http_status:
-                mismatched.append(
-                    (cls.__name__, instance.code, instance.http_status, registered),
-                )
 
-        assert not missing, (
-            "Codes without registry entry (would fall to 500 default in PR 2): " f"{missing}"
-        )
-        assert not mismatched, (
-            "Registry value disagrees with the http_status property "
-            f"(class, code, property, registry): {mismatched}"
-        )
+        assert (
+            not missing
+        ), f"Codes without registry entry (would fall to 500 default at runtime): {missing}"

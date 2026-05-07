@@ -18,11 +18,13 @@ from src.building_blocks.infrastructure.errors import (
     InfrastructureException,
     RepositoryException,
 )
+from src.building_blocks.presentation.error_mapping import resolve_http_status
 
 # Exception contract table: (ExceptionClass, http_status, code, message_code)
 # Each entry asserts that an instance built with only `message` exposes the
-# expected defaults, which catches both accidental overrides and base-class
-# regressions in one place.
+# expected defaults. The HTTP status is checked against the registry
+# (ADR-012) keyed by the exception's `code`, since the property has been
+# removed and the registry is the source of truth.
 _EXCEPTION_CONTRACTS = [
     (InfrastructureException, 500, "INFRASTRUCTURE_ERROR", "INFRASTRUCTURE_ERROR"),
     (GatewayException, 500, "GATEWAY_ERROR", "GATEWAY_ERROR"),
@@ -72,7 +74,8 @@ class TestExceptionContracts:
         _code: str,
         _message_code: str,
     ) -> None:
-        assert exc_class(message="boom").http_status == expected_status
+        instance = exc_class(message="boom")
+        assert resolve_http_status(instance.code) == expected_status
 
     @pytest.mark.parametrize(
         ("exc_class", "_status", "expected_code", "_message_code"),

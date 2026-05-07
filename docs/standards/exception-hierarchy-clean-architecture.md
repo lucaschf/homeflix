@@ -1,8 +1,8 @@
 # Hierarquia de Exceções para Clean Architecture
 
-> ⚠️ **Em migração — ver [ADR-012](../adr/ADR-012-decentralized-error-http-mapping.md).**
+> ⚠️ **Exemplos de código desatualizados — ver [ADR-012](../adr/ADR-012-decentralized-error-http-mapping.md).**
 >
-> A propriedade `http_status` que aparece nos exemplos de código abaixo está sendo removida das classes de exceção. O projeto adotou um **registry descentralizado de mapeamento `error_code → http_status`** registrado por Bounded Context no bootstrap. Os exemplos refletem o estado pré-migração e serão atualizados em PRs subsequentes. Consulte ADR-012 para a abordagem atual e a §8 (HTTP Status Mapping) abaixo para o resumo do novo design.
+> A propriedade `http_status` que aparece nos exemplos de código abaixo **foi removida** das classes de exceção. O projeto usa um **registry descentralizado de mapeamento `error_code → http_status`** registrado por Bounded Context no bootstrap, e o handler global resolve status + `type` via `resolve_http_status` / `resolve_error_type`. Os exemplos refletem o estado anterior e serão atualizados num PR de docs futuro. Consulte ADR-012 para a abordagem atual e a §8 (HTTP Status Mapping) abaixo para o resumo do design.
 
 ## Sumário
 

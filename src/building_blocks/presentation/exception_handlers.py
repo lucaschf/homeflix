@@ -35,11 +35,12 @@ async def core_exception_handler(request: Request, exc: Exception) -> JSONRespon
     """Translate typed domain/application/infra exceptions into HTTP.
 
     HTTP status and error ``type`` are resolved through the registry
-    (ADR-012) keyed by ``exc.code``, not from the exception class. The
-    body comes from ``CoreException.to_dict()`` with the ``type`` field
-    overridden so the registry stays the single source of truth — this
-    matters once the ``http_status`` property is removed in the next
-    migration step. ``_internal`` is never serialized.
+    (ADR-012) keyed by ``exc.code``, not from the exception class —
+    domain code carries no HTTP knowledge. ``CoreException.to_dict()``
+    returns the body without ``type``; this handler prepends the
+    registry-resolved value so the JSON output keeps the v3 envelope
+    key order (type, message, code, …). ``_internal`` is never
+    serialized.
 
     Logging level is chosen from ``exc.severity`` so a 4xx doesn't look
     like a 5xx in the logs.
@@ -61,8 +62,7 @@ async def core_exception_handler(request: Request, exc: Exception) -> JSONRespon
     )
     _log_with_severity(logger, exc)
 
-    content = exc.to_dict()
-    content["type"] = error_type
+    content = {"type": error_type, **exc.to_dict()}
     return JSONResponse(status_code=http_status, content=content)
 
 

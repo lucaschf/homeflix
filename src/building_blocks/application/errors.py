@@ -22,16 +22,12 @@ class ApplicationException(CoreException):
 
     Use for errors related to application flow, not domain rules.
 
-    Default HTTP status: 400 (Bad Request)
+    HTTP status: 400 (Bad Request), resolved by the registry via
+    ``code``. See ADR-012 / ``error_mapping.GENERIC_HTTP_STATUSES``.
     """
 
     code: str = "APPLICATION_ERROR"
     severity: Severity = Severity.MEDIUM
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 400 (Bad Request)."""
-        return 400
 
 
 @dataclass
@@ -153,11 +149,6 @@ class UnauthorizedOperationException(ApplicationException):
     message_code: str = "UNAUTHORIZED"
     severity: Severity = Severity.LOW
 
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 401 (Unauthorized)."""
-        return 401
-
 
 @dataclass
 class ForbiddenOperationException(ApplicationException):
@@ -181,11 +172,6 @@ class ForbiddenOperationException(ApplicationException):
     message_code: str = "FORBIDDEN"
     required_permission: str = ""
     severity: Severity = Severity.LOW
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 403 (Forbidden)."""
-        return 403
 
     def __post_init__(self) -> None:
         """Initialize and add required_permission to tags if set."""
@@ -223,11 +209,6 @@ class ResourceNotFoundException(ApplicationException):
     message_code: str = "RESOURCE_NOT_FOUND"
     resource_type: str = ""
     resource_id: str = ""
-
-    @property
-    def http_status(self) -> int:
-        """Return HTTP status code 404 (Not Found)."""
-        return 404
 
     def __post_init__(self) -> None:
         """Initialize and add resource metadata to tags and message_params."""
