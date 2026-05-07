@@ -1,9 +1,5 @@
 # Hierarquia de Exceções para Clean Architecture
 
-> ⚠️ **Exemplos de código desatualizados — ver [ADR-012](../adr/ADR-012-decentralized-error-http-mapping.md).**
->
-> A propriedade `http_status` que aparece nos exemplos de código abaixo **foi removida** das classes de exceção. O projeto usa um **registry descentralizado de mapeamento `error_code → http_status`** registrado por Bounded Context no bootstrap, e o handler global resolve status + `type` via `resolve_http_status` / `resolve_error_type`. Os exemplos refletem o estado anterior e serão atualizados num PR de docs futuro. Consulte ADR-012 para a abordagem atual e a §8 (HTTP Status Mapping) abaixo para o resumo do design.
-
 ## Sumário
 
 1. [Visão Geral](#visão-geral)
@@ -286,15 +282,6 @@ class CoreException(Exception):
             }
         
         return result
-    
-    @property
-    def http_status(self) -> int:
-        """
-        Código HTTP correspondente ao erro.
-        
-        Override nas subclasses para mapear corretamente.
-        """
-        return 500
 ```
 
 ### Domínio (DomainException)
@@ -315,10 +302,6 @@ class DomainException(CoreException):
     independente de como a aplicação foi chamada (API, CLI, evento).
     """
     code: str = "DOMAIN_ERROR"
-    
-    @property
-    def http_status(self) -> int:
-        return 422
 
 
 @dataclass
@@ -467,10 +450,6 @@ class DomainNotFoundException(DomainException):
     resource_type: str = ""
     resource_id: str = ""
     
-    @property
-    def http_status(self) -> int:
-        return 404
-    
     def __post_init__(self):
         super().__post_init__()
         self.tags["resource_type"] = self.resource_type
@@ -494,10 +473,6 @@ class DomainConflictException(DomainException):
         ... )
     """
     code: str = "DOMAIN_CONFLICT"
-    
-    @property
-    def http_status(self) -> int:
-        return 409
 ```
 
 ### Aplicação (ApplicationException)
@@ -517,10 +492,6 @@ class ApplicationException(CoreException):
     não às regras de negócio em si.
     """
     code: str = "APPLICATION_ERROR"
-    
-    @property
-    def http_status(self) -> int:
-        return 400
 
 
 @dataclass
@@ -609,10 +580,6 @@ class UnauthorizedOperationException(ApplicationException):
         ... )
     """
     code: str = "UNAUTHORIZED"
-    
-    @property
-    def http_status(self) -> int:
-        return 401
 
 
 @dataclass
@@ -634,10 +601,6 @@ class ForbiddenOperationException(ApplicationException):
     """
     code: str = "FORBIDDEN"
     required_permission: str = ""
-    
-    @property
-    def http_status(self) -> int:
-        return 403
     
     def __post_init__(self):
         super().__post_init__()
@@ -672,10 +635,6 @@ class ResourceNotFoundException(ApplicationException):
     resource_type: str = ""
     resource_id: str = ""
     
-    @property
-    def http_status(self) -> int:
-        return 404
-    
     def __post_init__(self):
         super().__post_init__()
         self.tags["resource_type"] = self.resource_type
@@ -705,12 +664,7 @@ class InfrastructureException(CoreException):
     code: str = "INFRASTRUCTURE_ERROR"
     severity: Severity = Severity.HIGH
     internal_message: str = ""
-    
-    @property
-    def http_status(self) -> int:
-        return 502
-    
-    def to_dict(self, include_internal: bool = False) -> dict[str, Any]:
+        def to_dict(self, include_internal: bool = False) -> dict[str, Any]:
         """
         Serializa a exceção.
         
@@ -770,10 +724,6 @@ class GatewayTimeoutException(GatewayException):
     code: str = "GATEWAY_TIMEOUT"
     timeout_seconds: float | None = None
     
-    @property
-    def http_status(self) -> int:
-        return 504
-    
     def __post_init__(self):
         super().__post_init__()
         if self.timeout_seconds:
@@ -798,10 +748,6 @@ class GatewayUnavailableException(GatewayException):
         ...     ) from e
     """
     code: str = "GATEWAY_UNAVAILABLE"
-    
-    @property
-    def http_status(self) -> int:
-        return 503
 
 
 @dataclass
@@ -821,10 +767,6 @@ class GatewayRateLimitException(GatewayException):
     """
     code: str = "GATEWAY_RATE_LIMIT"
     retry_after_seconds: int | None = None
-    
-    @property
-    def http_status(self) -> int:
-        return 429
     
     def __post_init__(self):
         super().__post_init__()
@@ -888,10 +830,6 @@ class DatabaseConnectionException(RepositoryException):
     """
     code: str = "DATABASE_CONNECTION_ERROR"
     severity: Severity = Severity.CRITICAL
-    
-    @property
-    def http_status(self) -> int:
-        return 503
 
 
 @dataclass
@@ -919,10 +857,6 @@ class DataIntegrityException(RepositoryException):
     """
     code: str = "DATA_INTEGRITY_ERROR"
     constraint_name: str = ""
-    
-    @property
-    def http_status(self) -> int:
-        return 409
     
     def __post_init__(self):
         super().__post_init__()
@@ -966,10 +900,6 @@ class PresentationException(CoreException):
     ou para cenários não cobertos pelo framework.
     """
     code: str = "PRESENTATION_ERROR"
-    
-    @property
-    def http_status(self) -> int:
-        return 400
 
 
 @dataclass
@@ -1008,10 +938,6 @@ class UnsupportedMediaTypeException(PresentationException):
         self.tags["received_type"] = self.received_type
         self.tags["supported_types"] = self.supported_types
     
-    @property
-    def http_status(self) -> int:
-        return 415
-
 
 @dataclass
 class NotAcceptableException(PresentationException):
@@ -1030,10 +956,6 @@ class NotAcceptableException(PresentationException):
         super().__post_init__()
         self.available_types = self.available_types or ["application/json"]
     
-    @property
-    def http_status(self) -> int:
-        return 406
-
 
 @dataclass
 class MissingHeaderException(PresentationException):
@@ -1124,10 +1046,6 @@ class APIRateLimitException(PresentationException):
         self.tags["limit"] = self.limit
         self.tags["window_seconds"] = self.window_seconds
     
-    @property
-    def http_status(self) -> int:
-        return 429
-
 
 @dataclass
 class RequestEntityTooLargeException(PresentationException):
@@ -1146,10 +1064,6 @@ class RequestEntityTooLargeException(PresentationException):
         super().__post_init__()
         self.tags["max_size_bytes"] = self.max_size_bytes
         self.tags["received_size_bytes"] = self.received_size_bytes
-    
-    @property
-    def http_status(self) -> int:
-        return 413
 ```
 
 #### Uso com Middlewares e Dependencies
@@ -1352,8 +1266,9 @@ async def core_exception_handler(request: Request, exc: CoreException) -> JSONRe
         pass
     
     # 3. Response limpa pro cliente
+    http_status = resolve_http_status(exc.code)
     response = JSONResponse(
-        status_code=exc.http_status,
+        status_code=http_status,
         content=exc.to_dict(include_internal=False),
         headers={"X-Request-ID": exc.exception_id}
     )
@@ -1992,7 +1907,7 @@ async def core_exception_handler(request: Request, exc: Exception) -> JSONRespon
     http_status = resolve_http_status(exc.code)
     error_type = resolve_error_type(http_status)
     # ... log + serialize
-    return JSONResponse(status_code=http_status, content=exc.to_dict(error_type=error_type))
+    return JSONResponse(status_code=http_status, content={**exc.to_dict(), "type": error_type})
 ```
 
 ### Regras
@@ -2000,15 +1915,15 @@ async def core_exception_handler(request: Request, exc: Exception) -> JSONRespon
 1. Nenhuma classe em `domain/`, `application/` ou `infrastructure/` declara `http_status`. A camada de transporte vive 100% em `presentation/`.
 2. Repetir entradas no `{BC}_HTTP_STATUSES` para codes que herdam de bases (ex.: `PROFILE_NOT_FOUND`) — o registry é flat e indexado por code, não por classe.
 3. `register_http_statuses` é idempotente quando o mesmo code é registrado com o mesmo status, mas levanta em conflito real (mesmo code, status diferente).
-4. Teste de cobertura em `tests/building_blocks/unit/presentation/test_error_mapping_coverage.py` itera todas as subclasses de `CoreException` e garante que cada `code` tem entrada no registry — sem isso, codes esquecidos caem em 500 silenciosamente.
+4. Teste de cobertura em `tests/building_blocks/unit/presentation/test_error_mapping.py` (`TestRegistryCoverage`) itera todas as subclasses de `CoreException` e garante que cada `code` tem entrada no registry — sem isso, codes esquecidos caem em 500 silenciosamente.
 
-### Migração
+### Histórico da migração
 
-A inversão da decisão acontece em 3 PRs sequenciais (ver ADR-012 §Migração):
+A inversão da decisão foi entregue em 3 PRs sequenciais (ver ADR-012 §Migração) — todas mergeadas em `develop`:
 
-1. Introduzir o registry, manter `http_status` property como fonte da verdade. Adicionar test de cobertura.
-2. Inverter handler para `resolve_http_status(exc.code)`.
-3. Remover `http_status` de todas as exception classes e refatorar testes.
+1. PR #193 — registry foundation: `error_mapping.py`, `GENERIC_HTTP_STATUSES`, identity bootstrap, teste de cobertura. Comportamento inalterado (handler ainda lia `exc.http_status`).
+2. PR #194 — handler invertido: `core_exception_handler` passa a resolver status e `type` via registry.
+3. PR #195 — `http_status` property removida de todas as 20 subclasses + `CoreException._get_error_type()`. Domain/application/infrastructure deixam de mencionar HTTP.
 
 ---
 
@@ -2032,8 +1947,9 @@ Esta seção mostra como registrar os handlers e mappers de forma limpa e organi
                                       │
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ 2. CONFIGURAÇÃO DO HTTP STATUS MAPPER (se usar abordagem purista)           │
-│    - Registrar mapeamentos de exceções customizadas                         │
+│ 2. BOOTSTRAP DE BCs (registry error_code → http_status, ADR-012)            │
+│    - Cada modules/<bc>/bootstrap.py registra {BC}_HTTP_STATUSES             │
+│    - DEVE rodar antes do registro dos exception handlers                    │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
                                       ▼
@@ -2095,7 +2011,7 @@ async def core_exception_handler(request: Request, exc: CoreException) -> JSONRe
     response_body["error"]["request_id"] = correlation_id  # Sobrescreve
     
     return JSONResponse(
-        status_code=exc.http_status,
+        status_code=resolve_http_status(exc.code),
         content=response_body,
         headers={
             "X-Request-ID": correlation_id,
@@ -2284,7 +2200,7 @@ async def core_exception_handler(request: Request, exc: CoreException) -> JSONRe
     response_body["error"]["request_id"] = correlation_id
     
     return JSONResponse(
-        status_code=exc.http_status,
+        status_code=resolve_http_status(exc.code),
         content=response_body,
         headers={
             "X-Request-ID": correlation_id,
@@ -2751,7 +2667,7 @@ def test_user_not_found_raises_exception():
     assert exc.code == "DOMAIN_NOT_FOUND"
     assert exc.resource_type == "User"
     assert exc.resource_id == "nonexistent-id"
-    assert exc.http_status == 404
+    assert resolve_http_status(exc.code) == 404
 ```
 
 ---
@@ -4741,10 +4657,6 @@ class CoreException(Exception):
             }
         
         return result
-    
-    @property
-    def http_status(self) -> int:
-        return 500
 ```
 
 #### 4. Exceções com message_params automático
@@ -4864,7 +4776,7 @@ async def core_exception_handler(request: Request, exc: CoreException) -> JSONRe
     
     # Response no locale do cliente
     return JSONResponse(
-        status_code=exc.http_status,
+        status_code=resolve_http_status(exc.code),
         content=exc.to_dict(include_internal=False, locale=locale),
         headers={
             "X-Request-ID": exc.exception_id,
@@ -5246,7 +5158,7 @@ class TestCoreException:
     def test_http_status_default(self):
         exc = CoreException(message="Test")
         
-        assert exc.http_status == 500
+        assert resolve_http_status(exc.code) == 500
 
 
 class TestSeverity:
@@ -5276,7 +5188,7 @@ class TestDomainValidationException:
     def test_http_status(self):
         exc = DomainValidationException(message="Invalid")
         
-        assert exc.http_status == 422
+        assert resolve_http_status(exc.code) == 422
     
     def test_from_violations_factory(self):
         exc = DomainValidationException.from_violations(
@@ -5314,7 +5226,7 @@ class TestBusinessRuleViolationException:
     def test_http_status(self):
         exc = BusinessRuleViolationException(message="Rule violated")
         
-        assert exc.http_status == 422
+        assert resolve_http_status(exc.code) == 422
     
     def test_rule_code_in_tags(self):
         exc = BusinessRuleViolationException(
@@ -5341,7 +5253,7 @@ class TestDomainNotFoundException:
     def test_http_status(self):
         exc = DomainNotFoundException(message="Not found")
         
-        assert exc.http_status == 404
+        assert resolve_http_status(exc.code) == 404
     
     def test_resource_info_in_tags(self):
         exc = DomainNotFoundException(
@@ -5369,7 +5281,7 @@ class TestDomainConflictException:
     def test_http_status(self):
         exc = DomainConflictException(message="Conflict")
         
-        assert exc.http_status == 409
+        assert resolve_http_status(exc.code) == 409
 ```
 
 ### Testes de i18n
