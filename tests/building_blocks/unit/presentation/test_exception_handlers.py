@@ -234,6 +234,27 @@ class TestHttpExceptionTranslation:
         assert body["param"] == "email"
         assert body["details"] == {"expected": "string"}
 
+    def test_should_fall_back_to_api_error_type_for_unmapped_status(self) -> None:
+        """End-to-end fallback: an HTTP status with no entry in the registry's
+        ``_STATUS_TO_ERROR_TYPE`` table surfaces as ``"api_error"`` in the
+        envelope. Pins the contract that consolidating the local
+        ``_STATUS_TO_ERROR_TYPE`` into ``resolve_error_type`` preserved the
+        previous default behavior at the handler boundary, not just inside
+        the helper.
+        """
+        app = _make_app()
+
+        @app.get("/foo")
+        async def _route() -> None:
+            raise HTTPException(status_code=418, detail="i'm a teapot")
+
+        response = TestClient(app).get("/foo")
+
+        assert response.status_code == 418
+        body = response.json()
+        assert body["type"] == "api_error"
+        assert body["message"] == "i'm a teapot"
+
     def test_should_default_message_and_code_when_dict_detail_lacks_them(self) -> None:
         app = _make_app()
 
@@ -308,7 +329,14 @@ class TestRegistryDrivesCoreHandler:
             response = TestClient(app).get("/foo")
 
         assert response.status_code == 409
-        assert response.json()["type"] == "conflict_error"
+        body = response.json()
+        assert body["type"] == "conflict_error"
+        # The rest of the envelope still flows from CoreException.to_dict() —
+        # only the registry-driven `type` is overridden. If the handler
+        # ever stops calling `to_dict()` or reshapes its output, these
+        # assertions catch it.
+        assert body["message"] == "probe"
+        assert body["code"] == "PR2_TYPE_PROBE"
 
     def test_unregistered_code_falls_back_to_500(self) -> None:
         @dataclass
