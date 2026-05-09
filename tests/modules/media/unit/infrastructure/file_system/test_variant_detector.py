@@ -67,6 +67,18 @@ class TestExtractBaseName:
         assert mib == "Men in Black II"
         assert predator != mib
 
+    def test_handles_mixed_and_unc_windows_paths(self, detector: VariantDetector) -> None:
+        # Mixed separators happen when paths get concatenated from different
+        # sources; UNC paths show up when libraries point at network shares.
+        mixed = detector.extract_base_name(
+            r"D:/homeflix\Movies\Predator (1987)\Predator (1987).mkv",
+        )
+        unc = detector.extract_base_name(
+            r"\\server\share\Movies\Predator (1987)\Predator (1987).mkv",
+        )
+        assert mixed == "Predator"
+        assert unc == "Predator"
+
 
 @pytest.mark.unit
 class TestAreVariants:
