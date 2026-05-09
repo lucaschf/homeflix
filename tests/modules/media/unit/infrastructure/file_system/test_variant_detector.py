@@ -52,6 +52,33 @@ class TestExtractBaseName:
     def test_preserves_name_without_tags(self, detector: VariantDetector) -> None:
         assert detector.extract_base_name("my_video.mkv") == "my_video"
 
+    def test_windows_path_does_not_eat_parent_folder(self, detector: VariantDetector) -> None:
+        # Sibling movie folders with "(YYYY)" must produce distinct base names.
+        # Regression: ``\(.*?\)`` previously backtracked across path separators
+        # because PurePosixPath treats Windows ``\`` as a literal character,
+        # collapsing both files below to ``D:\homeflix\Movies\Predator``.
+        predator = detector.extract_base_name(
+            r"D:\homeflix\Movies\Predator (1987)\Predator (1987).mkv",
+        )
+        mib = detector.extract_base_name(
+            r"D:\homeflix\Movies\Predator (2002)\Men in Black II (2002).mkv",
+        )
+        assert predator == "Predator"
+        assert mib == "Men in Black II"
+        assert predator != mib
+
+    def test_handles_mixed_and_unc_windows_paths(self, detector: VariantDetector) -> None:
+        # Mixed separators happen when paths get concatenated from different
+        # sources; UNC paths show up when libraries point at network shares.
+        mixed = detector.extract_base_name(
+            r"D:/homeflix\Movies\Predator (1987)\Predator (1987).mkv",
+        )
+        unc = detector.extract_base_name(
+            r"\\server\share\Movies\Predator (1987)\Predator (1987).mkv",
+        )
+        assert mixed == "Predator"
+        assert unc == "Predator"
+
 
 @pytest.mark.unit
 class TestAreVariants:
