@@ -105,7 +105,9 @@ class VariantDetector(VariantDetectorPort):
         Returns:
             Base content name with quality indicators removed.
         """
-        name = PurePosixPath(file_path).stem
+        # Normalize Windows separators so the stem isolates the filename
+        # even when this code runs on POSIX against a path like ``D:\foo\bar.mkv``.
+        name = PurePosixPath(file_path.replace("\\", "/")).stem
 
         # Strip quality-related tags
         result = _COMBINED_PATTERN.sub("", name)
