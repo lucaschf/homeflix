@@ -322,6 +322,36 @@ class TestHlsServiceBuildAudioCmd:
         assert cmd[ss_index + 1] == "1800"
         assert ss_index < input_index
 
+    def test_should_force_accurate_seek_when_start_positive(self, tmp_path: Path) -> None:
+        # Without ``-accurate_seek`` ffmpeg drops to the preceding
+        # keyframe but audio starts at exactly ``start`` — the two
+        # streams open out of sync by ``start - keyframe_pos``.
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0, start=1800)
+
+        assert "-accurate_seek" in cmd
+        accurate_index = cmd.index("-accurate_seek")
+        input_index = cmd.index("-i")
+        assert accurate_index < input_index
+
+    def test_should_normalize_negative_ts_when_start_positive(self, tmp_path: Path) -> None:
+        # ``-avoid_negative_ts make_zero`` clamps the per-stream PTS
+        # minimum to zero so any residual offset surfaces as a tiny
+        # leading silence instead of an audio-leads-video drift.
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0, start=1800)
+
+        assert "-avoid_negative_ts" in cmd
+        idx = cmd.index("-avoid_negative_ts")
+        assert cmd[idx + 1] == "make_zero"
+
+    def test_should_not_emit_sync_flags_when_start_is_zero(self, tmp_path: Path) -> None:
+        # Sync hardening only kicks in for non-zero ``start`` since the
+        # legacy cold-cache transcode never hits the keyframe-vs-audio
+        # gap (it begins at t=0 of the source).
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0)
+
+        assert "-accurate_seek" not in cmd
+        assert "-avoid_negative_ts" not in cmd
+
 
 @pytest.mark.unit
 class TestHlsServiceBuildVideoCmd:
@@ -336,6 +366,21 @@ class TestHlsServiceBuildVideoCmd:
 
         assert "copy" in cmd
         assert "libx264" not in cmd
+
+    def test_should_transcode_h264_when_start_positive(self, tmp_path: Path) -> None:
+        # ``-c:v copy`` is the fast path for cold cache but it skips
+        # the decode pass that ``-accurate_seek`` depends on. With a
+        # non-zero ``start`` the copy would land at the preceding
+        # keyframe while audio lands at the exact second, so we force
+        # the transcode to keep the two streams aligned.
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+
+        assert "libx264" in cmd
+        assert "copy" not in cmd
 
     def test_should_transcode_non_h264(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path / "cache"))
@@ -382,6 +427,42 @@ class TestHlsServiceBuildVideoCmd:
         input_index = cmd.index("-i")
         assert cmd[ss_index + 1] == "1800"
         assert ss_index < input_index
+
+    def test_should_force_accurate_seek_when_start_positive(self, tmp_path: Path) -> None:
+        # Mirrors the audio-cmd test — without this, the video opens at
+        # the preceding keyframe while audio opens at the exact seek
+        # point and playback drifts audio-leads-video.
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+
+        assert "-accurate_seek" in cmd
+        accurate_index = cmd.index("-accurate_seek")
+        input_index = cmd.index("-i")
+        assert accurate_index < input_index
+
+    def test_should_normalize_negative_ts_when_start_positive(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+
+        assert "-avoid_negative_ts" in cmd
+        idx = cmd.index("-avoid_negative_ts")
+        assert cmd[idx + 1] == "make_zero"
+
+    def test_should_not_emit_sync_flags_when_start_is_zero(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert "-accurate_seek" not in cmd
+        assert "-avoid_negative_ts" not in cmd
 
 
 @pytest.mark.unit

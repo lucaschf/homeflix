@@ -707,12 +707,28 @@ class HlsService(HlsPlaylistPort):
         instead of ``video.currentTime = saved`` (which would only
         work with ``-copyts`` / source-time preserved, a path the
         prior attempts at this refactor never landed reliably).
+
+        When ``start > 0`` we also emit ``-accurate_seek`` and
+        ``-avoid_negative_ts make_zero``. The first forces ffmpeg to
+        decode-and-drop frames between the preceding keyframe and the
+        exact requested second; without it, video opens at the
+        keyframe while audio opens at ``start`` and the two streams
+        play out of sync by that gap. The second clamps the minimum
+        PTS to zero across streams so any residual offset surfaces as
+        a tiny silence prefix instead of an audio-leads-video drift.
+
+        The H.264 ``-c:v copy`` fast path is bypassed for non-zero
+        ``start`` because copying skips the decode pass that
+        ``-accurate_seek`` relies on to drop pre-target frames — the
+        copied video would land at the preceding keyframe while the
+        re-encoded audio lands at the exact ``start``, recreating the
+        same 1-3s gap the seek flag was meant to close.
         """
         codec = self._probe_video_codec(file_path)
-        needs_transcode = codec not in _BROWSER_SAFE_CODECS
+        needs_transcode = codec not in _BROWSER_SAFE_CODECS or start > 0
 
         if needs_transcode:
-            _logger.info("Source codec %s — transcoding to H.264", codec)
+            _logger.info("Source codec %s — transcoding to H.264 (start=%d)", codec, start)
             video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
         else:
             _logger.info("Source codec %s — copying", codec)
@@ -721,7 +737,8 @@ class HlsService(HlsPlaylistPort):
         primary_idx = _primary_audio_index(probe)
         audio_map = f"0:a:{primary_idx}"
 
-        seek_args = ["-ss", str(start)] if start > 0 else []
+        seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
+        ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
 
         return [
             "ffmpeg",
@@ -740,6 +757,7 @@ class HlsService(HlsPlaylistPort):
             "2",
             "-ar",
             "48000",
+            *ts_normalize_args,
             "-hls_time",
             str(_SEGMENT_DURATION),
             "-hls_list_size",
@@ -769,9 +787,15 @@ class HlsService(HlsPlaylistPort):
         """Build FFmpeg command for audio-only HLS track.
 
         ``-ss`` placed before ``-i`` when ``start > 0`` — same input-seek
-        rationale as ``_build_video_cmd``.
+        rationale as ``_build_video_cmd``. The alternate-audio playlist
+        is consumed independently by the player; even though there is
+        no video stream here, we still match the video pipeline's
+        ``-accurate_seek`` / ``-avoid_negative_ts make_zero`` so a
+        switch from primary to alternate audio at a non-zero bucket
+        lands on the same source-time second.
         """
-        seek_args = ["-ss", str(start)] if start > 0 else []
+        seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
+        ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
         return [
             "ffmpeg",
             *seek_args,
@@ -787,6 +811,7 @@ class HlsService(HlsPlaylistPort):
             "2",
             "-ar",
             "48000",
+            *ts_normalize_args,
             "-hls_time",
             str(_SEGMENT_DURATION),
             "-hls_list_size",
