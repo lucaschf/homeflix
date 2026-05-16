@@ -598,7 +598,7 @@ class HlsService(HlsPlaylistPort):
         for sub in text_subs:
             threading.Thread(
                 target=self._extract_one_subtitle,
-                args=(safe_path, output_dir, sub, path_hash),
+                args=(safe_path, output_dir, sub, path_hash, bucket_start),
                 daemon=True,
                 name=f"hls-sub-{path_hash[:8]}-{sub.index}",
             ).start()
@@ -836,6 +836,7 @@ class HlsService(HlsPlaylistPort):
         output_dir: Path,
         track: SubtitleTrack,
         path_hash: str,
+        start: int = 0,
     ) -> None:
         """Extract a single text-based subtitle to WebVTT.
 
@@ -845,14 +846,22 @@ class HlsService(HlsPlaylistPort):
         on ffmpeg failure or timeout) and gets a chance to respond —
         typically with a 404 if extraction never produced a file.
 
-        The source is read from the beginning; subtitle timestamps are
-        in source time, which matches the HLS stream (also from t=0)
-        and the player's ``video.currentTime``.
+        Subtitle cues are emitted in the same timeline as the HLS
+        stream that wraps them. For a non-zero ``start`` we input-seek
+        and let ``-avoid_negative_ts make_zero`` rebase the cue times
+        to bucket-local: a cue at source-K is written with timestamp
+        ``K - start`` so it fires when ``video.currentTime`` (also
+        bucket-local) reaches the right moment. Without this shift,
+        resume sessions would show every cue at ``start`` seconds
+        later than the actual line of dialogue.
         """
         try:
             sub_dir = output_dir / f"sub_{track.index}"
             sub_dir.mkdir(exist_ok=True)
             vtt_path = sub_dir / "sub.vtt"
+
+            seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
+            ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
 
             if track.is_external:
                 if track.file_path is None:
@@ -864,10 +873,12 @@ class HlsService(HlsPlaylistPort):
                         with_ffmpeg_threads(
                             [
                                 "ffmpeg",
+                                *seek_args,
                                 "-i",
                                 input_arg,
                                 "-c:s",
                                 "webvtt",
+                                *ts_normalize_args,
                                 "-loglevel",
                                 "error",
                                 "-y",
@@ -889,12 +900,14 @@ class HlsService(HlsPlaylistPort):
                         with_ffmpeg_threads(
                             [
                                 "ffmpeg",
+                                *seek_args,
                                 "-i",
                                 file_path,
                                 "-map",
                                 f"0:s:{track.index}",
                                 "-c:s",
                                 "webvtt",
+                                *ts_normalize_args,
                                 "-loglevel",
                                 "error",
                                 "-y",

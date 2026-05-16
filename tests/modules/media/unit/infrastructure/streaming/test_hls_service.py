@@ -881,9 +881,9 @@ class TestHlsServiceExtractOneSubtitle:
 
         assert event.is_set()
 
-    def test_should_not_emit_a_seek_flag(self, tmp_path: Path) -> None:
-        # Subtitle timestamps are absolute source times, which is also
-        # what the player's ``currentTime`` reports — no seek needed.
+    def test_should_omit_seek_flag_when_start_is_zero(self, tmp_path: Path) -> None:
+        # Cold play emits cues in source time — same scale as the
+        # bucket-local timeline when ``bucket_start == 0``.
         import threading
 
         service, output_dir = self._make_service(tmp_path)
@@ -906,6 +906,91 @@ class TestHlsServiceExtractOneSubtitle:
             )
 
         assert "-ss" not in captured["cmd"]
+        assert "-accurate_seek" not in captured["cmd"]
+        assert "-avoid_negative_ts" not in captured["cmd"]
+
+    def test_should_shift_embedded_subtitle_cues_when_start_positive(self, tmp_path: Path) -> None:
+        # Resume buckets play on a bucket-local timeline that starts
+        # at ``bucket_start``. Without ``-ss N`` the VTT cues stay in
+        # source-time and fire ``bucket_start`` seconds after the line
+        # is actually spoken in the bucket. Verify the ffmpeg argv
+        # carries the seek + the normalize-PTS pair that rebases cues.
+        import threading
+
+        service, output_dir = self._make_service(tmp_path)
+        service._subtitle_events["abc"] = {1: threading.Event()}
+        track = _make_subtitle_track(index=1, fmt="srt")
+
+        captured: dict[str, list[str]] = {}
+
+        def _capture(cmd: list[str], **_: object) -> MagicMock:
+            captured["cmd"] = cmd
+            (output_dir / "sub_1" / "sub.vtt").write_text("WEBVTT\n")
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=_capture):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                path_hash="abc",
+                start=1800,
+            )
+
+        cmd = captured["cmd"]
+        assert "-ss" in cmd
+        ss_index = cmd.index("-ss")
+        input_index = cmd.index("-i")
+        assert cmd[ss_index + 1] == "1800"
+        assert ss_index < input_index
+        assert "-accurate_seek" in cmd
+        assert cmd.index("-accurate_seek") < input_index
+        ant_idx = cmd.index("-avoid_negative_ts")
+        assert cmd[ant_idx + 1] == "make_zero"
+
+    def test_should_shift_external_subtitle_cues_when_start_positive(self, tmp_path: Path) -> None:
+        # External sidecar subs (.srt/.ass next to the video) carry the
+        # same source-time timestamps as embedded tracks, so they need
+        # the same bucket-local rebase to stay in sync on resume.
+        import threading
+
+        from src.shared_kernel.value_objects.file_path import FilePath
+
+        service, output_dir = self._make_service(tmp_path)
+        service._subtitle_events["abc"] = {2: threading.Event()}
+        sidecar = tmp_path / "movie.en.srt"
+        sidecar.write_text("1\n00:00:01,000 --> 00:00:02,000\nhello\n")
+        track = SubtitleTrack(
+            index=2,
+            language=LanguageCode("en"),
+            format="srt",
+            is_external=True,
+            file_path=FilePath(str(sidecar)),
+        )
+
+        captured: dict[str, list[str]] = {}
+
+        def _capture(cmd: list[str], **_: object) -> MagicMock:
+            captured["cmd"] = cmd
+            (output_dir / "sub_2" / "sub.vtt").write_text("WEBVTT\n")
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=_capture):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                path_hash="abc",
+                start=900,
+            )
+
+        cmd = captured["cmd"]
+        assert "-ss" in cmd
+        assert cmd[cmd.index("-ss") + 1] == "900"
+        assert "-accurate_seek" in cmd
+        assert "-avoid_negative_ts" in cmd
+        # External input path replaces the source file in the argv.
+        assert str(sidecar) in cmd
 
     def test_kill_processes_should_release_subtitle_waiters(self, tmp_path: Path) -> None:
         import threading
