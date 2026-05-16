@@ -266,20 +266,29 @@ class HlsService(HlsPlaylistPort):
         return target
 
     def is_complete(self, path_hash: str) -> bool:
-        """Check if generation is fully complete."""
-        video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
-        if not video_playlist.is_file():
-            flat = self._cache_dir / path_hash / "playlist.m3u8"
-            if not flat.is_file():
-                return False
-            try:
-                return "#EXT-X-ENDLIST" in flat.read_text(encoding="utf-8")
-            except OSError:
-                return False
-        try:
-            return "#EXT-X-ENDLIST" in video_playlist.read_text(encoding="utf-8")
-        except OSError:
+        """Check if every playlist in the bucket has been sealed with ENDLIST.
+
+        A bucket is "complete" only when every nested ``playlist.m3u8``
+        (video, alternate audios, subtitle wrappers) carries the
+        ``#EXT-X-ENDLIST`` tag. The encode-watcher writes the tag on
+        clean ffmpeg exit; subtitle wrappers are emitted with the tag
+        baked in. Checking ALL playlists prevents the next session from
+        skipping regeneration when the video encode finished cleanly
+        but an alternate-audio encode was killed mid-flight.
+        """
+        bucket = self._cache_dir / path_hash
+        if not bucket.is_dir():
             return False
+
+        flat = bucket / "playlist.m3u8"
+        nested_video_dir = bucket / _VIDEO_DIR
+        if flat.is_file() and not nested_video_dir.is_dir():
+            return _has_endlist(flat)
+
+        playlists = list(bucket.glob("*/playlist.m3u8"))
+        if not playlists:
+            return False
+        return all(_has_endlist(p) for p in playlists)
 
     def get_master_playlist(self, path_hash: str) -> str | None:
         """Get master playlist content, falling back to legacy flat playlist.
@@ -520,7 +529,9 @@ class HlsService(HlsPlaylistPort):
                 self._ffmpeg_threads,
             )
             _logger.info("Starting video HLS for %s", safe_path)
-            procs.append(self._spawn_ffmpeg(cmd))
+            procs.append(
+                self._spawn_ffmpeg(cmd, playlist_path=video_dir / "playlist.m3u8"),
+            )
 
             # 2. Additional audio tracks (audio-only HLS)
             primary_audio_idx = _primary_audio_index(probe_result)
@@ -539,7 +550,9 @@ class HlsService(HlsPlaylistPort):
                     track.language.value,
                     safe_path,
                 )
-                procs.append(self._spawn_ffmpeg(cmd))
+                procs.append(
+                    self._spawn_ffmpeg(cmd, playlist_path=audio_dir / "playlist.m3u8"),
+                )
 
             # 3. Build master playlist now — it references sub_N/playlist.m3u8
             # paths that get filled in by the background subtitle extraction
@@ -573,18 +586,61 @@ class HlsService(HlsPlaylistPort):
 
         return path_hash
 
-    @staticmethod
-    def _spawn_ffmpeg(cmd: list[str]) -> subprocess.Popen[bytes]:
+    def _spawn_ffmpeg(
+        self,
+        cmd: list[str],
+        playlist_path: Path | None = None,
+    ) -> subprocess.Popen[bytes]:
         """Spawn an FFmpeg subprocess.
 
         All arguments are built internally from validated paths,
         not from user-controlled input.
+
+        When ``playlist_path`` is provided, a daemon thread waits for
+        the process and seals the playlist with ``#EXT-X-ENDLIST`` on
+        clean exit (returncode 0). This is what makes ``is_complete``
+        flip to True after a successful full encode, so the next
+        session reuses the cache instead of respawning ffmpeg.
         """
-        return subprocess.Popen(
+        proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
+        if playlist_path is not None:
+            threading.Thread(
+                target=self._watch_for_endlist,
+                args=(proc, playlist_path),
+                daemon=True,
+                name=f"hls-endlist-{playlist_path.parent.name}",
+            ).start()
+        return proc
+
+    @staticmethod
+    def _watch_for_endlist(
+        proc: subprocess.Popen[bytes],
+        playlist_path: Path,
+    ) -> None:
+        """Wait for an ffmpeg encode to finish; seal the playlist on success.
+
+        Skips the seal on any non-zero exit — eviction killing the
+        process (negative returncode from SIGKILL) or ffmpeg failing
+        partway both fall through here and leave the playlist as a
+        growing event stream, so the next session correctly
+        regenerates instead of treating a half-encoded cache as final.
+        """
+        try:
+            returncode = proc.wait()
+        except Exception:
+            _logger.exception("ffmpeg watcher for %s failed", playlist_path)
+            return
+        if returncode != 0:
+            return
+        try:
+            _append_endlist_atomic(playlist_path)
+            _logger.info("Sealed HLS playlist with ENDLIST: %s", playlist_path)
+        except OSError:
+            _logger.exception("Failed to append ENDLIST to %s", playlist_path)
 
     # -- Private: FFmpeg commands ----------------------------------------------
 
@@ -972,6 +1028,35 @@ def _write_subtitle_playlist(sub_dir: Path) -> None:
         "#EXT-X-ENDLIST\n",
         encoding="utf-8",
     )
+
+
+def _has_endlist(playlist_path: Path) -> bool:
+    """Return ``True`` iff the playlist file exists and contains ``#EXT-X-ENDLIST``."""
+    try:
+        return "#EXT-X-ENDLIST" in playlist_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def _append_endlist_atomic(playlist_path: Path) -> None:
+    """Append ``#EXT-X-ENDLIST`` to a playlist via temp-file + atomic rename.
+
+    Idempotent — returns early if the tag is already present. The
+    rename is atomic on POSIX and on Windows (``Path.replace``), so a
+    concurrent playlist GET sees either the pre-ENDLIST content or the
+    sealed one, never a torn write.
+    """
+    if not playlist_path.is_file():
+        return
+    content = playlist_path.read_text(encoding="utf-8")
+    if "#EXT-X-ENDLIST" in content:
+        return
+    if not content.endswith("\n"):
+        content += "\n"
+    content += "#EXT-X-ENDLIST\n"
+    tmp_path = playlist_path.with_name(playlist_path.name + ".endlist.tmp")
+    tmp_path.write_text(content, encoding="utf-8")
+    tmp_path.replace(playlist_path)
 
 
 __all__ = ["HlsService"]

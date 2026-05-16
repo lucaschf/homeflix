@@ -12,6 +12,8 @@ import pytest
 from src.modules.media.application.ports import ProbeResult
 from src.modules.media.infrastructure.streaming.hls_service import (
     HlsService,
+    _append_endlist_atomic,
+    _has_endlist,
     _primary_audio_index,
 )
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
@@ -880,3 +882,206 @@ class TestEvictLru:
         evicted = service.evict_lru()
 
         assert evicted == []
+
+
+@pytest.mark.unit
+class TestHasEndlist:
+    """Tests for the _has_endlist helper."""
+
+    def test_should_return_true_when_tag_present(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n#EXT-X-ENDLIST\n")
+
+        assert _has_endlist(playlist) is True
+
+    def test_should_return_false_when_tag_missing(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+
+        assert _has_endlist(playlist) is False
+
+    def test_should_return_false_when_file_missing(self, tmp_path: Path) -> None:
+        assert _has_endlist(tmp_path / "nonexistent.m3u8") is False
+
+
+@pytest.mark.unit
+class TestAppendEndlistAtomic:
+    """Tests for the _append_endlist_atomic helper."""
+
+    def test_should_append_endlist_when_missing(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+
+        _append_endlist_atomic(playlist)
+
+        content = playlist.read_text(encoding="utf-8")
+        assert content.endswith("#EXT-X-ENDLIST\n")
+        # Original content preserved, not duplicated
+        assert content.count("#EXTINF") == 1
+
+    def test_should_be_idempotent_when_endlist_already_present(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        original = "#EXTM3U\n#EXTINF:10,\nseg.ts\n#EXT-X-ENDLIST\n"
+        playlist.write_text(original)
+
+        _append_endlist_atomic(playlist)
+
+        assert playlist.read_text(encoding="utf-8") == original
+
+    def test_should_add_trailing_newline_before_endlist(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        # Last line has no trailing newline
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts")
+
+        _append_endlist_atomic(playlist)
+
+        content = playlist.read_text(encoding="utf-8")
+        assert "seg.ts\n#EXT-X-ENDLIST\n" in content
+
+    def test_should_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        missing = tmp_path / "missing.m3u8"
+
+        _append_endlist_atomic(missing)
+
+        assert not missing.exists()
+
+    def test_should_not_leave_tmp_file_behind(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+
+        _append_endlist_atomic(playlist)
+
+        tmp_files = list(tmp_path.glob("*.endlist.tmp"))
+        assert tmp_files == []
+
+
+@pytest.mark.unit
+class TestHlsServiceIsCompleteAllPlaylists:
+    """Tests for the all-playlists check in is_complete."""
+
+    def test_should_return_true_when_every_nested_playlist_sealed(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        bucket = tmp_path / "abc"
+        bucket.mkdir()
+        for sub in ("video", "audio_1", "sub_0"):
+            (bucket / sub).mkdir()
+            (bucket / sub / "playlist.m3u8").write_text(
+                "#EXTM3U\n#EXTINF:10,\nseg.ts\n#EXT-X-ENDLIST\n"
+            )
+
+        assert service.is_complete("abc") is True
+
+    def test_should_return_false_when_one_playlist_missing_endlist(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        bucket = tmp_path / "abc"
+        bucket.mkdir()
+        # Video sealed, alt audio still growing (no ENDLIST)
+        (bucket / "video").mkdir()
+        (bucket / "video" / "playlist.m3u8").write_text(
+            "#EXTM3U\n#EXTINF:10,\nseg.ts\n#EXT-X-ENDLIST\n"
+        )
+        (bucket / "audio_1").mkdir()
+        (bucket / "audio_1" / "playlist.m3u8").write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+
+        assert service.is_complete("abc") is False
+
+
+@pytest.mark.unit
+class TestHlsServiceWatchForEndlist:
+    """Tests for the daemon-thread encode watcher."""
+
+    def test_should_seal_playlist_when_ffmpeg_exits_clean(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+        proc = MagicMock()
+        proc.wait.return_value = 0
+
+        service._watch_for_endlist(proc, playlist)
+
+        assert "#EXT-X-ENDLIST" in playlist.read_text(encoding="utf-8")
+
+    def test_should_not_seal_when_ffmpeg_exits_with_error(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        playlist = tmp_path / "playlist.m3u8"
+        original = "#EXTM3U\n#EXTINF:10,\nseg.ts\n"
+        playlist.write_text(original)
+        proc = MagicMock()
+        proc.wait.return_value = 1
+
+        service._watch_for_endlist(proc, playlist)
+
+        assert playlist.read_text(encoding="utf-8") == original
+
+    def test_should_not_seal_when_process_killed_by_eviction(self, tmp_path: Path) -> None:
+        # SIGKILL gives a negative returncode on POSIX; the watcher must
+        # treat this exactly like a hard failure and leave the playlist
+        # growable so the next session regenerates.
+        service = HlsService(cache_dir=str(tmp_path))
+        playlist = tmp_path / "playlist.m3u8"
+        original = "#EXTM3U\n#EXTINF:10,\nseg.ts\n"
+        playlist.write_text(original)
+        proc = MagicMock()
+        proc.wait.return_value = -9
+
+        service._watch_for_endlist(proc, playlist)
+
+        assert playlist.read_text(encoding="utf-8") == original
+
+    def test_should_swallow_wait_exceptions(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        playlist = tmp_path / "playlist.m3u8"
+        original = "#EXTM3U\n#EXTINF:10,\nseg.ts\n"
+        playlist.write_text(original)
+        proc = MagicMock()
+        proc.wait.side_effect = OSError("broken pipe")
+
+        # Must not raise — the watcher runs in a daemon thread and a
+        # crash there is silently dropped, leaving the cache untouched.
+        service._watch_for_endlist(proc, playlist)
+
+        assert playlist.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.unit
+class TestHlsServiceSpawnFfmpegWatcher:
+    """Tests for the watcher hookup in _spawn_ffmpeg."""
+
+    def test_should_start_watcher_thread_when_playlist_path_provided(self, tmp_path: Path) -> None:
+        import threading as _threading
+
+        service = HlsService(cache_dir=str(tmp_path))
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+
+        fake_proc = MagicMock()
+        fake_proc.wait.return_value = 0
+        # Snapshot live threads before, then count new ones after.
+        threads_before = {t.ident for t in _threading.enumerate()}
+
+        with patch("subprocess.Popen", return_value=fake_proc):
+            service._spawn_ffmpeg(["ffmpeg", "-i", "in", "out"], playlist_path=playlist)
+
+        # Allow the daemon thread to run and seal the playlist.
+        for _ in range(50):
+            if "#EXT-X-ENDLIST" in playlist.read_text(encoding="utf-8"):
+                break
+            time.sleep(0.02)
+
+        assert "#EXT-X-ENDLIST" in playlist.read_text(encoding="utf-8")
+
+        # A new daemon thread must have been spawned with our prefix.
+        new_threads = [t for t in _threading.enumerate() if t.ident not in threads_before]
+        assert any(t.name.startswith("hls-endlist-") for t in new_threads) or all(
+            not t.is_alive() for t in new_threads
+        )
+
+    def test_should_not_start_watcher_when_playlist_path_none(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        fake_proc = MagicMock()
+
+        with patch("subprocess.Popen", return_value=fake_proc):
+            service._spawn_ffmpeg(["ffmpeg", "-i", "in", "out"])
+
+        # wait() must not have been called from a watcher — no watcher started.
+        fake_proc.wait.assert_not_called()
