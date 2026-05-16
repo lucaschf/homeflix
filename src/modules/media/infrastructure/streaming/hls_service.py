@@ -33,6 +33,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import shutil
 import subprocess
 import threading
@@ -847,85 +848,33 @@ class HlsService(HlsPlaylistPort):
         typically with a 404 if extraction never produced a file.
 
         Subtitle cues are emitted in the same timeline as the HLS
-        stream that wraps them. For a non-zero ``start`` we input-seek
-        and let ``-avoid_negative_ts make_zero`` rebase the cue times
-        to bucket-local: a cue at source-K is written with timestamp
-        ``K - start`` so it fires when ``video.currentTime`` (also
-        bucket-local) reaches the right moment. Without this shift,
-        resume sessions would show every cue at ``start`` seconds
-        later than the actual line of dialogue.
+        stream that wraps them. ffmpeg is invoked WITHOUT ``-ss`` so
+        the full subtitle stream is written in source-time — that
+        cmd-line worked uniformly across MKV/MP4/SRT demuxers; using
+        ``-ss N`` instead produced container-dependent results
+        (cues either late by ``N`` seconds or compressed to bucket
+        start by ``-avoid_negative_ts``). After the extraction
+        succeeds the post-processor ``_shift_webvtt_to_bucket_local``
+        subtracts ``start`` from every cue, clamping negatives to
+        zero, so cue at source-K lands at bucket-local ``K - start``.
         """
         try:
             sub_dir = output_dir / f"sub_{track.index}"
             sub_dir.mkdir(exist_ok=True)
             vtt_path = sub_dir / "sub.vtt"
 
-            seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
-            ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
-
-            if track.is_external:
-                if track.file_path is None:
-                    return
-                input_arg = track.file_path.value
-                log_label = f"external subtitle {input_arg}"
-                try:
-                    subprocess.run(
-                        with_ffmpeg_threads(
-                            [
-                                "ffmpeg",
-                                *seek_args,
-                                "-i",
-                                input_arg,
-                                "-c:s",
-                                "webvtt",
-                                *ts_normalize_args,
-                                "-loglevel",
-                                "error",
-                                "-y",
-                                str(vtt_path),
-                            ],
-                            self._ffmpeg_threads,
-                        ),
-                        **SUBPROCESS_TEXT_KWARGS,
-                        check=False,
-                        timeout=120,
-                    )
-                except subprocess.TimeoutExpired:
-                    _logger.warning("Extraction timed out for %s", log_label)
-                    return
-            else:
-                log_label = f"subtitle track {track.index}"
-                try:
-                    subprocess.run(
-                        with_ffmpeg_threads(
-                            [
-                                "ffmpeg",
-                                *seek_args,
-                                "-i",
-                                file_path,
-                                "-map",
-                                f"0:s:{track.index}",
-                                "-c:s",
-                                "webvtt",
-                                *ts_normalize_args,
-                                "-loglevel",
-                                "error",
-                                "-y",
-                                str(vtt_path),
-                            ],
-                            self._ffmpeg_threads,
-                        ),
-                        **SUBPROCESS_TEXT_KWARGS,
-                        check=False,
-                        timeout=120,
-                    )
-                except subprocess.TimeoutExpired:
-                    _logger.warning("Extraction timed out for %s", log_label)
-                    return
+            cmd_and_label = self._build_subtitle_extract_cmd(track, file_path, vtt_path)
+            if cmd_and_label is None:
+                return
+            cmd, log_label = cmd_and_label
+            if not self._run_subtitle_ffmpeg(cmd, log_label):
+                return
 
             if vtt_path.is_file():
+                if start > 0:
+                    _shift_webvtt_to_bucket_local(vtt_path, start)
                 _write_subtitle_playlist(sub_dir)
-                _logger.info("Extracted %s to %s", log_label, vtt_path)
+                _logger.info("Extracted %s to %s (start=%d)", log_label, vtt_path, start)
             else:
                 _logger.warning("Failed to extract %s", log_label)
         finally:
@@ -933,6 +882,69 @@ class HlsService(HlsPlaylistPort):
                 event = self._subtitle_events.get(path_hash, {}).get(track.index)
             if event is not None:
                 event.set()
+
+    def _build_subtitle_extract_cmd(
+        self,
+        track: SubtitleTrack,
+        file_path: str,
+        vtt_path: Path,
+    ) -> tuple[list[str], str] | None:
+        """Build the ffmpeg argv + log label for a single subtitle track.
+
+        Returns ``None`` when the track is unusable (external sidecar
+        with no resolved file path). The cmd is wrapped through
+        ``with_ffmpeg_threads`` so the global cap applies uniformly.
+        """
+        if track.is_external:
+            if track.file_path is None:
+                return None
+            cmd = with_ffmpeg_threads(
+                [
+                    "ffmpeg",
+                    "-i",
+                    track.file_path.value,
+                    "-c:s",
+                    "webvtt",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    str(vtt_path),
+                ],
+                self._ffmpeg_threads,
+            )
+            return cmd, f"external subtitle {track.file_path.value}"
+        cmd = with_ffmpeg_threads(
+            [
+                "ffmpeg",
+                "-i",
+                file_path,
+                "-map",
+                f"0:s:{track.index}",
+                "-c:s",
+                "webvtt",
+                "-loglevel",
+                "error",
+                "-y",
+                str(vtt_path),
+            ],
+            self._ffmpeg_threads,
+        )
+        return cmd, f"subtitle track {track.index}"
+
+    @staticmethod
+    def _run_subtitle_ffmpeg(cmd: list[str], log_label: str) -> bool:
+        """Run a subtitle ffmpeg cmd, returning True iff it didn't time out."""
+        try:
+            subprocess.run(
+                cmd,
+                **SUBPROCESS_TEXT_KWARGS,
+                check=False,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            _logger.warning("Extraction timed out for %s", log_label)
+            return False
+        return True
 
     # -- Private: master playlist ----------------------------------------------
 
@@ -1130,6 +1142,63 @@ def _append_endlist_atomic(playlist_path: Path) -> None:
     tmp_path = playlist_path.with_name(playlist_path.name + ".endlist.tmp")
     tmp_path.write_text(content, encoding="utf-8")
     tmp_path.replace(playlist_path)
+
+
+# Matches WebVTT cue timestamps in either ``mm:ss.fff`` (under one hour)
+# or ``hh:mm:ss.fff`` shape, so the post-processor can shift cues
+# regardless of which form ffmpeg picked when writing the file.
+_VTT_TIMESTAMP_RE = re.compile(r"(?:(?P<h>\d+):)?(?P<m>\d{2}):(?P<s>\d{2})\.(?P<ms>\d{3})")
+
+
+def _shift_one_timestamp(match: re.Match[str], shift_seconds: int) -> str:
+    """Return the WebVTT timestamp in ``match`` shifted back by ``shift_seconds``.
+
+    Negatives clamp to zero so a cue that straddled the bucket
+    boundary collapses to ``00:00:00.000`` (start == end → the player
+    skips it) instead of producing an invalid VTT line.
+    """
+    h = int(match.group("h") or 0)
+    m = int(match.group("m"))
+    s = int(match.group("s"))
+    ms = int(match.group("ms"))
+    total_ms = ((h * 60 + m) * 60 + s) * 1000 + ms - shift_seconds * 1000
+    if total_ms < 0:
+        total_ms = 0
+    new_h, rem = divmod(total_ms, 3_600_000)
+    new_m, rem = divmod(rem, 60_000)
+    new_s, new_ms = divmod(rem, 1_000)
+    return f"{new_h:02d}:{new_m:02d}:{new_s:02d}.{new_ms:03d}"
+
+
+def _shift_webvtt_to_bucket_local(vtt_path: Path, shift_seconds: int) -> None:
+    """Subtract ``shift_seconds`` from every cue timestamp in the VTT.
+
+    The extracted subtitle carries source-time cue timestamps; on a
+    non-zero bucket start the player runs a bucket-local clock and
+    every cue would otherwise fire ``shift_seconds`` seconds after
+    the spoken line. Shift everything once on disk so hls.js can map
+    cues to the active manifest's timeline without further help.
+    """
+    if shift_seconds <= 0:
+        return
+    if not vtt_path.is_file():
+        return
+    try:
+        content = vtt_path.read_text(encoding="utf-8")
+    except OSError:
+        _logger.exception("Failed to read VTT for shifting: %s", vtt_path)
+        return
+
+    def _replace(m: re.Match[str]) -> str:
+        return _shift_one_timestamp(m, shift_seconds)
+
+    new_content = _VTT_TIMESTAMP_RE.sub(_replace, content)
+    tmp_path = vtt_path.with_name(vtt_path.name + ".shift.tmp")
+    try:
+        tmp_path.write_text(new_content, encoding="utf-8")
+        tmp_path.replace(vtt_path)
+    except OSError:
+        _logger.exception("Failed to write shifted VTT: %s", vtt_path)
 
 
 __all__ = ["HlsService"]

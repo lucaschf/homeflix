@@ -15,6 +15,7 @@ from src.modules.media.infrastructure.streaming.hls_service import (
     _append_endlist_atomic,
     _has_endlist,
     _primary_audio_index,
+    _shift_webvtt_to_bucket_local,
 )
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
 from src.shared_kernel.value_objects.language_code import LanguageCode
@@ -881,20 +882,21 @@ class TestHlsServiceExtractOneSubtitle:
 
         assert event.is_set()
 
-    def test_should_omit_seek_flag_when_start_is_zero(self, tmp_path: Path) -> None:
-        # Cold play emits cues in source time — same scale as the
-        # bucket-local timeline when ``bucket_start == 0``.
+    def test_should_skip_post_shift_when_start_is_zero(self, tmp_path: Path) -> None:
+        # Cold play has bucket-local == source-time, so the VTT is
+        # left exactly as ffmpeg wrote it and no post-shift runs.
         import threading
 
         service, output_dir = self._make_service(tmp_path)
         service._subtitle_events["abc"] = {0: threading.Event()}
         track = _make_subtitle_track(index=0, fmt="srt")
 
+        original_vtt = "WEBVTT\n\n00:00:05.000 --> 00:00:07.000\nhello\n"
         captured: dict[str, list[str]] = {}
 
         def _capture(cmd: list[str], **_: object) -> MagicMock:
             captured["cmd"] = cmd
-            (output_dir / "sub_0" / "sub.vtt").write_text("WEBVTT\n")
+            (output_dir / "sub_0" / "sub.vtt").write_text(original_vtt)
             return MagicMock(returncode=0)
 
         with patch("subprocess.run", side_effect=_capture):
@@ -908,13 +910,17 @@ class TestHlsServiceExtractOneSubtitle:
         assert "-ss" not in captured["cmd"]
         assert "-accurate_seek" not in captured["cmd"]
         assert "-avoid_negative_ts" not in captured["cmd"]
+        assert (output_dir / "sub_0" / "sub.vtt").read_text(encoding="utf-8") == original_vtt
 
-    def test_should_shift_embedded_subtitle_cues_when_start_positive(self, tmp_path: Path) -> None:
-        # Resume buckets play on a bucket-local timeline that starts
-        # at ``bucket_start``. Without ``-ss N`` the VTT cues stay in
-        # source-time and fire ``bucket_start`` seconds after the line
-        # is actually spoken in the bucket. Verify the ffmpeg argv
-        # carries the seek + the normalize-PTS pair that rebases cues.
+    def test_should_post_shift_embedded_subtitle_cues_when_start_positive(
+        self, tmp_path: Path
+    ) -> None:
+        # ffmpeg is invoked WITHOUT ``-ss`` regardless of bucket
+        # offset because cue-PTS handling under ``-ss`` is
+        # container-dependent (we'd land at either source-time or
+        # over-shifted to zero depending on the demuxer). The full
+        # source-time VTT is then post-processed in Python to subtract
+        # ``start`` from every cue — deterministic across containers.
         import threading
 
         service, output_dir = self._make_service(tmp_path)
@@ -925,7 +931,11 @@ class TestHlsServiceExtractOneSubtitle:
 
         def _capture(cmd: list[str], **_: object) -> MagicMock:
             captured["cmd"] = cmd
-            (output_dir / "sub_1" / "sub.vtt").write_text("WEBVTT\n")
+            # ffmpeg "writes" a VTT with source-time cues — cue at
+            # source 00:30:30 (1830s), 8s past the bucket start of 1800.
+            (output_dir / "sub_1" / "sub.vtt").write_text(
+                "WEBVTT\n\n00:30:30.500 --> 00:30:33.200\nhello\n"
+            )
             return MagicMock(returncode=0)
 
         with patch("subprocess.run", side_effect=_capture):
@@ -938,20 +948,16 @@ class TestHlsServiceExtractOneSubtitle:
             )
 
         cmd = captured["cmd"]
-        assert "-ss" in cmd
-        ss_index = cmd.index("-ss")
-        input_index = cmd.index("-i")
-        assert cmd[ss_index + 1] == "1800"
-        assert ss_index < input_index
-        assert "-accurate_seek" in cmd
-        assert cmd.index("-accurate_seek") < input_index
-        ant_idx = cmd.index("-avoid_negative_ts")
-        assert cmd[ant_idx + 1] == "make_zero"
+        assert "-ss" not in cmd
+        assert "-accurate_seek" not in cmd
+        assert "-avoid_negative_ts" not in cmd
+        # Post-shift moved the cue from source-1830.5 to bucket-30.5.
+        shifted = (output_dir / "sub_1" / "sub.vtt").read_text(encoding="utf-8")
+        assert "00:00:30.500 --> 00:00:33.200" in shifted
 
-    def test_should_shift_external_subtitle_cues_when_start_positive(self, tmp_path: Path) -> None:
-        # External sidecar subs (.srt/.ass next to the video) carry the
-        # same source-time timestamps as embedded tracks, so they need
-        # the same bucket-local rebase to stay in sync on resume.
+    def test_should_post_shift_external_subtitle_cues_when_start_positive(
+        self, tmp_path: Path
+    ) -> None:
         import threading
 
         from src.shared_kernel.value_objects.file_path import FilePath
@@ -972,7 +978,9 @@ class TestHlsServiceExtractOneSubtitle:
 
         def _capture(cmd: list[str], **_: object) -> MagicMock:
             captured["cmd"] = cmd
-            (output_dir / "sub_2" / "sub.vtt").write_text("WEBVTT\n")
+            (output_dir / "sub_2" / "sub.vtt").write_text(
+                "WEBVTT\n\n00:15:10.000 --> 00:15:12.500\nhello\n"
+            )
             return MagicMock(returncode=0)
 
         with patch("subprocess.run", side_effect=_capture):
@@ -985,10 +993,12 @@ class TestHlsServiceExtractOneSubtitle:
             )
 
         cmd = captured["cmd"]
-        assert "-ss" in cmd
-        assert cmd[cmd.index("-ss") + 1] == "900"
-        assert "-accurate_seek" in cmd
-        assert "-avoid_negative_ts" in cmd
+        assert "-ss" not in cmd
+        assert "-accurate_seek" not in cmd
+        assert str(sidecar) in cmd
+        # Post-shift moved cue at source-15:10 (910s) to bucket-00:10.
+        shifted = (output_dir / "sub_2" / "sub.vtt").read_text(encoding="utf-8")
+        assert "00:00:10.000 --> 00:00:12.500" in shifted
         # External input path replaces the source file in the argv.
         assert str(sidecar) in cmd
 
@@ -1164,6 +1174,77 @@ class TestAppendEndlistAtomic:
 
         tmp_files = list(tmp_path.glob("*.endlist.tmp"))
         assert tmp_files == []
+
+
+@pytest.mark.unit
+@pytest.mark.unit
+class TestShiftWebvttToBucketLocal:
+    """Tests for the WebVTT post-shift helper."""
+
+    def test_should_shift_cue_timestamps_back_by_start(self, tmp_path: Path) -> None:
+        vtt_path = tmp_path / "sub.vtt"
+        vtt_path.write_text("WEBVTT\n\n00:30:30.500 --> 00:30:33.200\nhello\n", encoding="utf-8")
+
+        _shift_webvtt_to_bucket_local(vtt_path, 1800)
+
+        content = vtt_path.read_text(encoding="utf-8")
+        assert "00:00:30.500 --> 00:00:33.200" in content
+        assert "hello" in content
+
+    def test_should_handle_mm_ss_short_form(self, tmp_path: Path) -> None:
+        # ffmpeg sometimes writes the short ``mm:ss.fff`` form when
+        # the hour component is zero. The regex must catch both
+        # shapes so the post-shift doesn't silently skip cues.
+        vtt_path = tmp_path / "sub.vtt"
+        vtt_path.write_text("WEBVTT\n\n10:30.000 --> 10:32.500\nhello\n", encoding="utf-8")
+
+        _shift_webvtt_to_bucket_local(vtt_path, 300)
+
+        content = vtt_path.read_text(encoding="utf-8")
+        assert "00:05:30.000 --> 00:05:32.500" in content
+
+    def test_should_clamp_negative_timestamps_to_zero(self, tmp_path: Path) -> None:
+        # Cues that straddle the bucket boundary end up with a negative
+        # start after the shift. Clamping to ``00:00:00.000`` collapses
+        # them to ``start == end`` which the player skips silently.
+        vtt_path = tmp_path / "sub.vtt"
+        vtt_path.write_text(
+            "WEBVTT\n\n00:29:58.000 --> 00:30:02.000\nstraddle\n",
+            encoding="utf-8",
+        )
+
+        _shift_webvtt_to_bucket_local(vtt_path, 1800)
+
+        content = vtt_path.read_text(encoding="utf-8")
+        # Start was 2s before the new zero → clamps to 00:00:00.000.
+        assert "00:00:00.000 --> 00:00:02.000" in content
+
+    def test_should_preserve_cue_text_lines(self, tmp_path: Path) -> None:
+        vtt_path = tmp_path / "sub.vtt"
+        vtt_path.write_text(
+            "WEBVTT\n\n00:31:00.000 --> 00:31:02.000\n" "first line\n" "second line\n",
+            encoding="utf-8",
+        )
+
+        _shift_webvtt_to_bucket_local(vtt_path, 1800)
+
+        content = vtt_path.read_text(encoding="utf-8")
+        assert "first line" in content
+        assert "second line" in content
+
+    def test_should_no_op_when_shift_is_zero(self, tmp_path: Path) -> None:
+        vtt_path = tmp_path / "sub.vtt"
+        original = "WEBVTT\n\n00:00:05.000 --> 00:00:07.000\nhello\n"
+        vtt_path.write_text(original, encoding="utf-8")
+
+        _shift_webvtt_to_bucket_local(vtt_path, 0)
+
+        assert vtt_path.read_text(encoding="utf-8") == original
+
+    def test_should_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        # Defensive — caller may pass a path that the ffmpeg run never
+        # actually produced (timeout, demuxer error). Don't blow up.
+        _shift_webvtt_to_bucket_local(tmp_path / "missing.vtt", 100)
 
 
 @pytest.mark.unit
