@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from src.building_blocks.application.errors import ResourceNotFoundException
@@ -134,6 +134,15 @@ async def hls_file(
 @inject  # type: ignore[misc]
 async def movie_hls_playlist(
     movie_id: str,
+    start: int = Query(
+        0,
+        ge=0,
+        description=(
+            "Source-time second to begin transcoding at. Rounded down "
+            "to a 5-minute bucket. Defaults to 0 for legacy single-bucket "
+            "caching."
+        ),
+    ),
     profile_id: str = Depends(resolve_profile_id),
     movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],
@@ -155,7 +164,7 @@ async def movie_hls_playlist(
     file_path = _require_file(movie.file_path)
     if movie.scrub_preview_path is None:
         _fire_eager_movie(backfill_job, movie_id)
-    return await _serve_master(hls_uc, file_path)
+    return await _serve_master(hls_uc, file_path, start=start)
 
 
 @router.get("/episode/{series_id}/{season_number}/{episode_number}/hls/playlist.m3u8")  # type: ignore[misc]
@@ -164,6 +173,15 @@ async def episode_hls_playlist(
     series_id: str,
     season_number: int,
     episode_number: int,
+    start: int = Query(
+        0,
+        ge=0,
+        description=(
+            "Source-time second to begin transcoding at. Rounded down "
+            "to a 5-minute bucket. Defaults to 0 for legacy single-bucket "
+            "caching."
+        ),
+    ),
     profile_id: str = Depends(resolve_profile_id),
     series_uc: GetSeriesByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_by_id],
@@ -182,7 +200,7 @@ async def episode_hls_playlist(
     file_path = _require_file(episode.file_path)
     if episode.scrub_preview_path is None and episode.id is not None:
         _fire_eager_episode(backfill_job, episode.id)
-    return await _serve_master(hls_uc, file_path)
+    return await _serve_master(hls_uc, file_path, start=start)
 
 
 # -- Track info ----------------------------------------------------------------
@@ -402,12 +420,14 @@ async def stream_episode(
 async def _serve_master(
     use_case: GenerateHlsPlaylistUseCase,
     file_path: str,
+    start: int = 0,
 ) -> Response:
     """Run the generate-playlist use case and wrap its DTO in a Response."""
     output = await use_case.execute(
         GenerateHlsPlaylistInput(
             file_path=file_path,
             base_url_template=_MASTER_BASE_URL,
+            start=start,
         )
     )
     return Response(

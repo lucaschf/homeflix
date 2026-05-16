@@ -61,6 +61,13 @@ _BROWSER_SAFE_CODECS = {"h264"}
 # hls.js something to render; the rest stream in as they're written.
 _MIN_SEGMENTS_FRESH = 1
 
+# Granularity (in source-time seconds) for the cache key when a non-zero
+# ``start`` offset is requested. Adjacent resume positions inside the
+# same bucket reuse the same encode instead of spawning a fresh ffmpeg
+# per second; coarser buckets save disk at the cost of a longer wait
+# for ``video.currentTime`` to land on the exact saved point.
+_RESUME_BUCKET_SECONDS = 300
+
 # Idle eviction defaults: kill ffmpeg after this many seconds with no
 # segment requests. Trade-off: short timeout frees CPU faster after the
 # user navigates away, but a paused user beyond this window will see the
@@ -230,20 +237,26 @@ class HlsService(HlsPlaylistPort):
 
     # -- Public API ------------------------------------------------------------
 
-    def get_path_hash(self, file_path: str) -> str:
-        """Get the hash key for a source file.
+    def get_path_hash(self, file_path: str, start: int = 0) -> str:
+        """Get the hash key for a source file at a given start offset.
 
         Args:
             file_path: Absolute path to the source video file.
+            start: Source-time second the playback session starts from.
+                Rounded down to ``_RESUME_BUCKET_SECONDS`` so adjacent
+                resume positions share a cache bucket. ``0`` (the
+                default) hashes the file path alone, keeping
+                pre-existing cache directories valid after upgrade.
 
         Returns:
-            Hex MD5 digest uniquely identifying the cache bucket for
-            this file. One bucket per file regardless of resume offset —
-            playback positions are handled client-side via the native
-            ``HTMLMediaElement.currentTime`` seek once the manifest
-            loads.
+            Hex MD5 digest uniquely identifying the cache bucket. The
+            seek-ahead and resume flows on cold cache rely on this
+            being deterministic so the same offset always re-attaches
+            to the same on-disk bucket.
         """
-        return hashlib.md5(file_path.encode()).hexdigest()
+        bucket = (start // _RESUME_BUCKET_SECONDS) * _RESUME_BUCKET_SECONDS
+        key = file_path if bucket == 0 else f"{file_path}:{bucket}"
+        return hashlib.md5(key.encode()).hexdigest()
 
     def get_file_by_hash(self, path_hash: str, relative_path: str) -> Path | None:
         """Get any file from cache by hash + relative path.
@@ -345,23 +358,25 @@ class HlsService(HlsPlaylistPort):
         except (OSError, json.JSONDecodeError):
             return None
 
-    async def ensure_playlist(self, file_path: str) -> str:
+    async def ensure_playlist(self, file_path: str, start: int = 0) -> str:
         """Start generation and wait until the first segments are ready.
 
         Args:
             file_path: Absolute path to the source video file.
+            start: Source-time second to begin transcoding at. Rounded
+                down to a 5-minute bucket via ``get_path_hash`` so a
+                small change in resume position reuses the same encode.
+                ``0`` is the legacy behaviour (single bucket per file).
 
         Returns:
-            The path hash for this file. Always the same hash for a
-            given path — resume positions are applied client-side after
-            the full manifest loads, so a single cache bucket per file
-            is reused across every session.
+            The path hash for the bucket — unique per ``(file_path,
+            start_bucket)`` pair.
 
         Raises:
             RuntimeError: If FFmpeg is not available, fails, or times out.
             FileNotFoundError: If the source file does not exist.
         """
-        path_hash = self.get_path_hash(file_path)
+        path_hash = self.get_path_hash(file_path, start)
         # Touch immediately so the eviction loop never kills a process
         # that the user just asked for, even if no segments have been
         # served yet (e.g. while waiting for ffmpeg to start).
@@ -379,7 +394,7 @@ class HlsService(HlsPlaylistPort):
             msg = f"Source file not found: {file_path}"
             raise FileNotFoundError(msg)
 
-        await asyncio.to_thread(self._start_generation, file_path)
+        await asyncio.to_thread(self._start_generation, file_path, start)
 
         video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
         attempts = int(_POLL_TIMEOUT / _POLL_INTERVAL)
@@ -468,21 +483,24 @@ class HlsService(HlsPlaylistPort):
 
     # -- Private: generation ---------------------------------------------------
 
-    def _start_generation(self, file_path: str) -> str:
+    def _start_generation(self, file_path: str, start: int = 0) -> str:
         """Start all FFmpeg processes for multi-track HLS generation.
 
-        Always transcodes from t=0 into a single per-file bucket. Resume
-        positions are applied client-side via ``video.currentTime`` once
-        the event-style playlist starts populating — this keeps the
-        cache reusable across sessions and lets the browser seek freely
-        in either direction.
+        Transcodes from ``start`` seconds (rounded down to the cache
+        bucket) into a bucket keyed by ``(file_path, start_bucket)``.
+        Each ffmpeg invocation gets ``-ss N`` as an input seek so the
+        encode skips fast to the nearest preceding keyframe before
+        producing segments. ENDLIST sealing happens via the watcher
+        spawned in ``_spawn_ffmpeg``.
 
         Args:
             file_path: Absolute path to the source video file.
+            start: Source-time second to begin the encode at.
         """
         source = self._validate_source(file_path)
         safe_path = str(source)
-        path_hash = self.get_path_hash(file_path)
+        path_hash = self.get_path_hash(file_path, start)
+        bucket_start = (start // _RESUME_BUCKET_SECONDS) * _RESUME_BUCKET_SECONDS
 
         if self.is_complete(path_hash):
             return path_hash
@@ -525,10 +543,10 @@ class HlsService(HlsPlaylistPort):
             video_dir = output_dir / _VIDEO_DIR
             video_dir.mkdir()
             cmd = with_ffmpeg_threads(
-                self._build_video_cmd(safe_path, video_dir, probe_result),
+                self._build_video_cmd(safe_path, video_dir, probe_result, bucket_start),
                 self._ffmpeg_threads,
             )
-            _logger.info("Starting video HLS for %s", safe_path)
+            _logger.info("Starting video HLS for %s (offset=%ds)", safe_path, bucket_start)
             procs.append(
                 self._spawn_ffmpeg(cmd, playlist_path=video_dir / "playlist.m3u8"),
             )
@@ -541,14 +559,15 @@ class HlsService(HlsPlaylistPort):
                 audio_dir = output_dir / f"audio_{track.index}"
                 audio_dir.mkdir()
                 cmd = with_ffmpeg_threads(
-                    self._build_audio_cmd(safe_path, audio_dir, track.index),
+                    self._build_audio_cmd(safe_path, audio_dir, track.index, bucket_start),
                     self._ffmpeg_threads,
                 )
                 _logger.info(
-                    "Starting audio HLS for track %d (%s) of %s",
+                    "Starting audio HLS for track %d (%s) of %s (offset=%ds)",
                     track.index,
                     track.language.value,
                     safe_path,
+                    bucket_start,
                 )
                 procs.append(
                     self._spawn_ffmpeg(cmd, playlist_path=audio_dir / "playlist.m3u8"),
@@ -675,13 +694,19 @@ class HlsService(HlsPlaylistPort):
         file_path: str,
         output_dir: Path,
         probe: ProbeResult,
+        start: int = 0,
     ) -> list[str]:
         """Build FFmpeg command for video + default audio.
 
-        Always transcodes (or remuxes, for already-H.264 sources) from
-        the beginning of the file. Resume positions are a client-side
-        concern — the player calls ``video.currentTime`` once the
-        event-style playlist starts populating.
+        Transcodes (or remuxes, for already-H.264 sources) from the
+        ``start`` second of the file. ``-ss`` is placed BEFORE ``-i``
+        so ffmpeg does an input seek — fast and keyframe-accurate —
+        and the resulting segments carry timestamps starting near zero
+        in bucket-local time. Bucket-local timestamps are why the
+        frontend computes ``video.currentTime = saved - bucket_start``
+        instead of ``video.currentTime = saved`` (which would only
+        work with ``-copyts`` / source-time preserved, a path the
+        prior attempts at this refactor never landed reliably).
         """
         codec = self._probe_video_codec(file_path)
         needs_transcode = codec not in _BROWSER_SAFE_CODECS
@@ -696,8 +721,11 @@ class HlsService(HlsPlaylistPort):
         primary_idx = _primary_audio_index(probe)
         audio_map = f"0:a:{primary_idx}"
 
+        seek_args = ["-ss", str(start)] if start > 0 else []
+
         return [
             "ffmpeg",
+            *seek_args,
             "-i",
             file_path,
             "-map",
@@ -736,10 +764,17 @@ class HlsService(HlsPlaylistPort):
         file_path: str,
         output_dir: Path,
         audio_index: int,
+        start: int = 0,
     ) -> list[str]:
-        """Build FFmpeg command for audio-only HLS track."""
+        """Build FFmpeg command for audio-only HLS track.
+
+        ``-ss`` placed before ``-i`` when ``start > 0`` — same input-seek
+        rationale as ``_build_video_cmd``.
+        """
+        seek_args = ["-ss", str(start)] if start > 0 else []
         return [
             "ffmpeg",
+            *seek_args,
             "-i",
             file_path,
             "-map",

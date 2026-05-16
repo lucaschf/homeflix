@@ -105,14 +105,35 @@ class TestHlsServiceGetPathHash:
         service = HlsService(cache_dir=str(tmp_path / "hls"))
         assert service.get_path_hash("/a.mkv") != service.get_path_hash("/b.mkv")
 
-    def test_should_depend_only_on_file_path(self, tmp_path: Path) -> None:
-        # The cache bucket is keyed by the source file alone: resume
-        # positions apply client-side via ``video.currentTime`` so every
-        # session for the same file reuses the same transcode output.
+    def test_should_match_legacy_hash_when_start_is_zero(self, tmp_path: Path) -> None:
+        # The default ``start=0`` bucket keeps the legacy hash scheme so
+        # caches generated before the resume-offset refactor stay
+        # addressable. This is the load-bearing contract for not
+        # invalidating warm caches on deploy.
         service = HlsService(cache_dir=str(tmp_path / "hls"))
         path = "/movies/test.mkv"
         expected = hashlib.md5(path.encode()).hexdigest()
         assert service.get_path_hash(path) == expected
+        assert service.get_path_hash(path, start=0) == expected
+
+    def test_should_round_start_down_to_bucket(self, tmp_path: Path) -> None:
+        # Adjacent resume positions inside the same 5-minute window
+        # collapse onto the same bucket so a player resuming at t=302
+        # reuses the ffmpeg encode started at t=300.
+        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        path = "/movies/test.mkv"
+        # 299s rounds down to bucket 0 — same as default
+        assert service.get_path_hash(path, start=299) == service.get_path_hash(path)
+        # 300s and 599s share the same bucket (300)
+        assert service.get_path_hash(path, start=300) == service.get_path_hash(path, start=599)
+        # 600s steps to the next bucket
+        assert service.get_path_hash(path, start=300) != service.get_path_hash(path, start=600)
+
+    def test_should_differ_across_buckets_for_same_file(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        path = "/movies/test.mkv"
+        assert service.get_path_hash(path, start=0) != service.get_path_hash(path, start=300)
+        assert service.get_path_hash(path, start=300) != service.get_path_hash(path, start=600)
 
 
 @pytest.mark.unit
@@ -283,14 +304,23 @@ class TestHlsServiceBuildAudioCmd:
 
         assert "aac" in cmd
 
-    def test_should_never_emit_a_seek_flag(self, tmp_path: Path) -> None:
-        # The transcode always starts at t=0 — resume positions are
-        # applied client-side via ``video.currentTime``. A ``-ss`` in
-        # the ffmpeg argv would re-introduce the per-offset bucket
-        # problem the per-file cache was designed to avoid.
+    def test_should_omit_seek_flag_when_start_is_zero(self, tmp_path: Path) -> None:
+        # Default cold-cache transcode starts at t=0 — no ``-ss``.
         cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0)
 
         assert "-ss" not in cmd
+
+    def test_should_emit_seek_flag_before_input_when_start_positive(self, tmp_path: Path) -> None:
+        # ``-ss N`` must come BEFORE ``-i`` so ffmpeg does an input
+        # seek (fast, keyframe-accurate) rather than decoding from 0
+        # and dropping output.
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0, start=1800)
+
+        assert "-ss" in cmd
+        ss_index = cmd.index("-ss")
+        input_index = cmd.index("-i")
+        assert cmd[ss_index + 1] == "1800"
+        assert ss_index < input_index
 
 
 @pytest.mark.unit
@@ -327,9 +357,8 @@ class TestHlsServiceBuildVideoCmd:
 
         assert "0:a:3" in cmd
 
-    def test_should_never_emit_a_seek_flag(self, tmp_path: Path) -> None:
-        # Symmetric with the audio-only pipeline: the video transcode
-        # starts at t=0 and the player seeks natively.
+    def test_should_omit_seek_flag_when_start_is_zero(self, tmp_path: Path) -> None:
+        # Default cold-cache transcode starts at t=0 — no ``-ss``.
         service = HlsService(cache_dir=str(tmp_path / "cache"))
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
@@ -337,6 +366,22 @@ class TestHlsServiceBuildVideoCmd:
             cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "-ss" not in cmd
+
+    def test_should_emit_seek_flag_before_input_when_start_positive(self, tmp_path: Path) -> None:
+        # Input seek for the video pipeline mirrors the audio one — the
+        # seek is in source-time seconds and lands at the nearest
+        # preceding keyframe before any encoding work begins.
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+
+        assert "-ss" in cmd
+        ss_index = cmd.index("-ss")
+        input_index = cmd.index("-i")
+        assert cmd[ss_index + 1] == "1800"
+        assert ss_index < input_index
 
 
 @pytest.mark.unit

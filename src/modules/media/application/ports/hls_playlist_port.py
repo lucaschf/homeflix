@@ -17,15 +17,18 @@ class HlsPlaylistPort(ABC):
     """Manage the HLS cache: playlists, segments, subtitles, eviction."""
 
     @abstractmethod
-    async def ensure_playlist(self, file_path: str) -> str:
+    async def ensure_playlist(self, file_path: str, start: int = 0) -> str:
         """Prepare an HLS cache for ``file_path`` and return its path hash.
 
         Blocks until at least the master playlist and the first segment
-        are ready so the caller can serve the playlist immediately. The
-        transcode always starts at the beginning of the source —
-        resume positions are a player-side concern applied via
-        ``HTMLMediaElement.currentTime`` once the manifest loads, which
-        keeps a single cache bucket per file reusable across sessions.
+        are ready so the caller can serve the playlist immediately.
+
+        ``start`` is the source-time second the player wants playback
+        to begin from. When non-zero, the implementation rounds it
+        down to a coarser bucket (so a small change in resume position
+        reuses the same encode) and spawns ffmpeg with an input seek
+        to that bucket. The default of ``0`` preserves the
+        single-bucket-per-file behaviour for cold first plays.
         """
         ...
 
