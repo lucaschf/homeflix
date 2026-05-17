@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -238,6 +239,36 @@ class MediaMetadata:
     localized: dict[str, LocalizedFields] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class SearchCandidate:
+    """A single raw search hit for the admin relink picker.
+
+    Distinct from ``MediaMetadata`` because the picker only needs the
+    card-level fields (title, year, poster, overview) and shouldn't
+    pay for the per-detail round-trip TMDB requires for full
+    ``MediaMetadata``. The admin clicks a card → relink flow then
+    triggers a real enrichment for the selected id.
+
+    Attributes:
+        tmdb_id: TMDB primary key.
+        media_type: ``"movie"`` for ``/search/movie`` hits, ``"tv"``
+            for ``/search/tv`` hits — tells the caller which TMDB
+            endpoint to refetch from.
+        title: Display title.
+        year: Release / first-air year, or ``None`` when the source
+            lacks a usable date.
+        overview: Synopsis (possibly empty).
+        poster_url: Absolute image URL, or ``None``.
+    """
+
+    tmdb_id: int
+    media_type: Literal["movie", "tv"]
+    title: str
+    year: int | None
+    overview: str | None
+    poster_url: str | None
+
+
 class MetadataProvider(ABC):
     """Port for fetching media metadata from external services."""
 
@@ -264,6 +295,47 @@ class MetadataProvider(ABC):
 
         Returns:
             Metadata for the best match, or None if not found.
+        """
+        ...
+
+    @abstractmethod
+    async def find_movie_candidates(
+        self,
+        title: str,
+        year: int | None = None,
+        limit: int = 5,
+    ) -> list["SearchCandidate"]:
+        """Return raw movie search hits for the admin relink picker.
+
+        Unlike ``search_movie`` (which year-strict-filters and returns
+        a single best match for auto-enrichment), this returns the
+        top ``limit`` raw results sorted by the provider's own
+        ranking — admins want to see candidates, including off-year
+        ones, to pick visually.
+
+        Args:
+            title: Movie title to search for.
+            year: Year hint passed to the provider as a soft ranking
+                signal (not strictly filtered).
+            limit: Maximum number of results to return.
+
+        Returns:
+            List of candidates (possibly empty).
+        """
+        ...
+
+    @abstractmethod
+    async def find_series_candidates(
+        self,
+        title: str,
+        year: int | None = None,
+        limit: int = 5,
+    ) -> list["SearchCandidate"]:
+        """Return raw TV search hits for the admin relink picker.
+
+        Same contract as ``find_movie_candidates`` but hits
+        ``/search/tv`` — used to surface the "this is actually a
+        miniseries" case (Salem's Lot 1979 → ``tv/16118``).
         """
         ...
 

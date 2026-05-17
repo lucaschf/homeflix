@@ -1,5 +1,6 @@
 """TMDB API client implementing MetadataProvider port."""
 
+from collections.abc import Callable
 from typing import Literal
 
 import httpx
@@ -14,6 +15,7 @@ from src.modules.media.application.ports import (
     MediaMetadata,
     MetadataProvider,
     PersonMetadata,
+    SearchCandidate,
     SeasonMetadata,
 )
 from src.modules.media.domain.value_objects import ContentRating
@@ -155,6 +157,41 @@ class TmdbClient(MetadataProvider):
             return None
 
         return await self._fetch_series_details(best["id"])
+
+    async def find_movie_candidates(
+        self,
+        title: str,
+        year: int | None = None,
+        limit: int = 5,
+    ) -> list[SearchCandidate]:
+        """Return the top ``limit`` raw movie search hits.
+
+        See ``find_movie_candidates`` on ``MetadataProvider`` for the
+        contract — picker-mode, no year post-filter, TMDB's own
+        popularity ranking preserved.
+        """
+        resp = await self._client.get(
+            f"{self._base_url}/search/movie",
+            params=self._params(query=title, year=year),
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
+        return [_to_movie_candidate(r, self._image_url) for r in results[:limit]]
+
+    async def find_series_candidates(
+        self,
+        title: str,
+        year: int | None = None,
+        limit: int = 5,
+    ) -> list[SearchCandidate]:
+        """Return the top ``limit`` raw TV search hits."""
+        resp = await self._client.get(
+            f"{self._base_url}/search/tv",
+            params=self._params(query=title, first_air_date_year=year),
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
+        return [_to_series_candidate(r, self._image_url) for r in results[:limit]]
 
     @staticmethod
     def _pick_year_match(
@@ -884,6 +921,58 @@ class TmdbClient(MetadataProvider):
             profile_url=self._image_url(profile_path),
             tmdb_id=int(str(data["id"])) if data.get("id") else None,
         )
+
+
+def _extract_year_prefix(value: object) -> int | None:
+    """Return the 4-digit year prefix of an ISO date string, or ``None``.
+
+    Both ``release_date`` (movies) and ``first_air_date`` (TV) come
+    in as ``"YYYY-MM-DD"`` — or empty/missing for poorly catalogued
+    entries. Defensive parsing here avoids ``ValueError`` polluting
+    the picker payload when TMDB returns ``""`` or no field at all.
+    """
+    if not isinstance(value, str) or len(value) < 4:
+        return None
+    try:
+        return int(value[:4])
+    except ValueError:
+        return None
+
+
+def _to_movie_candidate(
+    raw: dict[str, object],
+    image_url: Callable[[str | None], str | None],
+) -> SearchCandidate:
+    title = str(raw.get("title") or raw.get("original_title") or "")
+    overview_raw = raw.get("overview")
+    overview = str(overview_raw) if overview_raw else None
+    poster = raw.get("poster_path")
+    return SearchCandidate(
+        tmdb_id=int(str(raw["id"])),
+        media_type="movie",
+        title=title,
+        year=_extract_year_prefix(raw.get("release_date")),
+        overview=overview,
+        poster_url=image_url(str(poster)) if isinstance(poster, str) else None,
+    )
+
+
+def _to_series_candidate(
+    raw: dict[str, object],
+    image_url: Callable[[str | None], str | None],
+) -> SearchCandidate:
+    title = str(raw.get("name") or raw.get("original_name") or "")
+    overview_raw = raw.get("overview")
+    overview = str(overview_raw) if overview_raw else None
+    poster = raw.get("poster_path")
+    return SearchCandidate(
+        tmdb_id=int(str(raw["id"])),
+        media_type="tv",
+        title=title,
+        year=_extract_year_prefix(raw.get("first_air_date")),
+        overview=overview,
+        poster_url=image_url(str(poster)) if isinstance(poster, str) else None,
+    )
 
 
 __all__ = ["TmdbClient"]

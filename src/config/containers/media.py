@@ -29,6 +29,9 @@ from src.modules.media.application.use_cases.get_featured_media import GetFeatur
 from src.modules.media.application.use_cases.get_file_tracks import GetFileTracksUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
+from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
+    GetMovieTmdbSuggestionsUseCase,
+)
 from src.modules.media.application.use_cases.get_person_bio import GetPersonBioUseCase
 from src.modules.media.application.use_cases.get_related_movies import GetRelatedMoviesUseCase
 from src.modules.media.application.use_cases.get_related_series import GetRelatedSeriesUseCase
@@ -37,6 +40,9 @@ from src.modules.media.application.use_cases.list_by_genre import ListByGenreUse
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
 from src.modules.media.application.use_cases.list_movies_by_actor import ListMoviesByActorUseCase
+from src.modules.media.application.use_cases.list_movies_needing_review import (
+    ListMoviesNeedingReviewUseCase,
+)
 from src.modules.media.application.use_cases.list_recently_added_catalog import (
     ListRecentlyAddedCatalogUseCase,
 )
@@ -47,6 +53,7 @@ from src.modules.media.application.use_cases.list_recently_added_series import (
     ListRecentlyAddedSeriesUseCase,
 )
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
+from src.modules.media.application.use_cases.relink_movie import RelinkMovieUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
@@ -407,6 +414,27 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         enrich_movie=enrich_movie_metadata,
         enrich_series=enrich_series_metadata,
         uow_factory=media_unit_of_work_factory,
+    )
+
+    # =========================================================================
+    # Use Cases — Admin Relink
+    # =========================================================================
+
+    list_movies_needing_review = providers.Factory(
+        ListMoviesNeedingReviewUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
+    get_movie_tmdb_suggestions = providers.Factory(
+        GetMovieTmdbSuggestionsUseCase,
+        uow_factory=media_unit_of_work_factory,
+        metadata_provider=tmdb_client,
+    )
+
+    relink_movie = providers.Factory(
+        RelinkMovieUseCase,
+        uow_factory=media_unit_of_work_factory,
+        enrich_use_case=enrich_movie_metadata,
     )
 
     # =========================================================================

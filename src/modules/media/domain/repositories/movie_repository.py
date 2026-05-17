@@ -406,6 +406,30 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_needs_enrichment_review(
+        self,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[Movie]:
+        """Return movies flagged for admin enrichment review.
+
+        Backs the ``GET /admin/movies/needs-review`` listing.
+        Soft-deleted rows are excluded. The set is expected to be
+        small (a few entries per few hundred movies) so no pagination
+        — caller orders by ``updated_at`` so newest-flagged float up.
+
+        Args:
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, restricts to rows owned by libraries in
+                the set; ``None`` means no library filter (current
+                admin endpoint passes ``None``).
+
+        Returns:
+            Sequence of flagged movies.
+        """
+        ...
+
+    @abstractmethod
     async def find_missing_scrub_preview(self, limit: int) -> Sequence[Movie]:
         """Return up to ``limit`` movies that have no scrub-preview thumbnails yet.
 

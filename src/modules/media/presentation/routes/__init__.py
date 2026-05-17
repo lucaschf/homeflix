@@ -1,5 +1,8 @@
 """Media API routes."""
 
+from src.modules.media.presentation.routes.admin_relink_routes import (
+    router as admin_relink_router,
+)
 from src.modules.media.presentation.routes.catalog_routes import router as catalog_router
 from src.modules.media.presentation.routes.collection_routes import router as collection_router
 from src.modules.media.presentation.routes.enrichment_routes import router as enrichment_router
@@ -12,6 +15,7 @@ from src.modules.media.presentation.routes.series_routes import router as series
 from src.modules.media.presentation.routes.stream_routes import router as stream_router
 
 __all__ = [
+    "admin_relink_router",
     "catalog_router",
     "collection_router",
     "enrichment_router",
