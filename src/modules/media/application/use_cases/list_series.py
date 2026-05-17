@@ -75,6 +75,8 @@ class ListSeriesUseCase:
                 limit=input_dto.limit,
                 include_total=input_dto.include_total,
                 allowed_library_ids=allowed,
+                library_id=input_dto.library_id,
+                has_tmdb_id=input_dto.has_tmdb_id,
             )
 
         return ListSeriesOutput(

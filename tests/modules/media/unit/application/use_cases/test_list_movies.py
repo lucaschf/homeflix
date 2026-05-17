@@ -76,6 +76,9 @@ class TestListMoviesUseCase:
             limit=20,
             include_total=False,
             allowed_library_ids=[_LIBRARY_ID],
+            library_id=None,
+            has_tmdb_id=None,
+            needs_enrichment_review=None,
         )
 
     @pytest.mark.asyncio
@@ -114,6 +117,9 @@ class TestListMoviesUseCase:
             limit=15,
             include_total=False,
             allowed_library_ids=[_LIBRARY_ID],
+            library_id=None,
+            has_tmdb_id=None,
+            needs_enrichment_review=None,
         )
 
     @pytest.mark.asyncio
@@ -169,6 +175,9 @@ class TestListMoviesUseCase:
             limit=20,
             include_total=True,
             allowed_library_ids=[_LIBRARY_ID],
+            library_id=None,
+            has_tmdb_id=None,
+            needs_enrichment_review=None,
         )
 
     @pytest.mark.asyncio
@@ -228,3 +237,29 @@ class TestListMoviesUseCase:
         passed = mocks.movies.list_paginated.await_args.kwargs["allowed_library_ids"]
         assert list(passed) == [_LIBRARY_ID]
         assert _LIBRARY_ID_OTHER not in list(passed)
+
+    @pytest.mark.asyncio
+    async def test_should_forward_admin_filters_to_repository(self) -> None:
+        """``library_id`` / ``has_tmdb_id`` / ``needs_enrichment_review``
+        are pass-through filters used by the admin Catalog page. The
+        use case mustn't drop them on the floor."""
+        mocks = make_media_uow_mock()
+        mocks.movies.list_paginated.return_value = _page([])
+        use_case = ListMoviesUseCase(
+            uow_factory=mocks.factory,
+            profile_library_access=make_profile_library_access(),
+        )
+
+        await use_case.execute(
+            ListMoviesInput(
+                profile_id=_PROFILE_ID,
+                library_id="lib_specific00000",
+                has_tmdb_id=False,
+                needs_enrichment_review=True,
+            ),
+        )
+
+        kwargs = mocks.movies.list_paginated.await_args.kwargs
+        assert kwargs["library_id"] == "lib_specific00000"
+        assert kwargs["has_tmdb_id"] is False
+        assert kwargs["needs_enrichment_review"] is True

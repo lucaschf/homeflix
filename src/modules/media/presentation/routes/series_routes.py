@@ -21,12 +21,14 @@ from src.modules.media.application.dtos.media_file_dtos import (
     SetPrimaryFileInput,
 )
 from src.modules.media.application.dtos.series_dtos import (
+    DeleteSeriesInput,
     GetSeriesByIdInput,
     ListRecentlyAddedSeriesInput,
     ListSeriesInput,
 )
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
 from src.modules.media.application.use_cases.clear_episode_intro import ClearEpisodeIntroUseCase
+from src.modules.media.application.use_cases.delete_series import DeleteSeriesUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
 from src.modules.media.application.use_cases.get_related_series import (
     GetRelatedSeriesInput,
@@ -61,6 +63,8 @@ async def list_series(
     limit: int = DEFAULT_PAGE_SIZE,
     include_count: bool = False,
     lang: str = "en",
+    library_id: str | None = None,
+    has_tmdb_id: bool | None = None,
     profile_id: str = Depends(resolve_profile_id),
     use_case: ListSeriesUseCase = Depends(
         Provide[ApplicationContainer.media.list_series],
@@ -68,9 +72,9 @@ async def list_series(
 ) -> dict[str, Any]:
     """List one cursor-paginated page of series.
 
-    Same query-param contract as ``GET /api/v1/movies`` — see that
-    endpoint for the full description of ``cursor``, ``limit``,
-    ``include_count``, and the response shape.
+    Mirrors ``GET /api/v1/movies`` for the common params; series
+    don't carry a ``needs_review`` flag yet, so the filter set
+    drops that one.
     """
     clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
     result = await use_case.execute(
@@ -80,6 +84,8 @@ async def list_series(
             limit=clamped_limit,
             include_total=include_count,
             lang=lang,
+            library_id=library_id,
+            has_tmdb_id=has_tmdb_id,
         )
     )
     extras: dict[str, Any] | None = (
@@ -132,6 +138,26 @@ async def get_series(
         GetSeriesByIdInput(profile_id=profile_id, series_id=series_id, lang=lang)
     )
     return api_single("series", _dataclass_to_dict(result))
+
+
+@router.delete("/{series_id}", status_code=204)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def delete_series(
+    series_id: str,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: DeleteSeriesUseCase = Depends(
+        Provide[ApplicationContainer.media.delete_series],
+    ),
+) -> None:
+    """Soft-delete a series by ID.
+
+    Mirrors the movie endpoint: the series row is marked as deleted
+    (``deleted_at`` timestamp) but stays on disk. Children rows
+    (seasons, episodes, ``media_files``) are not touched —
+    ``ON DELETE CASCADE`` only fires on a physical row delete, and
+    soft-delete is the only flavour exposed by the API today.
+    """
+    await use_case.execute(DeleteSeriesInput(series_id=series_id))
 
 
 @router.get("/{series_id}/related")  # type: ignore[misc]

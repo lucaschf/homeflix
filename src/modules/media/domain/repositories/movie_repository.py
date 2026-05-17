@@ -97,6 +97,9 @@ class MovieRepository(ABC):
         *,
         include_total: bool = False,
         allowed_library_ids: Sequence[str] | None = None,
+        library_id: str | None = None,
+        has_tmdb_id: bool | None = None,
+        needs_enrichment_review: bool | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies in a single page using cursor-based pagination.
 
@@ -127,6 +130,13 @@ class MovieRepository(ABC):
                 ``COUNT(*)`` are restricted to rows whose
                 ``library_id`` is in the supplied set. ``None``
                 (default) applies no library filter.
+            library_id: Optional admin filter — restrict to a single
+                library (composes with ``allowed_library_ids``).
+            has_tmdb_id: Optional admin filter — ``True`` keeps only
+                enriched rows, ``False`` only un-enriched, ``None``
+                applies no filter.
+            needs_enrichment_review: Optional admin filter — ``True``
+                keeps only rows the enricher flagged for review.
 
         Returns:
             ``PaginatedResult`` containing the page items, the

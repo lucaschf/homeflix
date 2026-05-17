@@ -34,6 +34,37 @@ from src.modules.media.infrastructure.persistence.repositories._path_prefix_help
 )
 
 
+def _movie_filter_conditions(
+    *,
+    allowed_library_ids: Sequence[str] | None,
+    library_id: str | None,
+    has_tmdb_id: bool | None,
+    needs_enrichment_review: bool | None,
+) -> list:
+    """Build SQLAlchemy ``WHERE`` clauses for the optional movie filters.
+
+    Pulled out as a helper so ``list_paginated`` and its
+    ``COUNT(*)`` partner stay in lock-step — adding a new filter
+    means one edit here rather than two parallel branches drifting.
+    """
+    conditions: list = []
+    if allowed_library_ids is not None:
+        conditions.append(MovieModel.library_id.in_(allowed_library_ids))
+    if library_id is not None:
+        conditions.append(MovieModel.library_id == library_id)
+    if has_tmdb_id is not None:
+        conditions.append(
+            MovieModel.tmdb_id.is_not(None) if has_tmdb_id else MovieModel.tmdb_id.is_(None),
+        )
+    if needs_enrichment_review is not None:
+        conditions.append(
+            MovieModel.needs_enrichment_review.is_(True)
+            if needs_enrichment_review
+            else MovieModel.needs_enrichment_review.is_(False),
+        )
+    return conditions
+
+
 class SQLAlchemyMovieRepository(MovieRepository):
     """SQLAlchemy implementation of MovieRepository.
 
@@ -172,6 +203,9 @@ class SQLAlchemyMovieRepository(MovieRepository):
         *,
         include_total: bool = False,
         allowed_library_ids: Sequence[str] | None = None,
+        library_id: str | None = None,
+        has_tmdb_id: bool | None = None,
+        needs_enrichment_review: bool | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies in a single cursor-paginated page.
 
@@ -185,17 +219,28 @@ class SQLAlchemyMovieRepository(MovieRepository):
         Soft-deleted rows are filtered out the same way as ``list_all``.
         Fetches ``limit + 1`` rows to detect ``has_more`` cheaply
         without an extra query.
+
+        The admin-facing filters (``library_id``, ``has_tmdb_id``,
+        ``needs_enrichment_review``) compose with the per-profile ACL
+        in ``allowed_library_ids``: when both are present the row must
+        satisfy *both* constraints. Admin pages call without ACL
+        kwargs and pass these filters; the user-facing list does the
+        inverse.
         """
+        conditions = _movie_filter_conditions(
+            allowed_library_ids=allowed_library_ids,
+            library_id=library_id,
+            has_tmdb_id=has_tmdb_id,
+            needs_enrichment_review=needs_enrichment_review,
+        )
+
         decoded = decode_cursor(cursor)
 
         stmt = (
             select(MovieModel)
-            .where(MovieModel.deleted_at.is_(None))
+            .where(MovieModel.deleted_at.is_(None), *conditions)
             .options(selectinload(MovieModel.file_variants))
         )
-
-        if allowed_library_ids is not None:
-            stmt = stmt.where(MovieModel.library_id.in_(allowed_library_ids))
 
         if decoded is not None:
             stmt = stmt.where(MovieModel.id < decoded.id)
@@ -216,10 +261,10 @@ class SQLAlchemyMovieRepository(MovieRepository):
         total_count: int | None = None
         if include_total:
             count_stmt = (
-                select(func.count()).select_from(MovieModel).where(MovieModel.deleted_at.is_(None))
+                select(func.count())
+                .select_from(MovieModel)
+                .where(MovieModel.deleted_at.is_(None), *conditions)
             )
-            if allowed_library_ids is not None:
-                count_stmt = count_stmt.where(MovieModel.library_id.in_(allowed_library_ids))
             total_count = (await self._session.execute(count_stmt)).scalar_one()
 
         return PaginatedResult(

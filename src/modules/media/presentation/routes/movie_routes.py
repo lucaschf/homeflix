@@ -56,6 +56,9 @@ async def list_movies(
     limit: int = DEFAULT_PAGE_SIZE,
     include_count: bool = False,
     lang: str = "en",
+    library_id: str | None = None,
+    has_tmdb_id: bool | None = None,
+    needs_review: bool | None = None,
     profile_id: str = Depends(resolve_profile_id),
     use_case: ListMoviesUseCase = Depends(
         Provide[ApplicationContainer.media.list_movies],
@@ -75,6 +78,18 @@ async def list_movies(
             the extra ``COUNT(*)`` query that infinite-scroll
             consumers don't need.
         lang: Language code for localized metadata.
+        library_id: Restrict the page to a single library (e.g.
+            ``lib_abc123``). Composes with the per-profile ACL — the
+            row must satisfy both. Used by the admin Catalog page's
+            library filter.
+        has_tmdb_id: ``true`` keeps only enriched rows (``tmdb_id``
+            set), ``false`` only un-enriched. Omit (``None``) for no
+            filter.
+        needs_review: ``true`` keeps only rows the enricher flagged
+            for admin review. Mirrors the dedicated
+            ``/admin/movies/needs-review`` listing but stays inside
+            the standard paginated list so the admin Catalog page
+            can apply it alongside other filters.
     """
     clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
     result = await use_case.execute(
@@ -84,6 +99,9 @@ async def list_movies(
             limit=clamped_limit,
             include_total=include_count,
             lang=lang,
+            library_id=library_id,
+            has_tmdb_id=has_tmdb_id,
+            needs_enrichment_review=needs_review,
         )
     )
     extras: dict[str, Any] | None = (
