@@ -127,12 +127,56 @@ class TestEnrichMovieMetadata:
         movie = _make_movie()
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_movie.return_value = None
+        provider.search_series.return_value = None
+
+        use_case, _ = _set_up_enrichment(movie, provider)
+        result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        assert result.enriched is False
+        assert result.error == "No metadata found from any provider"
+
+    @pytest.mark.asyncio
+    async def test_should_surface_cross_type_hint_when_title_is_a_tv_series(self) -> None:
+        """Salem's Lot 1979 case: movie search finds nothing for the year,
+        but ``/search/tv`` matches a miniseries. The use case must surface
+        the suggested TMDB series id so the user can re-classify."""
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = None
+        provider.search_series.return_value = MediaMetadata(
+            title="Salem's Lot",
+            tmdb_id=16118,
+            year=1979,
+        )
 
         use_case, _ = _set_up_enrichment(movie, provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         assert result.enriched is False
         assert result.error is not None
+        assert "tmdb/tv/16118" in result.error
+        assert "series" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_should_retry_cross_type_without_year_when_year_search_misses(self) -> None:
+        """If the TV-side search misses with the year hint, retry without
+        it — same fallback chain as the movie path, since the folder year
+        may be off-by-one for a miniseries premiere."""
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = None
+        provider.search_series.side_effect = [
+            None,
+            MediaMetadata(title="Salem's Lot", tmdb_id=16118, year=1979),
+        ]
+
+        use_case, _ = _set_up_enrichment(movie, provider)
+        result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        assert result.enriched is False
+        assert result.error is not None
+        assert "tmdb/tv/16118" in result.error
+        assert provider.search_series.await_count == 2
 
     @pytest.mark.asyncio
     async def test_should_raise_when_movie_not_found(self) -> None:
@@ -175,7 +219,9 @@ class TestEnrichMovieMetadata:
         assert "pt-BR" in saved.localized
 
     @pytest.mark.asyncio
-    async def test_should_retry_with_cleaned_title(self) -> None:
+    async def test_should_retry_with_cleaned_title_preserving_year(self) -> None:
+        """Quality-tag cleanup still passes the year hint — dropping the
+        year on retry was the original Salem's Lot regression."""
         movie = Movie.create(
             library_id=_LIBRARY_ID,
             title="Inception 1080p BluRay x264",
@@ -187,23 +233,37 @@ class TestEnrichMovieMetadata:
         )
         provider = AsyncMock(spec=MetadataProvider)
         provider.search_movie.side_effect = [None, _make_metadata()]
+        provider.search_series.return_value = None
 
         use_case, _ = _set_up_enrichment(movie, provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         assert result.enriched is True
         assert provider.search_movie.await_count == 2
+        first_call, second_call = provider.search_movie.await_args_list
+        assert first_call.args == ("Inception 1080p BluRay x264", 2010)
+        assert second_call.args == ("Inception", 2010)
 
     @pytest.mark.asyncio
-    async def test_should_retry_with_title_only_when_year_search_fails(self) -> None:
+    async def test_should_not_retry_title_only_when_year_search_fails(self) -> None:
+        """Year-strict contract: when the year-correct match is missing,
+        do NOT silently promote a popular off-year result. Falls through
+        to cross-type detection (or generic "not found") instead. This
+        is what got Salem's Lot 1979 wrongly enriched as the 2024 movie
+        before — the no-year retry overrode the year filter."""
         movie = _make_movie()
         provider = AsyncMock(spec=MetadataProvider)
-        provider.search_movie.side_effect = [None, _make_metadata()]
+        provider.search_movie.return_value = None
+        provider.search_series.return_value = None
 
         use_case, _ = _set_up_enrichment(movie, provider)
         result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
-        assert result.enriched is True
+        assert result.enriched is False
+        # One movie call with year, plus the cross-type series lookup.
+        # No title-only retry should have been made.
+        assert provider.search_movie.await_count == 1
+        assert provider.search_movie.await_args.args == ("Inception", 2010)
 
 
 @pytest.mark.unit

@@ -45,7 +45,14 @@ def _extract_year(filename: str) -> int | None:
 
 
 def _extract_title(filename: str, year: int | None) -> str:
-    """Extract title from filename by removing year and quality tags."""
+    """Extract title from filename by removing year and quality tags.
+
+    When the year is wrapped in brackets (``Title (1979).mkv``,
+    ``Title [1979].mkv``), slicing at the year digit leaves the opening
+    bracket behind. Those characters are included in the final strip so
+    downstream TMDB matching sees ``Salem's Lot`` rather than
+    ``Salem's Lot (``.
+    """
     stem = PurePath(filename).stem
 
     # Remove everything from year onwards (if present)
@@ -57,7 +64,7 @@ def _extract_title(filename: str, year: int | None) -> str:
     # Replace dots, underscores with spaces and strip
     title = re.sub(r"[\._]", " ", stem).strip()
     title = re.sub(r"\s+", " ", title)
-    return title.strip(" -")
+    return title.strip(" -([{")
 
 
 def _detect_episode(file_path: str) -> tuple[str, int, int] | None:

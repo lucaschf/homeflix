@@ -68,10 +68,11 @@ class EnrichMovieMetadataUseCase:
 
             metadata, provider_name = await self._fetch_metadata(movie)
             if not metadata:
+                error_msg = await self._build_no_metadata_error(movie, input_dto.media_id)
                 return EnrichMediaOutput(
                     media_id=input_dto.media_id,
                     enriched=False,
-                    error="No metadata found from any provider",
+                    error=error_msg,
                 )
 
             # Re-fetch with localization if TMDB provider supports it
@@ -89,8 +90,13 @@ class EnrichMovieMetadataUseCase:
     async def _fetch_metadata(self, movie: Movie) -> tuple[MediaMetadata | None, str | None]:
         """Try primary provider, then fallback.
 
-        Searches with original title first, then retries with a
-        cleaned title (quality tags removed) and without year.
+        Always year-strict: every search retains the ``year`` hint so a
+        popular off-year title (e.g. ``Salem's Lot`` 2024 outranking the
+        1979 entry that doesn't exist as a movie on TMDB at all) cannot
+        win as a silent title-only fallback. When no year-correct match
+        is found, ``_build_no_metadata_error`` runs a cross-type check
+        against ``/search/tv`` so the user gets an actionable hint
+        instead of a wrong enrichment.
         """
         if movie.tmdb_id:
             metadata = await self._primary.get_movie_by_id(movie.tmdb_id.value)
@@ -100,30 +106,70 @@ class EnrichMovieMetadataUseCase:
         title = movie.title.value
         year = movie.year.value
 
-        # Try with original title + year
         metadata = await self._primary.search_movie(title, year)
         if metadata:
             return metadata, "tmdb"
 
-        # Retry with cleaned title (remove quality tags) and no year
+        # Retry with quality tags stripped — keep the year hint so we
+        # don't open the door to off-year matches the strict search
+        # already rejected.
         clean = _clean_title(title)
         if clean != title:
-            metadata = await self._primary.search_movie(clean)
+            metadata = await self._primary.search_movie(clean, year)
             if metadata:
                 return metadata, "tmdb"
 
-        # Retry with just the title, no year
-        metadata = await self._primary.search_movie(title)
-        if metadata:
-            return metadata, "tmdb"
-
         if self._fallback:
-            metadata = await self._fallback.search_movie(clean or title)
+            metadata = await self._fallback.search_movie(clean or title, year)
             if metadata:
                 return metadata, "omdb"
 
-        _logger.warning("No metadata found for movie %r", title)
+        _logger.warning("No metadata found for movie %r (year=%s)", title, year)
         return None, None
+
+    async def _detect_cross_type_series(self, title: str, year: int | None) -> int | None:
+        """Look for a TV series match when a movie search came back empty.
+
+        Why: the scanner classifies any file without an ``SxxExx`` pattern
+        as a Movie (see ``scanner.py:_detect_episode``), but some titles
+        only exist on TMDB as TV miniseries — e.g. ``Salem's Lot (1979)``
+        lives at ``tmdb/tv/16118``, not under ``/search/movie`` at all.
+        When the movie path can't find a match, we re-query ``/search/tv``
+        so we can surface an actionable hint instead of silently leaving
+        the item un-enriched. Returns the TMDB series ID on match, or
+        ``None`` if the title isn't on the TV side either.
+        """
+        metadata = await self._primary.search_series(title, year)
+        if metadata is None and year is not None:
+            metadata = await self._primary.search_series(title)
+        return metadata.tmdb_id if metadata else None
+
+    async def _build_no_metadata_error(self, movie: Movie, media_id: str) -> str:
+        """Produce the ``error`` payload for a failed enrichment.
+
+        Defaults to a generic "no provider matched" message. When the
+        title resolves on the TV side instead, the message embeds the
+        suggested TMDB series ID so the user can re-classify the file
+        (move into a series library or rename with ``SxxExx``).
+        """
+        cross_type_tmdb_id = await self._detect_cross_type_series(
+            movie.title.value, movie.year.value
+        )
+        if cross_type_tmdb_id is None:
+            return "No metadata found from any provider"
+
+        _logger.warning(
+            "Cross-type match for movie %r (id=%s): TMDB series tv/%s",
+            movie.title.value,
+            media_id,
+            cross_type_tmdb_id,
+        )
+        return (
+            f"Cross-type match: this title appears to be a TV series on TMDB "
+            f"(tmdb/tv/{cross_type_tmdb_id}). Move the file into a series "
+            f"library or rename with an SxxExx pattern so the scanner "
+            f"classifies it as a series."
+        )
 
 
 def _clean_title(title: str) -> str:

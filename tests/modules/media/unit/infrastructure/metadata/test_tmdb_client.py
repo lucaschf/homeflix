@@ -433,7 +433,9 @@ class TestSearchMovie:
     async def test_should_return_metadata_for_match(self) -> None:
         client = _make_client(
             get_responses=[
-                _build_response(json_data={"results": [{"id": 27205}]}),
+                _build_response(
+                    json_data={"results": [{"id": 27205, "release_date": "2010-07-16"}]}
+                ),
                 _build_response(json_data=_movie_details()),
             ]
         )
@@ -454,7 +456,7 @@ class TestSearchMovie:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_should_use_first_result_when_multiple(self) -> None:
+    async def test_should_use_first_result_when_no_year_hint(self) -> None:
         client = _make_client(
             get_responses=[
                 _build_response(json_data={"results": [{"id": 100}, {"id": 200}]}),
@@ -467,6 +469,71 @@ class TestSearchMovie:
         assert result is not None
         assert result.tmdb_id == 100
 
+    @pytest.mark.asyncio
+    async def test_should_prefer_year_match_over_first_result(self) -> None:
+        """American Gothic-style case for movies: year-correct entry is not
+        ranked first by TMDB and must be selected by the year post-filter."""
+        client = _make_client(
+            get_responses=[
+                _build_response(
+                    json_data={
+                        "results": [
+                            {"id": 748230, "release_date": "2024-10-03"},
+                            {"id": 555, "release_date": "2016-05-12"},
+                        ]
+                    }
+                ),
+                _build_response(json_data=_movie_details(tmdb_id=555)),
+            ]
+        )
+
+        result = await client.search_movie("Salem's Lot", 2016)
+
+        assert result is not None
+        assert result.tmdb_id == 555
+
+    @pytest.mark.asyncio
+    async def test_should_return_none_when_no_result_matches_year(self) -> None:
+        """Salem's Lot 1979 case: the 1979 entry isn't a movie on TMDB, so
+        no movie result matches year=1979. Returns None so the caller can
+        retry without the year hint instead of silently picking 2024."""
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "results": [
+                        {"id": 748230, "release_date": "2024-10-03"},
+                        {"id": 999, "release_date": "2004-06-04"},
+                    ]
+                }
+            )
+        )
+
+        result = await client.search_movie("Salem's Lot", 1979)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_should_skip_results_with_missing_release_date(self) -> None:
+        client = _make_client(
+            get_responses=[
+                _build_response(
+                    json_data={
+                        "results": [
+                            {"id": 100},
+                            {"id": 200, "release_date": ""},
+                            {"id": 300, "release_date": "2010-07-16"},
+                        ]
+                    }
+                ),
+                _build_response(json_data=_movie_details(tmdb_id=300)),
+            ]
+        )
+
+        result = await client.search_movie("Inception", 2010)
+
+        assert result is not None
+        assert result.tmdb_id == 300
+
 
 @pytest.mark.unit
 class TestSearchSeries:
@@ -476,7 +543,9 @@ class TestSearchSeries:
     async def test_should_return_metadata_for_match(self) -> None:
         client = _make_client(
             get_responses=[
-                _build_response(json_data={"results": [{"id": 1396}]}),
+                _build_response(
+                    json_data={"results": [{"id": 1396, "first_air_date": "2008-01-20"}]}
+                ),
                 _build_response(json_data=_series_details()),
                 _build_response(json_data=_season_details()),
             ]
@@ -494,6 +563,50 @@ class TestSearchSeries:
         client = _make_client(get_responses=_build_response(json_data={"results": []}))
 
         result = await client.search_series("Nonexistent")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_should_prefer_year_match_over_first_result(self) -> None:
+        """American Gothic 2016 case: TMDB ranks the more-popular 1995
+        series first even when ``first_air_date_year=2016`` is set. The
+        post-filter must pick the 2016 entry."""
+        client = _make_client(
+            get_responses=[
+                _build_response(
+                    json_data={
+                        "results": [
+                            {"id": 11366, "first_air_date": "1995-09-22"},
+                            {"id": 66718, "first_air_date": "2016-06-22"},
+                        ]
+                    }
+                ),
+                _build_response(
+                    json_data={**_series_details(), "id": 66718, "name": "American Gothic"}
+                ),
+                _build_response(json_data=_season_details()),
+            ]
+        )
+
+        result = await client.search_series("American Gothic", 2016)
+
+        assert result is not None
+        assert result.tmdb_id == 66718
+
+    @pytest.mark.asyncio
+    async def test_should_return_none_when_no_result_matches_year(self) -> None:
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "results": [
+                        {"id": 11366, "first_air_date": "1995-09-22"},
+                        {"id": 9999, "first_air_date": "2004-06-04"},
+                    ]
+                }
+            )
+        )
+
+        result = await client.search_series("American Gothic", 2016)
 
         assert result is None
 
