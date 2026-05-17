@@ -94,6 +94,19 @@ class TestScanDirectories:
         assert results[0].title == "Inception"
         assert results[0].year == 2010
 
+    def test_should_strip_trailing_bracket_when_year_is_wrapped(
+        self, scanner: LocalFileSystemScanner, media_dir: Path
+    ) -> None:
+        """Folders like ``Title (year)`` left a dangling ``(`` in the
+        extracted title — broke fuzzy matching against TMDB."""
+        _create_file(media_dir, "Salem's Lot (1979).mkv")
+        _create_file(media_dir, "Other Movie [1985].mkv")
+
+        results = scanner.scan_directories([FilePath(str(media_dir))])
+        titles = {r.title for r in results}
+
+        assert titles == {"Salem's Lot", "Other Movie"}
+
     def test_should_extract_resolution(
         self, scanner: LocalFileSystemScanner, media_dir: Path
     ) -> None:

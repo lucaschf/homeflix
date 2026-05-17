@@ -109,7 +109,16 @@ class TmdbClient(MetadataProvider):
         return self._image_url(best.get("file_path"))
 
     async def search_movie(self, title: str, year: int | None = None) -> MediaMetadata | None:
-        """Search TMDB for a movie and return metadata for the best match."""
+        """Search TMDB for a movie and return metadata for the best match.
+
+        When ``year`` is provided, results are filtered to entries whose
+        ``release_date`` falls in that exact year — TMDB's ``year`` query
+        param is a soft ranking signal, not a hard filter, so without
+        this post-filter a popular off-year title (e.g. ``Salem's Lot``
+        2024) can outrank the year-correct entry. Returns ``None`` when
+        no result matches the requested year; the caller's retry layer
+        will re-search without the year hint.
+        """
         resp = await self._client.get(
             f"{self._base_url}/search/movie",
             params=self._params(query=title, year=year),
@@ -117,14 +126,23 @@ class TmdbClient(MetadataProvider):
         resp.raise_for_status()
         results = resp.json().get("results", [])
 
-        if not results:
+        best = self._pick_year_match(results, year, "release_date")
+        if best is None:
             return None
 
-        tmdb_id = results[0]["id"]
-        return await self._fetch_movie_details(tmdb_id)
+        return await self._fetch_movie_details(best["id"])
 
     async def search_series(self, title: str, year: int | None = None) -> MediaMetadata | None:
-        """Search TMDB for a TV series and return metadata for the best match."""
+        """Search TMDB for a TV series and return metadata for the best match.
+
+        When ``year`` is provided, results are filtered to entries whose
+        ``first_air_date`` falls in that exact year. See ``search_movie``
+        for the rationale: ``first_air_date_year`` boosts ranking but does
+        not strictly filter, so the more-popular off-year entry can come
+        back first (e.g. ``American Gothic`` 1995 outranking the 2016
+        revival). Returns ``None`` when no result matches the requested
+        year.
+        """
         resp = await self._client.get(
             f"{self._base_url}/search/tv",
             params=self._params(query=title, first_air_date_year=year),
@@ -132,11 +150,36 @@ class TmdbClient(MetadataProvider):
         resp.raise_for_status()
         results = resp.json().get("results", [])
 
-        if not results:
+        best = self._pick_year_match(results, year, "first_air_date")
+        if best is None:
             return None
 
-        tmdb_id = results[0]["id"]
-        return await self._fetch_series_details(tmdb_id)
+        return await self._fetch_series_details(best["id"])
+
+    @staticmethod
+    def _pick_year_match(
+        results: list[dict[str, object]],
+        year: int | None,
+        date_field: str,
+    ) -> dict[str, object] | None:
+        """Pick the first result whose ``date_field`` starts with ``year``.
+
+        Without a ``year`` hint, falls back to the first result (TMDB's
+        own popularity ranking). With a ``year`` hint, returns ``None``
+        if no result matches — strict year semantics, to avoid silently
+        returning a popular off-year entry.
+        """
+        if not results:
+            return None
+        if year is None:
+            return results[0]
+
+        prefix = f"{year}"
+        for result in results:
+            date = result.get(date_field)
+            if isinstance(date, str) and date.startswith(prefix):
+                return result
+        return None
 
     async def get_movie_by_id(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch movie details by TMDB ID."""
