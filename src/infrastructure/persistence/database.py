@@ -5,13 +5,43 @@ This module provides async SQLAlchemy engine and session factory setup.
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine.interfaces import DBAPIConnection
+    from sqlalchemy.pool import ConnectionPoolEntry
+
+
+def _enable_sqlite_foreign_keys(
+    dbapi_connection: "DBAPIConnection",
+    _connection_record: "ConnectionPoolEntry",
+) -> None:
+    """Run ``PRAGMA foreign_keys = ON`` on every new SQLite connection.
+
+    SQLite ships with FK enforcement OFF by default and the pragma
+    is *per connection* — declarative ``ON DELETE CASCADE`` clauses
+    in our models stay inert until each connection turns FKs on. A
+    manual ``DELETE FROM movies`` from an external tool then leaves
+    orphan rows in ``media_files`` etc., which break re-scans via
+    the ``UNIQUE(file_path)`` constraint.
+
+    Attached as a ``connect`` listener on the sync engine that the
+    async wrapper drives — ``AsyncEngine.sync_engine`` is the
+    standard hook because pool events are sync-side.
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
 
 
 class Database:
@@ -97,6 +127,16 @@ class Database:
             engine_kwargs["max_overflow"] = self._max_overflow
 
         self._engine = create_async_engine(self._database_url, **engine_kwargs)
+
+        if is_sqlite:
+            # Pool events fire on the sync engine even under
+            # ``AsyncEngine``; without this the pragma never runs
+            # and CASCADE constraints stay dormant.
+            event.listen(
+                self._engine.sync_engine,
+                "connect",
+                _enable_sqlite_foreign_keys,
+            )
 
         self._session_factory = async_sessionmaker(
             bind=self._engine,

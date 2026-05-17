@@ -64,11 +64,25 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     """Create an async engine and run migrations."""
+    from sqlalchemy import event
+
+    from src.infrastructure.persistence.database import _enable_sqlite_foreign_keys
+
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+
+    # Migrations that DELETE rows (orphan cleanups, data backfills)
+    # need cascade enforcement to match runtime behavior; otherwise
+    # a cleanup written assuming FKs would silently leave children.
+    if connectable.dialect.name == "sqlite":
+        event.listen(
+            connectable.sync_engine,
+            "connect",
+            _enable_sqlite_foreign_keys,
+        )
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
