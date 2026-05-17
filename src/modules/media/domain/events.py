@@ -72,9 +72,42 @@ class IntroClearedEvent(DomainEvent):
     series_id: str = ""
 
 
+@dataclass(frozen=True)
+class MoviePromotedToSeriesEvent(DomainEvent):
+    """Emitted when an admin promotes a movie into a series.
+
+    Driven by the cross-type relink flow (e.g. ``Salem's Lot (1979)``,
+    which TMDB catalogs as a TV miniseries rather than a film).
+
+    The original movie row is soft-deleted; a new series + season
+    + episodes structure takes its place. All file variants of the
+    movie are reattached to the first episode (``first_episode_id``)
+    so external bounded contexts know where playback state should
+    migrate (or — per the agreed design — where to delete it).
+
+    Cross-BC handlers:
+        - ``watch_progress`` deletes WatchProgress rows for the old
+          movie id (safer than mapping a position across a possibly
+          re-cut episode boundary).
+        - ``collections`` rewrites watchlist + custom-list entries
+          to point at the new series id.
+
+    Attributes:
+        movie_id: External ID of the source movie (mov_xxx).
+        series_id: External ID of the new series (ser_xxx).
+        first_episode_id: External ID of the first episode (epi_xxx)
+            that now owns the movie's file variants.
+    """
+
+    movie_id: str = ""
+    series_id: str = ""
+    first_episode_id: str = ""
+
+
 __all__ = [
     "IntroClearedEvent",
     "IntroDetectedEvent",
     "IntroManuallySetEvent",
     "MediaCreatedEvent",
+    "MoviePromotedToSeriesEvent",
 ]

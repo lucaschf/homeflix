@@ -152,15 +152,42 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     Centralises event handler registration so it stays alongside
     the rest of the container configuration.
     """
+    from src.modules.collections.application.event_handlers import (
+        OnMoviePromotedToSeriesHandler as CollectionsOnMoviePromotedHandler,
+    )
     from src.modules.media.application.event_handlers import OnMediaCreatedHandler
-    from src.modules.media.domain.events import MediaCreatedEvent
+    from src.modules.media.domain.events import (
+        MediaCreatedEvent,
+        MoviePromotedToSeriesEvent,
+    )
+    from src.modules.watch_progress.application.event_handlers import (
+        OnMoviePromotedToSeriesHandler as ProgressOnMoviePromotedHandler,
+    )
 
     event_bus = container.infrastructure.event_bus()
-    handler = OnMediaCreatedHandler(
+
+    media_created_handler = OnMediaCreatedHandler(
         enrich_movie_factory=container.media.enrich_movie_metadata,
         enrich_series_factory=container.media.enrich_series_metadata,
     )
-    event_bus.subscribe(MediaCreatedEvent, handler)
+    event_bus.subscribe(MediaCreatedEvent, media_created_handler)
+
+    # Cross-BC fan-out when a movie is promoted into a series.
+    # watch_progress drops the stale rows (positions can't survive a
+    # re-cut episode boundary); collections rewrites watchlist +
+    # custom-list refs so the same content stays on the user's lists.
+    event_bus.subscribe(
+        MoviePromotedToSeriesEvent,
+        ProgressOnMoviePromotedHandler(
+            uow_factory=container.watch_progress.watch_progress_unit_of_work_factory(),
+        ),
+    )
+    event_bus.subscribe(
+        MoviePromotedToSeriesEvent,
+        CollectionsOnMoviePromotedHandler(
+            uow_factory=container.collections.collections_unit_of_work_factory(),
+        ),
+    )
 
 
 def _bootstrap_modules() -> None:

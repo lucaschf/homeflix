@@ -118,5 +118,25 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
         result = await self._session.execute(stmt)
         return (result.scalar() or 0) > 0
 
+    async def rewrite_media_id(
+        self,
+        from_media_id: str,
+        to_media_id: str,
+        to_media_type: str,
+    ) -> int:
+        """Repoint every watchlist row (across profiles) to a new media id."""
+        stmt = select(WatchlistItemModel).where(
+            WatchlistItemModel.media_id == from_media_id,
+            WatchlistItemModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        models = result.scalars().all()
+        for model in models:
+            model.media_id = to_media_id
+            model.media_type = to_media_type
+        if models:
+            await self._session.flush()
+        return len(models)
+
 
 __all__ = ["SQLAlchemyWatchlistRepository"]

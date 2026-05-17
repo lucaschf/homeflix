@@ -101,5 +101,29 @@ class CustomListRepository(ABC):
     ) -> int:
         """Return the next 0-based position to use for a new item."""
 
+    @abstractmethod
+    async def rewrite_item_media_id(
+        self,
+        from_media_id: str,
+        to_media_id: str,
+        to_media_type: str,
+    ) -> int:
+        """Repoint every custom-list item from one media id to another.
+
+        Cross-BC migration triggered by
+        ``MoviePromotedToSeriesEvent`` — see the matching method on
+        ``WatchlistRepository`` for the rationale. Runs across every
+        profile's lists so the operator doesn't have to clean up per
+        list.
+
+        Args:
+            from_media_id: External id currently stored.
+            to_media_id: External id to migrate to.
+            to_media_type: New ``media_type`` discriminator.
+
+        Returns:
+            Number of items updated.
+        """
+
 
 __all__ = ["CustomListRepository"]

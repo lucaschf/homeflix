@@ -316,3 +316,46 @@ class TestSQLAlchemyWatchProgressRepositoryDelete:
         result = await repo.list_in_progress(_PROFILE_ID)
 
         assert result == []
+
+
+@pytest.mark.integration
+class TestDeleteAllForMovie:
+    """Tests for ``delete_all_for_movie`` — driven by the cross-BC
+    promote-to-series handler."""
+
+    async def test_should_clear_every_profile_row_for_the_movie(
+        self, db_session: AsyncSession
+    ) -> None:
+        other_profile = ProfileId("prf_otherprofile")
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        await repo.save(_create_progress())
+        await repo.save(_create_progress(profile_id=other_profile))
+
+        deleted = await repo.delete_all_for_movie(SAMPLE_MOVIE_ID)
+
+        assert deleted == 2
+        assert (await repo.find_by_media_id(SAMPLE_MOVIE_ID, _PROFILE_ID)) is None
+        assert (await repo.find_by_media_id(SAMPLE_MOVIE_ID, other_profile)) is None
+
+    async def test_should_only_delete_movie_progress_not_episode(
+        self, db_session: AsyncSession
+    ) -> None:
+        """``media_type`` filter prevents accidentally wiping episode
+        progress whose id happens to collide (won't happen with prefixed
+        ids, but defensive)."""
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        await repo.save(
+            _create_progress(media_id=SAMPLE_EPISODE_ID, media_type=WatchableMediaType.EPISODE),
+        )
+
+        deleted = await repo.delete_all_for_movie(SAMPLE_EPISODE_ID)
+
+        assert deleted == 0
+        assert (await repo.find_by_media_id(SAMPLE_EPISODE_ID, _PROFILE_ID)) is not None
+
+    async def test_should_return_zero_when_nothing_matches(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+
+        deleted = await repo.delete_all_for_movie(MISSING_MEDIA_ID)
+
+        assert deleted == 0

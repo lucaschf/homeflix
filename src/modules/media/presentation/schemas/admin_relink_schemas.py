@@ -8,23 +8,39 @@ from pydantic import BaseModel, Field
 class RelinkMovieRequest(BaseModel):
     """Request body for ``POST /admin/movies/{id}/relink``.
 
-    The admin picked one of the cards returned by
-    ``GET /admin/movies/{id}/tmdb-suggestions`` and is committing
-    that choice. ``media_type`` mirrors which TMDB endpoint produced
-    the card so the server knows whether to refresh the movie
-    in-place (``movie``) or short-circuit to the not-yet-implemented
-    promote-to-series flow (``tv``).
+    Only movie picks ride this endpoint — series picks must hit
+    ``POST /admin/movies/{id}/promote-to-series`` instead, since the
+    structural conversion needs cross-BC event fanout that the
+    in-place enrichment refresh doesn't do. Pydantic's ``Literal``
+    enforces the split: a payload with ``media_type="tv"`` is
+    rejected at the schema layer with a 422.
     """
 
     tmdb_id: int = Field(..., ge=1, description="TMDB primary key of the picked entry.")
-    media_type: Literal["movie", "tv"] = Field(
+    media_type: Literal["movie"] = Field(
         ...,
         description=(
-            "Which TMDB endpoint the picked card came from. 'movie' "
-            "triggers an enrichment refresh; 'tv' returns a 422 "
-            "asking to use the future promote-to-series endpoint."
+            "Must be 'movie'. Series picks use the dedicated "
+            "/admin/movies/{id}/promote-to-series endpoint."
         ),
     )
 
 
-__all__ = ["RelinkMovieRequest"]
+class PromoteMovieToSeriesRequest(BaseModel):
+    """Request body for ``POST /admin/movies/{id}/promote-to-series``.
+
+    Admin picked a TV suggestion in the relink picker. Server fetches
+    the TMDB series, builds the ``Series + Season + Episodes`` shape,
+    moves the original movie's file variants onto the first episode,
+    soft-deletes the movie and fans the change out to the
+    watch_progress and collections bounded contexts.
+    """
+
+    tmdb_id: int = Field(
+        ...,
+        ge=1,
+        description="TMDB *series* id the admin picked from the TV column.",
+    )
+
+
+__all__ = ["PromoteMovieToSeriesRequest", "RelinkMovieRequest"]

@@ -97,15 +97,19 @@ class GetMovieTmdbSuggestionsOutput:
 
 @dataclass(frozen=True)
 class RelinkMovieInput:
-    """Admin's pick from the suggestion picker.
+    """Admin's movie-side pick from the suggestion picker.
+
+    TV picks travel through the dedicated promote-to-series flow
+    (see ``PromoteMovieToSeriesInput``) — keeping the relink command
+    movie-only avoids stitching two unrelated state machines under
+    one endpoint. The use case still rejects ``media_type="tv"``
+    defensively in case a caller bypasses the presentation-layer
+    schema validation.
 
     Attributes:
         movie_id: External movie id to relink.
-        tmdb_id: TMDB id the admin selected.
-        media_type: ``"movie"`` triggers an enrichment refresh against
-            the picked id. ``"tv"`` is rejected by this PR with a
-            "use promote-to-series" error — the cross-BC conversion
-            lives in a follow-up.
+        tmdb_id: TMDB *movie* id the admin selected.
+        media_type: Must be ``"movie"``.
     """
 
     movie_id: str
@@ -133,12 +137,50 @@ class RelinkMovieOutput:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class PromoteMovieToSeriesInput:
+    """Input for the cross-type promotion endpoint.
+
+    Attributes:
+        movie_id: External movie id to convert.
+        tmdb_id: TMDB *series* id the admin picked from the picker.
+            The use case fetches the series shape from TMDB to know
+            how many episodes to create.
+    """
+
+    movie_id: str
+    tmdb_id: int
+
+
+@dataclass(frozen=True)
+class PromoteMovieToSeriesOutput:
+    """Result of a promotion.
+
+    Attributes:
+        movie_id: External id of the (now soft-deleted) source movie.
+        series_id: External id of the newly-created series.
+        first_episode_id: Episode id that now owns the original
+            movie's file variants. Returned so the UI can deep-link
+            into the new series and the cross-BC handlers know which
+            episode replaced the movie.
+        episodes_created: How many episodes the structure has — driven
+            by the TMDB season's episode count, minimum one.
+    """
+
+    movie_id: str
+    series_id: str
+    first_episode_id: str
+    episodes_created: int
+
+
 __all__ = [
     "GetMovieTmdbSuggestionsInput",
     "GetMovieTmdbSuggestionsOutput",
     "ListMoviesNeedingReviewOutput",
     "MediaType",
     "NeedsReviewMovieOutput",
+    "PromoteMovieToSeriesInput",
+    "PromoteMovieToSeriesOutput",
     "RelinkMovieInput",
     "RelinkMovieOutput",
     "TmdbSuggestionOutput",
