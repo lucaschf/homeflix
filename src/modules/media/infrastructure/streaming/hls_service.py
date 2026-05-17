@@ -38,10 +38,14 @@ import shutil
 import subprocess
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.modules.media.application.ports.hls_playlist_port import HlsPlaylistPort
+from src.modules.media.application.ports.hls_playlist_port import (
+    HlsCacheStats,
+    HlsPlaylistPort,
+)
 from src.modules.media.application.ports.media_probe_port import ProbeResult
 from src.modules.media.infrastructure.streaming._subprocess import (
     SUBPROCESS_TEXT_KWARGS,
@@ -445,6 +449,58 @@ class HlsService(HlsPlaylistPort):
                     self._kill_processes(path_hash)
             shutil.rmtree(self._cache_dir, ignore_errors=True)
             self._cache_dir.mkdir(parents=True, exist_ok=True)
+            self._touch_last_cleared_marker()
+
+    def get_cache_stats(self) -> HlsCacheStats:
+        """Return total bytes on disk + the configured ceiling + last clear.
+
+        The walk visits every file under the cache root and sums
+        ``st_size``. Cheap enough for an admin survey — the same
+        approach already runs inside ``evict_lru`` whenever the
+        cache fills up — but not something to hammer; the admin
+        page polls on demand only.
+        """
+        total = 0
+        if self._cache_dir.exists():
+            for entry in self._cache_dir.rglob("*"):
+                if entry.is_file():
+                    try:
+                        total += entry.stat().st_size
+                    except OSError:
+                        # File raced with eviction / clear; skip.
+                        continue
+        return HlsCacheStats(
+            size_bytes=total,
+            max_bytes=self._max_cache_bytes,
+            last_cleared_at=self._read_last_cleared_marker(),
+        )
+
+    # -- Last-cleared marker --------------------------------------------------
+    #
+    # A small zero-byte file at ``<cache_dir>/.last_cleared`` whose
+    # mtime captures when ``clear_cache`` was last called with
+    # ``file_path=None``. Cheaper than wiring a new table and
+    # survives restarts (in-memory state would not).
+
+    def _last_cleared_marker_path(self) -> Path:
+        return self._cache_dir / ".last_cleared"
+
+    def _touch_last_cleared_marker(self) -> None:
+        marker = self._last_cleared_marker_path()
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.touch(exist_ok=True)
+        except OSError:
+            # Don't let a marker write error mask a successful clear.
+            pass
+
+    def _read_last_cleared_marker(self) -> datetime | None:
+        marker = self._last_cleared_marker_path()
+        try:
+            ts = marker.stat().st_mtime
+        except OSError:
+            return None
+        return datetime.fromtimestamp(ts, tz=UTC)
 
     # -- Private: process management -------------------------------------------
 
