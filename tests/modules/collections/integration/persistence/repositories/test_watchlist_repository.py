@@ -201,3 +201,40 @@ class TestSQLAlchemyWatchlistRepository:
         saved = await repo.add(item)
 
         assert saved.media_type == CollectionMediaType.SERIES
+
+    async def test_rewrite_media_id_should_repoint_rows_across_profiles(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Driven by the promote-to-series flow — watchlist entries
+        on the old movie id move to the new series id without losing
+        per-profile presence."""
+        repo = SQLAlchemyWatchlistRepository(db_session)
+        await repo.add(_create_item(media_id=SAMPLE_MOVIE_ID))
+        await repo.add(_create_item(media_id=SAMPLE_MOVIE_ID, profile_id=_OTHER_PROFILE_ID))
+
+        updated = await repo.rewrite_media_id(
+            from_media_id=SAMPLE_MOVIE_ID,
+            to_media_id="ser_promotedxxxx",
+            to_media_type="series",
+        )
+
+        assert updated == 2
+        for profile in (_PROFILE_ID, _OTHER_PROFILE_ID):
+            stale = await repo.find_by_media_id(SAMPLE_MOVIE_ID, profile)
+            assert stale is None
+            fresh = await repo.find_by_media_id("ser_promotedxxxx", profile)
+            assert fresh is not None
+            assert fresh.media_type == CollectionMediaType.SERIES
+
+    async def test_rewrite_media_id_should_return_zero_when_nothing_matches(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyWatchlistRepository(db_session)
+
+        updated = await repo.rewrite_media_id(
+            from_media_id="mov_unknown00000",
+            to_media_id="ser_promotedxxxx",
+            to_media_type="series",
+        )
+
+        assert updated == 0

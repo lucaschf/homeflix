@@ -167,5 +167,26 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
             await self._session.flush()
         return len(models)
 
+    async def delete_all_for_movie(self, movie_id: str) -> int:
+        """Soft-delete every (cross-profile) progress row on a movie id.
+
+        Driven by ``MoviePromotedToSeriesEvent`` — see the interface
+        docstring for the rationale (movie ids vanish on promotion,
+        and mapping a half-watched position to a re-cut episode is
+        almost guaranteed to be wrong).
+        """
+        stmt = select(WatchProgressModel).where(
+            WatchProgressModel.media_id == movie_id,
+            WatchProgressModel.media_type == "movie",
+            WatchProgressModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        models = result.scalars().all()
+        for model in models:
+            model.soft_delete()
+        if models:
+            await self._session.flush()
+        return len(models)
+
 
 __all__ = ["SQLAlchemyWatchProgressRepository"]

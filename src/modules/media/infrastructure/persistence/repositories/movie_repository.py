@@ -18,9 +18,13 @@ from src.building_blocks.application.pagination import (
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
 from src.modules.media.domain.repositories.movie_repository import GenreRow
-from src.modules.media.domain.value_objects import FilePath, Genre, MovieId
+from src.modules.media.domain.value_objects import EpisodeId, FilePath, Genre, MovieId
 from src.modules.media.infrastructure.persistence.mappers import MovieMapper
-from src.modules.media.infrastructure.persistence.models import MediaFileModel, MovieModel
+from src.modules.media.infrastructure.persistence.models import (
+    EpisodeModel,
+    MediaFileModel,
+    MovieModel,
+)
 from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
     fetch_genre_paginated_page,
     fetch_genre_rows,
@@ -518,6 +522,40 @@ class SQLAlchemyMovieRepository(MovieRepository):
         )
         result = await self._session.execute(stmt)
         return [MovieMapper.to_entity(model) for model in result.scalars().all()]
+
+    async def transfer_file_variants_to_episode(
+        self,
+        movie_id: MovieId,
+        episode_id: EpisodeId,
+    ) -> int:
+        """Re-FK media_files from a movie's row to an episode's row.
+
+        Looks up both internal primary keys via the external ids,
+        then a single ``UPDATE`` rewrites the FK pair on every matching
+        row. ``movie_id`` is set to ``NULL`` so the cascade triggered
+        by the subsequent movie soft-delete doesn't sweep the rows
+        we just relocated.
+        """
+        movie_pk_stmt = select(MovieModel.id).where(
+            MovieModel.external_id == str(movie_id),
+        )
+        episode_pk_stmt = select(EpisodeModel.id).where(
+            EpisodeModel.external_id == str(episode_id),
+        )
+        movie_pk = (await self._session.execute(movie_pk_stmt)).scalar_one_or_none()
+        episode_pk = (await self._session.execute(episode_pk_stmt)).scalar_one_or_none()
+        if movie_pk is None or episode_pk is None:
+            return 0
+
+        result = await self._session.execute(
+            text(
+                "UPDATE media_files "
+                "SET movie_id = NULL, episode_id = :episode_pk "
+                "WHERE movie_id = :movie_pk"
+            ),
+            {"movie_pk": movie_pk, "episode_pk": episode_pk},
+        )
+        return result.rowcount or 0
 
     async def find_missing_scrub_preview(self, limit: int) -> Sequence[Movie]:
         """Return up to ``limit`` movies whose ``scrub_preview_path`` is null.

@@ -53,6 +53,9 @@ from src.modules.media.application.use_cases.list_recently_added_series import (
     ListRecentlyAddedSeriesUseCase,
 )
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
+from src.modules.media.application.use_cases.promote_movie_to_series import (
+    PromoteMovieToSeriesUseCase,
+)
 from src.modules.media.application.use_cases.relink_movie import RelinkMovieUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
 from src.modules.media.application.use_cases.scan_media_directories import (
@@ -435,6 +438,14 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         RelinkMovieUseCase,
         uow_factory=media_unit_of_work_factory,
         enrich_use_case=enrich_movie_metadata,
+    )
+
+    promote_movie_to_series = providers.Factory(
+        PromoteMovieToSeriesUseCase,
+        uow_factory=media_unit_of_work_factory,
+        metadata_provider=tmdb_client,
+        enrich_series_use_case=enrich_series_metadata,
+        event_bus=event_bus,
     )
 
     # =========================================================================

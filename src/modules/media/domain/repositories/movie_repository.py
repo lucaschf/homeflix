@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from src.building_blocks.application.pagination import PaginatedResult
 from src.modules.media.domain.entities.movie import Movie
-from src.modules.media.domain.value_objects import FilePath, Genre, MovieId
+from src.modules.media.domain.value_objects import EpisodeId, FilePath, Genre, MovieId
 
 
 @dataclass(frozen=True)
@@ -426,6 +426,33 @@ class MovieRepository(ABC):
 
         Returns:
             Sequence of flagged movies.
+        """
+        ...
+
+    @abstractmethod
+    async def transfer_file_variants_to_episode(
+        self,
+        movie_id: MovieId,
+        episode_id: EpisodeId,
+    ) -> int:
+        """Re-attach all ``media_files`` rows from a movie to an episode.
+
+        Used by the Movie→Series promotion: the original movie owns
+        one or more file variants on disk, the new series structure
+        needs those variants on its first episode. Reusing the same
+        ``media_files`` rows avoids the ``UNIQUE(file_path)`` clash
+        that would happen if we tried to create new rows alongside
+        the old ones, and keeps the existing track/probe metadata.
+
+        After this call the movie has no remaining file variants and
+        the episode owns every row that used to belong to the movie.
+
+        Args:
+            movie_id: External id of the source movie.
+            episode_id: External id of the target episode.
+
+        Returns:
+            Number of media_files rows moved.
         """
         ...
 

@@ -46,5 +46,31 @@ class WatchlistRepository(ABC):
     async def exists(self, media_id: str, profile_id: ProfileId) -> bool:
         """Check whether ``media_id`` is on ``profile_id``'s watchlist."""
 
+    @abstractmethod
+    async def rewrite_media_id(
+        self,
+        from_media_id: str,
+        to_media_id: str,
+        to_media_type: str,
+    ) -> int:
+        """Repoint every row from one media id to another (cross-profile).
+
+        Driven by ``MoviePromotedToSeriesEvent``: when a movie is
+        converted to a series, every profile's watchlist entry for
+        the old ``mov_xxx`` id needs to land on the new ``ser_xxx``
+        id so the list keeps the same set of titles without manual
+        cleanup. ``media_type`` is rewritten too because watchlist
+        rows carry the discriminator alongside the id.
+
+        Args:
+            from_media_id: External id currently stored.
+            to_media_id: External id to migrate to.
+            to_media_type: New ``media_type`` discriminator
+                (``"series"`` for the promote flow).
+
+        Returns:
+            Number of rows updated.
+        """
+
 
 __all__ = ["WatchlistRepository"]

@@ -274,5 +274,25 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         result = await self._session.execute(stmt)
         return result.scalar() or 0
 
+    async def rewrite_item_media_id(
+        self,
+        from_media_id: str,
+        to_media_id: str,
+        to_media_type: str,
+    ) -> int:
+        """Repoint every list item (cross-list, cross-profile) to a new media id."""
+        stmt = select(CustomListItemModel).where(
+            CustomListItemModel.media_id == from_media_id,
+            CustomListItemModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        models = result.scalars().all()
+        for model in models:
+            model.media_id = to_media_id
+            model.media_type = to_media_type
+        if models:
+            await self._session.flush()
+        return len(models)
+
 
 __all__ = ["SQLAlchemyCustomListRepository"]

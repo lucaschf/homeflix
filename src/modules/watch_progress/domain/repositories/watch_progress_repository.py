@@ -118,5 +118,28 @@ class WatchProgressRepository(ABC):
             Number of rows soft-deleted.
         """
 
+    @abstractmethod
+    async def delete_all_for_movie(self, movie_id: str) -> int:
+        """Soft-delete every progress row that points at a movie id.
+
+        Cross-BC operation driven by ``MoviePromotedToSeriesEvent``:
+        when a movie is converted to a series the old ``mov_xxx``
+        identity disappears, and re-anchoring a half-watched
+        playback position to a re-cut episode would almost always
+        land the user mid-scene. Wiping the progress is the safest
+        option — the operator can scrub manually next time.
+
+        Unlike ``delete()`` this is *not* profile-scoped: every
+        affected profile's row is removed in one call so the cross-BC
+        handler doesn't need to fan out per profile.
+
+        Args:
+            movie_id: External movie id (``mov_xxx`` format).
+
+        Returns:
+            Number of rows soft-deleted (may be 0 if no one had
+            progress on that movie yet).
+        """
+
 
 __all__ = ["WatchProgressRepository"]

@@ -23,6 +23,7 @@ from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.media.application.dtos.admin_relink_dtos import (
     GetMovieTmdbSuggestionsInput,
+    PromoteMovieToSeriesInput,
     RelinkMovieInput,
 )
 from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
@@ -31,8 +32,11 @@ from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
 from src.modules.media.application.use_cases.list_movies_needing_review import (
     ListMoviesNeedingReviewUseCase,
 )
+from src.modules.media.application.use_cases.promote_movie_to_series import (
+    PromoteMovieToSeriesUseCase,
+)
 from src.modules.media.application.use_cases.relink_movie import RelinkMovieUseCase
-from src.modules.media.presentation.schemas import RelinkMovieRequest
+from src.modules.media.presentation.schemas import PromoteMovieToSeriesRequest, RelinkMovieRequest
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Movie Relink"])
 
@@ -83,6 +87,23 @@ async def relink_movie(
         ),
     )
     return api_single("relink", asdict(output))
+
+
+@router.post("/movies/{movie_id}/promote-to-series")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def promote_movie_to_series(
+    movie_id: str,
+    body: PromoteMovieToSeriesRequest,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: PromoteMovieToSeriesUseCase = Depends(
+        Provide[ApplicationContainer.media.promote_movie_to_series],
+    ),
+) -> dict[str, Any]:
+    """Convert a misclassified movie into a series using a TMDB tv id."""
+    output = await use_case.execute(
+        PromoteMovieToSeriesInput(movie_id=movie_id, tmdb_id=body.tmdb_id),
+    )
+    return api_single("promote_to_series", asdict(output))
 
 
 __all__ = ["router"]
