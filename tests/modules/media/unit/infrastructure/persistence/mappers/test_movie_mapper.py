@@ -62,6 +62,36 @@ class TestMovieMapper:
         assert model.year == 2024
         assert model.duration == 7200
 
+    def test_should_round_trip_needs_enrichment_review_flag(self) -> None:
+        """``to_model`` writes the flag, ``to_entity`` reads it back."""
+        movie_id = MovieId.generate()
+        movie = _create_movie(movie_id=movie_id).with_updates(needs_enrichment_review=True)
+
+        model = MovieMapper.to_model(movie)
+
+        assert model.needs_enrichment_review is True
+
+        # Build a fresh model mirror to exercise the read path
+        # (the model from to_model has SQLAlchemy plumbing we don't
+        # need to round-trip here).
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
+        read_model = MovieModel(
+            library_id=_LIBRARY_ID,
+            external_id=str(movie_id),
+            title="Test Movie",
+            year=2024,
+            duration=7200,
+            needs_enrichment_review=True,
+            created_at=now,
+            updated_at=now,
+        )
+
+        entity = MovieMapper.to_entity(read_model, include_files=False)
+
+        assert entity.needs_enrichment_review is True
+
     def test_to_entity_shallow_returns_empty_files_even_with_legacy_columns(self) -> None:
         """``include_files=False`` must skip the file-loading branch entirely.
 

@@ -1212,3 +1212,47 @@ class TestAllowedLibraryIdsFilter:
 
         assert found is not None
         assert found.title.value == "Allowed"
+
+
+class TestFindNeedsEnrichmentReview:
+    """Tests for ``find_needs_enrichment_review`` — admin review queue."""
+
+    async def test_should_return_only_flagged_movies(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        flagged = _create_movie(
+            title="Salem's Lot",
+            file_path="/movies/salem.mkv",
+            needs_enrichment_review=True,
+        )
+        clean = _create_movie(title="Inception", file_path="/movies/inception.mkv")
+        await repo.save(flagged)
+        await repo.save(clean)
+
+        result = await repo.find_needs_enrichment_review()
+
+        assert [m.title.value for m in result] == ["Salem's Lot"]
+
+    async def test_should_return_empty_when_none_flagged(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="Inception", file_path="/movies/inception.mkv"))
+
+        result = await repo.find_needs_enrichment_review()
+
+        assert result == []
+
+    async def test_should_exclude_soft_deleted_rows(self, db_session: AsyncSession) -> None:
+        """Admin queue shouldn't surface rows the operator already
+        soft-deleted — they're conceptually gone."""
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _create_movie(
+            title="Salem's Lot",
+            file_path="/movies/salem.mkv",
+            needs_enrichment_review=True,
+        )
+        await repo.save(movie)
+        assert movie.id is not None
+        await repo.delete(movie.id)
+
+        result = await repo.find_needs_enrichment_review()
+
+        assert result == []

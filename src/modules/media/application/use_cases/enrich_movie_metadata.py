@@ -69,6 +69,13 @@ class EnrichMovieMetadataUseCase:
             metadata, provider_name = await self._fetch_metadata(movie)
             if not metadata:
                 error_msg = await self._build_no_metadata_error(movie, input_dto.media_id)
+                # Flag the movie for admin review (cleared on the next
+                # successful enrichment). Persisting on the failure
+                # path turns "log-only cross-type hints" into a
+                # queryable inbox.
+                if not movie.needs_enrichment_review:
+                    movie = movie.with_updates(needs_enrichment_review=True)
+                    await uow.movies.save(movie)
                 return EnrichMediaOutput(
                     media_id=input_dto.media_id,
                     enriched=False,
@@ -83,6 +90,8 @@ class EnrichMovieMetadataUseCase:
                     metadata = localized_meta
 
             movie = _apply_movie_metadata(movie, metadata, force=input_dto.force)
+            if movie.needs_enrichment_review:
+                movie = movie.with_updates(needs_enrichment_review=False)
             await uow.movies.save(movie)
 
         return EnrichMediaOutput(media_id=input_dto.media_id, enriched=True, provider=provider_name)

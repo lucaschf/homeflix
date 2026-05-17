@@ -93,6 +93,7 @@ class MovieMapper:
             resolution=primary.resolution.value if primary else None,
             tmdb_id=entity.tmdb_id.value if entity.tmdb_id else None,
             imdb_id=entity.imdb_id.value if entity.imdb_id else None,
+            needs_enrichment_review=entity.needs_enrichment_review,
         )
 
         for file in entity.files:
@@ -178,6 +179,10 @@ class MovieMapper:
             files=files,
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
             imdb_id=ImdbId(model.imdb_id) if model.imdb_id else None,
+            # ``Mapped[bool]`` only auto-fills the SQL default on INSERT;
+            # in-memory models built by tests can have ``None`` here.
+            # Domain default is ``False`` so coerce safely.
+            needs_enrichment_review=bool(model.needs_enrichment_review),
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -231,6 +236,7 @@ class MovieMapper:
         model.resolution = primary.resolution.value if primary else None
         model.tmdb_id = entity.tmdb_id.value if entity.tmdb_id else None
         model.imdb_id = entity.imdb_id.value if entity.imdb_id else None
+        model.needs_enrichment_review = entity.needs_enrichment_review
 
         _sync_file_variants(model.file_variants, entity.files)
 

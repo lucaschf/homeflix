@@ -158,6 +158,53 @@ class TestEnrichMovieMetadata:
         assert "series" in result.error.lower()
 
     @pytest.mark.asyncio
+    async def test_should_flag_movie_for_review_when_enrichment_fails(self) -> None:
+        """Failure path persists ``needs_enrichment_review=True`` so the
+        admin needs-review listing can pick it up — without this, the
+        cross-type warning would live only in the log."""
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = None
+        provider.search_series.return_value = None
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        mocks.movies.save.assert_called_once()
+        saved_movie = mocks.movies.save.call_args.args[0]
+        assert saved_movie.needs_enrichment_review is True
+
+    @pytest.mark.asyncio
+    async def test_should_clear_review_flag_on_successful_enrichment(self) -> None:
+        """Re-enriching a previously-flagged movie clears the flag so it
+        falls off the admin queue without manual intervention."""
+        movie = _make_movie().with_updates(needs_enrichment_review=True)
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = _make_metadata()
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        mocks.movies.save.assert_called_once()
+        saved_movie = mocks.movies.save.call_args.args[0]
+        assert saved_movie.needs_enrichment_review is False
+
+    @pytest.mark.asyncio
+    async def test_should_not_double_save_when_flag_already_set(self) -> None:
+        """If the movie is already flagged, the failure path skips an
+        extra save — repeated failed enrichments shouldn't churn the
+        ``updated_at`` timestamp on the row."""
+        movie = _make_movie().with_updates(needs_enrichment_review=True)
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = None
+        provider.search_series.return_value = None
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        mocks.movies.save.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_should_retry_cross_type_without_year_when_year_search_misses(self) -> None:
         """If the TV-side search misses with the year hint, retry without
         it — same fallback chain as the movie path, since the folder year
