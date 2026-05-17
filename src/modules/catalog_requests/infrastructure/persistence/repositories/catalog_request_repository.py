@@ -7,7 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.repositories import CatalogRequestRepository
-from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
+from src.modules.catalog_requests.domain.value_objects import (
+    CatalogRequestId,
+    RequestedMediaType,
+)
 from src.modules.catalog_requests.infrastructure.persistence.mappers import (
     CatalogRequestMapper,
 )
@@ -106,6 +109,20 @@ class SQLAlchemyCatalogRequestRepository(CatalogRequestRepository):
         await self._session.flush()
         await self._session.refresh(model)
         return CatalogRequestMapper.to_entity(model)
+
+    async def delete(self, request_id: CatalogRequestId) -> bool:
+        """Soft-delete a pending request by external id."""
+        stmt = select(CatalogRequestModel).where(
+            CatalogRequestModel.external_id == str(request_id),
+            CatalogRequestModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        if model is None:
+            return False
+        model.soft_delete()
+        await self._session.flush()
+        return True
 
 
 __all__ = ["SQLAlchemyCatalogRequestRepository"]

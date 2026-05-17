@@ -4,7 +4,10 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from src.modules.catalog_requests.domain.entities import CatalogRequest
-from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
+from src.modules.catalog_requests.domain.value_objects import (
+    CatalogRequestId,
+    RequestedMediaType,
+)
 
 
 class CatalogRequestRepository(ABC):
@@ -94,6 +97,25 @@ class CatalogRequestRepository(ABC):
 
         Returns:
             The persisted aggregate, refreshed from the database.
+        """
+
+    @abstractmethod
+    async def delete(self, request_id: CatalogRequestId) -> bool:
+        """Soft-delete a request by its external id.
+
+        Backs the admin "dismiss" action — the operator drops a
+        pending request that the household no longer wants tracked.
+        Soft-delete matches every other aggregate in the codebase:
+        the row stays with ``deleted_at`` set, list queries skip it,
+        and a future "restore" can flip the timestamp back to
+        ``NULL`` via DB intervention.
+
+        Args:
+            request_id: External id (``req_xxx``).
+
+        Returns:
+            ``True`` when a row was soft-deleted, ``False`` when no
+            matching active row was found.
         """
 
 
