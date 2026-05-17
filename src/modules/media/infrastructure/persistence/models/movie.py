@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.infrastructure.persistence.base import Base
@@ -87,6 +87,17 @@ class MovieModel(Base):
     # External IDs for metadata enrichment
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+
+    # Flag set when enrichment couldn't resolve a TMDB match.
+    # Indexed so the admin "needs review" listing scans cheaply even
+    # as the catalog grows past tens of thousands of rows.
+    needs_enrichment_review: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+        index=True,
+    )
 
     # Relationships
     file_variants: Mapped[list["MediaFileModel"]] = relationship(

@@ -494,6 +494,31 @@ class SQLAlchemyMovieRepository(MovieRepository):
 
         return None if model is None else MovieMapper.to_entity(model)
 
+    async def find_needs_enrichment_review(
+        self,
+        *,
+        allowed_library_ids: Sequence[str] | None = None,
+    ) -> Sequence[Movie]:
+        """Return movies with the review flag set, newest-first."""
+        conditions = [
+            MovieModel.deleted_at.is_(None),
+            MovieModel.needs_enrichment_review.is_(True),
+        ]
+        if allowed_library_ids is not None:
+            allowed = list(allowed_library_ids)
+            if not allowed:
+                return []
+            conditions.append(MovieModel.library_id.in_(allowed))
+
+        stmt = (
+            select(MovieModel)
+            .where(*conditions)
+            .options(selectinload(MovieModel.file_variants))
+            .order_by(MovieModel.updated_at.desc())
+        )
+        result = await self._session.execute(stmt)
+        return [MovieMapper.to_entity(model) for model in result.scalars().all()]
+
     async def find_missing_scrub_preview(self, limit: int) -> Sequence[Movie]:
         """Return up to ``limit`` movies whose ``scrub_preview_path`` is null.
 

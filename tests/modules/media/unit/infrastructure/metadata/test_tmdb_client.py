@@ -612,6 +612,106 @@ class TestSearchSeries:
 
 
 @pytest.mark.unit
+class TestFindMovieCandidates:
+    """Tests for ``find_movie_candidates`` — picker-mode raw search."""
+
+    @pytest.mark.asyncio
+    async def test_should_return_raw_candidates_without_detail_fetch(self) -> None:
+        """A single HTTP call (no per-id detail roundtrip) is the
+        whole point of the picker path."""
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "results": [
+                        {
+                            "id": 748230,
+                            "title": "Salem's Lot",
+                            "release_date": "2024-10-03",
+                            "overview": "Reboot",
+                            "poster_path": "/poster.jpg",
+                        },
+                    ],
+                },
+            ),
+        )
+
+        result = await client.find_movie_candidates("Salem's Lot", year=2024, limit=5)
+
+        assert len(result) == 1
+        assert result[0].tmdb_id == 748230
+        assert result[0].media_type == "movie"
+        assert result[0].year == 2024
+        assert result[0].poster_url == "https://image.tmdb.org/t/p/original/poster.jpg"
+
+    @pytest.mark.asyncio
+    async def test_should_truncate_to_limit(self) -> None:
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "results": [
+                        {"id": i, "title": f"M{i}", "release_date": "2020-01-01"} for i in range(10)
+                    ],
+                },
+            ),
+        )
+
+        result = await client.find_movie_candidates("M", year=None, limit=3)
+
+        assert [c.tmdb_id for c in result] == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_should_return_empty_when_no_results(self) -> None:
+        client = _make_client(get_responses=_build_response(json_data={"results": []}))
+
+        result = await client.find_movie_candidates("Nonexistent")
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_should_handle_missing_release_date(self) -> None:
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={"results": [{"id": 100, "title": "Unknown Year"}]},
+            ),
+        )
+
+        result = await client.find_movie_candidates("Unknown Year")
+
+        assert result[0].year is None
+
+
+@pytest.mark.unit
+class TestFindSeriesCandidates:
+    """Tests for ``find_series_candidates`` — picker-mode raw search."""
+
+    @pytest.mark.asyncio
+    async def test_should_return_raw_candidates_with_tv_media_type(self) -> None:
+        client = _make_client(
+            get_responses=_build_response(
+                json_data={
+                    "results": [
+                        {
+                            "id": 16118,
+                            "name": "Salem's Lot",
+                            "first_air_date": "1979-11-17",
+                            "overview": "Tobe Hooper miniseries",
+                            "poster_path": "/sl.jpg",
+                        },
+                    ],
+                },
+            ),
+        )
+
+        result = await client.find_series_candidates("Salem's Lot", year=1979)
+
+        assert len(result) == 1
+        assert result[0].tmdb_id == 16118
+        assert result[0].media_type == "tv"
+        assert result[0].year == 1979
+        assert result[0].title == "Salem's Lot"
+
+
+@pytest.mark.unit
 class TestGetMovieById:
     """Tests for get_movie_by_id."""
 

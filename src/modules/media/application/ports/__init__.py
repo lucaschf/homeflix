@@ -30,6 +30,7 @@ from src.modules.media.application.ports.metadata_provider_port import (
     MediaMetadata,
     MetadataProvider,
     PersonMetadata,
+    SearchCandidate,
     SeasonMetadata,
 )
 from src.modules.media.application.ports.profile_library_access_port import (
@@ -68,6 +69,7 @@ __all__ = [
     "ProgressLookupPort",
     "ProgressSummary",
     "ScannedFile",
+    "SearchCandidate",
     "SeasonMetadata",
     "VariantDetectorPort",
 ]

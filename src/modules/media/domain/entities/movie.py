@@ -93,6 +93,12 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     tmdb_id: TmdbId | None = None
     imdb_id: ImdbId | None = None
 
+    # Set true when an enrichment attempt could not resolve a TMDB
+    # match (off-year movie, cross-type miss, ambiguous title, …).
+    # Read by the admin "needs review" listing so the operator can
+    # relink manually. Cleared on successful enrichment.
+    needs_enrichment_review: bool = False
+
     # noinspection PyNestedDecorators
     @field_validator("id", mode="before")
     @classmethod
