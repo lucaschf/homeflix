@@ -17,7 +17,10 @@ from src.building_blocks.presentation.exception_handlers import register_excepti
 from src.config.containers import ApplicationContainer
 from src.config.logging import get_logger, setup_logging
 from src.config.settings import get_settings
-from src.modules.catalog_requests.presentation.routes import catalog_request_router
+from src.modules.catalog_requests.presentation.routes import (
+    admin_catalog_request_router,
+    catalog_request_router,
+)
 from src.modules.collections.presentation.routes import custom_list_router, watchlist_router
 from src.modules.identity.infrastructure.auth import auth_backend, fastapi_users
 from src.modules.identity.presentation.routes import profile_router, users_router
@@ -62,6 +65,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.collections.presentation.routes.watchlist_routes",
     "src.modules.collections.presentation.routes.custom_list_routes",
     "src.modules.catalog_requests.presentation.routes.catalog_request_routes",
+    "src.modules.catalog_requests.presentation.routes.admin_catalog_request_routes",
     "src.modules.library.presentation.routes.library_routes",
     "src.modules.preferences.presentation.routes.preferences_routes",
     "src.modules.identity.presentation.routes.profile_routes",
@@ -263,6 +267,7 @@ def create_app() -> FastAPI:
     app.include_router(watchlist_router)
     app.include_router(custom_list_router)
     app.include_router(catalog_request_router)
+    app.include_router(admin_catalog_request_router)
     app.include_router(library_router)
     app.include_router(preferences_router)
 

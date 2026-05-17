@@ -41,6 +41,22 @@ class SubscribeCatalogNotificationInput:
 
 
 @dataclass(frozen=True)
+class DismissCatalogRequestInput:
+    """Input for ``DismissCatalogRequestUseCase``.
+
+    The admin "Dismiss" action removes a pending request from the
+    queue when the household no longer wants to track it (e.g. the
+    title becomes available on a service the household uses, or the
+    initial request was a misclick on an obscure tmdb id).
+
+    Attributes:
+        request_id: External catalog-request id (``req_xxx``).
+    """
+
+    request_id: str
+
+
+@dataclass(frozen=True)
 class CatalogRequestOutput:
     """Output representation of a catalog request.
 
@@ -82,5 +98,6 @@ class CatalogRequestOutput:
 __all__ = [
     "CatalogRequestOutput",
     "CreateCatalogRequestInput",
+    "DismissCatalogRequestInput",
     "SubscribeCatalogNotificationInput",
 ]

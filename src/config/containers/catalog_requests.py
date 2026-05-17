@@ -3,6 +3,7 @@
 from dependency_injector import containers, providers
 
 from src.modules.catalog_requests.application.use_cases import (
+    DismissCatalogRequestUseCase,
     ListCatalogRequestsUseCase,
     RequestCatalogInclusionUseCase,
     SubscribeCatalogNotificationUseCase,
@@ -61,5 +62,10 @@ class CatalogRequestsContainer(containers.DeclarativeContainer):  # type: ignore
 
     list_catalog_requests = providers.Factory(
         ListCatalogRequestsUseCase,
+        uow_factory=catalog_requests_unit_of_work_factory,
+    )
+
+    dismiss_catalog_request = providers.Factory(
+        DismissCatalogRequestUseCase,
         uow_factory=catalog_requests_unit_of_work_factory,
     )
