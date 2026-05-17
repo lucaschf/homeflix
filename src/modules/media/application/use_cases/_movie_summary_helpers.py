@@ -26,6 +26,10 @@ def to_movie_summary(movie: Movie, lang: str = "en") -> MovieSummaryOutput:
         variant_count=len(movie.files),
         available_resolutions=[r.value for r in movie.available_resolutions],
         genres=movie.get_genres(lang),
+        library_id=movie.library_id,
+        tmdb_id=movie.tmdb_id.value if movie.tmdb_id else None,
+        imdb_id=movie.imdb_id.value if movie.imdb_id else None,
+        needs_enrichment_review=movie.needs_enrichment_review,
     )
 
 

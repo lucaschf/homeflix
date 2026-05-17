@@ -65,6 +65,8 @@ class TestListSeriesUseCase:
             limit=20,
             include_total=False,
             allowed_library_ids=[_LIBRARY_ID],
+            library_id=None,
+            has_tmdb_id=None,
         )
 
     @pytest.mark.asyncio
@@ -109,6 +111,8 @@ class TestListSeriesUseCase:
             limit=15,
             include_total=False,
             allowed_library_ids=[_LIBRARY_ID],
+            library_id=None,
+            has_tmdb_id=None,
         )
 
     @pytest.mark.asyncio
@@ -194,6 +198,8 @@ class TestListSeriesUseCase:
             limit=20,
             include_total=True,
             allowed_library_ids=[_LIBRARY_ID],
+            library_id=None,
+            has_tmdb_id=None,
         )
 
     @pytest.mark.asyncio

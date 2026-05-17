@@ -47,6 +47,29 @@ from src.modules.media.infrastructure.persistence.repositories._path_prefix_help
 )
 
 
+def _series_filter_conditions(
+    *,
+    allowed_library_ids: Sequence[str] | None,
+    library_id: str | None,
+    has_tmdb_id: bool | None,
+) -> list:
+    """Build SQLAlchemy ``WHERE`` clauses for the optional series filters.
+
+    Mirrors ``_movie_filter_conditions`` so both repositories surface
+    the same admin-facing filter contract.
+    """
+    conditions: list = []
+    if allowed_library_ids is not None:
+        conditions.append(SeriesModel.library_id.in_(allowed_library_ids))
+    if library_id is not None:
+        conditions.append(SeriesModel.library_id == library_id)
+    if has_tmdb_id is not None:
+        conditions.append(
+            SeriesModel.tmdb_id.is_not(None) if has_tmdb_id else SeriesModel.tmdb_id.is_(None),
+        )
+    return conditions
+
+
 class SQLAlchemySeriesRepository(SeriesRepository):
     """SQLAlchemy implementation of SeriesRepository.
 
@@ -200,6 +223,8 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         *,
         include_total: bool = False,
         allowed_library_ids: Sequence[str] | None = None,
+        library_id: str | None = None,
+        has_tmdb_id: bool | None = None,
     ) -> PaginatedResult[Series]:
         """List series in a single cursor-paginated page.
 
@@ -211,17 +236,24 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         without an extra query. The full season / episode hierarchy is
         loaded via the same options as ``list_all``; if that turns out
         to be a perf issue we'll add a shallow variant later.
+
+        Admin filters (``library_id``, ``has_tmdb_id``) compose with
+        the per-profile ``allowed_library_ids`` ACL — see the matching
+        helper on the movie repository for the contract.
         """
+        conditions = _series_filter_conditions(
+            allowed_library_ids=allowed_library_ids,
+            library_id=library_id,
+            has_tmdb_id=has_tmdb_id,
+        )
+
         decoded = decode_cursor(cursor)
 
         stmt = (
             select(SeriesModel)
-            .where(SeriesModel.deleted_at.is_(None))
+            .where(SeriesModel.deleted_at.is_(None), *conditions)
             .options(*self._series_load_options())
         )
-
-        if allowed_library_ids is not None:
-            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
 
         if decoded is not None:
             stmt = stmt.where(SeriesModel.id < decoded.id)
@@ -244,10 +276,8 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             count_stmt = (
                 select(func.count())
                 .select_from(SeriesModel)
-                .where(SeriesModel.deleted_at.is_(None))
+                .where(SeriesModel.deleted_at.is_(None), *conditions)
             )
-            if allowed_library_ids is not None:
-                count_stmt = count_stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
             total_count = (await self._session.execute(count_stmt)).scalar_one()
 
         return PaginatedResult(

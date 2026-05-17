@@ -13,6 +13,7 @@ from src.modules.media.application.use_cases.bulk_enrich_metadata import (
 from src.modules.media.application.use_cases.clear_episode_intro import ClearEpisodeIntroUseCase
 from src.modules.media.application.use_cases.clear_hls_cache import ClearHlsCacheUseCase
 from src.modules.media.application.use_cases.delete_movie import DeleteMovieUseCase
+from src.modules.media.application.use_cases.delete_series import DeleteSeriesUseCase
 from src.modules.media.application.use_cases.enrich_movie_metadata import (
     EnrichMovieMetadataUseCase,
 )
@@ -173,6 +174,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     delete_movie = providers.Factory(
         DeleteMovieUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
+    delete_series = providers.Factory(
+        DeleteSeriesUseCase,
         uow_factory=media_unit_of_work_factory,
     )
 

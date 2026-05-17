@@ -137,6 +137,9 @@ class SeriesSummaryOutput:
 
     Contains essential fields for displaying series in a grid/list.
     Does NOT include full episode data to keep response lightweight.
+    The admin Catalog table reads the same shape; the trailing
+    operator-facing fields (``library_id``, ``tmdb_id``, ``imdb_id``)
+    are ignored by user-facing surfaces.
 
     Attributes:
         id: External series ID.
@@ -148,6 +151,11 @@ class SeriesSummaryOutput:
         season_count: Number of seasons.
         total_episodes: Total episode count.
         genres: List of genre strings.
+        library_id: External library id (``lib_xxx``) owning the
+            series. Used by the admin Catalog "Library" column.
+        tmdb_id: TMDB primary key, or ``None`` for un-enriched
+            series.
+        imdb_id: IMDb id (``tt…``), or ``None``.
     """
 
     id: str
@@ -161,6 +169,20 @@ class SeriesSummaryOutput:
     season_count: int
     total_episodes: int
     genres: list[str]
+    library_id: str
+    tmdb_id: int | None
+    imdb_id: str | None
+
+
+@dataclass(frozen=True)
+class DeleteSeriesInput:
+    """Input for ``DeleteSeriesUseCase``.
+
+    Attributes:
+        series_id: External ID of the series (``ser_xxx``).
+    """
+
+    series_id: str
 
 
 @dataclass(frozen=True)
@@ -207,6 +229,10 @@ class ListSeriesInput:
     limit: int = DEFAULT_PAGE_SIZE
     include_total: bool = False
     lang: str = "en"
+    # Optional filters used by the admin Catalog page; ``None`` on
+    # the user-facing list means "no extra constraint".
+    library_id: str | None = None
+    has_tmdb_id: bool | None = None
 
 
 @dataclass(frozen=True)

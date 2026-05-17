@@ -149,6 +149,10 @@ class MovieSummaryOutput:
     """Summary representation of a Movie for list views.
 
     Contains essential fields for displaying movies in a grid/list.
+    The admin Catalog table reads the same shape; the three trailing
+    fields (``library_id``, ``tmdb_id``, ``imdb_id``,
+    ``needs_enrichment_review``) carry operator-facing metadata that
+    user-facing surfaces simply ignore.
 
     Attributes:
         id: External movie ID.
@@ -158,6 +162,17 @@ class MovieSummaryOutput:
         poster_path: Path to poster image (optional).
         resolution: Video resolution.
         genres: List of genre strings.
+        library_id: External library id (``lib_xxx``) the movie lives
+            in. Read by the admin Catalog page to render the
+            "Library" column.
+        tmdb_id: TMDB primary key, or ``None`` when the movie has
+            never been successfully enriched.
+        imdb_id: IMDb id (``tt…``), or ``None`` for rows TMDB lacks
+            it on.
+        needs_enrichment_review: ``True`` when an enrichment attempt
+            couldn't resolve a TMDB match. The admin table renders
+            an inline badge / dim row so operators can spot
+            unresolved items without leaving the page.
     """
 
     id: str
@@ -171,6 +186,10 @@ class MovieSummaryOutput:
     variant_count: int
     available_resolutions: list[str]
     genres: list[str]
+    library_id: str
+    tmdb_id: int | None
+    imdb_id: str | None
+    needs_enrichment_review: bool
 
 
 @dataclass(frozen=True)
@@ -200,6 +219,11 @@ class ListMoviesInput:
     limit: int = DEFAULT_PAGE_SIZE
     include_total: bool = False
     lang: str = "en"
+    # Optional filters used by the admin Catalog page; ``None`` on
+    # the user-facing list means "no extra constraint".
+    library_id: str | None = None
+    has_tmdb_id: bool | None = None
+    needs_enrichment_review: bool | None = None
 
 
 @dataclass(frozen=True)

@@ -561,6 +561,88 @@ class TestSQLAlchemyMovieRepositoryListPaginated:
 
 
 @pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryListPaginatedAdminFilters:
+    """Integration coverage for the admin Catalog filter set on
+    ``list_paginated`` — library_id, has_tmdb_id, needs_enrichment_review."""
+
+    async def test_library_id_should_restrict_to_a_single_library(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="A", file_path="/m/a.mkv"))
+        await repo.save(
+            _movie_in_library(library_id=_LIBRARY_ID_OTHER, title="B", file_path="/m/b.mkv")
+        )
+
+        page = await repo.list_paginated(cursor=None, limit=10, library_id=_LIBRARY_ID)
+
+        assert {m.title.value for m in page.items} == {"A"}
+
+    async def test_has_tmdb_id_true_should_keep_only_enriched_rows(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="Plain", file_path="/m/p.mkv"))
+        await repo.save(
+            _create_movie(title="Enriched", file_path="/m/e.mkv").with_updates(tmdb_id=TmdbId(550))
+        )
+
+        page = await repo.list_paginated(cursor=None, limit=10, has_tmdb_id=True)
+
+        assert {m.title.value for m in page.items} == {"Enriched"}
+
+    async def test_has_tmdb_id_false_should_keep_only_unenriched_rows(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="Plain", file_path="/m/p.mkv"))
+        await repo.save(
+            _create_movie(title="Enriched", file_path="/m/e.mkv").with_updates(tmdb_id=TmdbId(550))
+        )
+
+        page = await repo.list_paginated(cursor=None, limit=10, has_tmdb_id=False)
+
+        assert {m.title.value for m in page.items} == {"Plain"}
+
+    async def test_needs_enrichment_review_should_keep_flagged_rows(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="Clean", file_path="/m/c.mkv"))
+        await repo.save(
+            _create_movie(title="Flagged", file_path="/m/f.mkv").with_updates(
+                needs_enrichment_review=True
+            )
+        )
+
+        page = await repo.list_paginated(cursor=None, limit=10, needs_enrichment_review=True)
+
+        assert {m.title.value for m in page.items} == {"Flagged"}
+
+    async def test_filters_should_compose(self, db_session: AsyncSession) -> None:
+        """Multiple filters combine via AND — a row must satisfy every
+        constraint to land in the page."""
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(
+            _create_movie(title="Match", file_path="/m/match.mkv").with_updates(
+                needs_enrichment_review=True
+            )
+        )
+        await repo.save(
+            _create_movie(title="WrongFlag", file_path="/m/wf.mkv").with_updates(tmdb_id=TmdbId(99))
+        )
+
+        page = await repo.list_paginated(
+            cursor=None,
+            limit=10,
+            has_tmdb_id=False,
+            needs_enrichment_review=True,
+        )
+
+        assert {m.title.value for m in page.items} == {"Match"}
+
+
+@pytest.mark.integration
 class TestSQLAlchemyMovieRepositoryListRecentlyAdded:
     """Integration tests for the bounded "top N newest" projection."""
 
