@@ -12,7 +12,10 @@ import pytest
 from src.modules.media.application.ports import ProbeResult
 from src.modules.media.infrastructure.streaming.hls_service import (
     HlsService,
+    _append_endlist_atomic,
+    _has_endlist,
     _primary_audio_index,
+    _shift_webvtt_to_bucket_local,
 )
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
 from src.shared_kernel.value_objects.language_code import LanguageCode
@@ -103,14 +106,35 @@ class TestHlsServiceGetPathHash:
         service = HlsService(cache_dir=str(tmp_path / "hls"))
         assert service.get_path_hash("/a.mkv") != service.get_path_hash("/b.mkv")
 
-    def test_should_depend_only_on_file_path(self, tmp_path: Path) -> None:
-        # The cache bucket is keyed by the source file alone: resume
-        # positions apply client-side via ``video.currentTime`` so every
-        # session for the same file reuses the same transcode output.
+    def test_should_match_legacy_hash_when_start_is_zero(self, tmp_path: Path) -> None:
+        # The default ``start=0`` bucket keeps the legacy hash scheme so
+        # caches generated before the resume-offset refactor stay
+        # addressable. This is the load-bearing contract for not
+        # invalidating warm caches on deploy.
         service = HlsService(cache_dir=str(tmp_path / "hls"))
         path = "/movies/test.mkv"
         expected = hashlib.md5(path.encode()).hexdigest()
         assert service.get_path_hash(path) == expected
+        assert service.get_path_hash(path, start=0) == expected
+
+    def test_should_round_start_down_to_bucket(self, tmp_path: Path) -> None:
+        # Adjacent resume positions inside the same 5-minute window
+        # collapse onto the same bucket so a player resuming at t=302
+        # reuses the ffmpeg encode started at t=300.
+        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        path = "/movies/test.mkv"
+        # 299s rounds down to bucket 0 — same as default
+        assert service.get_path_hash(path, start=299) == service.get_path_hash(path)
+        # 300s and 599s share the same bucket (300)
+        assert service.get_path_hash(path, start=300) == service.get_path_hash(path, start=599)
+        # 600s steps to the next bucket
+        assert service.get_path_hash(path, start=300) != service.get_path_hash(path, start=600)
+
+    def test_should_differ_across_buckets_for_same_file(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        path = "/movies/test.mkv"
+        assert service.get_path_hash(path, start=0) != service.get_path_hash(path, start=300)
+        assert service.get_path_hash(path, start=300) != service.get_path_hash(path, start=600)
 
 
 @pytest.mark.unit
@@ -281,14 +305,53 @@ class TestHlsServiceBuildAudioCmd:
 
         assert "aac" in cmd
 
-    def test_should_never_emit_a_seek_flag(self, tmp_path: Path) -> None:
-        # The transcode always starts at t=0 — resume positions are
-        # applied client-side via ``video.currentTime``. A ``-ss`` in
-        # the ffmpeg argv would re-introduce the per-offset bucket
-        # problem the per-file cache was designed to avoid.
+    def test_should_omit_seek_flag_when_start_is_zero(self, tmp_path: Path) -> None:
+        # Default cold-cache transcode starts at t=0 — no ``-ss``.
         cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0)
 
         assert "-ss" not in cmd
+
+    def test_should_emit_seek_flag_before_input_when_start_positive(self, tmp_path: Path) -> None:
+        # ``-ss N`` must come BEFORE ``-i`` so ffmpeg does an input
+        # seek (fast, keyframe-accurate) rather than decoding from 0
+        # and dropping output.
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0, start=1800)
+
+        assert "-ss" in cmd
+        ss_index = cmd.index("-ss")
+        input_index = cmd.index("-i")
+        assert cmd[ss_index + 1] == "1800"
+        assert ss_index < input_index
+
+    def test_should_force_accurate_seek_when_start_positive(self, tmp_path: Path) -> None:
+        # Without ``-accurate_seek`` ffmpeg drops to the preceding
+        # keyframe but audio starts at exactly ``start`` — the two
+        # streams open out of sync by ``start - keyframe_pos``.
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0, start=1800)
+
+        assert "-accurate_seek" in cmd
+        accurate_index = cmd.index("-accurate_seek")
+        input_index = cmd.index("-i")
+        assert accurate_index < input_index
+
+    def test_should_normalize_negative_ts_when_start_positive(self, tmp_path: Path) -> None:
+        # ``-avoid_negative_ts make_zero`` clamps the per-stream PTS
+        # minimum to zero so any residual offset surfaces as a tiny
+        # leading silence instead of an audio-leads-video drift.
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0, start=1800)
+
+        assert "-avoid_negative_ts" in cmd
+        idx = cmd.index("-avoid_negative_ts")
+        assert cmd[idx + 1] == "make_zero"
+
+    def test_should_not_emit_sync_flags_when_start_is_zero(self, tmp_path: Path) -> None:
+        # Sync hardening only kicks in for non-zero ``start`` since the
+        # legacy cold-cache transcode never hits the keyframe-vs-audio
+        # gap (it begins at t=0 of the source).
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0)
+
+        assert "-accurate_seek" not in cmd
+        assert "-avoid_negative_ts" not in cmd
 
 
 @pytest.mark.unit
@@ -304,6 +367,21 @@ class TestHlsServiceBuildVideoCmd:
 
         assert "copy" in cmd
         assert "libx264" not in cmd
+
+    def test_should_transcode_h264_when_start_positive(self, tmp_path: Path) -> None:
+        # ``-c:v copy`` is the fast path for cold cache but it skips
+        # the decode pass that ``-accurate_seek`` depends on. With a
+        # non-zero ``start`` the copy would land at the preceding
+        # keyframe while audio lands at the exact second, so we force
+        # the transcode to keep the two streams aligned.
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+
+        assert "libx264" in cmd
+        assert "copy" not in cmd
 
     def test_should_transcode_non_h264(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path / "cache"))
@@ -325,9 +403,8 @@ class TestHlsServiceBuildVideoCmd:
 
         assert "0:a:3" in cmd
 
-    def test_should_never_emit_a_seek_flag(self, tmp_path: Path) -> None:
-        # Symmetric with the audio-only pipeline: the video transcode
-        # starts at t=0 and the player seeks natively.
+    def test_should_omit_seek_flag_when_start_is_zero(self, tmp_path: Path) -> None:
+        # Default cold-cache transcode starts at t=0 — no ``-ss``.
         service = HlsService(cache_dir=str(tmp_path / "cache"))
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
@@ -335,6 +412,58 @@ class TestHlsServiceBuildVideoCmd:
             cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "-ss" not in cmd
+
+    def test_should_emit_seek_flag_before_input_when_start_positive(self, tmp_path: Path) -> None:
+        # Input seek for the video pipeline mirrors the audio one — the
+        # seek is in source-time seconds and lands at the nearest
+        # preceding keyframe before any encoding work begins.
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+
+        assert "-ss" in cmd
+        ss_index = cmd.index("-ss")
+        input_index = cmd.index("-i")
+        assert cmd[ss_index + 1] == "1800"
+        assert ss_index < input_index
+
+    def test_should_force_accurate_seek_when_start_positive(self, tmp_path: Path) -> None:
+        # Mirrors the audio-cmd test — without this, the video opens at
+        # the preceding keyframe while audio opens at the exact seek
+        # point and playback drifts audio-leads-video.
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+
+        assert "-accurate_seek" in cmd
+        accurate_index = cmd.index("-accurate_seek")
+        input_index = cmd.index("-i")
+        assert accurate_index < input_index
+
+    def test_should_normalize_negative_ts_when_start_positive(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+
+        assert "-avoid_negative_ts" in cmd
+        idx = cmd.index("-avoid_negative_ts")
+        assert cmd[idx + 1] == "make_zero"
+
+    def test_should_not_emit_sync_flags_when_start_is_zero(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert "-accurate_seek" not in cmd
+        assert "-avoid_negative_ts" not in cmd
 
 
 @pytest.mark.unit
@@ -753,20 +882,21 @@ class TestHlsServiceExtractOneSubtitle:
 
         assert event.is_set()
 
-    def test_should_not_emit_a_seek_flag(self, tmp_path: Path) -> None:
-        # Subtitle timestamps are absolute source times, which is also
-        # what the player's ``currentTime`` reports — no seek needed.
+    def test_should_skip_post_shift_when_start_is_zero(self, tmp_path: Path) -> None:
+        # Cold play has bucket-local == source-time, so the VTT is
+        # left exactly as ffmpeg wrote it and no post-shift runs.
         import threading
 
         service, output_dir = self._make_service(tmp_path)
         service._subtitle_events["abc"] = {0: threading.Event()}
         track = _make_subtitle_track(index=0, fmt="srt")
 
+        original_vtt = "WEBVTT\n\n00:00:05.000 --> 00:00:07.000\nhello\n"
         captured: dict[str, list[str]] = {}
 
         def _capture(cmd: list[str], **_: object) -> MagicMock:
             captured["cmd"] = cmd
-            (output_dir / "sub_0" / "sub.vtt").write_text("WEBVTT\n")
+            (output_dir / "sub_0" / "sub.vtt").write_text(original_vtt)
             return MagicMock(returncode=0)
 
         with patch("subprocess.run", side_effect=_capture):
@@ -778,6 +908,99 @@ class TestHlsServiceExtractOneSubtitle:
             )
 
         assert "-ss" not in captured["cmd"]
+        assert "-accurate_seek" not in captured["cmd"]
+        assert "-avoid_negative_ts" not in captured["cmd"]
+        assert (output_dir / "sub_0" / "sub.vtt").read_text(encoding="utf-8") == original_vtt
+
+    def test_should_post_shift_embedded_subtitle_cues_when_start_positive(
+        self, tmp_path: Path
+    ) -> None:
+        # ffmpeg is invoked WITHOUT ``-ss`` regardless of bucket
+        # offset because cue-PTS handling under ``-ss`` is
+        # container-dependent (we'd land at either source-time or
+        # over-shifted to zero depending on the demuxer). The full
+        # source-time VTT is then post-processed in Python to subtract
+        # ``start`` from every cue — deterministic across containers.
+        import threading
+
+        service, output_dir = self._make_service(tmp_path)
+        service._subtitle_events["abc"] = {1: threading.Event()}
+        track = _make_subtitle_track(index=1, fmt="srt")
+
+        captured: dict[str, list[str]] = {}
+
+        def _capture(cmd: list[str], **_: object) -> MagicMock:
+            captured["cmd"] = cmd
+            # ffmpeg "writes" a VTT with source-time cues — cue at
+            # source 00:30:30 (1830s), 8s past the bucket start of 1800.
+            (output_dir / "sub_1" / "sub.vtt").write_text(
+                "WEBVTT\n\n00:30:30.500 --> 00:30:33.200\nhello\n"
+            )
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=_capture):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                path_hash="abc",
+                start=1800,
+            )
+
+        cmd = captured["cmd"]
+        assert "-ss" not in cmd
+        assert "-accurate_seek" not in cmd
+        assert "-avoid_negative_ts" not in cmd
+        # Post-shift moved the cue from source-1830.5 to bucket-30.5.
+        shifted = (output_dir / "sub_1" / "sub.vtt").read_text(encoding="utf-8")
+        assert "00:00:30.500 --> 00:00:33.200" in shifted
+
+    def test_should_post_shift_external_subtitle_cues_when_start_positive(
+        self, tmp_path: Path
+    ) -> None:
+        import threading
+
+        from src.shared_kernel.value_objects.file_path import FilePath
+
+        service, output_dir = self._make_service(tmp_path)
+        service._subtitle_events["abc"] = {2: threading.Event()}
+        sidecar = tmp_path / "movie.en.srt"
+        sidecar.write_text("1\n00:00:01,000 --> 00:00:02,000\nhello\n")
+        track = SubtitleTrack(
+            index=2,
+            language=LanguageCode("en"),
+            format="srt",
+            is_external=True,
+            file_path=FilePath(str(sidecar)),
+        )
+
+        captured: dict[str, list[str]] = {}
+
+        def _capture(cmd: list[str], **_: object) -> MagicMock:
+            captured["cmd"] = cmd
+            (output_dir / "sub_2" / "sub.vtt").write_text(
+                "WEBVTT\n\n00:15:10.000 --> 00:15:12.500\nhello\n"
+            )
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=_capture):
+            service._extract_one_subtitle(
+                file_path="/movies/test.mkv",
+                output_dir=output_dir,
+                track=track,
+                path_hash="abc",
+                start=900,
+            )
+
+        cmd = captured["cmd"]
+        assert "-ss" not in cmd
+        assert "-accurate_seek" not in cmd
+        assert str(sidecar) in cmd
+        # Post-shift moved cue at source-15:10 (910s) to bucket-00:10.
+        shifted = (output_dir / "sub_2" / "sub.vtt").read_text(encoding="utf-8")
+        assert "00:00:10.000 --> 00:00:12.500" in shifted
+        # External input path replaces the source file in the argv.
+        assert str(sidecar) in cmd
 
     def test_kill_processes_should_release_subtitle_waiters(self, tmp_path: Path) -> None:
         import threading
@@ -880,3 +1103,277 @@ class TestEvictLru:
         evicted = service.evict_lru()
 
         assert evicted == []
+
+
+@pytest.mark.unit
+class TestHasEndlist:
+    """Tests for the _has_endlist helper."""
+
+    def test_should_return_true_when_tag_present(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n#EXT-X-ENDLIST\n")
+
+        assert _has_endlist(playlist) is True
+
+    def test_should_return_false_when_tag_missing(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+
+        assert _has_endlist(playlist) is False
+
+    def test_should_return_false_when_file_missing(self, tmp_path: Path) -> None:
+        assert _has_endlist(tmp_path / "nonexistent.m3u8") is False
+
+
+@pytest.mark.unit
+class TestAppendEndlistAtomic:
+    """Tests for the _append_endlist_atomic helper."""
+
+    def test_should_append_endlist_when_missing(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+
+        _append_endlist_atomic(playlist)
+
+        content = playlist.read_text(encoding="utf-8")
+        assert content.endswith("#EXT-X-ENDLIST\n")
+        # Original content preserved, not duplicated
+        assert content.count("#EXTINF") == 1
+
+    def test_should_be_idempotent_when_endlist_already_present(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        original = "#EXTM3U\n#EXTINF:10,\nseg.ts\n#EXT-X-ENDLIST\n"
+        playlist.write_text(original)
+
+        _append_endlist_atomic(playlist)
+
+        assert playlist.read_text(encoding="utf-8") == original
+
+    def test_should_add_trailing_newline_before_endlist(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        # Last line has no trailing newline
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts")
+
+        _append_endlist_atomic(playlist)
+
+        content = playlist.read_text(encoding="utf-8")
+        assert "seg.ts\n#EXT-X-ENDLIST\n" in content
+
+    def test_should_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        missing = tmp_path / "missing.m3u8"
+
+        _append_endlist_atomic(missing)
+
+        assert not missing.exists()
+
+    def test_should_not_leave_tmp_file_behind(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+
+        _append_endlist_atomic(playlist)
+
+        tmp_files = list(tmp_path.glob("*.endlist.tmp"))
+        assert tmp_files == []
+
+
+@pytest.mark.unit
+@pytest.mark.unit
+class TestShiftWebvttToBucketLocal:
+    """Tests for the WebVTT post-shift helper."""
+
+    def test_should_shift_cue_timestamps_back_by_start(self, tmp_path: Path) -> None:
+        vtt_path = tmp_path / "sub.vtt"
+        vtt_path.write_text("WEBVTT\n\n00:30:30.500 --> 00:30:33.200\nhello\n", encoding="utf-8")
+
+        _shift_webvtt_to_bucket_local(vtt_path, 1800)
+
+        content = vtt_path.read_text(encoding="utf-8")
+        assert "00:00:30.500 --> 00:00:33.200" in content
+        assert "hello" in content
+
+    def test_should_handle_mm_ss_short_form(self, tmp_path: Path) -> None:
+        # ffmpeg sometimes writes the short ``mm:ss.fff`` form when
+        # the hour component is zero. The regex must catch both
+        # shapes so the post-shift doesn't silently skip cues.
+        vtt_path = tmp_path / "sub.vtt"
+        vtt_path.write_text("WEBVTT\n\n10:30.000 --> 10:32.500\nhello\n", encoding="utf-8")
+
+        _shift_webvtt_to_bucket_local(vtt_path, 300)
+
+        content = vtt_path.read_text(encoding="utf-8")
+        assert "00:05:30.000 --> 00:05:32.500" in content
+
+    def test_should_clamp_negative_timestamps_to_zero(self, tmp_path: Path) -> None:
+        # Cues that straddle the bucket boundary end up with a negative
+        # start after the shift. Clamping to ``00:00:00.000`` collapses
+        # them to ``start == end`` which the player skips silently.
+        vtt_path = tmp_path / "sub.vtt"
+        vtt_path.write_text(
+            "WEBVTT\n\n00:29:58.000 --> 00:30:02.000\nstraddle\n",
+            encoding="utf-8",
+        )
+
+        _shift_webvtt_to_bucket_local(vtt_path, 1800)
+
+        content = vtt_path.read_text(encoding="utf-8")
+        # Start was 2s before the new zero → clamps to 00:00:00.000.
+        assert "00:00:00.000 --> 00:00:02.000" in content
+
+    def test_should_preserve_cue_text_lines(self, tmp_path: Path) -> None:
+        vtt_path = tmp_path / "sub.vtt"
+        vtt_path.write_text(
+            "WEBVTT\n\n00:31:00.000 --> 00:31:02.000\n" "first line\n" "second line\n",
+            encoding="utf-8",
+        )
+
+        _shift_webvtt_to_bucket_local(vtt_path, 1800)
+
+        content = vtt_path.read_text(encoding="utf-8")
+        assert "first line" in content
+        assert "second line" in content
+
+    def test_should_no_op_when_shift_is_zero(self, tmp_path: Path) -> None:
+        vtt_path = tmp_path / "sub.vtt"
+        original = "WEBVTT\n\n00:00:05.000 --> 00:00:07.000\nhello\n"
+        vtt_path.write_text(original, encoding="utf-8")
+
+        _shift_webvtt_to_bucket_local(vtt_path, 0)
+
+        assert vtt_path.read_text(encoding="utf-8") == original
+
+    def test_should_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        # Defensive — caller may pass a path that the ffmpeg run never
+        # actually produced (timeout, demuxer error). Don't blow up.
+        _shift_webvtt_to_bucket_local(tmp_path / "missing.vtt", 100)
+
+
+@pytest.mark.unit
+class TestHlsServiceIsCompleteAllPlaylists:
+    """Tests for the all-playlists check in is_complete."""
+
+    def test_should_return_true_when_every_nested_playlist_sealed(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        bucket = tmp_path / "abc"
+        bucket.mkdir()
+        for sub in ("video", "audio_1", "sub_0"):
+            (bucket / sub).mkdir()
+            (bucket / sub / "playlist.m3u8").write_text(
+                "#EXTM3U\n#EXTINF:10,\nseg.ts\n#EXT-X-ENDLIST\n"
+            )
+
+        assert service.is_complete("abc") is True
+
+    def test_should_return_false_when_one_playlist_missing_endlist(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        bucket = tmp_path / "abc"
+        bucket.mkdir()
+        # Video sealed, alt audio still growing (no ENDLIST)
+        (bucket / "video").mkdir()
+        (bucket / "video" / "playlist.m3u8").write_text(
+            "#EXTM3U\n#EXTINF:10,\nseg.ts\n#EXT-X-ENDLIST\n"
+        )
+        (bucket / "audio_1").mkdir()
+        (bucket / "audio_1" / "playlist.m3u8").write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+
+        assert service.is_complete("abc") is False
+
+
+@pytest.mark.unit
+class TestHlsServiceWatchForEndlist:
+    """Tests for the daemon-thread encode watcher."""
+
+    def test_should_seal_playlist_when_ffmpeg_exits_clean(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+        proc = MagicMock()
+        proc.wait.return_value = 0
+
+        service._watch_for_endlist(proc, playlist)
+
+        assert "#EXT-X-ENDLIST" in playlist.read_text(encoding="utf-8")
+
+    def test_should_not_seal_when_ffmpeg_exits_with_error(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        playlist = tmp_path / "playlist.m3u8"
+        original = "#EXTM3U\n#EXTINF:10,\nseg.ts\n"
+        playlist.write_text(original)
+        proc = MagicMock()
+        proc.wait.return_value = 1
+
+        service._watch_for_endlist(proc, playlist)
+
+        assert playlist.read_text(encoding="utf-8") == original
+
+    def test_should_not_seal_when_process_killed_by_eviction(self, tmp_path: Path) -> None:
+        # SIGKILL gives a negative returncode on POSIX; the watcher must
+        # treat this exactly like a hard failure and leave the playlist
+        # growable so the next session regenerates.
+        service = HlsService(cache_dir=str(tmp_path))
+        playlist = tmp_path / "playlist.m3u8"
+        original = "#EXTM3U\n#EXTINF:10,\nseg.ts\n"
+        playlist.write_text(original)
+        proc = MagicMock()
+        proc.wait.return_value = -9
+
+        service._watch_for_endlist(proc, playlist)
+
+        assert playlist.read_text(encoding="utf-8") == original
+
+    def test_should_swallow_wait_exceptions(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        playlist = tmp_path / "playlist.m3u8"
+        original = "#EXTM3U\n#EXTINF:10,\nseg.ts\n"
+        playlist.write_text(original)
+        proc = MagicMock()
+        proc.wait.side_effect = OSError("broken pipe")
+
+        # Must not raise — the watcher runs in a daemon thread and a
+        # crash there is silently dropped, leaving the cache untouched.
+        service._watch_for_endlist(proc, playlist)
+
+        assert playlist.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.unit
+class TestHlsServiceSpawnFfmpegWatcher:
+    """Tests for the watcher hookup in _spawn_ffmpeg."""
+
+    def test_should_start_watcher_thread_when_playlist_path_provided(self, tmp_path: Path) -> None:
+        import threading as _threading
+
+        service = HlsService(cache_dir=str(tmp_path))
+        playlist = tmp_path / "playlist.m3u8"
+        playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
+
+        fake_proc = MagicMock()
+        fake_proc.wait.return_value = 0
+        # Snapshot live threads before, then count new ones after.
+        threads_before = {t.ident for t in _threading.enumerate()}
+
+        with patch("subprocess.Popen", return_value=fake_proc):
+            service._spawn_ffmpeg(["ffmpeg", "-i", "in", "out"], playlist_path=playlist)
+
+        # Allow the daemon thread to run and seal the playlist.
+        for _ in range(50):
+            if "#EXT-X-ENDLIST" in playlist.read_text(encoding="utf-8"):
+                break
+            time.sleep(0.02)
+
+        assert "#EXT-X-ENDLIST" in playlist.read_text(encoding="utf-8")
+
+        # A new daemon thread must have been spawned with our prefix.
+        new_threads = [t for t in _threading.enumerate() if t.ident not in threads_before]
+        assert any(t.name.startswith("hls-endlist-") for t in new_threads) or all(
+            not t.is_alive() for t in new_threads
+        )
+
+    def test_should_not_start_watcher_when_playlist_path_none(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+        fake_proc = MagicMock()
+
+        with patch("subprocess.Popen", return_value=fake_proc):
+            service._spawn_ffmpeg(["ffmpeg", "-i", "in", "out"])
+
+        # wait() must not have been called from a watcher — no watcher started.
+        fake_proc.wait.assert_not_called()

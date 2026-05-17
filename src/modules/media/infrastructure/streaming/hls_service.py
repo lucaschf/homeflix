@@ -33,6 +33,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import shutil
 import subprocess
 import threading
@@ -60,6 +61,13 @@ _BROWSER_SAFE_CODECS = {"h264"}
 # The transcode always starts at t=0, so one segment is enough to give
 # hls.js something to render; the rest stream in as they're written.
 _MIN_SEGMENTS_FRESH = 1
+
+# Granularity (in source-time seconds) for the cache key when a non-zero
+# ``start`` offset is requested. Adjacent resume positions inside the
+# same bucket reuse the same encode instead of spawning a fresh ffmpeg
+# per second; coarser buckets save disk at the cost of a longer wait
+# for ``video.currentTime`` to land on the exact saved point.
+_RESUME_BUCKET_SECONDS = 300
 
 # Idle eviction defaults: kill ffmpeg after this many seconds with no
 # segment requests. Trade-off: short timeout frees CPU faster after the
@@ -230,20 +238,26 @@ class HlsService(HlsPlaylistPort):
 
     # -- Public API ------------------------------------------------------------
 
-    def get_path_hash(self, file_path: str) -> str:
-        """Get the hash key for a source file.
+    def get_path_hash(self, file_path: str, start: int = 0) -> str:
+        """Get the hash key for a source file at a given start offset.
 
         Args:
             file_path: Absolute path to the source video file.
+            start: Source-time second the playback session starts from.
+                Rounded down to ``_RESUME_BUCKET_SECONDS`` so adjacent
+                resume positions share a cache bucket. ``0`` (the
+                default) hashes the file path alone, keeping
+                pre-existing cache directories valid after upgrade.
 
         Returns:
-            Hex MD5 digest uniquely identifying the cache bucket for
-            this file. One bucket per file regardless of resume offset —
-            playback positions are handled client-side via the native
-            ``HTMLMediaElement.currentTime`` seek once the manifest
-            loads.
+            Hex MD5 digest uniquely identifying the cache bucket. The
+            seek-ahead and resume flows on cold cache rely on this
+            being deterministic so the same offset always re-attaches
+            to the same on-disk bucket.
         """
-        return hashlib.md5(file_path.encode()).hexdigest()
+        bucket = (start // _RESUME_BUCKET_SECONDS) * _RESUME_BUCKET_SECONDS
+        key = file_path if bucket == 0 else f"{file_path}:{bucket}"
+        return hashlib.md5(key.encode()).hexdigest()
 
     def get_file_by_hash(self, path_hash: str, relative_path: str) -> Path | None:
         """Get any file from cache by hash + relative path.
@@ -266,20 +280,29 @@ class HlsService(HlsPlaylistPort):
         return target
 
     def is_complete(self, path_hash: str) -> bool:
-        """Check if generation is fully complete."""
-        video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
-        if not video_playlist.is_file():
-            flat = self._cache_dir / path_hash / "playlist.m3u8"
-            if not flat.is_file():
-                return False
-            try:
-                return "#EXT-X-ENDLIST" in flat.read_text(encoding="utf-8")
-            except OSError:
-                return False
-        try:
-            return "#EXT-X-ENDLIST" in video_playlist.read_text(encoding="utf-8")
-        except OSError:
+        """Check if every playlist in the bucket has been sealed with ENDLIST.
+
+        A bucket is "complete" only when every nested ``playlist.m3u8``
+        (video, alternate audios, subtitle wrappers) carries the
+        ``#EXT-X-ENDLIST`` tag. The encode-watcher writes the tag on
+        clean ffmpeg exit; subtitle wrappers are emitted with the tag
+        baked in. Checking ALL playlists prevents the next session from
+        skipping regeneration when the video encode finished cleanly
+        but an alternate-audio encode was killed mid-flight.
+        """
+        bucket = self._cache_dir / path_hash
+        if not bucket.is_dir():
             return False
+
+        flat = bucket / "playlist.m3u8"
+        nested_video_dir = bucket / _VIDEO_DIR
+        if flat.is_file() and not nested_video_dir.is_dir():
+            return _has_endlist(flat)
+
+        playlists = list(bucket.glob("*/playlist.m3u8"))
+        if not playlists:
+            return False
+        return all(_has_endlist(p) for p in playlists)
 
     def get_master_playlist(self, path_hash: str) -> str | None:
         """Get master playlist content, falling back to legacy flat playlist.
@@ -336,23 +359,25 @@ class HlsService(HlsPlaylistPort):
         except (OSError, json.JSONDecodeError):
             return None
 
-    async def ensure_playlist(self, file_path: str) -> str:
+    async def ensure_playlist(self, file_path: str, start: int = 0) -> str:
         """Start generation and wait until the first segments are ready.
 
         Args:
             file_path: Absolute path to the source video file.
+            start: Source-time second to begin transcoding at. Rounded
+                down to a 5-minute bucket via ``get_path_hash`` so a
+                small change in resume position reuses the same encode.
+                ``0`` is the legacy behaviour (single bucket per file).
 
         Returns:
-            The path hash for this file. Always the same hash for a
-            given path — resume positions are applied client-side after
-            the full manifest loads, so a single cache bucket per file
-            is reused across every session.
+            The path hash for the bucket — unique per ``(file_path,
+            start_bucket)`` pair.
 
         Raises:
             RuntimeError: If FFmpeg is not available, fails, or times out.
             FileNotFoundError: If the source file does not exist.
         """
-        path_hash = self.get_path_hash(file_path)
+        path_hash = self.get_path_hash(file_path, start)
         # Touch immediately so the eviction loop never kills a process
         # that the user just asked for, even if no segments have been
         # served yet (e.g. while waiting for ffmpeg to start).
@@ -370,7 +395,7 @@ class HlsService(HlsPlaylistPort):
             msg = f"Source file not found: {file_path}"
             raise FileNotFoundError(msg)
 
-        await asyncio.to_thread(self._start_generation, file_path)
+        await asyncio.to_thread(self._start_generation, file_path, start)
 
         video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
         attempts = int(_POLL_TIMEOUT / _POLL_INTERVAL)
@@ -459,21 +484,24 @@ class HlsService(HlsPlaylistPort):
 
     # -- Private: generation ---------------------------------------------------
 
-    def _start_generation(self, file_path: str) -> str:
+    def _start_generation(self, file_path: str, start: int = 0) -> str:
         """Start all FFmpeg processes for multi-track HLS generation.
 
-        Always transcodes from t=0 into a single per-file bucket. Resume
-        positions are applied client-side via ``video.currentTime`` once
-        the event-style playlist starts populating — this keeps the
-        cache reusable across sessions and lets the browser seek freely
-        in either direction.
+        Transcodes from ``start`` seconds (rounded down to the cache
+        bucket) into a bucket keyed by ``(file_path, start_bucket)``.
+        Each ffmpeg invocation gets ``-ss N`` as an input seek so the
+        encode skips fast to the nearest preceding keyframe before
+        producing segments. ENDLIST sealing happens via the watcher
+        spawned in ``_spawn_ffmpeg``.
 
         Args:
             file_path: Absolute path to the source video file.
+            start: Source-time second to begin the encode at.
         """
         source = self._validate_source(file_path)
         safe_path = str(source)
-        path_hash = self.get_path_hash(file_path)
+        path_hash = self.get_path_hash(file_path, start)
+        bucket_start = (start // _RESUME_BUCKET_SECONDS) * _RESUME_BUCKET_SECONDS
 
         if self.is_complete(path_hash):
             return path_hash
@@ -516,11 +544,13 @@ class HlsService(HlsPlaylistPort):
             video_dir = output_dir / _VIDEO_DIR
             video_dir.mkdir()
             cmd = with_ffmpeg_threads(
-                self._build_video_cmd(safe_path, video_dir, probe_result),
+                self._build_video_cmd(safe_path, video_dir, probe_result, bucket_start),
                 self._ffmpeg_threads,
             )
-            _logger.info("Starting video HLS for %s", safe_path)
-            procs.append(self._spawn_ffmpeg(cmd))
+            _logger.info("Starting video HLS for %s (offset=%ds)", safe_path, bucket_start)
+            procs.append(
+                self._spawn_ffmpeg(cmd, playlist_path=video_dir / "playlist.m3u8"),
+            )
 
             # 2. Additional audio tracks (audio-only HLS)
             primary_audio_idx = _primary_audio_index(probe_result)
@@ -530,16 +560,19 @@ class HlsService(HlsPlaylistPort):
                 audio_dir = output_dir / f"audio_{track.index}"
                 audio_dir.mkdir()
                 cmd = with_ffmpeg_threads(
-                    self._build_audio_cmd(safe_path, audio_dir, track.index),
+                    self._build_audio_cmd(safe_path, audio_dir, track.index, bucket_start),
                     self._ffmpeg_threads,
                 )
                 _logger.info(
-                    "Starting audio HLS for track %d (%s) of %s",
+                    "Starting audio HLS for track %d (%s) of %s (offset=%ds)",
                     track.index,
                     track.language.value,
                     safe_path,
+                    bucket_start,
                 )
-                procs.append(self._spawn_ffmpeg(cmd))
+                procs.append(
+                    self._spawn_ffmpeg(cmd, playlist_path=audio_dir / "playlist.m3u8"),
+                )
 
             # 3. Build master playlist now — it references sub_N/playlist.m3u8
             # paths that get filled in by the background subtitle extraction
@@ -566,25 +599,68 @@ class HlsService(HlsPlaylistPort):
         for sub in text_subs:
             threading.Thread(
                 target=self._extract_one_subtitle,
-                args=(safe_path, output_dir, sub, path_hash),
+                args=(safe_path, output_dir, sub, path_hash, bucket_start),
                 daemon=True,
                 name=f"hls-sub-{path_hash[:8]}-{sub.index}",
             ).start()
 
         return path_hash
 
-    @staticmethod
-    def _spawn_ffmpeg(cmd: list[str]) -> subprocess.Popen[bytes]:
+    def _spawn_ffmpeg(
+        self,
+        cmd: list[str],
+        playlist_path: Path | None = None,
+    ) -> subprocess.Popen[bytes]:
         """Spawn an FFmpeg subprocess.
 
         All arguments are built internally from validated paths,
         not from user-controlled input.
+
+        When ``playlist_path`` is provided, a daemon thread waits for
+        the process and seals the playlist with ``#EXT-X-ENDLIST`` on
+        clean exit (returncode 0). This is what makes ``is_complete``
+        flip to True after a successful full encode, so the next
+        session reuses the cache instead of respawning ffmpeg.
         """
-        return subprocess.Popen(
+        proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
+        if playlist_path is not None:
+            threading.Thread(
+                target=self._watch_for_endlist,
+                args=(proc, playlist_path),
+                daemon=True,
+                name=f"hls-endlist-{playlist_path.parent.name}",
+            ).start()
+        return proc
+
+    @staticmethod
+    def _watch_for_endlist(
+        proc: subprocess.Popen[bytes],
+        playlist_path: Path,
+    ) -> None:
+        """Wait for an ffmpeg encode to finish; seal the playlist on success.
+
+        Skips the seal on any non-zero exit — eviction killing the
+        process (negative returncode from SIGKILL) or ffmpeg failing
+        partway both fall through here and leave the playlist as a
+        growing event stream, so the next session correctly
+        regenerates instead of treating a half-encoded cache as final.
+        """
+        try:
+            returncode = proc.wait()
+        except Exception:
+            _logger.exception("ffmpeg watcher for %s failed", playlist_path)
+            return
+        if returncode != 0:
+            return
+        try:
+            _append_endlist_atomic(playlist_path)
+            _logger.info("Sealed HLS playlist with ENDLIST: %s", playlist_path)
+        except OSError:
+            _logger.exception("Failed to append ENDLIST to %s", playlist_path)
 
     # -- Private: FFmpeg commands ----------------------------------------------
 
@@ -619,19 +695,41 @@ class HlsService(HlsPlaylistPort):
         file_path: str,
         output_dir: Path,
         probe: ProbeResult,
+        start: int = 0,
     ) -> list[str]:
         """Build FFmpeg command for video + default audio.
 
-        Always transcodes (or remuxes, for already-H.264 sources) from
-        the beginning of the file. Resume positions are a client-side
-        concern — the player calls ``video.currentTime`` once the
-        event-style playlist starts populating.
+        Transcodes (or remuxes, for already-H.264 sources) from the
+        ``start`` second of the file. ``-ss`` is placed BEFORE ``-i``
+        so ffmpeg does an input seek — fast and keyframe-accurate —
+        and the resulting segments carry timestamps starting near zero
+        in bucket-local time. Bucket-local timestamps are why the
+        frontend computes ``video.currentTime = saved - bucket_start``
+        instead of ``video.currentTime = saved`` (which would only
+        work with ``-copyts`` / source-time preserved, a path the
+        prior attempts at this refactor never landed reliably).
+
+        When ``start > 0`` we also emit ``-accurate_seek`` and
+        ``-avoid_negative_ts make_zero``. The first forces ffmpeg to
+        decode-and-drop frames between the preceding keyframe and the
+        exact requested second; without it, video opens at the
+        keyframe while audio opens at ``start`` and the two streams
+        play out of sync by that gap. The second clamps the minimum
+        PTS to zero across streams so any residual offset surfaces as
+        a tiny silence prefix instead of an audio-leads-video drift.
+
+        The H.264 ``-c:v copy`` fast path is bypassed for non-zero
+        ``start`` because copying skips the decode pass that
+        ``-accurate_seek`` relies on to drop pre-target frames — the
+        copied video would land at the preceding keyframe while the
+        re-encoded audio lands at the exact ``start``, recreating the
+        same 1-3s gap the seek flag was meant to close.
         """
         codec = self._probe_video_codec(file_path)
-        needs_transcode = codec not in _BROWSER_SAFE_CODECS
+        needs_transcode = codec not in _BROWSER_SAFE_CODECS or start > 0
 
         if needs_transcode:
-            _logger.info("Source codec %s — transcoding to H.264", codec)
+            _logger.info("Source codec %s — transcoding to H.264 (start=%d)", codec, start)
             video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
         else:
             _logger.info("Source codec %s — copying", codec)
@@ -640,8 +738,12 @@ class HlsService(HlsPlaylistPort):
         primary_idx = _primary_audio_index(probe)
         audio_map = f"0:a:{primary_idx}"
 
+        seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
+        ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
+
         return [
             "ffmpeg",
+            *seek_args,
             "-i",
             file_path,
             "-map",
@@ -656,6 +758,7 @@ class HlsService(HlsPlaylistPort):
             "2",
             "-ar",
             "48000",
+            *ts_normalize_args,
             "-hls_time",
             str(_SEGMENT_DURATION),
             "-hls_list_size",
@@ -680,10 +783,23 @@ class HlsService(HlsPlaylistPort):
         file_path: str,
         output_dir: Path,
         audio_index: int,
+        start: int = 0,
     ) -> list[str]:
-        """Build FFmpeg command for audio-only HLS track."""
+        """Build FFmpeg command for audio-only HLS track.
+
+        ``-ss`` placed before ``-i`` when ``start > 0`` — same input-seek
+        rationale as ``_build_video_cmd``. The alternate-audio playlist
+        is consumed independently by the player; even though there is
+        no video stream here, we still match the video pipeline's
+        ``-accurate_seek`` / ``-avoid_negative_ts make_zero`` so a
+        switch from primary to alternate audio at a non-zero bucket
+        lands on the same source-time second.
+        """
+        seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
+        ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
         return [
             "ffmpeg",
+            *seek_args,
             "-i",
             file_path,
             "-map",
@@ -696,6 +812,7 @@ class HlsService(HlsPlaylistPort):
             "2",
             "-ar",
             "48000",
+            *ts_normalize_args,
             "-hls_time",
             str(_SEGMENT_DURATION),
             "-hls_list_size",
@@ -720,6 +837,7 @@ class HlsService(HlsPlaylistPort):
         output_dir: Path,
         track: SubtitleTrack,
         path_hash: str,
+        start: int = 0,
     ) -> None:
         """Extract a single text-based subtitle to WebVTT.
 
@@ -729,74 +847,34 @@ class HlsService(HlsPlaylistPort):
         on ffmpeg failure or timeout) and gets a chance to respond —
         typically with a 404 if extraction never produced a file.
 
-        The source is read from the beginning; subtitle timestamps are
-        in source time, which matches the HLS stream (also from t=0)
-        and the player's ``video.currentTime``.
+        Subtitle cues are emitted in the same timeline as the HLS
+        stream that wraps them. ffmpeg is invoked WITHOUT ``-ss`` so
+        the full subtitle stream is written in source-time — that
+        cmd-line worked uniformly across MKV/MP4/SRT demuxers; using
+        ``-ss N`` instead produced container-dependent results
+        (cues either late by ``N`` seconds or compressed to bucket
+        start by ``-avoid_negative_ts``). After the extraction
+        succeeds the post-processor ``_shift_webvtt_to_bucket_local``
+        subtracts ``start`` from every cue, clamping negatives to
+        zero, so cue at source-K lands at bucket-local ``K - start``.
         """
         try:
             sub_dir = output_dir / f"sub_{track.index}"
             sub_dir.mkdir(exist_ok=True)
             vtt_path = sub_dir / "sub.vtt"
 
-            if track.is_external:
-                if track.file_path is None:
-                    return
-                input_arg = track.file_path.value
-                log_label = f"external subtitle {input_arg}"
-                try:
-                    subprocess.run(
-                        with_ffmpeg_threads(
-                            [
-                                "ffmpeg",
-                                "-i",
-                                input_arg,
-                                "-c:s",
-                                "webvtt",
-                                "-loglevel",
-                                "error",
-                                "-y",
-                                str(vtt_path),
-                            ],
-                            self._ffmpeg_threads,
-                        ),
-                        **SUBPROCESS_TEXT_KWARGS,
-                        check=False,
-                        timeout=120,
-                    )
-                except subprocess.TimeoutExpired:
-                    _logger.warning("Extraction timed out for %s", log_label)
-                    return
-            else:
-                log_label = f"subtitle track {track.index}"
-                try:
-                    subprocess.run(
-                        with_ffmpeg_threads(
-                            [
-                                "ffmpeg",
-                                "-i",
-                                file_path,
-                                "-map",
-                                f"0:s:{track.index}",
-                                "-c:s",
-                                "webvtt",
-                                "-loglevel",
-                                "error",
-                                "-y",
-                                str(vtt_path),
-                            ],
-                            self._ffmpeg_threads,
-                        ),
-                        **SUBPROCESS_TEXT_KWARGS,
-                        check=False,
-                        timeout=120,
-                    )
-                except subprocess.TimeoutExpired:
-                    _logger.warning("Extraction timed out for %s", log_label)
-                    return
+            cmd_and_label = self._build_subtitle_extract_cmd(track, file_path, vtt_path)
+            if cmd_and_label is None:
+                return
+            cmd, log_label = cmd_and_label
+            if not self._run_subtitle_ffmpeg(cmd, log_label):
+                return
 
             if vtt_path.is_file():
+                if start > 0:
+                    _shift_webvtt_to_bucket_local(vtt_path, start)
                 _write_subtitle_playlist(sub_dir)
-                _logger.info("Extracted %s to %s", log_label, vtt_path)
+                _logger.info("Extracted %s to %s (start=%d)", log_label, vtt_path, start)
             else:
                 _logger.warning("Failed to extract %s", log_label)
         finally:
@@ -804,6 +882,69 @@ class HlsService(HlsPlaylistPort):
                 event = self._subtitle_events.get(path_hash, {}).get(track.index)
             if event is not None:
                 event.set()
+
+    def _build_subtitle_extract_cmd(
+        self,
+        track: SubtitleTrack,
+        file_path: str,
+        vtt_path: Path,
+    ) -> tuple[list[str], str] | None:
+        """Build the ffmpeg argv + log label for a single subtitle track.
+
+        Returns ``None`` when the track is unusable (external sidecar
+        with no resolved file path). The cmd is wrapped through
+        ``with_ffmpeg_threads`` so the global cap applies uniformly.
+        """
+        if track.is_external:
+            if track.file_path is None:
+                return None
+            cmd = with_ffmpeg_threads(
+                [
+                    "ffmpeg",
+                    "-i",
+                    track.file_path.value,
+                    "-c:s",
+                    "webvtt",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    str(vtt_path),
+                ],
+                self._ffmpeg_threads,
+            )
+            return cmd, f"external subtitle {track.file_path.value}"
+        cmd = with_ffmpeg_threads(
+            [
+                "ffmpeg",
+                "-i",
+                file_path,
+                "-map",
+                f"0:s:{track.index}",
+                "-c:s",
+                "webvtt",
+                "-loglevel",
+                "error",
+                "-y",
+                str(vtt_path),
+            ],
+            self._ffmpeg_threads,
+        )
+        return cmd, f"subtitle track {track.index}"
+
+    @staticmethod
+    def _run_subtitle_ffmpeg(cmd: list[str], log_label: str) -> bool:
+        """Run a subtitle ffmpeg cmd, returning True iff it didn't time out."""
+        try:
+            subprocess.run(
+                cmd,
+                **SUBPROCESS_TEXT_KWARGS,
+                check=False,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            _logger.warning("Extraction timed out for %s", log_label)
+            return False
+        return True
 
     # -- Private: master playlist ----------------------------------------------
 
@@ -972,6 +1113,92 @@ def _write_subtitle_playlist(sub_dir: Path) -> None:
         "#EXT-X-ENDLIST\n",
         encoding="utf-8",
     )
+
+
+def _has_endlist(playlist_path: Path) -> bool:
+    """Return ``True`` iff the playlist file exists and contains ``#EXT-X-ENDLIST``."""
+    try:
+        return "#EXT-X-ENDLIST" in playlist_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def _append_endlist_atomic(playlist_path: Path) -> None:
+    """Append ``#EXT-X-ENDLIST`` to a playlist via temp-file + atomic rename.
+
+    Idempotent — returns early if the tag is already present. The
+    rename is atomic on POSIX and on Windows (``Path.replace``), so a
+    concurrent playlist GET sees either the pre-ENDLIST content or the
+    sealed one, never a torn write.
+    """
+    if not playlist_path.is_file():
+        return
+    content = playlist_path.read_text(encoding="utf-8")
+    if "#EXT-X-ENDLIST" in content:
+        return
+    if not content.endswith("\n"):
+        content += "\n"
+    content += "#EXT-X-ENDLIST\n"
+    tmp_path = playlist_path.with_name(playlist_path.name + ".endlist.tmp")
+    tmp_path.write_text(content, encoding="utf-8")
+    tmp_path.replace(playlist_path)
+
+
+# Matches WebVTT cue timestamps in either ``mm:ss.fff`` (under one hour)
+# or ``hh:mm:ss.fff`` shape, so the post-processor can shift cues
+# regardless of which form ffmpeg picked when writing the file.
+_VTT_TIMESTAMP_RE = re.compile(r"(?:(?P<h>\d+):)?(?P<m>\d{2}):(?P<s>\d{2})\.(?P<ms>\d{3})")
+
+
+def _shift_one_timestamp(match: re.Match[str], shift_seconds: int) -> str:
+    """Return the WebVTT timestamp in ``match`` shifted back by ``shift_seconds``.
+
+    Negatives clamp to zero so a cue that straddled the bucket
+    boundary collapses to ``00:00:00.000`` (start == end → the player
+    skips it) instead of producing an invalid VTT line.
+    """
+    h = int(match.group("h") or 0)
+    m = int(match.group("m"))
+    s = int(match.group("s"))
+    ms = int(match.group("ms"))
+    total_ms = ((h * 60 + m) * 60 + s) * 1000 + ms - shift_seconds * 1000
+    if total_ms < 0:
+        total_ms = 0
+    new_h, rem = divmod(total_ms, 3_600_000)
+    new_m, rem = divmod(rem, 60_000)
+    new_s, new_ms = divmod(rem, 1_000)
+    return f"{new_h:02d}:{new_m:02d}:{new_s:02d}.{new_ms:03d}"
+
+
+def _shift_webvtt_to_bucket_local(vtt_path: Path, shift_seconds: int) -> None:
+    """Subtract ``shift_seconds`` from every cue timestamp in the VTT.
+
+    The extracted subtitle carries source-time cue timestamps; on a
+    non-zero bucket start the player runs a bucket-local clock and
+    every cue would otherwise fire ``shift_seconds`` seconds after
+    the spoken line. Shift everything once on disk so hls.js can map
+    cues to the active manifest's timeline without further help.
+    """
+    if shift_seconds <= 0:
+        return
+    if not vtt_path.is_file():
+        return
+    try:
+        content = vtt_path.read_text(encoding="utf-8")
+    except OSError:
+        _logger.exception("Failed to read VTT for shifting: %s", vtt_path)
+        return
+
+    def _replace(m: re.Match[str]) -> str:
+        return _shift_one_timestamp(m, shift_seconds)
+
+    new_content = _VTT_TIMESTAMP_RE.sub(_replace, content)
+    tmp_path = vtt_path.with_name(vtt_path.name + ".shift.tmp")
+    try:
+        tmp_path.write_text(new_content, encoding="utf-8")
+        tmp_path.replace(vtt_path)
+    except OSError:
+        _logger.exception("Failed to write shifted VTT: %s", vtt_path)
 
 
 __all__ = ["HlsService"]
