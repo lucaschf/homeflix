@@ -1,6 +1,7 @@
 """Integration tests for Database class."""
 
 import pytest
+from sqlalchemy import text
 
 from src.infrastructure.persistence import Base
 from src.infrastructure.persistence.database import Database
@@ -117,3 +118,51 @@ class TestDatabase:
         with pytest.raises(RuntimeError, match="Database not connected"):
             async with db.session():
                 pass
+
+    async def test_sqlite_connections_enable_foreign_keys(self) -> None:
+        """``PRAGMA foreign_keys`` ships OFF by default on SQLite and is
+        per-connection — the connect listener installed by Database
+        must flip it on every time a connection is checked out, or
+        ON DELETE CASCADE silently fails (the original Salem's Lot
+        orphan story)."""
+        db = Database("sqlite+aiosqlite:///:memory:")
+        await db.connect()
+        try:
+            async with db.session() as session:
+                result = await session.execute(text("PRAGMA foreign_keys"))
+                assert result.scalar() == 1
+        finally:
+            await db.disconnect()
+
+    async def test_sqlite_cascade_actually_fires_on_delete(self) -> None:
+        """End-to-end check: with the pragma on, deleting a parent
+        row cleans up child rows via ON DELETE CASCADE — the
+        guarantee that lets us simplify the orphan-cleanup migration
+        from a recurring sweep into a one-shot heal."""
+        db = Database("sqlite+aiosqlite:///:memory:")
+        await db.connect()
+        try:
+            async with db.engine.begin() as conn:
+                await conn.execute(
+                    text("CREATE TABLE parents (id INTEGER PRIMARY KEY)"),
+                )
+                await conn.execute(
+                    text(
+                        "CREATE TABLE children ("
+                        "  id INTEGER PRIMARY KEY,"
+                        "  parent_id INTEGER REFERENCES parents(id) ON DELETE CASCADE"
+                        ")"
+                    ),
+                )
+                await conn.execute(text("INSERT INTO parents (id) VALUES (1)"))
+                await conn.execute(
+                    text("INSERT INTO children (id, parent_id) VALUES (10, 1)"),
+                )
+
+            async with db.session() as session:
+                await session.execute(text("DELETE FROM parents WHERE id = 1"))
+                await session.commit()
+                remaining = await session.execute(text("SELECT COUNT(*) FROM children"))
+                assert remaining.scalar() == 0
+        finally:
+            await db.disconnect()
