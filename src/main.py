@@ -126,7 +126,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # previous process died. The sweeper marks them ``interrupted``
     # so the admin Scan / Enrich pages never show a perpetually-
     # active row that nobody is actually working on.
-    sweep_scan_runs = container.media.sweep_interrupted_scan_runs()
+    # The provider chain transitively depends on the session_factory
+    # Resource, so the Factory call resolves asynchronously and
+    # must be awaited before ``.execute()``.
+    sweep_scan_runs = await container.media.sweep_interrupted_scan_runs()
     await sweep_scan_runs.execute()
 
     # Start background scheduler (library scans + thumbnail backfill +
