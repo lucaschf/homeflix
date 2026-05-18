@@ -12,7 +12,7 @@ libraries without touching a real database.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -23,7 +23,13 @@ from src.infrastructure.scheduling.scheduler_service import (
 from src.modules.library.domain.entities.library import Library
 from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.library.domain.value_objects.library_type import LibraryType
-from src.shared_kernel.value_objects.file_path import FilePath
+from src.modules.media.domain.entities.scan_run import (
+    ScanRun,
+    ScanRunKind,
+    ScanRunStatus,
+    ScanRunTrigger,
+)
+from src.modules.media.domain.value_objects.scan_run_id import ScanRunId
 
 
 class _FakeJob:
@@ -79,16 +85,35 @@ def library_repo() -> AsyncMock:
     return AsyncMock()
 
 
+def _make_run(library_id: str | None = "lib_test12345678") -> ScanRun:
+    """Build a stub ``ScanRun`` that already has an id assigned."""
+    return ScanRun(
+        id=ScanRunId.generate(),
+        kind=ScanRunKind.SCAN,
+        trigger=ScanRunTrigger.SCHEDULED,
+        library_id=library_id,
+        status=ScanRunStatus.RUNNING,
+    )
+
+
 @pytest.fixture
-def scheduler(library_repo: AsyncMock) -> LibraryScanScheduler:
+def scan_run_service() -> AsyncMock:
+    """Service mock — ``open_scan`` returns a fresh run with an id."""
+    service = AsyncMock()
+    service.open_scan.return_value = _make_run()
+    return service
+
+
+@pytest.fixture
+def scheduler(
+    library_repo: AsyncMock,
+    scan_run_service: AsyncMock,
+) -> LibraryScanScheduler:
     uow = _build_uow(library_repo)
     library_uow_factory = MagicMock(return_value=uow)
     instance = LibraryScanScheduler(
         library_uow_factory=library_uow_factory,
-        media_uow_factory=MagicMock(),
-        file_scanner=MagicMock(),
-        variant_detector=MagicMock(),
-        event_bus=MagicMock(),
+        scan_run_service=scan_run_service,
         reconcile_interval_minutes=5,
     )
     instance._scheduler = _FakeScheduler()
@@ -163,26 +188,17 @@ class TestReconcile:
 class TestRunScan:
     @pytest.mark.asyncio
     async def test_updates_last_scan_at_on_success(
-        self, scheduler: LibraryScanScheduler, library_repo: AsyncMock
+        self,
+        scheduler: LibraryScanScheduler,
+        library_repo: AsyncMock,
+        scan_run_service: AsyncMock,
     ) -> None:
         lib = _make_library("A", "0 * * * *")
         library_repo.find_by_id.return_value = lib
         library_repo.save = AsyncMock()
+        scan_run_service.open_scan.return_value = _make_run(str(lib.id))
 
-        fake_use_case = AsyncMock()
-        fake_use_case.execute.return_value = MagicMock(
-            movies_created=1,
-            movies_updated=0,
-            episodes_created=0,
-            episodes_updated=0,
-            errors=[],
-        )
-
-        with patch(
-            "src.infrastructure.scheduling.scheduler_service.ScanMediaDirectoriesUseCase",
-            return_value=fake_use_case,
-        ):
-            await scheduler._run_scan(str(lib.id))
+        await scheduler._run_scan(str(lib.id))
 
         library_repo.save.assert_awaited_once()
         saved = library_repo.save.await_args.args[0]
@@ -192,93 +208,44 @@ class TestRunScan:
 
     @pytest.mark.asyncio
     async def test_skips_when_library_deleted_mid_run(
-        self, scheduler: LibraryScanScheduler, library_repo: AsyncMock
+        self,
+        scheduler: LibraryScanScheduler,
+        library_repo: AsyncMock,
+        scan_run_service: AsyncMock,
     ) -> None:
         library_repo.find_by_id.return_value = None
         library_repo.save = AsyncMock()
 
         await scheduler._run_scan(str(LibraryId.generate()))
 
+        # No scan_runs row opened, no library save.
+        scan_run_service.open_scan.assert_not_awaited()
+        scan_run_service.run_scan.assert_not_awaited()
         library_repo.save.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_does_not_mark_scan_completed_on_failure(
-        self, scheduler: LibraryScanScheduler, library_repo: AsyncMock
+    async def test_delegates_to_scan_run_service_with_scheduled_trigger(
+        self,
+        scheduler: LibraryScanScheduler,
+        library_repo: AsyncMock,
+        scan_run_service: AsyncMock,
     ) -> None:
+        """The scheduler routes through ``ScanRunService`` so each run
+        becomes a ``scan_runs`` row tagged ``scheduled``."""
         lib = _make_library("A", "0 * * * *")
         library_repo.find_by_id.return_value = lib
         library_repo.save = AsyncMock()
+        run = _make_run(str(lib.id))
+        scan_run_service.open_scan.return_value = run
 
-        fake_use_case = AsyncMock()
-        fake_use_case.execute.side_effect = RuntimeError("scan blew up")
+        await scheduler._run_scan(str(lib.id))
 
-        with patch(
-            "src.infrastructure.scheduling.scheduler_service.ScanMediaDirectoriesUseCase",
-            return_value=fake_use_case,
-        ):
-            await scheduler._run_scan(str(lib.id))
+        scan_run_service.open_scan.assert_awaited_once()
+        kwargs = scan_run_service.open_scan.await_args.kwargs
+        assert kwargs["library_id"] == str(lib.id)
+        assert kwargs["trigger"] == ScanRunTrigger.SCHEDULED
 
-        library_repo.save.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_builds_scan_use_case_with_injected_dependencies(
-        self, scheduler: LibraryScanScheduler, library_repo: AsyncMock
-    ) -> None:
-        """Guard the fix for the pre-UoW scheduler bug: the use case is built
-        from the injected ``media_uow_factory`` + ports, never from per-session
-        concrete repositories."""
-        lib = _make_library("A", "0 * * * *")
-        library_repo.find_by_id.return_value = lib
-        library_repo.save = AsyncMock()
-
-        fake_use_case = AsyncMock()
-        fake_use_case.execute.return_value = MagicMock(
-            movies_created=0,
-            movies_updated=0,
-            episodes_created=0,
-            episodes_updated=0,
-            errors=[],
-        )
-
-        with patch(
-            "src.infrastructure.scheduling.scheduler_service.ScanMediaDirectoriesUseCase",
-            return_value=fake_use_case,
-        ) as use_case_cls:
-            await scheduler._run_scan(str(lib.id))
-
-        use_case_cls.assert_called_once()
-        kwargs = use_case_cls.call_args.kwargs
-        assert kwargs["uow_factory"] is scheduler._media_uow_factory
-        assert kwargs["file_scanner"] is scheduler._file_scanner
-        assert kwargs["variant_detector"] is scheduler._variant_detector
-        assert kwargs["event_bus"] is scheduler._event_bus
-        assert kwargs["probe_service"] is scheduler._probe_service
-
-    @pytest.mark.asyncio
-    async def test_passes_file_path_objects_to_scan_input(
-        self, scheduler: LibraryScanScheduler, library_repo: AsyncMock
-    ) -> None:
-        """Library paths must reach the use case as ``FilePath`` instances —
-        the scanner unwraps ``.value`` and crashes if given raw strings."""
-        lib = _make_library("A", "0 * * * *")
-        library_repo.find_by_id.return_value = lib
-        library_repo.save = AsyncMock()
-
-        fake_use_case = AsyncMock()
-        fake_use_case.execute.return_value = MagicMock(
-            movies_created=0,
-            movies_updated=0,
-            episodes_created=0,
-            episodes_updated=0,
-            errors=[],
-        )
-
-        with patch(
-            "src.infrastructure.scheduling.scheduler_service.ScanMediaDirectoriesUseCase",
-            return_value=fake_use_case,
-        ):
-            await scheduler._run_scan(str(lib.id))
-
-        fake_use_case.execute.assert_awaited_once()
-        scan_input = fake_use_case.execute.await_args.args[0]
-        assert all(isinstance(p, FilePath) for p in scan_input.directories)
+        scan_run_service.run_scan.assert_awaited_once()
+        run_args = scan_run_service.run_scan.await_args.args
+        assert run_args[0] == run.id
+        assert run_args[1] is lib

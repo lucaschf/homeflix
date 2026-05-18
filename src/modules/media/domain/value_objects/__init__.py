@@ -21,6 +21,7 @@ from src.modules.media.domain.value_objects.media_id import (
     parse_media_id,
 )
 from src.modules.media.domain.value_objects.resolution import Resolution
+from src.modules.media.domain.value_objects.scan_run_id import ScanRunId
 from src.modules.media.domain.value_objects.season_number import SeasonNumber
 from src.modules.media.domain.value_objects.title import Title
 from src.modules.media.domain.value_objects.tmdb_id import TmdbId
@@ -51,6 +52,7 @@ __all__ = [
     "MediaId",
     "MovieId",
     "Resolution",
+    "ScanRunId",
     "SeasonId",
     "SeasonNumber",
     "SeriesId",

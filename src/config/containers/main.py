@@ -25,6 +25,9 @@ from src.infrastructure.scheduling import (
 from src.modules.identity.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyIdentityUnitOfWorkFactory,
 )
+from src.modules.library.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SqlAlchemyLibraryUnitOfWorkFactory,
+)
 from src.modules.media.infrastructure.acl import (
     ProfileLibraryAccessAdapter,
     ProgressLookupAdapter,
@@ -100,6 +103,16 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         identity_uow_factory=_identity_uow_factory_for_profile_library_access,
     )
 
+    # Library UoW factory built at the composition root so the
+    # Media container can read libraries (for the trigger-scan use
+    # case) without the parent having to forward-reference the
+    # Library container — which would create a parse-order cycle
+    # (Library already depends on Media via the catalog repo).
+    _library_uow_factory_for_media = providers.Singleton(
+        SqlAlchemyLibraryUnitOfWorkFactory,
+        session_factory=infrastructure.session_factory,
+    )
+
     # Catalog Requests is built before Media so its ACL adapter can be
     # plumbed into the Media container as the ``CatalogRequestLookupPort``
     # implementation. Catalog Requests itself takes no Media dependency,
@@ -116,6 +129,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         progress_lookup=_progress_lookup_adapter,
         profile_library_access=_profile_library_access_adapter,
         catalog_request_lookup=catalog_requests.catalog_request_lookup,
+        library_uow_factory=_library_uow_factory_for_media,
         tmdb_api_key=config.provided.tmdb_api_key,
         hls_cache_directory=config.provided.hls_cache_directory,
         hls_cache_max_size_mb=config.provided.hls_cache_max_size_mb,
@@ -171,12 +185,8 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     library_scan_scheduler = providers.Singleton(
         LibraryScanScheduler,
         library_uow_factory=library.library_unit_of_work_factory,
-        media_uow_factory=media.media_unit_of_work_factory,
-        file_scanner=infrastructure.file_scanner,
-        variant_detector=infrastructure.variant_detector,
-        event_bus=infrastructure.event_bus,
+        scan_run_service=media.scan_run_service,
         reconcile_interval_minutes=config.provided.scheduler_reconcile_interval_minutes,
-        probe_service=media.media_probe_service,
     )
 
     thumbnail_backfill_job = providers.Singleton(

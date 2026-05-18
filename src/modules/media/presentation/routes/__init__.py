@@ -3,6 +3,9 @@
 from src.modules.media.presentation.routes.admin_relink_routes import (
     router as admin_relink_router,
 )
+from src.modules.media.presentation.routes.admin_scan_routes import (
+    router as admin_scan_router,
+)
 from src.modules.media.presentation.routes.admin_system_routes import (
     router as admin_system_router,
 )
@@ -19,6 +22,7 @@ from src.modules.media.presentation.routes.stream_routes import router as stream
 
 __all__ = [
     "admin_relink_router",
+    "admin_scan_router",
     "admin_system_router",
     "catalog_router",
     "collection_router",
