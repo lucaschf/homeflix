@@ -102,6 +102,27 @@ class CustomListRepository(ABC):
         """Return the next 0-based position to use for a new item."""
 
     @abstractmethod
+    async def delete_all_for_profiles(self, profile_ids: list[str]) -> int:
+        """Soft-delete every list (and its items) owned by the given profiles.
+
+        Cross-BC operation driven by ``UserDeletedEvent``. Lists
+        belong to a profile, not directly to a user, so a single
+        user delete fans out across each profile they owned. Items
+        cascade alongside the parent list (custom_list_items have no
+        ``profile_id`` column — they ride along via the list FK).
+
+        Args:
+            profile_ids: External profile ids (``pro_xxx`` format)
+                whose lists should be discarded. Empty list is a
+                no-op.
+
+        Returns:
+            Number of *lists* soft-deleted; items deleted in the
+            same call are not counted (the operator-facing log line
+            already names a per-list rather than per-item view).
+        """
+
+    @abstractmethod
     async def rewrite_item_media_id(
         self,
         from_media_id: str,

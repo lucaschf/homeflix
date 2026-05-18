@@ -1,22 +1,24 @@
 """User repository interface."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
 from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.value_objects.email import Email
+from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.shared_kernel.value_objects.user_id import UserId
 
 
 class UserRepository(ABC):
     """Repository interface for the ``User`` aggregate.
 
-    Note on lifecycle: the user table is also written by FastAPI Users
-    via ``SQLAlchemyUserDatabase`` (registration, password reset, email
+    The user table is also written by FastAPI Users via
+    ``SQLAlchemyUserDatabase`` (registration, password reset, email
     verification). This repository covers domain-driven reads and the
-    narrow set of fields the domain actually mutates (``role``,
-    ``is_active``). It deliberately does NOT expose ``delete()`` —
-    accounts are deactivated, not removed (preserves attribution of
-    historical data).
+    domain-mutable fields (``role``, ``is_active``), plus the admin
+    surface (``list_paginated``, ``count_active_admins``,
+    ``soft_delete``) that the ``/api/v1/admin/users`` endpoints
+    drive.
     """
 
     @abstractmethod
@@ -59,6 +61,64 @@ class UserRepository(ABC):
 
         Returns:
             The user if found, ``None`` otherwise.
+        """
+        ...
+
+    @abstractmethod
+    async def list_paginated(
+        self,
+        *,
+        role: UserRole | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Sequence[User]:
+        """List non-deleted users, optionally filtered by role.
+
+        Args:
+            role: Filter to a single ``UserRole`` or ``None`` for all.
+            limit: Page size cap (admin list page is short, default 50).
+            offset: Rows to skip from the head of the result.
+
+        Returns:
+            Users ordered by ``created_at`` descending (newest first).
+        """
+        ...
+
+    @abstractmethod
+    async def count(self, *, role: UserRole | None = None) -> int:
+        """Count non-deleted users, optionally filtered by role.
+
+        Args:
+            role: Filter to a single ``UserRole`` or ``None`` for all.
+
+        Returns:
+            Number of matching non-deleted rows.
+        """
+        ...
+
+    @abstractmethod
+    async def count_active_admins(self) -> int:
+        """Count non-deleted users whose role is ``ADMIN`` and active.
+
+        Drives the "block demoting the last admin" guard on the
+        role-update use case: when the count would drop to zero
+        after a role flip / delete, the operation is refused.
+        """
+        ...
+
+    @abstractmethod
+    async def soft_delete(self, user_id: UserId) -> bool:
+        """Mark the user as deleted (sets ``deleted_at``).
+
+        Idempotent: a row that's already soft-deleted returns
+        ``False`` (the caller treats it as "user doesn't exist").
+
+        Args:
+            user_id: External user id.
+
+        Returns:
+            ``True`` when a row was soft-deleted, ``False`` if not
+            found or already gone.
         """
         ...
 

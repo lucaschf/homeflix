@@ -118,6 +118,22 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
         result = await self._session.execute(stmt)
         return (result.scalar() or 0) > 0
 
+    async def delete_all_for_profiles(self, profile_ids: list[str]) -> int:
+        """Soft-delete every watchlist row owned by the given profiles."""
+        if not profile_ids:
+            return 0
+        stmt = select(WatchlistItemModel).where(
+            WatchlistItemModel.profile_id.in_(profile_ids),
+            WatchlistItemModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        models = result.scalars().all()
+        for model in models:
+            model.soft_delete()
+        if models:
+            await self._session.flush()
+        return len(models)
+
     async def rewrite_media_id(
         self,
         from_media_id: str,

@@ -28,6 +28,7 @@ from src.modules.identity.domain.repositories.profile_repository import (
 )
 from src.modules.identity.domain.repositories.user_repository import UserRepository
 from src.modules.identity.domain.value_objects.email import Email
+from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -37,21 +38,59 @@ class FakeUserRepository(UserRepository):
 
     def __init__(self) -> None:
         self._items: dict[UserId, User] = {}
+        self._deleted: set[UserId] = set()
 
     async def save(self, user: User) -> User:
         if user.id is None:
             user = user.with_updates(id=UserId.generate())
         self._items[user.id] = user
+        self._deleted.discard(user.id)
         return user
 
     async def find_by_id(self, user_id: UserId) -> User | None:
+        if user_id in self._deleted:
+            return None
         return self._items.get(user_id)
 
     async def find_by_email(self, email: Email) -> User | None:
-        for u in self._items.values():
+        for uid, u in self._items.items():
+            if uid in self._deleted:
+                continue
             if u.email == email:
                 return u
         return None
+
+    async def list_paginated(
+        self,
+        *,
+        role: UserRole | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Sequence[User]:
+        active = [u for uid, u in self._items.items() if uid not in self._deleted]
+        if role is not None:
+            active = [u for u in active if u.role == role]
+        active.sort(key=lambda u: u.created_at, reverse=True)
+        return active[offset : offset + limit]
+
+    async def count(self, *, role: UserRole | None = None) -> int:
+        active = [u for uid, u in self._items.items() if uid not in self._deleted]
+        if role is not None:
+            active = [u for u in active if u.role == role]
+        return len(active)
+
+    async def count_active_admins(self) -> int:
+        return sum(
+            1
+            for uid, u in self._items.items()
+            if uid not in self._deleted and u.is_active and u.role == UserRole.ADMIN
+        )
+
+    async def soft_delete(self, user_id: UserId) -> bool:
+        if user_id not in self._items or user_id in self._deleted:
+            return False
+        self._deleted.add(user_id)
+        return True
 
 
 class FakeProfileRepository(ProfileRepository):
