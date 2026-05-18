@@ -647,6 +647,12 @@ class SQLAlchemyMovieRepository(MovieRepository):
         result = await self._session.execute(stmt)
         return int(result.scalar_one())
 
+    async def count(self) -> int:
+        """Return the total number of non-deleted movies."""
+        stmt = select(func.count()).select_from(MovieModel).where(MovieModel.deleted_at.is_(None))
+        result = await self._session.execute(stmt)
+        return int(result.scalar_one())
+
     async def search(
         self,
         query: str,

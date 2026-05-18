@@ -505,5 +505,15 @@ class MovieRepository(ABC):
         """
         ...
 
+    @abstractmethod
+    async def count(self) -> int:
+        """Return the total number of non-deleted movies.
+
+        Drives the admin Overview stat card. Distinct from
+        :meth:`count_under_paths` (per-library) — this is the
+        catalog-wide tally.
+        """
+        ...
+
 
 __all__ = ["GenreRow", "MovieRepository"]

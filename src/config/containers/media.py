@@ -40,6 +40,9 @@ from src.modules.media.application.use_cases.get_movie_by_id import GetMovieById
 from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
     GetMovieTmdbSuggestionsUseCase,
 )
+from src.modules.media.application.use_cases.get_overview_stats import (
+    GetOverviewStatsUseCase,
+)
 from src.modules.media.application.use_cases.get_person_bio import GetPersonBioUseCase
 from src.modules.media.application.use_cases.get_related_movies import GetRelatedMoviesUseCase
 from src.modules.media.application.use_cases.get_related_series import GetRelatedSeriesUseCase
@@ -139,6 +142,12 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # needs to look up the requested library before opening the
     # ``scan_runs`` row. Keeps the cross-BC dependency explicit.
     library_uow_factory = providers.Dependency()
+
+    # Wired at the composition root — the OverviewStats aggregator
+    # reads the users count from identity. Same pattern as
+    # ``library_uow_factory`` above: a read-only cross-BC count
+    # for admin dashboard aggregation, not domain coupling.
+    identity_uow_factory = providers.Dependency()
 
     # Must be wired from parent container (Settings.hls_cache_directory / hls_cache_max_size_mb)
     hls_cache_directory = providers.Dependency(default="./hls_cache")
@@ -494,12 +503,29 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     )
 
     # =========================================================================
+    # Use Cases — Admin Overview aggregator
+    # =========================================================================
+
+    # Declared here so it can reach ``list_movies_needing_review``
+    # below — order in the container is purely for readability.
+    # The actual provider is appended after the review use case
+    # so its reference resolves cleanly.
+
+    # =========================================================================
     # Use Cases — Admin Relink
     # =========================================================================
 
     list_movies_needing_review = providers.Factory(
         ListMoviesNeedingReviewUseCase,
         uow_factory=media_unit_of_work_factory,
+    )
+
+    get_overview_stats = providers.Factory(
+        GetOverviewStatsUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+        identity_uow_factory=identity_uow_factory,
+        list_movies_needing_review=list_movies_needing_review,
+        hls_playlist=hls_service,
     )
 
     get_movie_tmdb_suggestions = providers.Factory(

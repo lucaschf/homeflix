@@ -1,0 +1,39 @@
+"""Admin REST API routes for the Overview dashboard."""
+
+from dataclasses import asdict
+from typing import Any
+
+from dependency_injector.wiring import Provide, inject
+from fastapi import APIRouter, Depends
+
+from src.building_blocks.presentation import api_single
+from src.config.containers import ApplicationContainer
+from src.modules.identity.infrastructure.auth import current_admin_user
+from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.media.application.use_cases.get_overview_stats import (
+    GetOverviewStatsUseCase,
+)
+
+router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Overview"])
+
+
+@router.get("/overview/stats")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def get_admin_overview_stats(
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: GetOverviewStatsUseCase = Depends(
+        Provide[ApplicationContainer.media.get_overview_stats],
+    ),
+) -> dict[str, Any]:
+    """Aggregate every Overview stat card into a single response.
+
+    The dashboard's headline cards (movies / series / users /
+    review queue / last scan) plus the HLS occupancy strip all
+    come from this one call so the page settles in a single
+    loading transition.
+    """
+    stats = await use_case.execute()
+    return api_single("overview_stats", asdict(stats))
+
+
+__all__ = ["router"]
