@@ -3,6 +3,9 @@
 from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
     SQLAlchemyMovieRepository,
 )
+from src.modules.media.infrastructure.persistence.repositories.scan_run_repository import (
+    SqlAlchemyScanRunRepository,
+)
 from src.modules.media.infrastructure.persistence.repositories.series_repository import (
     SQLAlchemySeriesRepository,
 )
@@ -10,4 +13,5 @@ from src.modules.media.infrastructure.persistence.repositories.series_repository
 __all__ = [
     "SQLAlchemyMovieRepository",
     "SQLAlchemySeriesRepository",
+    "SqlAlchemyScanRunRepository",
 ]

@@ -18,23 +18,14 @@ from apscheduler.triggers.cron import CronTrigger
 
 from src.config.logging import get_logger
 from src.modules.library.domain.value_objects.library_id import LibraryId
-from src.modules.media.application.dtos.scan_dtos import ScanMediaInput
-from src.modules.media.application.use_cases.scan_media_directories import (
-    ScanMediaDirectoriesUseCase,
-)
+from src.modules.media.domain.entities.scan_run import ScanRunTrigger
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from src.building_blocks.application.event_bus import EventBus
     from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
-    from src.modules.media.application.ports import (
-        FileSystemScanner,
-        MediaProbePort,
-        VariantDetectorPort,
-    )
-    from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
-    from src.shared_kernel.value_objects.file_path import FilePath
+    from src.modules.library.domain.entities.library import Library
+    from src.modules.media.application.services.scan_run_service import ScanRunService
 
 _logger = get_logger()
 
@@ -58,20 +49,12 @@ class LibraryScanScheduler:
     def __init__(
         self,
         library_uow_factory: LibraryUnitOfWorkFactory,
-        media_uow_factory: MediaUnitOfWorkFactory,
-        file_scanner: FileSystemScanner,
-        variant_detector: VariantDetectorPort,
-        event_bus: EventBus,
+        scan_run_service: ScanRunService,
         reconcile_interval_minutes: int,
-        probe_service: MediaProbePort | None = None,
     ) -> None:
         self._library_uow_factory = library_uow_factory
-        self._media_uow_factory = media_uow_factory
-        self._file_scanner = file_scanner
-        self._variant_detector = variant_detector
-        self._event_bus = event_bus
+        self._scan_run_service = scan_run_service
         self._reconcile_interval_minutes = reconcile_interval_minutes
-        self._probe_service = probe_service
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     async def start(self) -> None:
@@ -195,52 +178,33 @@ class LibraryScanScheduler:
     async def _run_scan(self, library_id: str) -> None:
         """Run a single library scan and record completion.
 
-        Loads the library in a short-lived UoW, releases it before the
-        long-running scan, then opens a fresh UoW to persist
-        ``last_scan_at`` on success. The scan use case drives its own
-        media UoW per file group so failures on one group roll back
-        only that transaction.
+        Opens a ``scan_runs`` row tagged ``trigger='scheduled'`` so
+        admin history surfaces background runs alongside
+        manually-triggered ones, then delegates to ``ScanRunService``
+        which writes the terminal state and emits log lines.
         """
         _logger.info("[scheduler] Running scan", library_id=library_id)
 
-        paths = await self._load_library_paths(library_id)
-        if paths is None:
+        library = await self._load_library(library_id)
+        if library is None:
             return
 
-        use_case = ScanMediaDirectoriesUseCase(
-            file_scanner=self._file_scanner,
-            variant_detector=self._variant_detector,
-            uow_factory=self._media_uow_factory,
-            probe_service=self._probe_service,
-            event_bus=self._event_bus,
+        run = await self._scan_run_service.open_scan(
+            library_id=library_id,
+            trigger=ScanRunTrigger.SCHEDULED,
         )
-        try:
-            result = await use_case.execute(
-                ScanMediaInput(library_id=library_id, directories=paths)
-            )
-        except Exception as exc:
+        if run.id is None:  # pragma: no cover — repo always assigns
             _logger.error(
-                "[scheduler] Scan failed",
+                "[scheduler] open_scan returned a row without id; skipping",
                 library_id=library_id,
-                error=str(exc),
-                exc_info=True,
             )
             return
 
+        await self._scan_run_service.run_scan(run.id, library)
         await self._mark_library_scanned(library_id)
 
-        _logger.info(
-            "[scheduler] Scan done",
-            library_id=library_id,
-            movies_created=result.movies_created,
-            movies_updated=result.movies_updated,
-            episodes_created=result.episodes_created,
-            episodes_updated=result.episodes_updated,
-            errors=len(result.errors),
-        )
-
-    async def _load_library_paths(self, library_id: str) -> list[FilePath] | None:
-        """Return the library's configured paths, or ``None`` if it vanished."""
+    async def _load_library(self, library_id: str) -> Library | None:
+        """Return the library row, or ``None`` if it vanished."""
         async with self._library_uow_factory() as uow:
             library = await uow.libraries.find_by_id(LibraryId(library_id))
             if library is None:
@@ -249,7 +213,7 @@ class LibraryScanScheduler:
                     library_id=library_id,
                 )
                 return None
-            return list(library.paths)
+            return library
 
     async def _mark_library_scanned(self, library_id: str) -> None:
         """Persist the completed-scan timestamp in its own UoW."""

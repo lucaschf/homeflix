@@ -6,6 +6,7 @@ Provides repositories and use cases for the Media module.
 from dependency_injector import containers, providers
 
 from src.modules.media.application.event_handlers import OnMediaCreatedHandler
+from src.modules.media.application.services.scan_run_service import ScanRunService
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
 from src.modules.media.application.use_cases.bulk_enrich_metadata import (
     BulkEnrichMetadataUseCase,
@@ -42,6 +43,7 @@ from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
 from src.modules.media.application.use_cases.get_person_bio import GetPersonBioUseCase
 from src.modules.media.application.use_cases.get_related_movies import GetRelatedMoviesUseCase
 from src.modules.media.application.use_cases.get_related_series import GetRelatedSeriesUseCase
+from src.modules.media.application.use_cases.get_scan_run import GetScanRunUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
@@ -59,6 +61,7 @@ from src.modules.media.application.use_cases.list_recently_added_movies import (
 from src.modules.media.application.use_cases.list_recently_added_series import (
     ListRecentlyAddedSeriesUseCase,
 )
+from src.modules.media.application.use_cases.list_scan_runs import ListScanRunsUseCase
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
 from src.modules.media.application.use_cases.promote_movie_to_series import (
     PromoteMovieToSeriesUseCase,
@@ -73,6 +76,13 @@ from src.modules.media.application.use_cases.serve_hls_file import ServeHlsFileU
 from src.modules.media.application.use_cases.set_episode_intro import SetEpisodeIntroUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
 from src.modules.media.application.use_cases.stream_file_range import StreamFileRangeUseCase
+from src.modules.media.application.use_cases.sweep_interrupted_scan_runs import (
+    SweepInterruptedScanRunsUseCase,
+)
+from src.modules.media.application.use_cases.trigger_bulk_enrich import (
+    TriggerBulkEnrichUseCase,
+)
+from src.modules.media.application.use_cases.trigger_scan import TriggerScanUseCase
 from src.modules.media.infrastructure.audio import (
     AudioExtractor,
     ChromaprintIntroDetector,
@@ -124,6 +134,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # ``Profile.allowed_library_ids`` via the Identity UoW so this
     # BC only ever sees ``ProfileLibraryAccessPort``.
     profile_library_access = providers.Dependency()
+
+    # Wired at the composition root — the trigger-scan use case
+    # needs to look up the requested library before opening the
+    # ``scan_runs`` row. Keeps the cross-BC dependency explicit.
+    library_uow_factory = providers.Dependency()
 
     # Must be wired from parent container (Settings.hls_cache_directory / hls_cache_max_size_mb)
     hls_cache_directory = providers.Dependency(default="./hls_cache")
@@ -439,6 +454,43 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         enrich_movie=enrich_movie_metadata,
         enrich_series=enrich_series_metadata,
         uow_factory=media_unit_of_work_factory,
+    )
+
+    # =========================================================================
+    # Scan + Enrich admin runs
+    # =========================================================================
+
+    scan_run_service = providers.Singleton(
+        ScanRunService,
+        scan_use_case=scan_media_directories,
+        bulk_enrich_use_case=bulk_enrich_metadata,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    trigger_scan = providers.Factory(
+        TriggerScanUseCase,
+        scan_run_service=scan_run_service,
+        library_uow_factory=library_uow_factory,
+    )
+
+    trigger_bulk_enrich = providers.Factory(
+        TriggerBulkEnrichUseCase,
+        scan_run_service=scan_run_service,
+    )
+
+    list_scan_runs = providers.Factory(
+        ListScanRunsUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    get_scan_run = providers.Factory(
+        GetScanRunUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    sweep_interrupted_scan_runs = providers.Factory(
+        SweepInterruptedScanRunsUseCase,
+        media_uow_factory=media_unit_of_work_factory,
     )
 
     # =========================================================================

@@ -4,6 +4,9 @@ from src.modules.media.infrastructure.persistence.mappers.media_file_mapper impo
     MediaFileMapper,
 )
 from src.modules.media.infrastructure.persistence.mappers.movie_mapper import MovieMapper
+from src.modules.media.infrastructure.persistence.mappers.scan_run_mapper import (
+    ScanRunMapper,
+)
 from src.modules.media.infrastructure.persistence.mappers.series_mapper import (
     EpisodeMapper,
     SeasonMapper,
@@ -14,6 +17,7 @@ __all__ = [
     "EpisodeMapper",
     "MediaFileMapper",
     "MovieMapper",
+    "ScanRunMapper",
     "SeasonMapper",
     "SeriesMapper",
 ]

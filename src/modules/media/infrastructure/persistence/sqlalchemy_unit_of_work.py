@@ -10,6 +10,9 @@ from src.modules.media.application.unit_of_work import (
 from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
     SQLAlchemyMovieRepository,
 )
+from src.modules.media.infrastructure.persistence.repositories.scan_run_repository import (
+    SqlAlchemyScanRunRepository,
+)
 from src.modules.media.infrastructure.persistence.repositories.series_repository import (
     SQLAlchemySeriesRepository,
 )
@@ -18,14 +21,16 @@ from src.modules.media.infrastructure.persistence.repositories.series_repository
 class SqlAlchemyMediaUnitOfWork(SqlAlchemyUnitOfWork, MediaUnitOfWork):
     """SQLAlchemy-backed Unit of Work for the media bounded context.
 
-    Exposes ``movies`` and ``series`` repositories bound to the active
-    transaction. Lifecycle (session open/commit/rollback/close,
-    nested-use guard) lives in :class:`SqlAlchemyUnitOfWork`.
+    Exposes ``movies``, ``series`` and ``scan_runs`` repositories
+    bound to the active transaction. Lifecycle (session
+    open/commit/rollback/close, nested-use guard) lives in
+    :class:`SqlAlchemyUnitOfWork`.
     """
 
     def _build_repositories(self, session: AsyncSession) -> None:
         self.movies = SQLAlchemyMovieRepository(session)
         self.series = SQLAlchemySeriesRepository(session)
+        self.scan_runs = SqlAlchemyScanRunRepository(session)
 
 
 class SqlAlchemyMediaUnitOfWorkFactory(MediaUnitOfWorkFactory):
