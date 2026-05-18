@@ -119,6 +119,28 @@ class WatchProgressRepository(ABC):
         """
 
     @abstractmethod
+    async def delete_all_for_profiles(self, profile_ids: list[str]) -> int:
+        """Soft-delete every progress row owned by the given profiles.
+
+        Cross-BC operation driven by ``UserDeletedEvent``: when an
+        admin removes a user every profile they owned is also gone,
+        so the half-watched positions belong to nobody. Restoring
+        them on a future re-create would be a privacy footgun.
+
+        Not profile-scoped at the caller layer: the handler passes
+        in a list of ids in one batch so the cascade is a single
+        SQL round-trip instead of one query per profile.
+
+        Args:
+            profile_ids: External profile ids (``pro_xxx`` format)
+                whose progress rows should be discarded. Empty
+                list is a no-op.
+
+        Returns:
+            Number of rows soft-deleted across all listed profiles.
+        """
+
+    @abstractmethod
     async def delete_all_for_movie(self, movie_id: str) -> int:
         """Soft-delete every progress row that points at a movie id.
 

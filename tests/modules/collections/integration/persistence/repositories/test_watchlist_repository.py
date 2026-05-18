@@ -238,3 +238,29 @@ class TestSQLAlchemyWatchlistRepository:
         )
 
         assert updated == 0
+
+    async def test_delete_all_for_profiles_should_wipe_listed_profiles(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Driven by the user-delete cascade — every watchlist row
+        owned by a profile id in the list goes away."""
+        repo = SQLAlchemyWatchlistRepository(db_session)
+        await repo.add(_create_item(media_id=SAMPLE_MOVIE_ID))
+        await repo.add(_create_item(media_id=SAMPLE_MOVIE_ID, profile_id=_OTHER_PROFILE_ID))
+
+        deleted = await repo.delete_all_for_profiles([_PROFILE_ID.value])
+
+        assert deleted == 1
+        assert await repo.find_by_media_id(SAMPLE_MOVIE_ID, _PROFILE_ID) is None
+        assert await repo.find_by_media_id(SAMPLE_MOVIE_ID, _OTHER_PROFILE_ID) is not None
+
+    async def test_delete_all_for_profiles_should_noop_on_empty_list(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyWatchlistRepository(db_session)
+        await repo.add(_create_item(media_id=SAMPLE_MOVIE_ID))
+
+        deleted = await repo.delete_all_for_profiles([])
+
+        assert deleted == 0
+        assert await repo.find_by_media_id(SAMPLE_MOVIE_ID, _PROFILE_ID) is not None

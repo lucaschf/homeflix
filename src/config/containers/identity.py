@@ -22,6 +22,22 @@ from src.modules.identity.application.use_cases import (
     UpdateProfileUseCase,
     UploadProfileAvatarUseCase,
 )
+from src.modules.identity.application.use_cases.create_admin_user import (
+    CreateAdminUserUseCase,
+)
+from src.modules.identity.application.use_cases.delete_admin_user import (
+    DeleteAdminUserUseCase,
+)
+from src.modules.identity.application.use_cases.get_user_detail import (
+    GetUserDetailUseCase,
+)
+from src.modules.identity.application.use_cases.list_users import ListUsersUseCase
+from src.modules.identity.application.use_cases.update_user_role import (
+    UpdateUserRoleUseCase,
+)
+from src.modules.identity.infrastructure.auth.password_hasher import (
+    FastApiUsersPasswordHasher,
+)
 from src.modules.identity.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyIdentityUnitOfWorkFactory,
 )
@@ -39,6 +55,7 @@ class IdentityContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     # Wired from InfrastructureContainer via the application container.
     session_factory = providers.Dependency()
+    event_bus = providers.Dependency()
 
     # Avatar storage configuration — wired from ``Settings`` at the
     # composition root. Defaults are present so tests / standalone
@@ -69,6 +86,8 @@ class IdentityContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         max_size_mb=avatar_max_size_mb,
         side_length=avatar_size_pixels,
     )
+
+    password_hasher = providers.Singleton(FastApiUsersPasswordHasher)
 
     # =========================================================================
     # Use Cases
@@ -115,4 +134,33 @@ class IdentityContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         DeleteProfileAvatarUseCase,
         uow_factory=identity_unit_of_work_factory,
         avatar_storage=avatar_storage,
+    )
+
+    # ─── Admin user use cases ──────────────────────────────
+
+    list_users = providers.Factory(
+        ListUsersUseCase,
+        uow_factory=identity_unit_of_work_factory,
+    )
+
+    get_user_detail = providers.Factory(
+        GetUserDetailUseCase,
+        uow_factory=identity_unit_of_work_factory,
+    )
+
+    create_admin_user = providers.Factory(
+        CreateAdminUserUseCase,
+        uow_factory=identity_unit_of_work_factory,
+        password_hasher=password_hasher,
+    )
+
+    update_user_role = providers.Factory(
+        UpdateUserRoleUseCase,
+        uow_factory=identity_unit_of_work_factory,
+    )
+
+    delete_admin_user = providers.Factory(
+        DeleteAdminUserUseCase,
+        uow_factory=identity_unit_of_work_factory,
+        event_bus=event_bus,
     )

@@ -463,3 +463,40 @@ class TestSQLAlchemyCustomListRepositoryItems:
 
         assert restored.media_id == SAMPLE_MOVIE_ID
         assert restored.position == 5
+
+
+@pytest.mark.integration
+class TestSQLAlchemyCustomListRepositoryDeleteAllForProfiles:
+    """``delete_all_for_profiles`` — user-delete cascade."""
+
+    async def test_should_soft_delete_lists_and_items_for_listed_profiles(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        owned = _create_list(name="Owned", profile_id=_PROFILE_ID)
+        kept = _create_list(name="Kept", profile_id=_OTHER_PROFILE_ID)
+        await repo.add(owned)
+        await repo.add(kept)
+        await repo.add_item(str(owned.id), _create_item(media_id=SAMPLE_MOVIE_ID), _PROFILE_ID)
+        await repo.add_item(
+            str(kept.id),
+            _create_item(media_id=SAMPLE_MOVIE_ID),
+            _OTHER_PROFILE_ID,
+        )
+
+        deleted = await repo.delete_all_for_profiles([_PROFILE_ID.value])
+
+        assert deleted == 1
+        assert await repo.find_by_id(str(owned.id), _PROFILE_ID) is None
+        assert await repo.find_by_id(str(kept.id), _OTHER_PROFILE_ID) is not None
+        # Items under the soft-deleted list are gone too.
+        items = await repo.list_items(str(owned.id), _PROFILE_ID)
+        assert items == []
+
+    async def test_should_be_noop_on_empty_profile_list(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        await repo.add(_create_list(name="Owned"))
+
+        deleted = await repo.delete_all_for_profiles([])
+
+        assert deleted == 0

@@ -167,6 +167,26 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
             await self._session.flush()
         return len(models)
 
+    async def delete_all_for_profiles(self, profile_ids: list[str]) -> int:
+        """Soft-delete every progress row owned by the given profiles.
+
+        Driven by ``UserDeletedEvent`` — see the interface docstring
+        for the rationale.
+        """
+        if not profile_ids:
+            return 0
+        stmt = select(WatchProgressModel).where(
+            WatchProgressModel.profile_id.in_(profile_ids),
+            WatchProgressModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        models = result.scalars().all()
+        for model in models:
+            model.soft_delete()
+        if models:
+            await self._session.flush()
+        return len(models)
+
     async def delete_all_for_movie(self, movie_id: str) -> int:
         """Soft-delete every (cross-profile) progress row on a movie id.
 

@@ -83,10 +83,66 @@ class NoActiveProfileSelectedError(ApplicationException):
     message_code: str = IdentityRuleCodes.NO_ACTIVE_PROFILE
 
 
+@dataclass
+class UserNotFoundException(ResourceNotFoundException):
+    """The requested user does not exist (or is soft-deleted).
+
+    Maps to HTTP 404. Raised by the admin user use cases when the
+    path id doesn't resolve to a live user.
+    """
+
+    code: str = "USER_NOT_FOUND"
+    message_code: str = IdentityRuleCodes.USER_NOT_FOUND
+    resource_type: str = "User"
+
+
+@dataclass
+class UserEmailAlreadyExistsError(ApplicationException):
+    """Admin tried to create a user with an email already in the table.
+
+    Maps to HTTP 409 (conflict). The check covers active rows AND
+    soft-deleted tombstones because the underlying ``email`` column
+    is unique at the DB level and a re-insert would crash.
+    """
+
+    code: str = "USER_EMAIL_ALREADY_EXISTS"
+    message_code: str = IdentityRuleCodes.USER_EMAIL_ALREADY_EXISTS
+
+
+@dataclass
+class CannotDeleteSelfError(ApplicationException):
+    """Admin tried to delete their own user account.
+
+    Maps to HTTP 409. The UI also hides the delete button on the
+    self row, but the server-side guard is the source of truth — a
+    direct curl call still gets refused.
+    """
+
+    code: str = "USER_CANNOT_DELETE_SELF"
+    message_code: str = IdentityRuleCodes.USER_CANNOT_DELETE_SELF
+
+
+@dataclass
+class CannotDemoteLastAdminError(ApplicationException):
+    """Operation would leave the system with zero active admins.
+
+    Maps to HTTP 409. Fires from both the role-flip (demoting the
+    last admin) and the delete (removing the last admin even when
+    not self-targeting) paths.
+    """
+
+    code: str = "USER_CANNOT_DEMOTE_LAST_ADMIN"
+    message_code: str = IdentityRuleCodes.USER_CANNOT_DEMOTE_LAST_ADMIN
+
+
 __all__ = [
     "CannotDeleteLastProfileError",
+    "CannotDeleteSelfError",
+    "CannotDemoteLastAdminError",
     "NoActiveProfileSelectedError",
     "NoActiveSessionError",
     "ProfileNotFoundException",
     "ProfileOwnershipViolation",
+    "UserEmailAlreadyExistsError",
+    "UserNotFoundException",
 ]

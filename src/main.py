@@ -23,7 +23,11 @@ from src.modules.catalog_requests.presentation.routes import (
 )
 from src.modules.collections.presentation.routes import custom_list_router, watchlist_router
 from src.modules.identity.infrastructure.auth import auth_backend, fastapi_users
-from src.modules.identity.presentation.routes import profile_router, users_router
+from src.modules.identity.presentation.routes import (
+    admin_user_router,
+    profile_router,
+    users_router,
+)
 from src.modules.library.presentation.routes.library_routes import (
     router as library_router,
 )
@@ -70,6 +74,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.catalog_requests.presentation.routes.admin_catalog_request_routes",
     "src.modules.library.presentation.routes.library_routes",
     "src.modules.preferences.presentation.routes.preferences_routes",
+    "src.modules.identity.presentation.routes.admin_user_routes",
     "src.modules.identity.presentation.routes.profile_routes",
     "src.modules.identity.presentation.routes.users_routes",
 )
@@ -161,6 +166,10 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     from src.modules.collections.application.event_handlers import (
         OnMoviePromotedToSeriesHandler as CollectionsOnMoviePromotedHandler,
     )
+    from src.modules.collections.application.event_handlers import (
+        OnUserDeletedHandler as CollectionsOnUserDeletedHandler,
+    )
+    from src.modules.identity.domain.events import UserDeletedEvent
     from src.modules.media.application.event_handlers import OnMediaCreatedHandler
     from src.modules.media.domain.events import (
         MediaCreatedEvent,
@@ -168,6 +177,9 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     )
     from src.modules.watch_progress.application.event_handlers import (
         OnMoviePromotedToSeriesHandler as ProgressOnMoviePromotedHandler,
+    )
+    from src.modules.watch_progress.application.event_handlers import (
+        OnUserDeletedHandler as ProgressOnUserDeletedHandler,
     )
 
     event_bus = container.infrastructure.event_bus()
@@ -191,6 +203,24 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     event_bus.subscribe(
         MoviePromotedToSeriesEvent,
         CollectionsOnMoviePromotedHandler(
+            uow_factory=container.collections.collections_unit_of_work_factory(),
+        ),
+    )
+
+    # Cross-BC cleanup when an admin removes a user — watch_progress
+    # drops the half-watched positions (privacy), collections wipes
+    # the user's watchlists + custom lists (no orphan owner). Each
+    # handler runs fire-and-forget so a downstream failure doesn't
+    # roll back the identity-side soft-delete.
+    event_bus.subscribe(
+        UserDeletedEvent,
+        ProgressOnUserDeletedHandler(
+            uow_factory=container.watch_progress.watch_progress_unit_of_work_factory(),
+        ),
+    )
+    event_bus.subscribe(
+        UserDeletedEvent,
+        CollectionsOnUserDeletedHandler(
             uow_factory=container.collections.collections_unit_of_work_factory(),
         ),
     )
@@ -284,6 +314,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(users_router)
     app.include_router(profile_router)
+    app.include_router(admin_user_router)
 
     return app
 

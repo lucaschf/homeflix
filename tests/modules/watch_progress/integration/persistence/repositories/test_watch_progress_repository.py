@@ -359,3 +359,44 @@ class TestDeleteAllForMovie:
         deleted = await repo.delete_all_for_movie(MISSING_MEDIA_ID)
 
         assert deleted == 0
+
+
+@pytest.mark.integration
+class TestDeleteAllForProfiles:
+    """Tests for ``delete_all_for_profiles`` — driven by the cross-BC user-delete handler."""
+
+    async def test_should_clear_every_row_for_each_listed_profile(
+        self, db_session: AsyncSession
+    ) -> None:
+        other_profile = ProfileId("prf_otherprofile")
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        await repo.save(_create_progress())
+        await repo.save(_create_progress(profile_id=other_profile))
+
+        deleted = await repo.delete_all_for_profiles(
+            [_PROFILE_ID.value, other_profile.value],
+        )
+
+        assert deleted == 2
+        assert (await repo.find_by_media_id(SAMPLE_MOVIE_ID, _PROFILE_ID)) is None
+        assert (await repo.find_by_media_id(SAMPLE_MOVIE_ID, other_profile)) is None
+
+    async def test_should_leave_unlisted_profiles_alone(self, db_session: AsyncSession) -> None:
+        kept_profile = ProfileId("prf_keptprofile1")
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        await repo.save(_create_progress())
+        await repo.save(_create_progress(profile_id=kept_profile))
+
+        deleted = await repo.delete_all_for_profiles([_PROFILE_ID.value])
+
+        assert deleted == 1
+        assert (await repo.find_by_media_id(SAMPLE_MOVIE_ID, kept_profile)) is not None
+
+    async def test_should_be_noop_for_empty_profile_list(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        await repo.save(_create_progress())
+
+        deleted = await repo.delete_all_for_profiles([])
+
+        assert deleted == 0
+        assert (await repo.find_by_media_id(SAMPLE_MOVIE_ID, _PROFILE_ID)) is not None

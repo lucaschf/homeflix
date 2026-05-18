@@ -274,6 +274,32 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         result = await self._session.execute(stmt)
         return result.scalar() or 0
 
+    async def delete_all_for_profiles(self, profile_ids: list[str]) -> int:
+        """Soft-delete every list + items owned by the given profiles."""
+        if not profile_ids:
+            return 0
+        list_stmt = select(CustomListModel).where(
+            CustomListModel.profile_id.in_(profile_ids),
+            CustomListModel.deleted_at.is_(None),
+        )
+        list_result = await self._session.execute(list_stmt)
+        list_models = list_result.scalars().all()
+        if not list_models:
+            return 0
+        list_internal_ids = [m.id for m in list_models]
+        item_stmt = select(CustomListItemModel).where(
+            CustomListItemModel.custom_list_id.in_(list_internal_ids),
+            CustomListItemModel.deleted_at.is_(None),
+        )
+        item_result = await self._session.execute(item_stmt)
+        item_models = item_result.scalars().all()
+        for item in item_models:
+            item.soft_delete()
+        for lst in list_models:
+            lst.soft_delete()
+        await self._session.flush()
+        return len(list_models)
+
     async def rewrite_item_media_id(
         self,
         from_media_id: str,

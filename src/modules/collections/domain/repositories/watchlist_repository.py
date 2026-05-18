@@ -47,6 +47,23 @@ class WatchlistRepository(ABC):
         """Check whether ``media_id`` is on ``profile_id``'s watchlist."""
 
     @abstractmethod
+    async def delete_all_for_profiles(self, profile_ids: list[str]) -> int:
+        """Soft-delete every watchlist row owned by the given profiles.
+
+        Cross-BC operation driven by ``UserDeletedEvent``: when an
+        admin removes a user, the profiles they owned vanish too,
+        so the watchlists belong to nobody.
+
+        Args:
+            profile_ids: External profile ids (``pro_xxx`` format)
+                whose watchlist rows should be discarded. Empty
+                list is a no-op.
+
+        Returns:
+            Number of rows soft-deleted across all listed profiles.
+        """
+
+    @abstractmethod
     async def rewrite_media_id(
         self,
         from_media_id: str,
