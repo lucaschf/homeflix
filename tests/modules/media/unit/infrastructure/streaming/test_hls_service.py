@@ -626,12 +626,65 @@ class TestHlsServiceClearCache:
         service.clear_cache()
 
         assert tmp_path.exists()  # Recreated
-        assert list(tmp_path.iterdir()) == []
+        # The cache dir holds only the ``.last_cleared`` marker after a
+        # global clear — every per-source bucket is gone.
+        remaining = [p.name for p in tmp_path.iterdir() if p.name != ".last_cleared"]
+        assert remaining == []
 
     def test_should_not_fail_when_cache_missing(self, tmp_path: Path) -> None:
         service = HlsService(cache_dir=str(tmp_path))
         # Should not raise
         service.clear_cache("/nonexistent.mkv")
+
+    def test_should_stamp_last_cleared_marker_on_global_clear(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+
+        service.clear_cache(None)
+
+        assert (tmp_path / ".last_cleared").exists()
+
+    def test_should_not_stamp_marker_on_per_file_clear(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path))
+
+        service.clear_cache("/movies/test.mkv")
+
+        assert not (tmp_path / ".last_cleared").exists()
+
+
+@pytest.mark.unit
+class TestHlsServiceGetCacheStats:
+    """Tests for ``HlsService.get_cache_stats``."""
+
+    def test_should_report_zero_bytes_when_cache_empty(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "hls"), max_cache_size_mb=100)
+
+        stats = service.get_cache_stats()
+
+        assert stats.size_bytes == 0
+        assert stats.max_bytes == 100 * 1024 * 1024
+        assert stats.last_cleared_at is None
+
+    def test_should_sum_file_sizes_across_nested_buckets(self, tmp_path: Path) -> None:
+        cache = tmp_path / "hls"
+        service = HlsService(cache_dir=str(cache), max_cache_size_mb=50)
+        (cache / "h1").mkdir(parents=True)
+        (cache / "h1" / "master.m3u8").write_bytes(b"x" * 10)
+        (cache / "h2" / "nested").mkdir(parents=True)
+        (cache / "h2" / "nested" / "seg.ts").write_bytes(b"y" * 25)
+
+        stats = service.get_cache_stats()
+
+        assert stats.size_bytes == 35
+        assert stats.max_bytes == 50 * 1024 * 1024
+
+    def test_should_expose_last_cleared_after_global_clear(self, tmp_path: Path) -> None:
+        service = HlsService(cache_dir=str(tmp_path / "hls"))
+
+        service.clear_cache(None)
+        stats = service.get_cache_stats()
+
+        assert stats.last_cleared_at is not None
+        assert stats.last_cleared_at.tzinfo is not None
 
 
 @pytest.mark.unit

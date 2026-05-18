@@ -8,9 +8,35 @@ the application layer.
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from src.modules.media.application.ports.media_probe_port import ProbeResult
+
+
+@dataclass(frozen=True)
+class HlsCacheStats:
+    """Snapshot of HLS cache occupancy + configured limit.
+
+    Used by the admin System page so the operator can eyeball how
+    much disk the cache is sitting on relative to its ceiling, and
+    when it was last cleared.
+
+    Attributes:
+        size_bytes: Bytes currently used on disk under the cache
+            root (walk + sum, no per-bucket breakdown).
+        max_bytes: Configured ceiling (from ``Settings``). The
+            evictor enforces this; the admin page renders the
+            ratio.
+        last_cleared_at: Wallclock time of the last "clear all"
+            invocation, or ``None`` when the cache hasn't been
+            cleared globally since the marker started being kept.
+    """
+
+    size_bytes: int
+    max_bytes: int
+    last_cleared_at: datetime | None
 
 
 class HlsPlaylistPort(ABC):
@@ -53,9 +79,19 @@ class HlsPlaylistPort(ABC):
         ...
 
     @abstractmethod
-    def clear_cache(self, file_path: str) -> None:
-        """Discard the cache entry for ``file_path``."""
+    def clear_cache(self, file_path: str | None) -> None:
+        """Discard cache entries.
+
+        A concrete ``file_path`` drops only that source file's buckets;
+        passing ``None`` wipes the entire cache root (used by the
+        admin "clean slate" affordance).
+        """
+        ...
+
+    @abstractmethod
+    def get_cache_stats(self) -> HlsCacheStats:
+        """Return cache occupancy + configured limit + last clear time."""
         ...
 
 
-__all__ = ["HlsPlaylistPort"]
+__all__ = ["HlsCacheStats", "HlsPlaylistPort"]

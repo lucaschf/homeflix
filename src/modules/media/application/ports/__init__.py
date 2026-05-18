@@ -10,7 +10,10 @@ from src.modules.media.application.ports.file_scanner_port import (
     ScannedFile,
 )
 from src.modules.media.application.ports.file_streamer_port import FileStreamerPort
-from src.modules.media.application.ports.hls_playlist_port import HlsPlaylistPort
+from src.modules.media.application.ports.hls_playlist_port import (
+    HlsCacheStats,
+    HlsPlaylistPort,
+)
 from src.modules.media.application.ports.intro_detector_port import (
     DetectedIntro,
     EpisodeFingerprint,
@@ -56,6 +59,7 @@ __all__ = [
     "EpisodeMetadata",
     "FileStreamerPort",
     "FileSystemScanner",
+    "HlsCacheStats",
     "HlsPlaylistPort",
     "IntroDetectorPort",
     "LocalizedFields",

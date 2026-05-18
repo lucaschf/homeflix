@@ -29,6 +29,7 @@ from src.modules.library.presentation.routes.library_routes import (
 )
 from src.modules.media.presentation.routes import (
     admin_relink_router,
+    admin_system_router,
     catalog_router,
     collection_router,
     enrichment_router,
@@ -51,6 +52,7 @@ from src.modules.watch_progress.presentation.routes import progress_router
 #: list (drift between the two would mean tests miss DI-resolved deps).
 WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.media.presentation.routes.admin_relink_routes",
+    "src.modules.media.presentation.routes.admin_system_routes",
     "src.modules.media.presentation.routes.catalog_routes",
     "src.modules.media.presentation.routes.collection_routes",
     "src.modules.media.presentation.routes.search_routes",
@@ -253,6 +255,7 @@ def create_app() -> FastAPI:
     # Register routes
     register_health_routes(app)
     app.include_router(admin_relink_router)
+    app.include_router(admin_system_router)
     app.include_router(catalog_router)
     app.include_router(collection_router)
     app.include_router(search_router)

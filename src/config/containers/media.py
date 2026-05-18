@@ -12,6 +12,9 @@ from src.modules.media.application.use_cases.bulk_enrich_metadata import (
 )
 from src.modules.media.application.use_cases.clear_episode_intro import ClearEpisodeIntroUseCase
 from src.modules.media.application.use_cases.clear_hls_cache import ClearHlsCacheUseCase
+from src.modules.media.application.use_cases.clear_hls_cache_global import (
+    ClearHlsCacheGlobalUseCase,
+)
 from src.modules.media.application.use_cases.delete_movie import DeleteMovieUseCase
 from src.modules.media.application.use_cases.delete_series import DeleteSeriesUseCase
 from src.modules.media.application.use_cases.enrich_movie_metadata import (
@@ -29,6 +32,9 @@ from src.modules.media.application.use_cases.get_collection_by_tmdb_id import (
 from src.modules.media.application.use_cases.get_featured_media import GetFeaturedMediaUseCase
 from src.modules.media.application.use_cases.get_file_tracks import GetFileTracksUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
+from src.modules.media.application.use_cases.get_hls_cache_stats import (
+    GetHlsCacheStatsUseCase,
+)
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
     GetMovieTmdbSuggestionsUseCase,
@@ -345,6 +351,16 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     clear_hls_cache = providers.Factory(
         ClearHlsCacheUseCase,
+        hls=hls_service,
+    )
+
+    clear_hls_cache_global = providers.Factory(
+        ClearHlsCacheGlobalUseCase,
+        hls=hls_service,
+    )
+
+    get_hls_cache_stats = providers.Factory(
+        GetHlsCacheStatsUseCase,
         hls=hls_service,
     )
 
