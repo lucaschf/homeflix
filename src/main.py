@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.building_blocks.presentation import RequestContextMiddleware
@@ -348,20 +348,48 @@ def register_health_routes(app: FastAPI) -> None:
         }
 
     @app.get("/health/ready", tags=["Health"])  # type: ignore[misc]
-    async def readiness_check() -> dict[str, Any]:
-        """Readiness check - verifies all dependencies are available."""
-        checks = {
-            "database": "healthy",  # TODO: Actually check database
-            "filesystem": "healthy",  # TODO: Check media directories
-        }
+    async def readiness_check(request: Request) -> dict[str, Any]:
+        """Readiness check covering every probe + a top-level rollup.
 
-        all_healthy = all(status == "healthy" for status in checks.values())
+        Top-level ``status``:
 
-        return {
-            "status": "ready" if all_healthy else "not_ready",
+        - ``ready`` — every probe healthy.
+        - ``degraded`` — at least one probe is partially OK
+          (e.g. one library mount missing while others are fine).
+        - ``not_ready`` — at least one probe is fully unhealthy.
+
+        ``messages`` is only emitted for probes that are not
+        healthy, so the bare healthy payload stays terse.
+        """
+        from src.infrastructure.health import ProbeResult, ProbeStatus
+
+        container: ApplicationContainer = request.app.state.container
+        database_probe = await container.database_probe()
+        filesystem_probe = await container.filesystem_probe()
+
+        results: list[ProbeResult] = [
+            await database_probe.execute(),
+            await filesystem_probe.execute(),
+        ]
+
+        checks = {r.name: r.status.value for r in results}
+        messages = {r.name: r.message for r in results if r.message}
+
+        if any(r.status == ProbeStatus.UNHEALTHY for r in results):
+            rollup = "not_ready"
+        elif any(r.status == ProbeStatus.DEGRADED for r in results):
+            rollup = "degraded"
+        else:
+            rollup = "ready"
+
+        payload: dict[str, Any] = {
+            "status": rollup,
             "timestamp": datetime.now(UTC).isoformat(),
             "checks": checks,
         }
+        if messages:
+            payload["messages"] = messages
+        return payload
 
     @app.get("/", tags=["Root"])  # type: ignore[misc]
     async def root() -> dict[str, str]:
