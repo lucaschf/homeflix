@@ -499,5 +499,13 @@ class SeriesRepository(ABC):
         """
         ...
 
+    @abstractmethod
+    async def count(self) -> int:
+        """Return the total number of non-deleted series.
+
+        Drives the admin Overview stat card.
+        """
+        ...
+
 
 __all__ = ["SeriesRepository"]

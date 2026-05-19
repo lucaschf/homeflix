@@ -1108,6 +1108,33 @@ class TestCountUnderPaths:
 
 
 @pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryCount:
+    """Integration tests for the catalog-wide ``count`` method."""
+
+    async def test_should_return_zero_for_empty_catalog(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        assert await repo.count() == 0
+
+    async def test_should_count_every_non_deleted_movie(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="A", file_path="/a.mkv"))
+        await repo.save(_create_movie(title="B", file_path="/b.mkv"))
+        await repo.save(_create_movie(title="C", file_path="/c.mkv"))
+
+        assert await repo.count() == 3
+
+    async def test_should_exclude_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        a = _create_movie(title="A", file_path="/a.mkv")
+        b = _create_movie(title="B", file_path="/b.mkv")
+        await repo.save(a)
+        await repo.save(b)
+        await repo.delete(_id_of(b))
+
+        assert await repo.count() == 1
+
+
+@pytest.mark.integration
 class TestSQLAlchemyMovieRepositoryLibraryIsolation:
     """Cross-library isolation at the persistence layer.
 

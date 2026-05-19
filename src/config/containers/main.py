@@ -130,6 +130,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         profile_library_access=_profile_library_access_adapter,
         catalog_request_lookup=catalog_requests.catalog_request_lookup,
         library_uow_factory=_library_uow_factory_for_media,
+        identity_uow_factory=_identity_uow_factory_for_profile_library_access,
         tmdb_api_key=config.provided.tmdb_api_key,
         hls_cache_directory=config.provided.hls_cache_directory,
         hls_cache_max_size_mb=config.provided.hls_cache_max_size_mb,

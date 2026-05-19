@@ -1170,6 +1170,30 @@ def _series_with_intro(
 
 
 @pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryCount:
+    """Integration tests for the catalog-wide ``count`` method."""
+
+    async def test_should_return_zero_for_empty_catalog(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        assert await repo.count() == 0
+
+    async def test_should_count_every_non_deleted_series(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await _seed_series(repo, 3)
+
+        assert await repo.count() == 3
+
+    async def test_should_exclude_soft_deleted(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        keep, doomed = await _seed_series(repo, 2)
+        await repo.delete(_id_of(doomed))
+
+        assert await repo.count() == 1
+        # Sanity-check the surviving row is the one we kept.
+        assert (await repo.find_by_id(_id_of(keep))) is not None
+
+
+@pytest.mark.integration
 class TestSeriesRepositoryIntroPersistence:
     """Tests covering IntroMarker and Season detection-state persistence."""
 
