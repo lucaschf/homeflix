@@ -65,6 +65,7 @@ async def list_series(
     lang: str = "en",
     library_id: str | None = None,
     has_tmdb_id: bool | None = None,
+    q: str | None = None,
     profile_id: str = Depends(resolve_profile_id),
     use_case: ListSeriesUseCase = Depends(
         Provide[ApplicationContainer.media.list_series],
@@ -74,7 +75,10 @@ async def list_series(
 
     Mirrors ``GET /api/v1/movies`` for the common params; series
     don't carry a ``needs_review`` flag yet, so the filter set
-    drops that one.
+    drops that one. ``q`` is an optional case-insensitive substring
+    match against ``title`` / ``original_title`` so the admin
+    Catalog page can layer text search on top of the other filters
+    without breaking cursor pagination.
     """
     clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
     result = await use_case.execute(
@@ -86,6 +90,7 @@ async def list_series(
             lang=lang,
             library_id=library_id,
             has_tmdb_id=has_tmdb_id,
+            q=q,
         )
     )
     extras: dict[str, Any] | None = (

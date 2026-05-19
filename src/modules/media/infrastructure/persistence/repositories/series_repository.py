@@ -52,11 +52,14 @@ def _series_filter_conditions(
     allowed_library_ids: Sequence[str] | None,
     library_id: str | None,
     has_tmdb_id: bool | None,
+    fts_matching_ids: Sequence[int] | None,
 ) -> list:
     """Build SQLAlchemy ``WHERE`` clauses for the optional series filters.
 
     Mirrors ``_movie_filter_conditions`` so both repositories surface
-    the same admin-facing filter contract.
+    the same admin-facing filter contract. ``fts_matching_ids`` is
+    the result of pre-querying ``series_fts`` for the operator's
+    ``q`` text; the caller resolves it once before the page query.
     """
     conditions: list = []
     if allowed_library_ids is not None:
@@ -67,7 +70,35 @@ def _series_filter_conditions(
         conditions.append(
             SeriesModel.tmdb_id.is_not(None) if has_tmdb_id else SeriesModel.tmdb_id.is_(None),
         )
+    if fts_matching_ids is not None:
+        conditions.append(SeriesModel.id.in_(fts_matching_ids))
     return conditions
+
+
+async def _series_fts_matching_ids(session: AsyncSession, query: str) -> list[int]:
+    """Resolve ``query`` against ``series_fts`` and return matching ids.
+
+    Mirrors ``_movie_fts_matching_ids`` — same FTS5 column surface
+    minus the movie-specific ``tagline`` / ``writers`` /
+    ``collection_name`` / ``directors`` projections (series don't
+    carry those fields).
+
+    Returns ``[]`` when the sanitized query is empty or has no
+    matches; caller short-circuits with an empty page.
+    """
+    from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
+        _prepare_fts_query,
+    )
+
+    fts_query = _prepare_fts_query(query)
+    if not fts_query:
+        return []
+    sql = """
+        SELECT rowid FROM series_fts
+        WHERE series_fts MATCH :query
+    """
+    result = await session.execute(text(sql), {"query": fts_query})
+    return [row[0] for row in result.fetchall()]
 
 
 class SQLAlchemySeriesRepository(SeriesRepository):
@@ -225,6 +256,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         allowed_library_ids: Sequence[str] | None = None,
         library_id: str | None = None,
         has_tmdb_id: bool | None = None,
+        q: str | None = None,
     ) -> PaginatedResult[Series]:
         """List series in a single cursor-paginated page.
 
@@ -240,11 +272,30 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         Admin filters (``library_id``, ``has_tmdb_id``) compose with
         the per-profile ``allowed_library_ids`` ACL — see the matching
         helper on the movie repository for the contract.
+
+        ``q`` is delegated to the ``series_fts`` virtual table for
+        i18n-aware matching across title / original_title / synopsis
+        / genres / cast plus every ``localized_*`` projection. The
+        FTS5 ``MATCH`` resolves to a set of internal ids that is
+        then composed as ``id IN (...)`` so cursor pagination stays
+        ordered by ``id DESC`` (consistent page-by-page admin walk)
+        rather than relevance.
         """
+        fts_matching_ids: list[int] | None = None
+        if q and q.strip():
+            fts_matching_ids = await _series_fts_matching_ids(self._session, q)
+            if not fts_matching_ids:
+                return PaginatedResult(
+                    items=[],
+                    pagination=Pagination(next_cursor=None, has_more=False),
+                    total_count=0 if include_total else None,
+                )
+
         conditions = _series_filter_conditions(
             allowed_library_ids=allowed_library_ids,
             library_id=library_id,
             has_tmdb_id=has_tmdb_id,
+            fts_matching_ids=fts_matching_ids,
         )
 
         decoded = decode_cursor(cursor)

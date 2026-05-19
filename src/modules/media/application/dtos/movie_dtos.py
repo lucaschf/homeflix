@@ -224,6 +224,7 @@ class ListMoviesInput:
     library_id: str | None = None
     has_tmdb_id: bool | None = None
     needs_enrichment_review: bool | None = None
+    q: str | None = None
 
 
 @dataclass(frozen=True)

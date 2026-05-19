@@ -67,6 +67,7 @@ class TestListSeriesUseCase:
             allowed_library_ids=[_LIBRARY_ID],
             library_id=None,
             has_tmdb_id=None,
+            q=None,
         )
 
     @pytest.mark.asyncio
@@ -113,6 +114,7 @@ class TestListSeriesUseCase:
             allowed_library_ids=[_LIBRARY_ID],
             library_id=None,
             has_tmdb_id=None,
+            q=None,
         )
 
     @pytest.mark.asyncio
@@ -200,6 +202,7 @@ class TestListSeriesUseCase:
             allowed_library_ids=[_LIBRARY_ID],
             library_id=None,
             has_tmdb_id=None,
+            q=None,
         )
 
     @pytest.mark.asyncio

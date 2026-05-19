@@ -856,6 +856,26 @@ class TestSQLAlchemySeriesRepositoryListPaginated:
 
 
 @pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryListPaginatedAdminFilters:
+    """Integration coverage for the admin Catalog ``q`` short-circuit
+    on ``list_paginated``. The FTS5 hit path itself is exercised by
+    the live ``/api/v1/series?q=...`` smoke flow because
+    ``series_fts`` ships via Alembic, not
+    ``Base.metadata.create_all``."""
+
+    async def test_q_blank_should_short_circuit_the_fts_round_trip(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_create_series(title="A"))
+        await repo.save(_create_series(title="B"))
+
+        page = await repo.list_paginated(cursor=None, limit=10, q="   ")
+
+        assert {s.title.value for s in page.items} == {"A", "B"}
+
+
+@pytest.mark.integration
 class TestSQLAlchemySeriesRepositoryListRecentlyAdded:
     """Integration tests for the bounded "top N newest" projection."""
 

@@ -77,6 +77,7 @@ class ListSeriesUseCase:
                 allowed_library_ids=allowed,
                 library_id=input_dto.library_id,
                 has_tmdb_id=input_dto.has_tmdb_id,
+                q=input_dto.q,
             )
 
         return ListSeriesOutput(

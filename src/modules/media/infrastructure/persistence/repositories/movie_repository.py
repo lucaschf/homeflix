@@ -40,12 +40,18 @@ def _movie_filter_conditions(
     library_id: str | None,
     has_tmdb_id: bool | None,
     needs_enrichment_review: bool | None,
+    fts_matching_ids: Sequence[int] | None,
 ) -> list:
     """Build SQLAlchemy ``WHERE`` clauses for the optional movie filters.
 
     Pulled out as a helper so ``list_paginated`` and its
     ``COUNT(*)`` partner stay in lock-step — adding a new filter
     means one edit here rather than two parallel branches drifting.
+
+    ``fts_matching_ids`` is the result of pre-querying the
+    ``movies_fts`` virtual table for the operator's ``q`` text.
+    Caller resolves it once, before the page query, so the same
+    id set scopes both ``SELECT`` and ``COUNT(*)``.
     """
     conditions: list = []
     if allowed_library_ids is not None:
@@ -62,6 +68,8 @@ def _movie_filter_conditions(
             if needs_enrichment_review
             else MovieModel.needs_enrichment_review.is_(False),
         )
+    if fts_matching_ids is not None:
+        conditions.append(MovieModel.id.in_(fts_matching_ids))
     return conditions
 
 
@@ -206,6 +214,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         library_id: str | None = None,
         has_tmdb_id: bool | None = None,
         needs_enrichment_review: bool | None = None,
+        q: str | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies in a single cursor-paginated page.
 
@@ -226,12 +235,34 @@ class SQLAlchemyMovieRepository(MovieRepository):
         satisfy *both* constraints. Admin pages call without ACL
         kwargs and pass these filters; the user-facing list does the
         inverse.
+
+        ``q`` is delegated to the ``movies_fts`` virtual table so the
+        same i18n-aware tokenizer + indexed surface (title,
+        original_title, synopsis, tagline, genres, cast, directors,
+        writers, collection_name, localized_*) used by the catalog
+        search overlay backs the admin's text filter. The FTS5
+        ``MATCH`` resolves to a set of internal ids that is then
+        composed as ``id IN (...)`` so cursor pagination remains
+        ordered by ``id DESC`` rather than relevance — the admin
+        flow benefits more from a stable page-by-page walk than a
+        ranked top-N.
         """
+        fts_matching_ids: list[int] | None = None
+        if q and q.strip():
+            fts_matching_ids = await _movie_fts_matching_ids(self._session, q)
+            if not fts_matching_ids:
+                return PaginatedResult(
+                    items=[],
+                    pagination=Pagination(next_cursor=None, has_more=False),
+                    total_count=0 if include_total else None,
+                )
+
         conditions = _movie_filter_conditions(
             allowed_library_ids=allowed_library_ids,
             library_id=library_id,
             has_tmdb_id=has_tmdb_id,
             needs_enrichment_review=needs_enrichment_review,
+            fts_matching_ids=fts_matching_ids,
         )
 
         decoded = decode_cursor(cursor)
@@ -729,6 +760,34 @@ class SQLAlchemyMovieRepository(MovieRepository):
         ]
         hits.sort(key=lambda h: h[1])
         return hits[:limit]
+
+
+async def _movie_fts_matching_ids(session: AsyncSession, query: str) -> list[int]:
+    """Resolve ``query`` against ``movies_fts`` and return matching ids.
+
+    Used by the admin Catalog list to delegate text matching to the
+    same FTS5 index that powers the catalog search overlay — same
+    tokenizer, same column surface (title, original_title, synopsis,
+    tagline, genres, cast, directors, writers, collection_name and
+    every ``localized_*`` projection of the JSON ``localized`` blob).
+
+    Returns ``[]`` when the sanitized query is empty or no rows
+    match — caller treats both as "no hits" and short-circuits with
+    an empty page.
+
+    No ``LIMIT``: the caller composes the result as ``id IN (...)``
+    and re-orders by ``id DESC`` for cursor pagination, so it needs
+    the full hit set rather than a relevance-ranked top-N.
+    """
+    fts_query = _prepare_fts_query(query)
+    if not fts_query:
+        return []
+    sql = """
+        SELECT rowid FROM movies_fts
+        WHERE movies_fts MATCH :query
+    """
+    result = await session.execute(text(sql), {"query": fts_query})
+    return [row[0] for row in result.fetchall()]
 
 
 def _prepare_fts_query(query: str) -> str:

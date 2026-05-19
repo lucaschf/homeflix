@@ -83,6 +83,7 @@ class ListMoviesUseCase:
                 library_id=input_dto.library_id,
                 has_tmdb_id=input_dto.has_tmdb_id,
                 needs_enrichment_review=input_dto.needs_enrichment_review,
+                q=input_dto.q,
             )
 
         return ListMoviesOutput(
