@@ -17,6 +17,7 @@ from src.config.containers.media import MediaContainer
 from src.config.containers.preferences import PreferencesContainer
 from src.config.containers.watch_progress import WatchProgressContainer
 from src.config.settings import Settings
+from src.infrastructure.health import DatabaseProbe, FilesystemProbe
 from src.infrastructure.scheduling import (
     IntroDetectionJob,
     LibraryScanScheduler,
@@ -111,6 +112,20 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     _library_uow_factory_for_media = providers.Singleton(
         SqlAlchemyLibraryUnitOfWorkFactory,
         session_factory=infrastructure.session_factory,
+    )
+
+    # Real readiness probes that back ``GET /health/ready`` — see
+    # ``src/infrastructure/health/probes.py``. Singletons because
+    # the probes are stateless and the underlying deps
+    # (session_factory, library UoW) are already shared singletons.
+    database_probe = providers.Singleton(
+        DatabaseProbe,
+        session_factory=infrastructure.session_factory,
+    )
+
+    filesystem_probe = providers.Singleton(
+        FilesystemProbe,
+        library_uow_factory=_library_uow_factory_for_media,
     )
 
     # Catalog Requests is built before Media so its ACL adapter can be
