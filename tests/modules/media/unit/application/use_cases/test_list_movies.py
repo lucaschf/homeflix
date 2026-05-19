@@ -79,6 +79,7 @@ class TestListMoviesUseCase:
             library_id=None,
             has_tmdb_id=None,
             needs_enrichment_review=None,
+            q=None,
         )
 
     @pytest.mark.asyncio
@@ -120,6 +121,7 @@ class TestListMoviesUseCase:
             library_id=None,
             has_tmdb_id=None,
             needs_enrichment_review=None,
+            q=None,
         )
 
     @pytest.mark.asyncio
@@ -178,6 +180,7 @@ class TestListMoviesUseCase:
             library_id=None,
             has_tmdb_id=None,
             needs_enrichment_review=None,
+            q=None,
         )
 
     @pytest.mark.asyncio

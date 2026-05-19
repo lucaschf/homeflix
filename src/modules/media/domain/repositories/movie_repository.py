@@ -100,6 +100,7 @@ class MovieRepository(ABC):
         library_id: str | None = None,
         has_tmdb_id: bool | None = None,
         needs_enrichment_review: bool | None = None,
+        q: str | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies in a single page using cursor-based pagination.
 
@@ -137,6 +138,9 @@ class MovieRepository(ABC):
                 applies no filter.
             needs_enrichment_review: Optional admin filter — ``True``
                 keeps only rows the enricher flagged for review.
+            q: Optional case-insensitive substring match against
+                ``title`` / ``original_title``. ``None`` or an empty /
+                whitespace-only string applies no filter.
 
         Returns:
             ``PaginatedResult`` containing the page items, the

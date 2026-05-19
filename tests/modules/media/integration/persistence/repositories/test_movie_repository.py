@@ -641,6 +641,26 @@ class TestSQLAlchemyMovieRepositoryListPaginatedAdminFilters:
 
         assert {m.title.value for m in page.items} == {"Match"}
 
+    async def test_q_blank_should_short_circuit_the_fts_round_trip(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Empty / whitespace-only ``q`` skips the FTS5 lookup so the
+        regular ``id DESC`` page still lands every non-deleted row.
+
+        End-to-end coverage for the FTS5 hit path lives in the
+        ``/api/v1/movies?q=...`` smoke flow — the in-memory SQLite
+        test database doesn't have the ``movies_fts`` virtual table
+        (it ships via Alembic, not ``Base.metadata.create_all``)
+        and bootstrapping it here would duplicate the chain of
+        migrations that build the localized JSON projections."""
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="A", file_path="/m/a.mkv"))
+        await repo.save(_create_movie(title="B", file_path="/m/b.mkv"))
+
+        page = await repo.list_paginated(cursor=None, limit=10, q="   ")
+
+        assert {m.title.value for m in page.items} == {"A", "B"}
+
 
 @pytest.mark.integration
 class TestSQLAlchemyMovieRepositoryListRecentlyAdded:

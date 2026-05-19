@@ -59,6 +59,7 @@ async def list_movies(
     library_id: str | None = None,
     has_tmdb_id: bool | None = None,
     needs_review: bool | None = None,
+    q: str | None = None,
     profile_id: str = Depends(resolve_profile_id),
     use_case: ListMoviesUseCase = Depends(
         Provide[ApplicationContainer.media.list_movies],
@@ -90,6 +91,11 @@ async def list_movies(
             ``/admin/movies/needs-review`` listing but stays inside
             the standard paginated list so the admin Catalog page
             can apply it alongside other filters.
+        q: Optional case-insensitive substring match against the
+            movie's ``title`` / ``original_title``. Empty /
+            whitespace-only values apply no filter — kept inside the
+            standard paginated list so it composes with the other
+            admin filters and cursor pagination.
     """
     clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
     result = await use_case.execute(
@@ -102,6 +108,7 @@ async def list_movies(
             library_id=library_id,
             has_tmdb_id=has_tmdb_id,
             needs_enrichment_review=needs_review,
+            q=q,
         )
     )
     extras: dict[str, Any] | None = (

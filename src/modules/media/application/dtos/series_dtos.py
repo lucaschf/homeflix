@@ -233,6 +233,7 @@ class ListSeriesInput:
     # the user-facing list means "no extra constraint".
     library_id: str | None = None
     has_tmdb_id: bool | None = None
+    q: str | None = None
 
 
 @dataclass(frozen=True)

@@ -95,6 +95,7 @@ class SeriesRepository(ABC):
         allowed_library_ids: Sequence[str] | None = None,
         library_id: str | None = None,
         has_tmdb_id: bool | None = None,
+        q: str | None = None,
     ) -> PaginatedResult[Series]:
         """List series in a single page using cursor-based pagination.
 
@@ -127,6 +128,9 @@ class SeriesRepository(ABC):
             has_tmdb_id: Optional admin filter — ``True`` keeps only
                 enriched rows, ``False`` only un-enriched, ``None``
                 applies no filter.
+            q: Optional case-insensitive substring match against
+                ``title`` / ``original_title``. ``None`` or an empty /
+                whitespace-only string applies no filter.
 
         Returns:
             ``PaginatedResult`` containing the page items, the
