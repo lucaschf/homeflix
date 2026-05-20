@@ -177,6 +177,9 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     Centralises event handler registration so it stays alongside
     the rest of the container configuration.
     """
+    from src.modules.catalog_requests.application.event_handlers import (
+        OnMediaEnrichedHandler,
+    )
     from src.modules.collections.application.event_handlers import (
         OnMoviePromotedToSeriesHandler as CollectionsOnMoviePromotedHandler,
     )
@@ -187,6 +190,7 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     from src.modules.media.application.event_handlers import OnMediaCreatedHandler
     from src.modules.media.domain.events import (
         MediaCreatedEvent,
+        MediaEnrichedEvent,
         MoviePromotedToSeriesEvent,
     )
     from src.modules.watch_progress.application.event_handlers import (
@@ -203,6 +207,16 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
         enrich_series_factory=container.media.enrich_series_metadata,
     )
     event_bus.subscribe(MediaCreatedEvent, media_created_handler)
+
+    # ``catalog_requests`` flips a pending request to fulfilled the
+    # moment a matching title finishes enrichment with a TMDB id —
+    # closes the loop so the admin queue stops surfacing the row.
+    event_bus.subscribe(
+        MediaEnrichedEvent,
+        OnMediaEnrichedHandler(
+            uow_factory=container.catalog_requests.catalog_requests_unit_of_work_factory(),
+        ),
+    )
 
     # Cross-BC fan-out when a movie is promoted into a series.
     # watch_progress drops the stale rows (positions can't survive a
