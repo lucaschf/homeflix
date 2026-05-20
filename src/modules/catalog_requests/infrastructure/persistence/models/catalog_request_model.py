@@ -25,6 +25,13 @@ class CatalogRequestModel(Base):
             inline without re-querying TMDB. ``None`` on rows created
             before this column existed (the admin page falls back to
             the bare ``tmdb/<id>`` link in that case).
+        requester_user_id: External id (``usr_xxx``) of the user who
+            registered the request. Layer B of the catalog-request
+            arrival flow uses this anchor to send the "title is
+            now available" notification to the right inbox instead
+            of broadcasting across the household. ``None`` on legacy
+            rows or programmatic seeds — those stay anonymous and
+            never produce a notification.
         collection_tmdb_id: Originating TMDB collection id, if any.
         notify_on_arrival: Whether the user opted in to a "title
             now available" notification.
@@ -38,6 +45,11 @@ class CatalogRequestModel(Base):
     tmdb_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     media_type: Mapped[str] = mapped_column(String(20), nullable=False)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    requester_user_id: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
     collection_tmdb_id: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,

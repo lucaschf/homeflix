@@ -22,6 +22,8 @@ from src.modules.catalog_requests.application.use_cases.list_catalog_requests im
     ListCatalogRequestsInput,
 )
 from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
+from src.modules.identity.infrastructure.auth import current_active_user
+from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 
 router = APIRouter(prefix="/api/v1/catalog-requests", tags=["Catalog Requests"])
 
@@ -69,6 +71,7 @@ class SubscribeNotifyRequest(BaseModel):
 @inject  # type: ignore[misc]
 async def create_catalog_request(
     body: CreateCatalogRequestRequest,
+    user: UserModel = Depends(current_active_user),
     use_case: RequestCatalogInclusionUseCase = Depends(
         Provide[ApplicationContainer.catalog_requests.request_catalog_inclusion],
     ),
@@ -77,13 +80,17 @@ async def create_catalog_request(
 
     Idempotent on ``(tmdb_id, media_type)``: a repeat call returns
     the existing request unchanged. Passing ``notify_on_arrival=true``
-    on a repeat call flips notifications on if they were off.
+    on a repeat call flips notifications on if they were off. The
+    request is tagged with the caller's user id so the arrival
+    notification (Layer B) reaches the right inbox; a repeat by a
+    different user keeps the original owner (first-owner wins).
     """
     result = await use_case.execute(
         CreateCatalogRequestInput(
             tmdb_id=body.tmdb_id,
             media_type=body.media_type,
             title=body.title,
+            requester_user_id=user.external_id,
             collection_tmdb_id=body.collection_tmdb_id,
             notify_on_arrival=body.notify_on_arrival,
         ),
@@ -96,6 +103,7 @@ async def create_catalog_request(
 async def subscribe_catalog_notification(
     tmdb_id: int,
     body: SubscribeNotifyRequest,
+    user: UserModel = Depends(current_active_user),
     use_case: SubscribeCatalogNotificationUseCase = Depends(
         Provide[ApplicationContainer.catalog_requests.subscribe_catalog_notification],
     ),
@@ -103,13 +111,16 @@ async def subscribe_catalog_notification(
     """Subscribe to the "title now available" notification.
 
     Creates a ``CatalogRequest`` if none exists yet, or just flips
-    ``notify_on_arrival`` to ``True`` on the existing one.
+    ``notify_on_arrival`` to ``True`` on the existing one. The
+    requester user id is backfilled when the existing row was
+    created without one (legacy / programmatic seed).
     """
     result = await use_case.execute(
         SubscribeCatalogNotificationInput(
             tmdb_id=tmdb_id,
             media_type=body.media_type,
             title=body.title,
+            requester_user_id=user.external_id,
             collection_tmdb_id=body.collection_tmdb_id,
         ),
     )
