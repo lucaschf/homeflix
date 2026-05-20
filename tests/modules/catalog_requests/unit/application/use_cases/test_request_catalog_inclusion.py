@@ -149,3 +149,70 @@ class TestRequestCatalogInclusionUseCase:
 
         assert result.title == "Alien"
         mocks.catalog_requests.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_persists_requester_user_id_on_new_request(self) -> None:
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = None
+        mocks.catalog_requests.add.side_effect = lambda req: req
+        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            CreateCatalogRequestInput(
+                tmdb_id=348,
+                media_type=RequestedMediaType.MOVIE,
+                requester_user_id="usr_abc123",
+            ),
+        )
+
+        assert result.requester_user_id == "usr_abc123"
+
+    @pytest.mark.asyncio
+    async def test_backfills_requester_user_id_on_legacy_repeat(self) -> None:
+        """Legacy rows with ``requester_user_id=None`` accept a
+        backfill from a re-submit so notifications start landing in
+        the user's inbox without an out-of-band migration."""
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        mocks.catalog_requests.update.side_effect = lambda req: req
+        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            CreateCatalogRequestInput(
+                tmdb_id=348,
+                media_type=RequestedMediaType.MOVIE,
+                requester_user_id="usr_abc123",
+            ),
+        )
+
+        assert result.requester_user_id == "usr_abc123"
+        mocks.catalog_requests.update.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_first_owner_wins_when_second_user_submits(self) -> None:
+        """First-owner-wins: user A's request keeps A as
+        ``requester_user_id`` even when user B re-submits, so A's
+        notification never gets re-routed to B."""
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+            requester_user_id="usr_alice",
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            CreateCatalogRequestInput(
+                tmdb_id=348,
+                media_type=RequestedMediaType.MOVIE,
+                requester_user_id="usr_bob",
+            ),
+        )
+
+        assert result.requester_user_id == "usr_alice"
+        mocks.catalog_requests.update.assert_not_called()

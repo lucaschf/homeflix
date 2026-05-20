@@ -35,6 +35,10 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
             was registered. The admin queue uses this to render
             "Title (tmdb/id)" inline without re-querying TMDB. May
             be ``None`` on rows created before the column existed.
+        requester_user_id: External id (``usr_xxx``) of the user who
+            registered the request. Layer B of the arrival flow
+            uses this anchor to ping the right inbox; ``None`` on
+            legacy rows skips the notification.
         collection_tmdb_id: TMDB collection id that surfaced this
             request, if any. Lets us scope listings to a single
             franchise (e.g. "all pending requests in the Alien
@@ -63,6 +67,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     tmdb_id: int
     media_type: RequestedMediaType
     title: str | None = None
+    requester_user_id: str | None = None
     collection_tmdb_id: int | None = None
     notify_on_arrival: bool = False
     requested_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -74,6 +79,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         tmdb_id: int,
         media_type: RequestedMediaType,
         title: str | None = None,
+        requester_user_id: str | None = None,
         collection_tmdb_id: int | None = None,
         notify_on_arrival: bool = False,
     ) -> CatalogRequest:
@@ -87,6 +93,10 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
                 (older clients, programmatic ingest), the field stays
                 ``None`` and the admin queue falls back to the bare
                 ``tmdb/<id>`` link.
+            requester_user_id: External id (``usr_xxx``) of the user
+                creating the request. Powers the per-user arrival
+                notification; ``None`` skips the ping (legacy or
+                anonymous seed).
             collection_tmdb_id: Optional franchise id that surfaced
                 this request.
             notify_on_arrival: Whether to subscribe to the arrival
@@ -100,6 +110,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
             tmdb_id=tmdb_id,
             media_type=media_type,
             title=title,
+            requester_user_id=requester_user_id,
             collection_tmdb_id=collection_tmdb_id,
             notify_on_arrival=notify_on_arrival,
             requested_at=datetime.now(UTC),

@@ -32,6 +32,7 @@ class CreateCatalogRequestInput:
     tmdb_id: int
     media_type: RequestedMediaType
     title: str | None = None
+    requester_user_id: str | None = None
     collection_tmdb_id: int | None = None
     notify_on_arrival: bool = False
 
@@ -43,6 +44,7 @@ class SubscribeCatalogNotificationInput:
     tmdb_id: int
     media_type: RequestedMediaType
     title: str | None = None
+    requester_user_id: str | None = None
     collection_tmdb_id: int | None = None
 
 
@@ -72,6 +74,8 @@ class CatalogRequestOutput:
         media_type: ``"movie"`` or ``"series"``.
         title: Snapshot of the title taken at request time. ``None``
             on legacy rows created before the column existed.
+        requester_user_id: External id (``usr_xxx``) of the user who
+            registered the request. ``None`` on legacy rows.
         collection_tmdb_id: Originating TMDB collection id, if any.
         notify_on_arrival: Whether the user opted in to a notification.
         is_fulfilled: ``True`` when the title is already in the catalog.
@@ -83,6 +87,7 @@ class CatalogRequestOutput:
     tmdb_id: int
     media_type: str
     title: str | None
+    requester_user_id: str | None
     collection_tmdb_id: int | None
     notify_on_arrival: bool
     is_fulfilled: bool
@@ -97,6 +102,7 @@ class CatalogRequestOutput:
             tmdb_id=entity.tmdb_id,
             media_type=entity.media_type.value,
             title=entity.title,
+            requester_user_id=entity.requester_user_id,
             collection_tmdb_id=entity.collection_tmdb_id,
             notify_on_arrival=entity.notify_on_arrival,
             is_fulfilled=entity.is_fulfilled,

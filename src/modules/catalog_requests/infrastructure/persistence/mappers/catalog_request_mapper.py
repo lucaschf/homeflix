@@ -40,6 +40,7 @@ class CatalogRequestMapper:
             tmdb_id=entity.tmdb_id,
             media_type=entity.media_type.value,
             title=entity.title,
+            requester_user_id=entity.requester_user_id,
             collection_tmdb_id=entity.collection_tmdb_id,
             notify_on_arrival=entity.notify_on_arrival,
             requested_at=entity.requested_at,
@@ -54,6 +55,7 @@ class CatalogRequestMapper:
             tmdb_id=model.tmdb_id,
             media_type=RequestedMediaType(model.media_type),
             title=model.title,
+            requester_user_id=model.requester_user_id,
             collection_tmdb_id=model.collection_tmdb_id,
             notify_on_arrival=model.notify_on_arrival,
             requested_at=model.requested_at,
@@ -72,10 +74,13 @@ class CatalogRequestMapper:
         Only mutable fields are written back: ``tmdb_id`` /
         ``media_type`` are part of the natural key and never change
         after creation, so updating them would be a bug. ``title``
-        is mutable so a re-submit from a client that finally knows
-        the title can backfill the snapshot on legacy rows.
+        and ``requester_user_id`` are mutable so a re-submit from
+        a client that finally knows the title (or comes from a
+        different user) can backfill the snapshot / replace the
+        recipient on legacy rows.
         """
         model.title = entity.title
+        model.requester_user_id = entity.requester_user_id
         model.collection_tmdb_id = entity.collection_tmdb_id
         model.notify_on_arrival = entity.notify_on_arrival
         model.fulfilled_at = entity.fulfilled_at

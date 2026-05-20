@@ -63,18 +63,27 @@ class RequestCatalogInclusionUseCase:
             )
             if existing is not None:
                 # Repeat submit: flip the notify flag on if the caller
-                # asked for it, and backfill the title when a legacy
-                # row was created before the column existed. Either
-                # write opens the same persisted path so the response
-                # stays a single round-trip.
+                # asked for it, and backfill the title /
+                # requester_user_id when a legacy row was created
+                # before those columns existed. We don't *replace*
+                # an existing requester_user_id — first-owner wins
+                # so an A-then-B subscribe doesn't reroute A's
+                # notification away.
                 title_backfill = (
                     input_dto.title if existing.title is None and input_dto.title else None
                 )
+                user_backfill = (
+                    input_dto.requester_user_id
+                    if existing.requester_user_id is None and input_dto.requester_user_id
+                    else None
+                )
                 wants_notify = input_dto.notify_on_arrival and not existing.notify_on_arrival
-                if title_backfill or wants_notify:
+                if title_backfill or user_backfill or wants_notify:
                     updates: dict[str, object] = {}
                     if title_backfill:
                         updates["title"] = title_backfill
+                    if user_backfill:
+                        updates["requester_user_id"] = user_backfill
                     if wants_notify:
                         updates["notify_on_arrival"] = True
                     updated = existing.with_updates(**updates)
@@ -86,6 +95,7 @@ class RequestCatalogInclusionUseCase:
                 tmdb_id=input_dto.tmdb_id,
                 media_type=input_dto.media_type,
                 title=input_dto.title,
+                requester_user_id=input_dto.requester_user_id,
                 collection_tmdb_id=input_dto.collection_tmdb_id,
                 notify_on_arrival=input_dto.notify_on_arrival,
             )
