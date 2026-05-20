@@ -13,6 +13,7 @@ import src.modules.catalog_requests.infrastructure.persistence.models
 import src.modules.collections.infrastructure.persistence.models
 import src.modules.identity.infrastructure.persistence.models
 import src.modules.media.infrastructure.persistence.models
+import src.modules.notifications.infrastructure.persistence.models
 import src.modules.watch_progress.infrastructure.persistence.models  # noqa: F401
 from src.config.settings import get_settings
 from src.infrastructure.persistence.base import Base

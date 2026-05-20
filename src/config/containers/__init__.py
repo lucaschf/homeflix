@@ -12,10 +12,12 @@ from src.config.containers.identity import IdentityContainer
 from src.config.containers.library import LibraryContainer
 from src.config.containers.main import ApplicationContainer
 from src.config.containers.media import MediaContainer
+from src.config.containers.notifications import NotificationsContainer
 
 __all__ = [
     "ApplicationContainer",
     "IdentityContainer",
     "LibraryContainer",
     "MediaContainer",
+    "NotificationsContainer",
 ]
