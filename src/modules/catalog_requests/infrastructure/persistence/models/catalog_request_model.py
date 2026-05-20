@@ -20,6 +20,11 @@ class CatalogRequestModel(Base):
     Attributes:
         tmdb_id: TMDB numeric id of the requested title.
         media_type: ``"movie"`` or ``"series"``.
+        title: Snapshot of the TMDB title at the moment the request
+            was registered, so the admin queue can render the title
+            inline without re-querying TMDB. ``None`` on rows created
+            before this column existed (the admin page falls back to
+            the bare ``tmdb/<id>`` link in that case).
         collection_tmdb_id: Originating TMDB collection id, if any.
         notify_on_arrival: Whether the user opted in to a "title
             now available" notification.
@@ -32,6 +37,7 @@ class CatalogRequestModel(Base):
 
     tmdb_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     media_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     collection_tmdb_id: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
