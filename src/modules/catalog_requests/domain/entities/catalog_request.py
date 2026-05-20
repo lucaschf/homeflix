@@ -31,6 +31,10 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         id: External ID (``req_xxx`` format).
         tmdb_id: TMDB numeric id of the requested title.
         media_type: Whether the request targets a movie or a series.
+        title: Snapshot of the TMDB title at the moment the request
+            was registered. The admin queue uses this to render
+            "Title (tmdb/id)" inline without re-querying TMDB. May
+            be ``None`` on rows created before the column existed.
         collection_tmdb_id: TMDB collection id that surfaced this
             request, if any. Lets us scope listings to a single
             franchise (e.g. "all pending requests in the Alien
@@ -49,6 +53,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         >>> req = CatalogRequest.create(
         ...     tmdb_id=348,
         ...     media_type=RequestedMediaType.MOVIE,
+        ...     title="Alien",
         ...     collection_tmdb_id=8091,
         ... )
     """
@@ -57,6 +62,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
 
     tmdb_id: int
     media_type: RequestedMediaType
+    title: str | None = None
     collection_tmdb_id: int | None = None
     notify_on_arrival: bool = False
     requested_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -67,6 +73,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         cls,
         tmdb_id: int,
         media_type: RequestedMediaType,
+        title: str | None = None,
         collection_tmdb_id: int | None = None,
         notify_on_arrival: bool = False,
     ) -> CatalogRequest:
@@ -75,6 +82,11 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         Args:
             tmdb_id: TMDB numeric id of the requested title.
             media_type: Whether the request targets a movie or a series.
+            title: Snapshot of the TMDB title at request time.
+                Optional — when the caller doesn't know the title
+                (older clients, programmatic ingest), the field stays
+                ``None`` and the admin queue falls back to the bare
+                ``tmdb/<id>`` link.
             collection_tmdb_id: Optional franchise id that surfaced
                 this request.
             notify_on_arrival: Whether to subscribe to the arrival
@@ -87,6 +99,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
             id=CatalogRequestId.generate(),
             tmdb_id=tmdb_id,
             media_type=media_type,
+            title=title,
             collection_tmdb_id=collection_tmdb_id,
             notify_on_arrival=notify_on_arrival,
             requested_at=datetime.now(UTC),

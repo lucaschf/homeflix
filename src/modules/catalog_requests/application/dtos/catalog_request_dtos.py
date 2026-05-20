@@ -17,6 +17,10 @@ class CreateCatalogRequestInput:
     Attributes:
         tmdb_id: TMDB numeric id of the title to request.
         media_type: Whether the target is a movie or a series.
+        title: Snapshot of the TMDB title at request time. Optional
+            so older clients (and programmatic seeds) keep working,
+            but the Collection Detail page sends it in so the admin
+            queue can render the title inline.
         collection_tmdb_id: Optional franchise id that surfaced this
             request (set when the user clicks "Solicitar inclusão"
             from a Collection Detail page).
@@ -27,6 +31,7 @@ class CreateCatalogRequestInput:
 
     tmdb_id: int
     media_type: RequestedMediaType
+    title: str | None = None
     collection_tmdb_id: int | None = None
     notify_on_arrival: bool = False
 
@@ -37,6 +42,7 @@ class SubscribeCatalogNotificationInput:
 
     tmdb_id: int
     media_type: RequestedMediaType
+    title: str | None = None
     collection_tmdb_id: int | None = None
 
 
@@ -64,6 +70,8 @@ class CatalogRequestOutput:
         id: External request id (``req_xxx``).
         tmdb_id: TMDB numeric id of the requested title.
         media_type: ``"movie"`` or ``"series"``.
+        title: Snapshot of the title taken at request time. ``None``
+            on legacy rows created before the column existed.
         collection_tmdb_id: Originating TMDB collection id, if any.
         notify_on_arrival: Whether the user opted in to a notification.
         is_fulfilled: ``True`` when the title is already in the catalog.
@@ -74,6 +82,7 @@ class CatalogRequestOutput:
     id: str
     tmdb_id: int
     media_type: str
+    title: str | None
     collection_tmdb_id: int | None
     notify_on_arrival: bool
     is_fulfilled: bool
@@ -87,6 +96,7 @@ class CatalogRequestOutput:
             id=str(entity.id),
             tmdb_id=entity.tmdb_id,
             media_type=entity.media_type.value,
+            title=entity.title,
             collection_tmdb_id=entity.collection_tmdb_id,
             notify_on_arrival=entity.notify_on_arrival,
             is_fulfilled=entity.is_fulfilled,

@@ -54,15 +54,22 @@ class SubscribeCatalogNotificationUseCase:
                 input_dto.media_type,
             )
             if existing is not None:
-                if existing.notify_on_arrival:
+                title_backfill = (
+                    input_dto.title if existing.title is None and input_dto.title else None
+                )
+                if existing.notify_on_arrival and not title_backfill:
                     return CatalogRequestOutput.from_entity(existing)
-                updated = existing.enable_notification()
+                updates: dict[str, object] = {"notify_on_arrival": True}
+                if title_backfill:
+                    updates["title"] = title_backfill
+                updated = existing.with_updates(**updates)
                 persisted = await uow.catalog_requests.update(updated)
                 return CatalogRequestOutput.from_entity(persisted)
 
             request = CatalogRequest.create(
                 tmdb_id=input_dto.tmdb_id,
                 media_type=input_dto.media_type,
+                title=input_dto.title,
                 collection_tmdb_id=input_dto.collection_tmdb_id,
                 notify_on_arrival=True,
             )

@@ -84,3 +84,68 @@ class TestRequestCatalogInclusionUseCase:
 
         assert result.notify_on_arrival is True
         mocks.catalog_requests.update.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_persists_title_on_new_request(self) -> None:
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = None
+        mocks.catalog_requests.add.side_effect = lambda req: req
+        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            CreateCatalogRequestInput(
+                tmdb_id=348,
+                media_type=RequestedMediaType.MOVIE,
+                title="Alien",
+            ),
+        )
+
+        assert result.title == "Alien"
+
+    @pytest.mark.asyncio
+    async def test_backfills_title_on_legacy_repeat(self) -> None:
+        """Existing rows with ``title=None`` accept a backfill from a
+        repeat submit so admin queue rendering recovers without an
+        out-of-band migration step."""
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        mocks.catalog_requests.update.side_effect = lambda req: req
+        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            CreateCatalogRequestInput(
+                tmdb_id=348,
+                media_type=RequestedMediaType.MOVIE,
+                title="Alien",
+            ),
+        )
+
+        assert result.title == "Alien"
+        mocks.catalog_requests.update.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_keeps_existing_title_on_repeat_without_payload(self) -> None:
+        """A repeat submit that doesn't carry a title must not blank
+        out an already-stored snapshot."""
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+            title="Alien",
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            CreateCatalogRequestInput(
+                tmdb_id=348,
+                media_type=RequestedMediaType.MOVIE,
+            ),
+        )
+
+        assert result.title == "Alien"
+        mocks.catalog_requests.update.assert_not_called()

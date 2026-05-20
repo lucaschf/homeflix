@@ -62,8 +62,22 @@ class RequestCatalogInclusionUseCase:
                 input_dto.media_type,
             )
             if existing is not None:
-                if input_dto.notify_on_arrival and not existing.notify_on_arrival:
-                    updated = existing.enable_notification()
+                # Repeat submit: flip the notify flag on if the caller
+                # asked for it, and backfill the title when a legacy
+                # row was created before the column existed. Either
+                # write opens the same persisted path so the response
+                # stays a single round-trip.
+                title_backfill = (
+                    input_dto.title if existing.title is None and input_dto.title else None
+                )
+                wants_notify = input_dto.notify_on_arrival and not existing.notify_on_arrival
+                if title_backfill or wants_notify:
+                    updates: dict[str, object] = {}
+                    if title_backfill:
+                        updates["title"] = title_backfill
+                    if wants_notify:
+                        updates["notify_on_arrival"] = True
+                    updated = existing.with_updates(**updates)
                     persisted = await uow.catalog_requests.update(updated)
                     return CatalogRequestOutput.from_entity(persisted)
                 return CatalogRequestOutput.from_entity(existing)
@@ -71,6 +85,7 @@ class RequestCatalogInclusionUseCase:
             request = CatalogRequest.create(
                 tmdb_id=input_dto.tmdb_id,
                 media_type=input_dto.media_type,
+                title=input_dto.title,
                 collection_tmdb_id=input_dto.collection_tmdb_id,
                 notify_on_arrival=input_dto.notify_on_arrival,
             )

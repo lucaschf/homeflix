@@ -35,6 +35,10 @@ class CreateCatalogRequestRequest(BaseModel):
     Attributes:
         tmdb_id: TMDB numeric id of the title to request.
         media_type: ``"movie"`` or ``"series"``.
+        title: Snapshot of the TMDB title at request time. Optional
+            for backwards compatibility with older clients; the
+            Collection Detail page sends it in so the admin queue
+            can render the title inline without a TMDB round-trip.
         collection_tmdb_id: Optional TMDB collection id that
             surfaced this request — set when the user clicks
             "Solicitar inclusão" from a Collection Detail page.
@@ -45,6 +49,7 @@ class CreateCatalogRequestRequest(BaseModel):
 
     tmdb_id: int = Field(..., ge=1)
     media_type: RequestedMediaType
+    title: str | None = Field(default=None, max_length=500)
     collection_tmdb_id: int | None = Field(default=None, ge=1)
     notify_on_arrival: bool = False
 
@@ -53,6 +58,7 @@ class SubscribeNotifyRequest(BaseModel):
     """Request body for the notification-subscribe endpoint."""
 
     media_type: RequestedMediaType
+    title: str | None = Field(default=None, max_length=500)
     collection_tmdb_id: int | None = Field(default=None, ge=1)
 
 
@@ -77,6 +83,7 @@ async def create_catalog_request(
         CreateCatalogRequestInput(
             tmdb_id=body.tmdb_id,
             media_type=body.media_type,
+            title=body.title,
             collection_tmdb_id=body.collection_tmdb_id,
             notify_on_arrival=body.notify_on_arrival,
         ),
@@ -102,6 +109,7 @@ async def subscribe_catalog_notification(
         SubscribeCatalogNotificationInput(
             tmdb_id=tmdb_id,
             media_type=body.media_type,
+            title=body.title,
             collection_tmdb_id=body.collection_tmdb_id,
         ),
     )
