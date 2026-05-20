@@ -47,6 +47,7 @@ from src.modules.media.presentation.routes import (
     series_router,
     stream_router,
 )
+from src.modules.notifications.presentation.routes import notification_router
 from src.modules.preferences.presentation.routes.preferences_routes import (
     router as preferences_router,
 )
@@ -76,6 +77,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.collections.presentation.routes.custom_list_routes",
     "src.modules.catalog_requests.presentation.routes.catalog_request_routes",
     "src.modules.catalog_requests.presentation.routes.admin_catalog_request_routes",
+    "src.modules.notifications.presentation.routes.notification_routes",
     "src.modules.library.presentation.routes.library_routes",
     "src.modules.preferences.presentation.routes.preferences_routes",
     "src.modules.identity.presentation.routes.admin_user_routes",
@@ -211,10 +213,14 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     # ``catalog_requests`` flips a pending request to fulfilled the
     # moment a matching title finishes enrichment with a TMDB id —
     # closes the loop so the admin queue stops surfacing the row.
+    # The optional ``NotificationPublisherAdapter`` (provided by the
+    # notifications BC) also pings the user who registered the
+    # request when they opted in to "notify on arrival".
     event_bus.subscribe(
         MediaEnrichedEvent,
         OnMediaEnrichedHandler(
             uow_factory=container.catalog_requests.catalog_requests_unit_of_work_factory(),
+            notification_publisher=container.notifications.notification_publisher(),
         ),
     )
 
@@ -331,6 +337,7 @@ def create_app() -> FastAPI:
     app.include_router(custom_list_router)
     app.include_router(catalog_request_router)
     app.include_router(admin_catalog_request_router)
+    app.include_router(notification_router)
     app.include_router(library_router)
     app.include_router(preferences_router)
 

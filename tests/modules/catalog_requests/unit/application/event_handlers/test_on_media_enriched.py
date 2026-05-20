@@ -1,9 +1,15 @@
 """Tests for ``OnMediaEnrichedHandler``."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from src.modules.catalog_requests.application.event_handlers import (
     OnMediaEnrichedHandler,
+)
+from src.modules.catalog_requests.application.ports import (
+    CatalogArrivalNotification,
+    NotificationPublisherPort,
 )
 from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
@@ -144,3 +150,190 @@ class TestOnMediaEnrichedHandler:
             RequestedMediaType.SERIES,
         )
         mocks.catalog_requests.update.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_publishes_notification_when_user_opted_in(self) -> None:
+        """When the requester opted in and we know who they are, the
+        handler dispatches a ``CatalogArrivalNotification`` to the
+        publisher port after committing the fulfillment."""
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+            title="Alien",
+            requester_user_id="usr_alice",
+            notify_on_arrival=True,
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        mocks.catalog_requests.update.side_effect = lambda req: req
+        publisher = AsyncMock(spec=NotificationPublisherPort)
+        handler = OnMediaEnrichedHandler(
+            uow_factory=mocks.factory,
+            notification_publisher=publisher,
+        )
+
+        await handler.handle(
+            MediaEnrichedEvent(
+                media_id="mov_abc",
+                media_type="movie",
+                tmdb_id=348,
+            ),
+        )
+
+        publisher.publish_catalog_arrival.assert_awaited_once()
+        payload = publisher.publish_catalog_arrival.await_args.args[0]
+        assert isinstance(payload, CatalogArrivalNotification)
+        assert payload.recipient_user_id == "usr_alice"
+        assert payload.title == "Alien"
+        assert payload.tmdb_id == 348
+        assert payload.media_id == "mov_abc"
+        assert payload.media_type == "movie"
+
+    @pytest.mark.asyncio
+    async def test_no_notification_when_user_did_not_opt_in(self) -> None:
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+            title="Alien",
+            requester_user_id="usr_alice",
+            notify_on_arrival=False,
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        mocks.catalog_requests.update.side_effect = lambda req: req
+        publisher = AsyncMock(spec=NotificationPublisherPort)
+        handler = OnMediaEnrichedHandler(
+            uow_factory=mocks.factory,
+            notification_publisher=publisher,
+        )
+
+        await handler.handle(
+            MediaEnrichedEvent(
+                media_id="mov_abc",
+                media_type="movie",
+                tmdb_id=348,
+            ),
+        )
+
+        publisher.publish_catalog_arrival.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_notification_when_requester_anonymous(self) -> None:
+        """Legacy rows without a ``requester_user_id`` skip the ping
+        even when ``notify_on_arrival=True`` (we have no inbox to
+        target)."""
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+            title="Alien",
+            notify_on_arrival=True,
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        mocks.catalog_requests.update.side_effect = lambda req: req
+        publisher = AsyncMock(spec=NotificationPublisherPort)
+        handler = OnMediaEnrichedHandler(
+            uow_factory=mocks.factory,
+            notification_publisher=publisher,
+        )
+
+        await handler.handle(
+            MediaEnrichedEvent(
+                media_id="mov_abc",
+                media_type="movie",
+                tmdb_id=348,
+            ),
+        )
+
+        publisher.publish_catalog_arrival.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_notification_without_publisher(self) -> None:
+        """The handler stays usable without the Notifications BC
+        wired in — fulfillment still happens, publisher path stays
+        a no-op."""
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+            title="Alien",
+            requester_user_id="usr_alice",
+            notify_on_arrival=True,
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        mocks.catalog_requests.update.side_effect = lambda req: req
+        handler = OnMediaEnrichedHandler(uow_factory=mocks.factory)
+
+        # No publisher injected: should not raise, fulfillment still happens.
+        await handler.handle(
+            MediaEnrichedEvent(
+                media_id="mov_abc",
+                media_type="movie",
+                tmdb_id=348,
+            ),
+        )
+
+        mocks.catalog_requests.update.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_publisher_failure_swallowed(self) -> None:
+        """A publisher exception must not leak out — it would
+        otherwise propagate into the event bus and short-circuit
+        other subscribers of the same event."""
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+            title="Alien",
+            requester_user_id="usr_alice",
+            notify_on_arrival=True,
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        mocks.catalog_requests.update.side_effect = lambda req: req
+        publisher = AsyncMock(spec=NotificationPublisherPort)
+        publisher.publish_catalog_arrival.side_effect = RuntimeError("boom")
+        handler = OnMediaEnrichedHandler(
+            uow_factory=mocks.factory,
+            notification_publisher=publisher,
+        )
+
+        await handler.handle(
+            MediaEnrichedEvent(
+                media_id="mov_abc",
+                media_type="movie",
+                tmdb_id=348,
+            ),
+        )
+
+        # No exception bubbled up; fulfillment still committed.
+        mocks.catalog_requests.update.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_notification_title_falls_back_to_tmdb_id(self) -> None:
+        """Legacy rows without a title snapshot still produce a
+        readable notification by falling back to ``tmdb/<type>/<id>``."""
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+            requester_user_id="usr_alice",
+            notify_on_arrival=True,
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        mocks.catalog_requests.update.side_effect = lambda req: req
+        publisher = AsyncMock(spec=NotificationPublisherPort)
+        handler = OnMediaEnrichedHandler(
+            uow_factory=mocks.factory,
+            notification_publisher=publisher,
+        )
+
+        await handler.handle(
+            MediaEnrichedEvent(
+                media_id="mov_abc",
+                media_type="movie",
+                tmdb_id=348,
+            ),
+        )
+
+        payload = publisher.publish_catalog_arrival.await_args.args[0]
+        assert payload.title == "tmdb/movie/348"

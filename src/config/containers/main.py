@@ -14,6 +14,7 @@ from src.config.containers.identity import IdentityContainer
 from src.config.containers.infrastructure import InfrastructureContainer
 from src.config.containers.library import LibraryContainer
 from src.config.containers.media import MediaContainer
+from src.config.containers.notifications import NotificationsContainer
 from src.config.containers.preferences import PreferencesContainer
 from src.config.containers.watch_progress import WatchProgressContainer
 from src.config.settings import Settings
@@ -190,6 +191,15 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         CollectionsContainer,
         session_factory=infrastructure.session_factory,
         media_uow_factory=media.media_unit_of_work_factory,
+    )
+
+    # Notifications BC: provides the cross-BC publisher adapter
+    # consumed by ``catalog_requests``' ``OnMediaEnrichedHandler``
+    # (wired in main.py's event subscription block, not here, so the
+    # container parse order stays acyclic).
+    notifications = providers.Container(
+        NotificationsContainer,
+        session_factory=infrastructure.session_factory,
     )
 
     # =========================================================================
