@@ -423,6 +423,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         EnrichMovieMetadataUseCase,
         uow_factory=media_unit_of_work_factory,
         primary_provider=tmdb_client,
+        event_bus=event_bus,
     )
 
     get_related_movies = providers.Factory(
@@ -449,6 +450,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         EnrichSeriesMetadataUseCase,
         uow_factory=media_unit_of_work_factory,
         primary_provider=tmdb_client,
+        event_bus=event_bus,
     )
 
     get_related_series = providers.Factory(

@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any
 
 from src.building_blocks.application.errors import ResourceNotFoundException
+from src.building_blocks.application.event_bus import EventBus
 from src.modules.media.application.dtos.enrichment_dtos import (
     EnrichMediaInput,
     EnrichMediaOutput,
@@ -18,6 +19,7 @@ from src.modules.media.application.ports import (
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Episode, Season, Series
+from src.modules.media.domain.events import MediaEnrichedEvent
 from src.modules.media.domain.value_objects import (
     AirDate,
     CastMember,
@@ -50,10 +52,12 @@ class EnrichSeriesMetadataUseCase:
         uow_factory: MediaUnitOfWorkFactory,
         primary_provider: MetadataProvider,
         fallback_provider: MetadataProvider | None = None,
+        event_bus: EventBus | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._primary = primary_provider
         self._fallback = fallback_provider
+        self._event_bus = event_bus
 
     async def execute(self, input_dto: EnrichMediaInput) -> EnrichMediaOutput:
         """Execute series metadata enrichment.
@@ -89,6 +93,19 @@ class EnrichSeriesMetadataUseCase:
 
             series = _apply_series_metadata(series, metadata)
             await uow.series.save(series)
+            enriched_tmdb_id = series.tmdb_id.value if series.tmdb_id else None
+
+        # Publish outside the UoW so a slow handler doesn't hold the
+        # write transaction open. ``catalog_requests`` listens for
+        # this event to flip pending requests to fulfilled.
+        if enriched_tmdb_id is not None and self._event_bus is not None:
+            await self._event_bus.publish(
+                MediaEnrichedEvent(
+                    media_id=input_dto.media_id,
+                    media_type="series",
+                    tmdb_id=enriched_tmdb_id,
+                ),
+            )
 
         return EnrichMediaOutput(media_id=input_dto.media_id, enriched=True, provider=provider_name)
 

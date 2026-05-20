@@ -17,6 +17,7 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
     _clean_title,
 )
 from src.modules.media.domain.entities import Movie
+from src.modules.media.domain.events import MediaEnrichedEvent
 from src.modules.media.domain.value_objects import ContentRating, TmdbId
 from src.modules.media.domain.value_objects.cast_member import CastMember
 from tests.modules.media.unit.conftest import MediaUoWMocks, make_media_uow_mock
@@ -515,3 +516,56 @@ class TestApplyMetadataFields:
         assert saved.localized["pt-BR"]["title"] == "A Origem"
         assert saved.localized["pt-BR"]["synopsis"] == "Sonho dentro do sonho."
         assert saved.localized["pt-BR"]["genres"] == ["Ficção Científica"]
+
+
+@pytest.mark.unit
+class TestEnrichMovieMetadataEvents:
+    """Cross-BC handshake: ``MediaEnrichedEvent`` must reach the bus
+    once the movie row picks up its tmdb id, so ``catalog_requests``
+    can flip a pending request to fulfilled."""
+
+    @pytest.mark.asyncio
+    async def test_publishes_event_when_tmdb_id_present(self) -> None:
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = _make_metadata()
+
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_id.return_value = movie
+        mocks.movies.save.side_effect = lambda m: m
+        event_bus = AsyncMock()
+        use_case = EnrichMovieMetadataUseCase(
+            uow_factory=mocks.factory,
+            primary_provider=provider,
+            event_bus=event_bus,
+        )
+
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        event_bus.publish.assert_awaited_once()
+        published = event_bus.publish.await_args.args[0]
+        assert isinstance(published, MediaEnrichedEvent)
+        assert published.media_type == "movie"
+        assert published.tmdb_id == 27205
+        assert published.media_id == str(movie.id)
+
+    @pytest.mark.asyncio
+    async def test_no_event_when_enrichment_fails(self) -> None:
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = None
+        provider.search_series.return_value = None
+
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_id.return_value = movie
+        mocks.movies.save.side_effect = lambda m: m
+        event_bus = AsyncMock()
+        use_case = EnrichMovieMetadataUseCase(
+            uow_factory=mocks.factory,
+            primary_provider=provider,
+            event_bus=event_bus,
+        )
+
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        event_bus.publish.assert_not_called()

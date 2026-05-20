@@ -73,6 +73,33 @@ class IntroClearedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class MediaEnrichedEvent(DomainEvent):
+    """Emitted when an enrichment pass finishes with a known TMDB id.
+
+    Distinct from ``MediaCreatedEvent`` because the TMDB id is only
+    populated *after* enrichment runs — ``MediaCreatedEvent`` fires
+    on scan with just the internal id, so a handler that needs the
+    tmdb id (e.g. ``catalog_requests`` marking a pending request as
+    fulfilled once the title finally lands) can't piggy-back on it.
+
+    Fires both on the first successful enrichment and on a forced
+    refresh that re-runs against TMDB. Downstream handlers should
+    treat it as idempotent: re-firing on an already-fulfilled
+    catalog request must short-circuit, not duplicate state.
+
+    Attributes:
+        media_id: External ID of the enriched media (mov_xxx or
+            ser_xxx).
+        media_type: ``"movie"`` or ``"series"``.
+        tmdb_id: TMDB numeric id the enrichment locked onto.
+    """
+
+    media_id: str = ""
+    media_type: str = ""
+    tmdb_id: int = 0
+
+
+@dataclass(frozen=True)
 class MoviePromotedToSeriesEvent(DomainEvent):
     """Emitted when an admin promotes a movie into a series.
 
@@ -109,5 +136,6 @@ __all__ = [
     "IntroDetectedEvent",
     "IntroManuallySetEvent",
     "MediaCreatedEvent",
+    "MediaEnrichedEvent",
     "MoviePromotedToSeriesEvent",
 ]
