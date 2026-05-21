@@ -14,15 +14,17 @@ produce them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
+
+from pydantic import ConfigDict
+
+from src.building_blocks.domain.value_objects import CompoundValueObject
 
 if TYPE_CHECKING:
     from src.modules.watch_progress.domain.entities import WatchProgress
 
 
-@dataclass(frozen=True)
-class EpisodeCandidate:
+class EpisodeCandidate(CompoundValueObject):
     """A single episode weighed by the continue-watching selector.
 
     Attributes:
@@ -38,13 +40,24 @@ class EpisodeCandidate:
             episode has never been played.
     """
 
+    # ``progress`` references ``WatchProgress``, which transitively imports
+    # this module via ``value_objects/__init__``. Defer build so Pydantic
+    # resolves the forward reference once ``entities/__init__`` calls
+    # ``EpisodeCandidate.model_rebuild()``.
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        frozen=True,
+        validate_assignment=True,
+        extra="forbid",
+        defer_build=True,
+    )
+
     series_id: str
     media_id: str
     season_number: int
     episode_number: int
     episode_title: str
     duration_seconds: int
-    progress: WatchProgress | None
+    progress: WatchProgress | None = None
 
 
 __all__ = ["EpisodeCandidate"]

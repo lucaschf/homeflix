@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.shared_kernel.episode_composite_id import EpisodeCompositeId
+from src.shared_kernel.value_objects.episode_composite_id import EpisodeCompositeId
 
 
 class TestEpisodeCompositeIdBuild:

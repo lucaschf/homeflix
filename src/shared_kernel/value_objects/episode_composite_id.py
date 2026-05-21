@@ -8,11 +8,11 @@ utilities so the format is defined in a single place.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from src.building_blocks.domain.errors import DomainValidationException
+from src.building_blocks.domain.value_objects import CompoundValueObject
 
 
-@dataclass(frozen=True)
-class EpisodeCompositeId:
+class EpisodeCompositeId(CompoundValueObject):
     """Composite episode identifier used by the frontend.
 
     Attributes:
@@ -79,7 +79,7 @@ class EpisodeCompositeId:
                 season_number=int(season_str),
                 episode_number=int(episode_str),
             )
-        except ValueError:
+        except (ValueError, DomainValidationException):
             return None
 
 
