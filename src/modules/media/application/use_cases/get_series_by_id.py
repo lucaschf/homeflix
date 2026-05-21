@@ -21,7 +21,7 @@ from src.modules.media.application.use_cases._media_file_helpers import (
 )
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import SeriesId
-from src.shared_kernel.episode_composite_id import EpisodeCompositeId
+from src.shared_kernel.value_objects.episode_composite_id import EpisodeCompositeId
 
 
 class GetSeriesByIdUseCase:

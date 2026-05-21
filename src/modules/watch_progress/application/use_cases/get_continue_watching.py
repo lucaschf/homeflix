@@ -16,7 +16,7 @@ from src.modules.watch_progress.domain.value_objects import (
     WatchableMediaType,
     WatchStatus,
 )
-from src.shared_kernel.episode_composite_id import EpisodeCompositeId
+from src.shared_kernel.value_objects.episode_composite_id import EpisodeCompositeId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 if TYPE_CHECKING:
