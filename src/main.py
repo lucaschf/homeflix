@@ -124,7 +124,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await container.infrastructure.init_resources()
 
     # Subscribe domain event handlers
-    _subscribe_event_handlers(container)
+    await _subscribe_event_handlers(container)
 
     # Close any ``scan_runs`` rows that were ``running`` when the
     # previous process died. The sweeper marks them ``interrupted``
@@ -173,11 +173,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Application stopped")
 
 
-def _subscribe_event_handlers(container: ApplicationContainer) -> None:
+async def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     """Wire domain event handlers to the event bus.
 
     Centralises event handler registration so it stays alongside
     the rest of the container configuration.
+
+    Async because every Unit-of-Work / publisher factory passed to a
+    handler transitively depends on the ``session_factory`` Resource;
+    invoking the provider chain from sync code returns a Future
+    instead of the resolved instance, and the handler later
+    explodes with ``'_asyncio.Future' object is not callable`` the
+    first time it tries to open a UoW. Awaiting the providers here
+    materialises the dependencies once, at startup, before any
+    event ever fires.
     """
     from src.modules.catalog_requests.application.event_handlers import (
         OnMediaEnrichedHandler,
@@ -204,6 +213,20 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
 
     event_bus = container.infrastructure.event_bus()
 
+    # Resolve every UoW factory / publisher up-front so each
+    # ``await`` happens once at startup rather than on the first
+    # event dispatch (where it would fail the type check in the
+    # handler — providers backed by an async Resource return a
+    # Future from sync ``__call__``).
+    catalog_requests_uow_factory = (
+        await container.catalog_requests.catalog_requests_unit_of_work_factory()
+    )
+    watch_progress_uow_factory = (
+        await container.watch_progress.watch_progress_unit_of_work_factory()
+    )
+    collections_uow_factory = await container.collections.collections_unit_of_work_factory()
+    notification_publisher = await container.notifications.notification_publisher()
+
     media_created_handler = OnMediaCreatedHandler(
         enrich_movie_factory=container.media.enrich_movie_metadata,
         enrich_series_factory=container.media.enrich_series_metadata,
@@ -219,8 +242,8 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     event_bus.subscribe(
         MediaEnrichedEvent,
         OnMediaEnrichedHandler(
-            uow_factory=container.catalog_requests.catalog_requests_unit_of_work_factory(),
-            notification_publisher=container.notifications.notification_publisher(),
+            uow_factory=catalog_requests_uow_factory,
+            notification_publisher=notification_publisher,
         ),
     )
 
@@ -230,15 +253,11 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     # custom-list refs so the same content stays on the user's lists.
     event_bus.subscribe(
         MoviePromotedToSeriesEvent,
-        ProgressOnMoviePromotedHandler(
-            uow_factory=container.watch_progress.watch_progress_unit_of_work_factory(),
-        ),
+        ProgressOnMoviePromotedHandler(uow_factory=watch_progress_uow_factory),
     )
     event_bus.subscribe(
         MoviePromotedToSeriesEvent,
-        CollectionsOnMoviePromotedHandler(
-            uow_factory=container.collections.collections_unit_of_work_factory(),
-        ),
+        CollectionsOnMoviePromotedHandler(uow_factory=collections_uow_factory),
     )
 
     # Cross-BC cleanup when an admin removes a user — watch_progress
@@ -248,15 +267,11 @@ def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     # roll back the identity-side soft-delete.
     event_bus.subscribe(
         UserDeletedEvent,
-        ProgressOnUserDeletedHandler(
-            uow_factory=container.watch_progress.watch_progress_unit_of_work_factory(),
-        ),
+        ProgressOnUserDeletedHandler(uow_factory=watch_progress_uow_factory),
     )
     event_bus.subscribe(
         UserDeletedEvent,
-        CollectionsOnUserDeletedHandler(
-            uow_factory=container.collections.collections_unit_of_work_factory(),
-        ),
+        CollectionsOnUserDeletedHandler(uow_factory=collections_uow_factory),
     )
 
 
