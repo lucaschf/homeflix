@@ -12,10 +12,12 @@ from src.modules.identity.infrastructure.auth import current_active_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.notifications.application.dtos import (
     ListUserNotificationsInput,
+    MarkAllNotificationsReadInput,
     MarkNotificationReadInput,
 )
 from src.modules.notifications.application.use_cases import (
     ListUserNotificationsUseCase,
+    MarkAllNotificationsReadUseCase,
     MarkNotificationReadUseCase,
 )
 
@@ -78,6 +80,28 @@ async def mark_notification_read(
         ),
     )
     return api_single("notification", asdict(result))
+
+
+@router.post("/read-all")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def mark_all_notifications_read(
+    user: UserModel = Depends(current_active_user),
+    use_case: MarkAllNotificationsReadUseCase = Depends(
+        Provide[ApplicationContainer.notifications.mark_all_notifications_read],
+    ),
+) -> dict[str, Any]:
+    """Flip every unread notification of the caller to read.
+
+    Backs the "Marcar todas como lidas" affordance in the header
+    bell. Idempotent — an empty inbox returns ``marked_read=0``
+    so the frontend doesn't have to branch on the empty case.
+    Scoped to the caller; another user's notifications are never
+    touched.
+    """
+    result = await use_case.execute(
+        MarkAllNotificationsReadInput(recipient_user_id=user.external_id),
+    )
+    return api_single("notifications_read_all", asdict(result))
 
 
 __all__ = ["router"]

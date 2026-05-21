@@ -67,6 +67,33 @@ class MarkNotificationReadInput:
 
 
 @dataclass(frozen=True)
+class MarkAllNotificationsReadInput:
+    """Input for ``MarkAllNotificationsReadUseCase``.
+
+    Attributes:
+        recipient_user_id: External id of the caller. The route
+            fills this from the auth context so a user can't
+            clear another user's inbox.
+    """
+
+    recipient_user_id: str
+
+
+@dataclass(frozen=True)
+class MarkAllNotificationsReadOutput:
+    """Output for ``MarkAllNotificationsReadUseCase``.
+
+    Attributes:
+        marked_read: How many rows transitioned from unread to
+            read on this call. ``0`` when the inbox was already
+            clean — the route still returns 200 so the frontend
+            doesn't have to branch on the empty case.
+    """
+
+    marked_read: int
+
+
+@dataclass(frozen=True)
 class NotificationOutput:
     """Output representation of a notification.
 
