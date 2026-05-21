@@ -5,6 +5,7 @@ from dependency_injector import containers, providers
 from src.modules.notifications.application.use_cases import (
     CreateNotificationUseCase,
     ListUserNotificationsUseCase,
+    MarkAllNotificationsReadUseCase,
     MarkNotificationReadUseCase,
 )
 from src.modules.notifications.infrastructure.acl import NotificationPublisherAdapter
@@ -53,6 +54,11 @@ class NotificationsContainer(containers.DeclarativeContainer):  # type: ignore[m
 
     mark_notification_read = providers.Factory(
         MarkNotificationReadUseCase,
+        uow_factory=notifications_unit_of_work_factory,
+    )
+
+    mark_all_notifications_read = providers.Factory(
+        MarkAllNotificationsReadUseCase,
         uow_factory=notifications_unit_of_work_factory,
     )
 

@@ -1,6 +1,8 @@
 """SQLAlchemy implementation of ``NotificationRepository``."""
 
-from sqlalchemy import func, select
+from datetime import UTC, datetime
+
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.notifications.domain.entities import Notification
@@ -100,6 +102,22 @@ class SQLAlchemyNotificationRepository(NotificationRepository):
         )
         result = await self._session.execute(stmt)
         return int(result.scalar_one() or 0)
+
+    async def mark_all_read_for_user(self, recipient_user_id: str) -> int:
+        """Bulk-flip every unread notification of a user to read."""
+        now = datetime.now(UTC)
+        stmt = (
+            update(NotificationModel)
+            .where(
+                NotificationModel.recipient_user_id == recipient_user_id,
+                NotificationModel.read_at.is_(None),
+                NotificationModel.deleted_at.is_(None),
+            )
+            .values(read_at=now, updated_at=now)
+        )
+        result = await self._session.execute(stmt)
+        await self._session.flush()
+        return result.rowcount or 0
 
 
 __all__ = ["SQLAlchemyNotificationRepository"]

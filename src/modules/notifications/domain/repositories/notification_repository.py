@@ -94,5 +94,23 @@ class NotificationRepository(ABC):
             Number of non-deleted notifications with ``read_at IS NULL``.
         """
 
+    @abstractmethod
+    async def mark_all_read_for_user(self, recipient_user_id: str) -> int:
+        """Stamp every unread notification of a user as read.
+
+        Powers the "Marcar todas como lidas" action in the header
+        bell. Implemented as a single bulk ``UPDATE`` instead of an
+        N+1 fetch-then-update so a long-untouched inbox flips in
+        one round-trip. Already-read rows are left alone so the
+        original ``read_at`` doesn't move.
+
+        Args:
+            recipient_user_id: External id of the recipient.
+
+        Returns:
+            Count of rows that were flipped from unread to read on
+            this call. ``0`` when the inbox was already clean.
+        """
+
 
 __all__ = ["NotificationRepository"]
