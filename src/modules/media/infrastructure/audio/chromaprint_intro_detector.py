@@ -39,17 +39,16 @@ from src.modules.media.application.ports.intro_detector_port import (
     DetectedIntro,
     EpisodeFingerprint,
     IntroDetectorPort,
+    IntroDetectorTuning,
 )
 from src.modules.media.domain.value_objects import EpisodeId
 
 # Defaults tuned against synthetic fixtures and a couple of real
-# anime / sitcom seasons. They are exposed as constructor kwargs so
-# operators can adjust without forking the implementation.
+# anime / sitcom seasons. ``max_hash_hamming``, ``tolerance_hashes``,
+# ``min_intro_seconds`` and ``max_intro_seconds`` are operator-tunable
+# via :class:`IntroDetectorTuning` per ``detect()`` call (ADR-013);
+# the other knobs are algorithm-internal and stay as constructor args.
 _DEFAULT_MAX_ALIGNMENT_SHIFT_SECONDS = 30.0
-_DEFAULT_MAX_HASH_HAMMING = 10  # bits, out of 32
-_DEFAULT_TOLERANCE_HASHES = 2
-_DEFAULT_MIN_INTRO_SECONDS = 5.0
-_DEFAULT_MAX_INTRO_SECONDS = 120.0
 _DEFAULT_MIN_PAIR_AGREEMENT = 0.5
 _DEFAULT_ALIGNMENT_WINDOW_SECONDS = 60.0
 
@@ -76,53 +75,33 @@ class ChromaprintIntroDetector(IntroDetectorPort):
         max_alignment_shift_seconds: How far cold-open lengths between
             two episodes can differ. Wider values cost more search time;
             30s comfortably covers most production patterns.
-        max_hash_hamming: Per-hash hamming distance (out of 32 bits)
-            considered "matching". Tighter values discriminate better
-            but also reject more genuine intro hashes that drifted
-            under encoding noise. ``10`` (≈ 31% bit divergence) is the
-            sweet spot for raw chromaprint hashes from typical TV
-            audio.
-        tolerance_hashes: How many CONSECUTIVE non-matching hashes a
-            run can absorb before terminating. Smooths over isolated
-            spikes inside an otherwise strong match — once a fresh
-            good hash arrives the counter resets, so the run can keep
-            extending. Trailing bad hashes never count toward the
-            reported segment length.
-        min_intro_seconds: Discard matches shorter than this. Stops the
-            detector from firing on incidental musical stings.
-        max_intro_seconds: Hard cap on the persisted match length.
-            Real intros virtually never exceed two minutes; longer
-            detections almost always include shared underscore /
-            transition music that bleeds past the title sequence and
-            should be truncated rather than persisted as-is.
         min_pair_agreement: Episodes whose match-rate against their
             peers falls below this fraction are dropped.
         alignment_window_seconds: How much of each fingerprint to scan
             when picking the alignment shift. Search is bounded so the
             algorithm stays linear in fingerprint length.
+
+    Operator-tunable knobs (``max_hash_hamming``, ``tolerance_hashes``,
+    ``min_intro_seconds``, ``max_intro_seconds``) are passed per
+    ``detect()`` call via :class:`IntroDetectorTuning` so admin-panel
+    edits take effect on the next tick.
     """
 
     def __init__(
         self,
         *,
         max_alignment_shift_seconds: float = _DEFAULT_MAX_ALIGNMENT_SHIFT_SECONDS,
-        max_hash_hamming: int = _DEFAULT_MAX_HASH_HAMMING,
-        tolerance_hashes: int = _DEFAULT_TOLERANCE_HASHES,
-        min_intro_seconds: float = _DEFAULT_MIN_INTRO_SECONDS,
-        max_intro_seconds: float = _DEFAULT_MAX_INTRO_SECONDS,
         min_pair_agreement: float = _DEFAULT_MIN_PAIR_AGREEMENT,
         alignment_window_seconds: float = _DEFAULT_ALIGNMENT_WINDOW_SECONDS,
     ) -> None:
         self._max_alignment_shift_seconds = max_alignment_shift_seconds
-        self._max_hash_hamming = max_hash_hamming
-        self._tolerance_hashes = tolerance_hashes
-        self._min_intro_seconds = min_intro_seconds
-        self._max_intro_seconds = max_intro_seconds
         self._min_pair_agreement = min_pair_agreement
         self._alignment_window_seconds = alignment_window_seconds
 
     def detect(
-        self, fingerprints: Sequence[EpisodeFingerprint]
+        self,
+        fingerprints: Sequence[EpisodeFingerprint],
+        tuning: IntroDetectorTuning,
     ) -> Mapping[EpisodeId, DetectedIntro]:
         """Run the full pairwise + voting pipeline.
 
@@ -144,7 +123,7 @@ class ChromaprintIntroDetector(IntroDetectorPort):
 
         for i, fp_a in enumerate(usable):
             for fp_b in usable[i + 1 :]:
-                match = self._pairwise_match(fp_a, fp_b, hash_rates)
+                match = self._pairwise_match(fp_a, fp_b, hash_rates, tuning)
                 if match is None:
                     continue
                 rate_a = hash_rates[fp_a.episode_id]
@@ -156,7 +135,7 @@ class ChromaprintIntroDetector(IntroDetectorPort):
                     (match.start_b / rate_b, match.end_b / rate_b)
                 )
 
-        return self._build_consensus(usable, per_episode_segments)
+        return self._build_consensus(usable, per_episode_segments, tuning)
 
     # ── pairwise matching ─────────────────────────────────────────────
 
@@ -165,6 +144,7 @@ class ChromaprintIntroDetector(IntroDetectorPort):
         fp_a: EpisodeFingerprint,
         fp_b: EpisodeFingerprint,
         hash_rates: Mapping[EpisodeId, float],
+        tuning: IntroDetectorTuning,
     ) -> _PairwiseMatch | None:
         """Return the best matching range between two fingerprints, or ``None``."""
         a_hashes = fp_a.hashes
@@ -192,7 +172,7 @@ class ChromaprintIntroDetector(IntroDetectorPort):
             distances = [
                 _popcount(a_hashes[a_start + k] ^ b_hashes[b_start + k]) for k in range(scan_len)
             ]
-            run_start, run_length = self._longest_run(distances)
+            run_start, run_length = self._longest_run(distances, tuning)
             if run_length == 0:
                 continue
 
@@ -210,11 +190,15 @@ class ChromaprintIntroDetector(IntroDetectorPort):
         # floor — the consensus step would drop it anyway, but doing it
         # here keeps the per-episode segment list cleaner.
         seconds = best.length_hashes / rate
-        if seconds < self._min_intro_seconds:
+        if seconds < tuning.min_intro_seconds:
             return None
         return best
 
-    def _longest_run(self, distances: list[int]) -> tuple[int, int]:
+    def _longest_run(
+        self,
+        distances: list[int],
+        tuning: IntroDetectorTuning,
+    ) -> tuple[int, int]:
         """Return (start, length) of the longest tolerant run.
 
         A "run" is a contiguous span starting on a good hash and
@@ -239,7 +223,7 @@ class ChromaprintIntroDetector(IntroDetectorPort):
         consecutive_bad = 0
 
         for i, d in enumerate(distances):
-            is_bad = d > self._max_hash_hamming
+            is_bad = d > tuning.max_hash_hamming
 
             if run_start < 0:
                 # Outside any run — only a good hash can start a new one.
@@ -255,7 +239,7 @@ class ChromaprintIntroDetector(IntroDetectorPort):
 
             if is_bad:
                 consecutive_bad += 1
-                if consecutive_bad > self._tolerance_hashes:
+                if consecutive_bad > tuning.tolerance_hashes:
                     run_start = -1
                 continue
 
@@ -276,6 +260,7 @@ class ChromaprintIntroDetector(IntroDetectorPort):
         self,
         fingerprints: Sequence[EpisodeFingerprint],
         per_episode_segments: Mapping[EpisodeId, list[tuple[float, float]]],
+        tuning: IntroDetectorTuning,
     ) -> Mapping[EpisodeId, DetectedIntro]:
         """Aggregate per-pair matches into one marker per episode."""
         result: dict[EpisodeId, DetectedIntro] = {}
@@ -296,9 +281,9 @@ class ChromaprintIntroDetector(IntroDetectorPort):
             # entirely; the user gets a "Skip Intro" button covering
             # the shared region without overshooting deep into the
             # episode.
-            if end_seconds - start_seconds > self._max_intro_seconds:
-                end_seconds = start_seconds + self._max_intro_seconds
-            if end_seconds - start_seconds < self._min_intro_seconds:
+            if end_seconds - start_seconds > tuning.max_intro_seconds:
+                end_seconds = start_seconds + tuning.max_intro_seconds
+            if end_seconds - start_seconds < tuning.min_intro_seconds:
                 continue
             result[episode_id] = DetectedIntro(
                 start_seconds=start_seconds,

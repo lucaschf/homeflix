@@ -4,6 +4,7 @@ This is the main entry point for the FastAPI application.
 It serves as the Composition Root where the DI container is configured.
 """
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -97,6 +98,41 @@ def create_container() -> ApplicationContainer:
     return container
 
 
+# Env vars that used to feed ``Settings`` directly but moved into the
+# DB-backed ``app_settings`` table in ADR-013 phase 2. Their presence
+# in the process environment is now a silent no-op, so we log a one-off
+# warning at startup to point the operator at the admin panel.
+_DEPRECATED_ENV_VARS: tuple[str, ...] = (
+    "SCHEDULER_ENABLED",
+    "SCHEDULER_RECONCILE_INTERVAL_MINUTES",
+    "THUMBNAIL_BACKFILL_ENABLED",
+    "THUMBNAIL_BACKFILL_BATCH_SIZE",
+    "THUMBNAIL_BACKFILL_INTERVAL_MINUTES",
+    "THUMBNAIL_BACKFILL_SUBDIR",
+    "INTRO_DETECTION_ENABLED",
+    "INTRO_DETECTION_BATCH_SIZE",
+    "INTRO_DETECTION_INTERVAL_MINUTES",
+    "INTRO_DETECTION_AUDIO_WINDOW_SECONDS",
+    "INTRO_DETECTION_MIN_CONFIDENCE",
+    "INTRO_DETECTION_MAX_HASH_HAMMING",
+    "INTRO_DETECTION_TOLERANCE_HASHES",
+    "INTRO_DETECTION_MIN_INTRO_SECONDS",
+    "INTRO_DETECTION_MAX_INTRO_SECONDS",
+)
+
+
+def _warn_about_deprecated_env_vars(logger: Any) -> None:
+    """Log a warning for each ADR-013-migrated env var still set."""
+    stale = [name for name in _DEPRECATED_ENV_VARS if os.environ.get(name) is not None]
+    if not stale:
+        return
+    logger.warning(
+        "Deprecated env vars detected; edit settings via the admin panel "
+        "or app_settings table instead (ADR-013).",
+        deprecated_env_vars=stale,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler.
@@ -114,6 +150,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app_name=settings.app_name,
         environment=settings.app_env,
     )
+
+    _warn_about_deprecated_env_vars(logger)
 
     # Initialize DI container
     container = create_container()
@@ -137,26 +175,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await sweep_scan_runs.execute()
 
     # Start background scheduler (library scans + thumbnail backfill +
-    # intro detection). The provider depends on the session_factory
-    # Resource, so it resolves asynchronously — must be awaited. Always
-    # pin a slot on app.state so the shutdown handler can do a single
-    # truthy check.
+    # intro detection). Scheduler-on/off + per-job intervals come from
+    # the RuntimeSettings snapshot (ADR-013 phase 2). Interval changes
+    # only take effect on the next process start; APScheduler does not
+    # support live-rescheduling a registered job and the rebuild path
+    # is out of scope for this phase.
     app.state.scheduler = None
-    if settings.scheduler_enabled:
+    runtime_settings = await container.settings.runtime_settings()
+    scheduler_cfg = await runtime_settings.scheduler()
+    if scheduler_cfg.enabled:
         scheduler = await container.library_scan_scheduler()
         await scheduler.start()
-        if settings.thumbnail_backfill_enabled:
+        backfill_cfg = await runtime_settings.thumbnail_backfill()
+        if backfill_cfg.enabled:
             backfill_job = await container.thumbnail_backfill_job()
             scheduler.add_interval_job(
                 backfill_job.run,
-                minutes=settings.thumbnail_backfill_interval_minutes,
+                minutes=backfill_cfg.interval_minutes,
                 job_id="homeflix:thumbnail-backfill",
             )
-        if settings.intro_detection_enabled:
+        intro_cfg = await runtime_settings.intro_detection()
+        if intro_cfg.enabled:
             intro_job = await container.intro_detection_job()
             scheduler.add_interval_job(
                 intro_job.run,
-                minutes=settings.intro_detection_interval_minutes,
+                minutes=intro_cfg.interval_minutes,
                 job_id="homeflix:intro-detection",
             )
         app.state.scheduler = scheduler

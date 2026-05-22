@@ -34,6 +34,7 @@ from src.modules.media.domain.value_objects import (
     Title,
 )
 from src.modules.media.infrastructure.audio import ChromaprintFingerprint
+from src.modules.settings.domain.value_objects import IntroDetectionConfig
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -129,6 +130,13 @@ def _make_detector(*, detections: dict[EpisodeId, DetectedIntro]) -> MagicMock:
     return detector
 
 
+def _make_runtime_settings(*, intro: IntroDetectionConfig | None = None) -> AsyncMock:
+    """Return a fake :class:`RuntimeSettings` exposing ``intro_detection``."""
+    runtime = AsyncMock()
+    runtime.intro_detection = AsyncMock(return_value=intro or IntroDetectionConfig())
+    return runtime
+
+
 @pytest.mark.unit
 class TestIntroDetectionJob:
     """Orchestration tests for IntroDetectionJob.run."""
@@ -144,6 +152,7 @@ class TestIntroDetectionJob:
             audio_extractor=_make_audio_extractor(),
             chromaprint_service=_make_chromaprint(),
             intro_detector=detector,
+            runtime_settings=_make_runtime_settings(),
         )
         await job.run()
 
@@ -174,7 +183,7 @@ class TestIntroDetectionJob:
             audio_extractor=_make_audio_extractor(),
             chromaprint_service=_make_chromaprint(),
             intro_detector=detector,
-            min_confidence=0.7,
+            runtime_settings=_make_runtime_settings(),
         )
         await job.run()
 
@@ -212,7 +221,7 @@ class TestIntroDetectionJob:
             audio_extractor=_make_audio_extractor(),
             chromaprint_service=_make_chromaprint(),
             intro_detector=detector,
-            min_confidence=0.7,
+            runtime_settings=_make_runtime_settings(),
         )
         await job.run()
 
@@ -250,6 +259,7 @@ class TestIntroDetectionJob:
             audio_extractor=_make_audio_extractor(),
             chromaprint_service=_make_chromaprint(),
             intro_detector=detector,
+            runtime_settings=_make_runtime_settings(),
         )
         await job.run()
 
@@ -274,6 +284,7 @@ class TestIntroDetectionJob:
             audio_extractor=extractor,
             chromaprint_service=_make_chromaprint(),
             intro_detector=detector,
+            runtime_settings=_make_runtime_settings(),
         )
         await job.run()
 
@@ -297,6 +308,7 @@ class TestIntroDetectionJob:
             audio_extractor=_make_audio_extractor(),
             chromaprint_service=_make_chromaprint(),
             intro_detector=broken_detector,
+            runtime_settings=_make_runtime_settings(),
         )
         await job.run()
 
@@ -331,6 +343,7 @@ class TestIntroDetectionJob:
             audio_extractor=_make_audio_extractor(),
             chromaprint_service=chromaprint,
             intro_detector=detector,
+            runtime_settings=_make_runtime_settings(),
         )
         await job.run()
 
@@ -371,6 +384,7 @@ class TestIntroDetectionJob:
             audio_extractor=crashing_extractor,
             chromaprint_service=_make_chromaprint(),
             intro_detector=_make_detector(detections={}),
+            runtime_settings=_make_runtime_settings(),
         )
         await job.run()
 
@@ -434,6 +448,7 @@ class TestIntroDetectionJob:
             audio_extractor=_make_audio_extractor(),
             chromaprint_service=_make_chromaprint(),
             intro_detector=broken_detector,
+            runtime_settings=_make_runtime_settings(),
         )
         # Must not raise — the batch loop survives the failed
         # state-recording on season_a.
@@ -479,7 +494,7 @@ class TestIntroDetectionJob:
             audio_extractor=_make_audio_extractor(),
             chromaprint_service=_make_chromaprint(),
             intro_detector=_make_detector(detections={}),
-            batch_size=1,
+            runtime_settings=_make_runtime_settings(),
         )
         await job.run()
 

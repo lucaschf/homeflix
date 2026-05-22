@@ -148,113 +148,14 @@ class Settings(BaseSettings):  # type: ignore[misc]
     )
 
     # =========================================================================
-    # Scheduler
+    # Scheduler / background jobs
     # =========================================================================
-
-    scheduler_enabled: bool = Field(
-        default=True,
-        description="Enable the background scheduler (library scans, etc.).",
-    )
-    scheduler_reconcile_interval_minutes: int = Field(
-        default=5,
-        ge=1,
-        description="How often the scheduler re-reads libraries from the "
-        "database to sync cron jobs with configured schedules.",
-    )
-
-    thumbnail_backfill_enabled: bool = Field(
-        default=True,
-        description="Enable the periodic job that fills in scrub-preview "
-        "thumbnails for movies and episodes that don't have one yet.",
-    )
-    thumbnail_backfill_batch_size: int = Field(
-        default=10,
-        ge=1,
-        description="Maximum number of media items processed per backfill "
-        "tick. Lower values reduce CPU spikes; higher values catch up "
-        "faster on a large catalog.",
-    )
-    thumbnail_backfill_interval_minutes: int = Field(
-        default=20,
-        ge=1,
-        description="How often the thumbnail backfill job runs.",
-    )
-    thumbnail_backfill_subdir: str = Field(
-        default=".homeflix/thumbnails",
-        description="Subdirectory (relative to each media file's parent "
-        "folder) where backfilled sprite + VTT files are written.",
-    )
-
-    intro_detection_enabled: bool = Field(
-        default=False,
-        description="Enable the periodic intro-detection job that locates "
-        "the shared opening sequence for each season via Chromaprint "
-        "audio fingerprinting. Off by default because it requires the "
-        "``fpcalc`` binary on PATH; turn it on once Chromaprint is "
-        "installed (``apt install libchromaprint-tools`` / "
-        "``brew install chromaprint``).",
-    )
-    intro_detection_batch_size: int = Field(
-        default=1,
-        ge=1,
-        description="Maximum number of seasons processed per detection "
-        "tick. Each season triggers ffmpeg + fpcalc per episode, so "
-        "values above 2 can saturate the host on large seasons.",
-    )
-    intro_detection_interval_minutes: int = Field(
-        default=30,
-        ge=1,
-        description="How often the intro-detection job runs.",
-    )
-    intro_detection_audio_window_seconds: int = Field(
-        default=600,
-        ge=60,
-        description="How many seconds of leading audio to analyse per "
-        "episode. 600s (10 min) covers all common cold-open + intro "
-        "lengths; trimming this lower speeds up the job at the cost "
-        "of missing intros that start late.",
-    )
-    intro_detection_min_confidence: float = Field(
-        default=0.7,
-        ge=0.0,
-        le=1.0,
-        description="Minimum detector confidence (in ``[0.0, 1.0]``) "
-        "required before an auto-detected intro is persisted. Confidence "
-        "is the fraction of peer episodes whose fingerprint agreed "
-        "with the candidate marker.",
-    )
-    intro_detection_max_hash_hamming: int = Field(
-        default=10,
-        ge=0,
-        le=32,
-        description="Per-hash hamming-distance ceiling (out of 32 bits) "
-        "considered a 'match' between two episode fingerprints. Lower "
-        "values reject more borderline hashes — useful when detections "
-        "overshoot into shared underscore music; higher values absorb "
-        "more chromaprint noise.",
-    )
-    intro_detection_tolerance_hashes: int = Field(
-        default=2,
-        ge=0,
-        description="How many CONSECUTIVE non-matching hashes a run "
-        "can absorb before terminating. A fresh good hash resets the "
-        "counter so isolated chromaprint noise is forgiven indefinitely.",
-    )
-    intro_detection_min_intro_seconds: float = Field(
-        default=5.0,
-        ge=0.0,
-        description="Minimum intro length to accept. Shorter matches "
-        "are dropped — usually they are recurring stingers / bumpers "
-        "rather than the title sequence proper.",
-    )
-    intro_detection_max_intro_seconds: float = Field(
-        default=120.0,
-        ge=10.0,
-        description="Hard cap on persisted intro length. Real intros "
-        "rarely exceed two minutes; longer detections almost always "
-        "include shared underscore that bleeds past the title sequence "
-        "and should be truncated to avoid skipping into the episode.",
-    )
+    # All scheduler / thumbnail-backfill / intro-detection tunables moved
+    # to ``app_settings`` (ADR-013 phase 2). Set them via the admin
+    # panel or ``UPDATE app_settings SET value_json=...`` for ops
+    # overrides. Setting the legacy ``SCHEDULER_*``, ``THUMBNAIL_BACKFILL_*``
+    # or ``INTRO_DETECTION_*`` env vars now has no effect — startup
+    # warns about each one it sees (see ``main.py``).
 
     ffmpeg_threads: int | None = Field(
         default=None,

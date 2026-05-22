@@ -13,11 +13,14 @@ import pytest
 from src.modules.media.application.ports import (
     DetectedIntro,
     EpisodeFingerprint,
+    IntroDetectorTuning,
 )
 from src.modules.media.domain.value_objects import EpisodeId
 from src.modules.media.infrastructure.audio.chromaprint_intro_detector import (
     ChromaprintIntroDetector,
 )
+
+_DEFAULT_TUNING = IntroDetectorTuning()
 
 _HASH_RATE = 8.0  # roughly the Chromaprint default; keeps math tidy
 _BIT_MASK = 0xFFFFFFFF
@@ -89,7 +92,7 @@ class TestChromaprintIntroDetector:
             seed=1,
         )
 
-        assert detector.detect([single]) == {}
+        assert detector.detect([single], _DEFAULT_TUNING) == {}
 
     def test_returns_empty_when_episodes_share_nothing(self) -> None:
         detector = ChromaprintIntroDetector()
@@ -102,7 +105,7 @@ class TestChromaprintIntroDetector:
             for seed in range(3)
         ]
 
-        result = detector.detect(episodes)
+        result = detector.detect(episodes, _DEFAULT_TUNING)
 
         assert result == {}
 
@@ -118,7 +121,7 @@ class TestChromaprintIntroDetector:
             for seed in (1, 2, 3, 4)
         ]
 
-        result = detector.detect(episodes)
+        result = detector.detect(episodes, _DEFAULT_TUNING)
 
         assert len(result) == len(episodes)
         for episode in episodes:
@@ -145,7 +148,7 @@ class TestChromaprintIntroDetector:
             for seed, offset in enumerate(offsets, start=10)
         ]
 
-        result = detector.detect(episodes)
+        result = detector.detect(episodes, _DEFAULT_TUNING)
 
         assert len(result) == len(episodes)
         for episode, offset in zip(episodes, offsets, strict=True):
@@ -171,7 +174,7 @@ class TestChromaprintIntroDetector:
             for seed in (1, 2, 3)
         ]
 
-        result = detector.detect(episodes)
+        result = detector.detect(episodes, _DEFAULT_TUNING)
 
         assert len(result) == len(episodes)
         for episode in episodes:
@@ -199,7 +202,7 @@ class TestChromaprintIntroDetector:
             duration_seconds=400 / _HASH_RATE,
         )
 
-        result = detector.detect([*with_intro, outlier])
+        result = detector.detect([*with_intro, outlier], _DEFAULT_TUNING)
 
         assert outlier.episode_id not in result
         # 1 agreeing peer out of 2 possible → confidence == 0.5
@@ -221,7 +224,7 @@ class TestChromaprintIntroDetector:
             for seed in (1, 2, 3)
         ]
 
-        assert detector.detect(episodes) == {}
+        assert detector.detect(episodes, _DEFAULT_TUNING) == {}
 
     def test_returns_empty_for_zero_duration_fingerprints(self) -> None:
         detector = ChromaprintIntroDetector()
@@ -234,7 +237,7 @@ class TestChromaprintIntroDetector:
             for _ in range(3)
         ]
 
-        assert detector.detect(empty) == {}
+        assert detector.detect(empty, _DEFAULT_TUNING) == {}
 
     def test_confidence_is_capped_at_one(self, shared_intro: list[int]) -> None:
         detector = ChromaprintIntroDetector()
@@ -248,7 +251,7 @@ class TestChromaprintIntroDetector:
             for seed in range(3)
         ]
 
-        result = detector.detect(episodes)
+        result = detector.detect(episodes, _DEFAULT_TUNING)
 
         for marker in result.values():
             assert 0.0 <= marker.confidence <= 1.0
@@ -258,7 +261,7 @@ class TestChromaprintIntroDetector:
         # at 5 s. The detector finds the full match, then truncates the
         # END so the persisted segment never goes past the cap.
         long_intro = _make_random_hashes(60, seed=99)
-        detector = ChromaprintIntroDetector(max_intro_seconds=5.0)
+        detector = ChromaprintIntroDetector()
         episodes = [
             _episode(
                 intro_hashes=long_intro,
@@ -269,7 +272,8 @@ class TestChromaprintIntroDetector:
             for seed in (1, 2, 3)
         ]
 
-        result = detector.detect(episodes)
+        tuning = IntroDetectorTuning(max_intro_seconds=5.0)
+        result = detector.detect(episodes, tuning)
 
         assert len(result) == len(episodes)
         for episode in episodes:
@@ -298,7 +302,7 @@ class TestChromaprintIntroDetector:
             for seed in (100, 200, 300)
         ]
 
-        result = detector.detect(episodes)
+        result = detector.detect(episodes, _DEFAULT_TUNING)
 
         for episode in episodes:
             marker = result[episode.episode_id]
@@ -317,10 +321,8 @@ class TestChromaprintIntroDetector:
         # every shift. The detector must still fall back to a 1-hash
         # window so misconfiguration becomes "low quality matches" and
         # not "matching disabled".
-        detector = ChromaprintIntroDetector(
-            alignment_window_seconds=0.05,
-            min_intro_seconds=0.1,
-        )
+        detector = ChromaprintIntroDetector(alignment_window_seconds=0.05)
+        tuning = IntroDetectorTuning(min_intro_seconds=0.1)
         episodes = [
             _episode(
                 intro_hashes=shared_intro,
@@ -331,7 +333,7 @@ class TestChromaprintIntroDetector:
             for seed in range(3)
         ]
 
-        result = detector.detect(episodes)
+        result = detector.detect(episodes, tuning)
 
         # The 1-hash floor cannot detect a 10s intro, but we explicitly
         # do not require correctness here — just that the loop is not
