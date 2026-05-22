@@ -26,6 +26,7 @@ from src.modules.media.infrastructure.streaming.thumbnail_service import (
 if TYPE_CHECKING:
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities import Episode, Movie
+    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = get_logger()
 
@@ -39,29 +40,32 @@ class ThumbnailBackfillJob:
     starting on episodes — acceptable because both eventually drain
     and operators rarely have a million of either.
 
+    All operator-tunable knobs (``batch_size``, sprite ``subdir``)
+    are read from :class:`RuntimeSettings` per ``run()`` so admin
+    edits propagate to the next tick without restart (ADR-013). The
+    on-demand ``process_movie``/``process_episode`` entry points
+    (eager triggers from the HLS route) read the snapshot lazily on
+    each invocation for the same reason.
+
     Args:
         media_uow_factory: Builds fresh media UoWs per tick. The job
             opens its own UoW per item so a single failure rolls back
             only that item's update, not the whole batch.
+        runtime_settings: Snapshot facade for
+            :class:`ThumbnailBackfillConfig`.
         thumbnail_service: Sprite + VTT generator. Default constructs
             its own; tests inject a fake.
-        batch_size: Maximum items processed per ``run()`` call.
-        sprite_subdir: Path relative to the media file's parent folder
-            where ``sprite.jpg`` and ``sprite.vtt`` are written.
     """
 
     def __init__(
         self,
         media_uow_factory: MediaUnitOfWorkFactory,
+        runtime_settings: RuntimeSettings,
         thumbnail_service: ThumbnailGenerationService | None = None,
-        *,
-        batch_size: int = 10,
-        sprite_subdir: str = ".homeflix/thumbnails",
     ) -> None:
         self._media_uow_factory = media_uow_factory
+        self._runtime_settings = runtime_settings
         self._thumbnail_service = thumbnail_service or ThumbnailGenerationService()
-        self._batch_size = batch_size
-        self._sprite_subdir = sprite_subdir
 
     async def run(self) -> None:
         """Process one batch of missing thumbnails.
@@ -72,17 +76,18 @@ class ThumbnailBackfillJob:
         many were skipped (because the source file vanished or ffmpeg
         could not produce a sprite).
         """
-        budget = self._batch_size
+        config = await self._runtime_settings.thumbnail_backfill()
+        budget = config.batch_size
 
         movies = await self._fetch_missing_movies(budget)
-        movies_done, movies_skipped = await self._process_movies(movies)
+        movies_done, movies_skipped = await self._process_movies(movies, config.subdir)
         budget -= len(movies)
 
         episodes_done = 0
         episodes_skipped = 0
         if budget > 0:
             episodes = await self._fetch_missing_episodes(budget)
-            episodes_done, episodes_skipped = await self._process_episodes(episodes)
+            episodes_done, episodes_skipped = await self._process_episodes(episodes, config.subdir)
 
         if movies_done or movies_skipped or episodes_done or episodes_skipped:
             _logger.info(
@@ -91,7 +96,7 @@ class ThumbnailBackfillJob:
                 movies_skipped=movies_skipped,
                 episodes_done=episodes_done,
                 episodes_skipped=episodes_skipped,
-                batch_size=self._batch_size,
+                batch_size=config.batch_size,
             )
 
     async def _fetch_missing_movies(self, limit: int) -> list[Movie]:
@@ -116,7 +121,8 @@ class ThumbnailBackfillJob:
             movie = await uow.movies.find_by_id(MovieId(movie_id))
         if movie is None or movie.scrub_preview_path is not None:
             return False
-        return await self.process_movie(movie)
+        subdir = (await self._runtime_settings.thumbnail_backfill()).subdir
+        return await self.process_movie(movie, subdir)
 
     async def process_episode_by_id(self, episode_id: str) -> bool:
         """Eager-trigger entry point for episodes — see ``process_movie_by_id``."""
@@ -124,9 +130,10 @@ class ThumbnailBackfillJob:
             episode = await uow.series.find_episode_by_id(EpisodeId(episode_id))
         if episode is None or episode.scrub_preview_path is not None:
             return False
-        return await self.process_episode(episode)
+        subdir = (await self._runtime_settings.thumbnail_backfill()).subdir
+        return await self.process_episode(episode, subdir)
 
-    async def process_movie(self, movie: Movie) -> bool:
+    async def process_movie(self, movie: Movie, subdir: str) -> bool:
         """Generate and persist scrub-preview thumbnails for a single movie.
 
         Reusable by both the periodic batch and the eager trigger fired
@@ -143,13 +150,13 @@ class ThumbnailBackfillJob:
         file_path = self._primary_file_path(movie)
         if file_path is None:
             return False
-        result = await self._generate(file_path)
+        result = await self._generate(file_path, subdir)
         if result is None:
             return False
         await self._persist_movie(movie, result)
         return True
 
-    async def process_episode(self, episode: Episode) -> bool:
+    async def process_episode(self, episode: Episode, subdir: str) -> bool:
         """Generate and persist scrub-preview thumbnails for a single episode.
 
         Mirror of ``process_movie`` for episodes. Skips silently if the
@@ -159,27 +166,27 @@ class ThumbnailBackfillJob:
         file_path = self._primary_file_path(episode)
         if file_path is None or episode.id is None:
             return False
-        result = await self._generate(file_path)
+        result = await self._generate(file_path, subdir)
         if result is None:
             return False
         await self._persist_episode(episode, result)
         return True
 
-    async def _process_movies(self, movies: list[Movie]) -> tuple[int, int]:
+    async def _process_movies(self, movies: list[Movie], subdir: str) -> tuple[int, int]:
         done = 0
         skipped = 0
         for movie in movies:
-            if await self.process_movie(movie):
+            if await self.process_movie(movie, subdir):
                 done += 1
             else:
                 skipped += 1
         return done, skipped
 
-    async def _process_episodes(self, episodes: list[Episode]) -> tuple[int, int]:
+    async def _process_episodes(self, episodes: list[Episode], subdir: str) -> tuple[int, int]:
         done = 0
         skipped = 0
         for episode in episodes:
-            if await self.process_episode(episode):
+            if await self.process_episode(episode, subdir):
                 done += 1
             else:
                 skipped += 1
@@ -192,7 +199,7 @@ class ThumbnailBackfillJob:
             return None
         return primary.file_path.value
 
-    async def _generate(self, file_path: str) -> ThumbnailResult | None:
+    async def _generate(self, file_path: str, subdir: str) -> ThumbnailResult | None:
         """Run sprite generation off the event loop and return its result.
 
         ``ThumbnailGenerationService.generate`` is fully synchronous
@@ -214,7 +221,7 @@ class ThumbnailBackfillJob:
         # no-op for them in practice, but the consistent layout means a
         # "Movies/" folder hosting multiple titles flat would survive
         # the same overwrite hazard.
-        output_dir = source.parent / self._sprite_subdir / source.stem
+        output_dir = source.parent / subdir / source.stem
         return await asyncio.to_thread(
             self._thumbnail_service.generate,
             file_path,

@@ -152,10 +152,6 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         hls_cache_directory=config.provided.hls_cache_directory,
         hls_cache_max_size_mb=config.provided.hls_cache_max_size_mb,
         ffmpeg_threads=config.provided.ffmpeg_threads,
-        intro_detection_max_hash_hamming=config.provided.intro_detection_max_hash_hamming,
-        intro_detection_tolerance_hashes=config.provided.intro_detection_tolerance_hashes,
-        intro_detection_min_intro_seconds=config.provided.intro_detection_min_intro_seconds,
-        intro_detection_max_intro_seconds=config.provided.intro_detection_max_intro_seconds,
     )
 
     library = providers.Container(
@@ -221,15 +217,14 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         LibraryScanScheduler,
         library_uow_factory=library.library_unit_of_work_factory,
         scan_run_service=media.scan_run_service,
-        reconcile_interval_minutes=config.provided.scheduler_reconcile_interval_minutes,
+        runtime_settings=settings.runtime_settings,
     )
 
     thumbnail_backfill_job = providers.Singleton(
         ThumbnailBackfillJob,
         media_uow_factory=media.media_unit_of_work_factory,
+        runtime_settings=settings.runtime_settings,
         thumbnail_service=media.thumbnail_generation_service,
-        batch_size=config.provided.thumbnail_backfill_batch_size,
-        sprite_subdir=config.provided.thumbnail_backfill_subdir,
     )
 
     intro_detection_job = providers.Singleton(
@@ -238,9 +233,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         audio_extractor=media.audio_extractor,
         chromaprint_service=media.chromaprint_service,
         intro_detector=media.intro_detector,
-        batch_size=config.provided.intro_detection_batch_size,
-        audio_window_seconds=config.provided.intro_detection_audio_window_seconds,
-        min_confidence=config.provided.intro_detection_min_confidence,
+        runtime_settings=settings.runtime_settings,
     )
 
 

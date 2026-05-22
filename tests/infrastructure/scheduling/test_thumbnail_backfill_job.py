@@ -27,6 +27,7 @@ from src.modules.media.domain.value_objects import (
     Title,
 )
 from src.modules.media.infrastructure.streaming.thumbnail_service import ThumbnailResult
+from src.modules.settings.domain.value_objects import ThumbnailBackfillConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -98,6 +99,19 @@ def _make_thumbnail_service(vtt_path: Path) -> MagicMock:
     return service
 
 
+def _make_runtime_settings(
+    *,
+    batch_size: int = 10,
+    subdir: str = ".homeflix/thumbnails",
+) -> AsyncMock:
+    """Return a fake :class:`RuntimeSettings` exposing ``thumbnail_backfill``."""
+    runtime = AsyncMock()
+    runtime.thumbnail_backfill = AsyncMock(
+        return_value=ThumbnailBackfillConfig(batch_size=batch_size, subdir=subdir),
+    )
+    return runtime
+
+
 @pytest.mark.unit
 class TestThumbnailBackfillJob:
     @pytest.mark.asyncio
@@ -122,8 +136,8 @@ class TestThumbnailBackfillJob:
 
         job = ThumbnailBackfillJob(
             media_uow_factory=factory,
+            runtime_settings=_make_runtime_settings(batch_size=2),
             thumbnail_service=service,
-            batch_size=2,
         )
         await job.run()
 
@@ -151,8 +165,8 @@ class TestThumbnailBackfillJob:
 
         job = ThumbnailBackfillJob(
             media_uow_factory=factory,
+            runtime_settings=_make_runtime_settings(batch_size=3),
             thumbnail_service=service,
-            batch_size=3,
         )
         await job.run()
 
@@ -176,8 +190,8 @@ class TestThumbnailBackfillJob:
 
         job = ThumbnailBackfillJob(
             media_uow_factory=factory,
+            runtime_settings=_make_runtime_settings(batch_size=5),
             thumbnail_service=service,
-            batch_size=5,
         )
         await job.run()
 
@@ -200,8 +214,8 @@ class TestThumbnailBackfillJob:
 
         job = ThumbnailBackfillJob(
             media_uow_factory=factory,
+            runtime_settings=_make_runtime_settings(batch_size=5),
             thumbnail_service=service,
-            batch_size=5,
         )
         await job.run()
 
@@ -225,9 +239,8 @@ class TestThumbnailBackfillJob:
 
         job = ThumbnailBackfillJob(
             media_uow_factory=factory,
+            runtime_settings=_make_runtime_settings(batch_size=1, subdir="custom/thumbs"),
             thumbnail_service=service,
-            batch_size=1,
-            sprite_subdir="custom/thumbs",
         )
         await job.run()
 
@@ -263,8 +276,8 @@ class TestThumbnailBackfillJob:
 
         job = ThumbnailBackfillJob(
             media_uow_factory=factory,
+            runtime_settings=_make_runtime_settings(batch_size=2),
             thumbnail_service=service,
-            batch_size=2,
         )
         await job.run()
 
@@ -287,6 +300,7 @@ class TestThumbnailBackfillJob:
 
         job = ThumbnailBackfillJob(
             media_uow_factory=factory,
+            runtime_settings=_make_runtime_settings(),
             thumbnail_service=service,
         )
         ok = await job.process_movie_by_id(str(movie.id))
@@ -312,7 +326,11 @@ class TestThumbnailBackfillJob:
         factory = MagicMock(return_value=uow)
         service = _make_thumbnail_service(tmp_path / "sprite.vtt")
 
-        job = ThumbnailBackfillJob(media_uow_factory=factory, thumbnail_service=service)
+        job = ThumbnailBackfillJob(
+            media_uow_factory=factory,
+            runtime_settings=_make_runtime_settings(),
+            thumbnail_service=service,
+        )
         ok = await job.process_movie_by_id(str(movie.id))
 
         assert ok is False
@@ -331,7 +349,11 @@ class TestThumbnailBackfillJob:
         factory = MagicMock(return_value=uow)
         service = _make_thumbnail_service(tmp_path / "sprite.vtt")
 
-        job = ThumbnailBackfillJob(media_uow_factory=factory, thumbnail_service=service)
+        job = ThumbnailBackfillJob(
+            media_uow_factory=factory,
+            runtime_settings=_make_runtime_settings(),
+            thumbnail_service=service,
+        )
         ok = await job.process_movie_by_id(str(MovieId.generate()))
 
         assert ok is False
@@ -348,7 +370,11 @@ class TestThumbnailBackfillJob:
         factory = MagicMock(return_value=uow)
         service = _make_thumbnail_service(tmp_path / "sprite.vtt")
 
-        job = ThumbnailBackfillJob(media_uow_factory=factory, thumbnail_service=service)
+        job = ThumbnailBackfillJob(
+            media_uow_factory=factory,
+            runtime_settings=_make_runtime_settings(),
+            thumbnail_service=service,
+        )
         ok = await job.process_episode_by_id(str(episode.id))
 
         assert ok is True
@@ -364,8 +390,8 @@ class TestThumbnailBackfillJob:
 
         job = ThumbnailBackfillJob(
             media_uow_factory=factory,
+            runtime_settings=_make_runtime_settings(batch_size=10),
             thumbnail_service=service,
-            batch_size=10,
         )
         # Should be a clean no-op — no persistence calls, no thumbnail
         # generation, and the run shouldn't raise.

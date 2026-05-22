@@ -18,6 +18,7 @@ from src.modules.media.application.ports.intro_detector_port import (
     DetectedIntro,
     EpisodeFingerprint,
     IntroDetectorPort,
+    IntroDetectorTuning,
 )
 from src.modules.media.application.ports.media_probe_port import (
     MediaProbePort,
@@ -62,6 +63,7 @@ __all__ = [
     "HlsCacheStats",
     "HlsPlaylistPort",
     "IntroDetectorPort",
+    "IntroDetectorTuning",
     "LocalizedFields",
     "MediaMetadata",
     "MediaProbePort",

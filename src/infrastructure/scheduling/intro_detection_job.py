@@ -29,7 +29,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from src.config.logging import get_logger
-from src.modules.media.application.ports import EpisodeFingerprint
+from src.modules.media.application.ports import EpisodeFingerprint, IntroDetectorTuning
 from src.modules.media.domain.value_objects import (
     IntroDetectionState,
     IntroMarker,
@@ -47,6 +47,8 @@ if TYPE_CHECKING:
         AudioExtractor,
         ChromaprintService,
     )
+    from src.modules.settings.domain.value_objects import IntroDetectionConfig
+    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = get_logger()
 
@@ -60,6 +62,11 @@ _MAX_ERROR_MESSAGE_LENGTH = 2000
 class IntroDetectionJob:
     """Run a single batch of audio-fingerprint intro detection.
 
+    All operator-tunable knobs (batch size, audio window, confidence
+    floor, detector tuning) are read from
+    :class:`RuntimeSettings` at the start of each ``run()`` so admin
+    edits propagate to the next tick without restart (ADR-013).
+
     Args:
         media_uow_factory: Builds fresh media UoWs. The job opens one
             UoW per state transition so a failure on a single season
@@ -69,13 +76,11 @@ class IntroDetectionJob:
         chromaprint_service: fpcalc wrapper that turns each WAV into a
             raw fingerprint.
         intro_detector: Cross-correlation algorithm that locates the
-            shared intro across the season's fingerprints.
-        batch_size: Maximum number of seasons processed per tick.
-        audio_window_seconds: How many leading seconds of each episode
-            to feed into fpcalc.
-        min_confidence: Auto-detected markers with confidence below
-            this floor are discarded — the season is still flagged
-            ``COMPLETED`` so it is not reprocessed indefinitely.
+            shared intro across the season's fingerprints. Receives
+            its tuning per ``detect()`` call so it stays stateless
+            with respect to runtime config.
+        runtime_settings: Snapshot facade for
+            :class:`IntroDetectionConfig`.
     """
 
     def __init__(
@@ -84,23 +89,19 @@ class IntroDetectionJob:
         audio_extractor: AudioExtractor,
         chromaprint_service: ChromaprintService,
         intro_detector: IntroDetectorPort,
-        *,
-        batch_size: int = 1,
-        audio_window_seconds: int = 600,
-        min_confidence: float = 0.7,
+        runtime_settings: RuntimeSettings,
     ) -> None:
         self._media_uow_factory = media_uow_factory
         self._audio_extractor = audio_extractor
         self._chromaprint_service = chromaprint_service
         self._intro_detector = intro_detector
-        self._batch_size = batch_size
-        self._audio_window_seconds = audio_window_seconds
-        self._min_confidence = min_confidence
+        self._runtime_settings = runtime_settings
 
     async def run(self) -> None:
         """Process one batch of pending seasons."""
+        config = await self._runtime_settings.intro_detection()
         async with self._media_uow_factory() as uow:
-            seasons = list(await uow.series.find_seasons_pending_intro_detection(self._batch_size))
+            seasons = list(await uow.series.find_seasons_pending_intro_detection(config.batch_size))
 
         if not seasons:
             return
@@ -109,7 +110,7 @@ class IntroDetectionJob:
         insufficient = 0
         failed = 0
         for season in seasons:
-            outcome = await self._process_season(season)
+            outcome = await self._process_season(season, config)
             if outcome == IntroDetectionState.COMPLETED:
                 completed += 1
             elif outcome == IntroDetectionState.INSUFFICIENT_EPISODES:
@@ -122,10 +123,14 @@ class IntroDetectionJob:
             seasons_completed=completed,
             seasons_insufficient=insufficient,
             seasons_failed=failed,
-            batch_size=self._batch_size,
+            batch_size=config.batch_size,
         )
 
-    async def _process_season(self, season: Season) -> IntroDetectionState:
+    async def _process_season(
+        self,
+        season: Season,
+        config: IntroDetectionConfig,
+    ) -> IntroDetectionState:
         """Drive one season through the detection pipeline.
 
         Returns the state the season was transitioned to (used by
@@ -157,7 +162,7 @@ class IntroDetectionJob:
             return IntroDetectionState.FAILED
 
         try:
-            return await self._detect_and_persist(season, season_id, log_ctx)
+            return await self._detect_and_persist(season, season_id, log_ctx, config)
         except Exception as exc:
             _logger.exception(
                 "[intro-detection] season processing failed",
@@ -186,6 +191,7 @@ class IntroDetectionJob:
         season: Season,
         season_id: SeasonId,
         log_ctx: dict[str, str | int],
+        config: IntroDetectionConfig,
     ) -> IntroDetectionState:
         candidates = [ep for ep in season.episodes if not _has_manual_marker(ep)]
         candidate_count = len(candidates)
@@ -199,7 +205,7 @@ class IntroDetectionJob:
             )
             return IntroDetectionState.INSUFFICIENT_EPISODES
 
-        fingerprints = await self._build_fingerprints(candidates)
+        fingerprints = await self._build_fingerprints(candidates, config.audio_window_seconds)
         fingerprint_count = len(fingerprints)
         if fingerprint_count < _MIN_EPISODES_FOR_DETECTION:
             await self._mark_state(season_id, IntroDetectionState.INSUFFICIENT_EPISODES)
@@ -211,8 +217,14 @@ class IntroDetectionJob:
             )
             return IntroDetectionState.INSUFFICIENT_EPISODES
 
-        detections = await asyncio.to_thread(self._intro_detector.detect, fingerprints)
-        persisted_count = await self._persist_detections(detections)
+        tuning = IntroDetectorTuning(
+            max_hash_hamming=config.max_hash_hamming,
+            tolerance_hashes=config.tolerance_hashes,
+            min_intro_seconds=config.min_intro_seconds,
+            max_intro_seconds=config.max_intro_seconds,
+        )
+        detections = await asyncio.to_thread(self._intro_detector.detect, fingerprints, tuning)
+        persisted_count = await self._persist_detections(detections, config.min_confidence)
         await self._mark_state(season_id, IntroDetectionState.COMPLETED)
         _logger.info(
             "[intro-detection] season completed",
@@ -224,16 +236,24 @@ class IntroDetectionJob:
         )
         return IntroDetectionState.COMPLETED
 
-    async def _build_fingerprints(self, episodes: list[Episode]) -> list[EpisodeFingerprint]:
+    async def _build_fingerprints(
+        self,
+        episodes: list[Episode],
+        audio_window_seconds: int,
+    ) -> list[EpisodeFingerprint]:
         """Extract audio + fingerprint each episode, dropping failures."""
         results: list[EpisodeFingerprint] = []
         for episode in episodes:
-            fingerprint = await self._fingerprint_episode(episode)
+            fingerprint = await self._fingerprint_episode(episode, audio_window_seconds)
             if fingerprint is not None:
                 results.append(fingerprint)
         return results
 
-    async def _fingerprint_episode(self, episode: Episode) -> EpisodeFingerprint | None:
+    async def _fingerprint_episode(
+        self,
+        episode: Episode,
+        audio_window_seconds: int,
+    ) -> EpisodeFingerprint | None:
         """Run ffmpeg + fpcalc against a single episode.
 
         Returns ``None`` when any step degrades — missing primary file,
@@ -248,7 +268,7 @@ class IntroDetectionJob:
             return None
         episode_id = episode.id
         file_path = primary.file_path.value
-        window = self._audio_window_seconds
+        window = audio_window_seconds
 
         def _extract_and_fingerprint() -> EpisodeFingerprint | None:
             # Per the docstring: any failure here just drops the
@@ -280,7 +300,11 @@ class IntroDetectionJob:
 
         return await asyncio.to_thread(_extract_and_fingerprint)
 
-    async def _persist_detections(self, detections: Mapping[EpisodeId, DetectedIntro]) -> int:
+    async def _persist_detections(
+        self,
+        detections: Mapping[EpisodeId, DetectedIntro],
+        min_confidence: float,
+    ) -> int:
         """Persist auto-detected markers that clear the confidence floor.
 
         Returns the number of markers actually written so the caller
@@ -294,7 +318,7 @@ class IntroDetectionJob:
         persisted = 0
         async with self._media_uow_factory() as uow:
             for episode_id, detected in detections.items():
-                if detected.confidence < self._min_confidence:
+                if detected.confidence < min_confidence:
                     continue
                 marker = _build_auto_marker(detected)
                 await uow.series.update_episode_intro(episode_id, marker)

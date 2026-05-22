@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
     from src.modules.library.domain.entities.library import Library
     from src.modules.media.application.services.scan_run_service import ScanRunService
+    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = get_logger()
 
@@ -44,26 +45,33 @@ class LibraryScanScheduler:
     service does not maintain its own job database.  Reconciliation
     runs at startup and on a configurable interval so schedule edits
     made through the REST API propagate without a restart.
+
+    The reconcile interval is read from :class:`RuntimeSettings` at
+    ``start()`` time so admin-panel edits land on the next deploy
+    (changing the APScheduler interval at runtime would require
+    rebuilding the registered job and is out of scope for ADR-013
+    phase 2 — documented limitation).
     """
 
     def __init__(
         self,
         library_uow_factory: LibraryUnitOfWorkFactory,
         scan_run_service: ScanRunService,
-        reconcile_interval_minutes: int,
+        runtime_settings: RuntimeSettings,
     ) -> None:
         self._library_uow_factory = library_uow_factory
         self._scan_run_service = scan_run_service
-        self._reconcile_interval_minutes = reconcile_interval_minutes
+        self._runtime_settings = runtime_settings
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     async def start(self) -> None:
         """Start the scheduler and register the reconcile + initial jobs."""
+        config = await self._runtime_settings.scheduler()
         self._scheduler.start()
         self._scheduler.add_job(
             self._reconcile,
             trigger="interval",
-            minutes=self._reconcile_interval_minutes,
+            minutes=config.reconcile_interval_minutes,
             id=_RECONCILE_JOB_ID,
             replace_existing=True,
             max_instances=1,
@@ -72,7 +80,7 @@ class LibraryScanScheduler:
         await self._reconcile()
         _logger.info(
             "[scheduler] Started",
-            reconcile_interval_minutes=self._reconcile_interval_minutes,
+            reconcile_interval_minutes=config.reconcile_interval_minutes,
         )
 
     async def stop(self) -> None:

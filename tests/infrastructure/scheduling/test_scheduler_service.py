@@ -111,10 +111,14 @@ def scheduler(
 ) -> LibraryScanScheduler:
     uow = _build_uow(library_repo)
     library_uow_factory = MagicMock(return_value=uow)
+    from src.modules.settings.domain.value_objects import SchedulerConfig
+
+    runtime_settings = AsyncMock()
+    runtime_settings.scheduler = AsyncMock(return_value=SchedulerConfig())
     instance = LibraryScanScheduler(
         library_uow_factory=library_uow_factory,
         scan_run_service=scan_run_service,
-        reconcile_interval_minutes=5,
+        runtime_settings=runtime_settings,
     )
     instance._scheduler = _FakeScheduler()
     return instance
