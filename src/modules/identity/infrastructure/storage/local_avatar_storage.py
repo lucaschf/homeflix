@@ -17,6 +17,7 @@ import asyncio
 import io
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PIL import Image, UnidentifiedImageError
 
@@ -26,6 +27,9 @@ from src.modules.identity.application.ports.avatar_storage_port import (
     AvatarTooLargeError,
     InvalidAvatarImageError,
 )
+
+if TYPE_CHECKING:
+    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = get_logger()
 
@@ -52,19 +56,43 @@ _WEBP_QUALITY = 85
 
 
 class LocalAvatarStorage(AvatarStoragePort):
-    """Resize uploaded avatars and write WebP files to local disk."""
+    """Resize uploaded avatars and write WebP files to local disk.
+
+    The on-disk directory is locked in on the **first** save/delete
+    using ``avatar.storage_subdir`` from :class:`RuntimeSettings`.
+    Subsequent changes to that field have no effect until the process
+    restarts — admin edits to ``storage_subdir`` would otherwise
+    orphan every avatar already on disk. ``max_size_mb`` and
+    ``size_pixels`` come straight from :class:`RuntimeSettings` per
+    upload so admin edits to those propagate immediately.
+    """
 
     def __init__(
         self,
+        runtime_settings: RuntimeSettings,
         *,
         root_directory: str,
-        subdirectory: str,
-        max_size_mb: int,
-        side_length: int,
     ) -> None:
-        self._directory = Path(root_directory) / subdirectory
-        self._max_size_bytes = max_size_mb * 1024 * 1024
-        self._side_length = side_length
+        self._runtime_settings = runtime_settings
+        self._root_directory = Path(root_directory)
+        self._directory: Path | None = None
+
+    async def _ensure_directory(self) -> Path:
+        if self._directory is None:
+            avatar_cfg = await self._runtime_settings.avatar()
+            self._directory = self._root_directory / avatar_cfg.storage_subdir
+        return self._directory
+
+    async def resolve_path(self, profile_id: str) -> Path:
+        """Return the on-disk path for ``profile_id``'s avatar.
+
+        Used by the read-only GET route so the route and the writer
+        always agree on where files live, even if an admin edits
+        ``storage_subdir`` mid-process (the first reader / writer
+        wins; the cached path is then frozen until restart).
+        """
+        directory = await self._ensure_directory()
+        return directory / f"{profile_id}.webp"
 
     async def save(
         self,
@@ -74,9 +102,11 @@ class LocalAvatarStorage(AvatarStoragePort):
         declared_mime_type: str,
     ) -> str:
         """Validate + resize + persist + return the cache-busted URL."""
-        if len(content) > self._max_size_bytes:
+        config = await self._runtime_settings.avatar()
+        max_size_bytes = config.max_size_mb * 1024 * 1024
+        if len(content) > max_size_bytes:
             raise AvatarTooLargeError(
-                f"avatar exceeds {self._max_size_bytes} byte cap " f"(got {len(content)} bytes)"
+                f"avatar exceeds {max_size_bytes} byte cap (got {len(content)} bytes)"
             )
         if declared_mime_type not in _ALLOWED_MIME_TYPES:
             raise InvalidAvatarImageError(
@@ -87,11 +117,12 @@ class LocalAvatarStorage(AvatarStoragePort):
         # Pillow work is CPU-bound — ``asyncio.to_thread`` avoids
         # blocking the event loop on JPEG decode + resize for a
         # 2 MB image (a few hundred ms on a modern phone shot).
-        target_path = self._target_path(profile_id)
+        target_path = await self.resolve_path(profile_id)
         await asyncio.to_thread(
             self._decode_resize_and_save,
             content,
             target_path,
+            config.size_pixels,
         )
 
         timestamp = int(datetime.now(UTC).timestamp())
@@ -99,7 +130,7 @@ class LocalAvatarStorage(AvatarStoragePort):
 
     async def delete(self, profile_id: str) -> None:
         """Remove the persisted file. Idempotent — no error when absent."""
-        target_path = self._target_path(profile_id)
+        target_path = await self.resolve_path(profile_id)
         try:
             await asyncio.to_thread(target_path.unlink)
         except FileNotFoundError:
@@ -116,11 +147,12 @@ class LocalAvatarStorage(AvatarStoragePort):
                 error=str(exc),
             )
 
-    def _target_path(self, profile_id: str) -> Path:
-        """Resolve the on-disk path for a profile's avatar."""
-        return self._directory / f"{profile_id}.webp"
-
-    def _decode_resize_and_save(self, content: bytes, target_path: Path) -> None:
+    def _decode_resize_and_save(
+        self,
+        content: bytes,
+        target_path: Path,
+        side_length: int,
+    ) -> None:
         """Synchronous Pillow work — open, validate, crop, scale, save."""
         try:
             with Image.open(io.BytesIO(content)) as source:
@@ -134,7 +166,7 @@ class LocalAvatarStorage(AvatarStoragePort):
                 source.load()
                 cropped = self._centre_crop_square(source)
                 resized = cropped.resize(
-                    (self._side_length, self._side_length),
+                    (side_length, side_length),
                     resample=Image.Resampling.LANCZOS,
                 )
                 target_path.parent.mkdir(parents=True, exist_ok=True)

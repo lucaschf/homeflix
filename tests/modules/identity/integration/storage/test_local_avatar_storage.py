@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 from pathlib import Path  # noqa: TCH003 — used by runtime fixture annotations
+from unittest.mock import AsyncMock
 
 import pytest
 from PIL import Image
@@ -18,6 +19,7 @@ from src.modules.identity.application.ports import (
     InvalidAvatarImageError,
 )
 from src.modules.identity.infrastructure.storage import LocalAvatarStorage
+from src.modules.settings.domain.value_objects import AvatarConfig
 
 _PROFILE_ID = "prf_test12345678"
 
@@ -32,12 +34,22 @@ def _png_bytes(
     return buf.getvalue()
 
 
+def _fake_runtime_settings(*, max_size_mb: int = 2, side: int = 256) -> AsyncMock:
+    runtime = AsyncMock()
+    runtime.avatar = AsyncMock(
+        return_value=AvatarConfig(
+            storage_subdir=".homeflix/avatars",
+            max_size_mb=max_size_mb,
+            size_pixels=side,
+        ),
+    )
+    return runtime
+
+
 def _make_storage(tmp_path: Path, *, max_size_mb: int = 2, side: int = 256) -> LocalAvatarStorage:
     return LocalAvatarStorage(
+        _fake_runtime_settings(max_size_mb=max_size_mb, side=side),
         root_directory=str(tmp_path),
-        subdirectory=".homeflix/avatars",
-        max_size_mb=max_size_mb,
-        side_length=side,
     )
 
 

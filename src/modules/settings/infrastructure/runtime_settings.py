@@ -147,6 +147,18 @@ class RuntimeSettings:
         await self._ensure_fresh()
         return cast(StreamingConfig, self._snapshot[SettingKey.STREAMING])
 
+    def streaming_snapshot_sync(self) -> StreamingConfig:
+        """Return the cached :class:`StreamingConfig` *without* refreshing.
+
+        Escape hatch for synchronous contexts (e.g. the HLS eviction
+        daemon thread) that cannot ``await``. Returns whatever was
+        last seen by the async path; if nothing has refreshed yet the
+        Pydantic defaults are used. Will go stale until an async
+        caller triggers the next refresh — acceptable for slow-tick
+        consumers like cache eviction (~60s loop).
+        """
+        return cast(StreamingConfig, self._snapshot[SettingKey.STREAMING])
+
     async def avatar(self) -> AvatarConfig:
         """Return the current :class:`AvatarConfig` snapshot."""
         await self._ensure_fresh()

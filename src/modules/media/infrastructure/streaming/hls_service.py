@@ -29,6 +29,8 @@ and served by the id-based ``/scrub-preview/`` routes — this service
 no longer touches them.
 """
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
@@ -40,7 +42,7 @@ import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.modules.media.application.ports.hls_playlist_port import (
     HlsCacheStats,
@@ -52,7 +54,10 @@ from src.modules.media.infrastructure.streaming._subprocess import (
     with_ffmpeg_threads,
 )
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
-from src.shared_kernel.value_objects.tracks import SubtitleTrack
+
+if TYPE_CHECKING:
+    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
+    from src.shared_kernel.value_objects.tracks import SubtitleTrack
 
 _logger = logging.getLogger(__name__)
 
@@ -96,32 +101,31 @@ class HlsService(HlsPlaylistPort):
 
     Args:
         cache_dir: Directory to store generated HLS files.
+        runtime_settings: Snapshot facade for :class:`StreamingConfig`.
+            ``ffmpeg_threads`` is read fresh per ffmpeg invocation;
+            ``hls_cache_max_size_mb`` is read via the *sync* snapshot
+            in the eviction daemon (so admin edits propagate on the
+            next eviction tick, ~60s).
         probe_service: Service to discover audio/subtitle tracks.
         idle_timeout: Seconds without segment requests before a running
             ffmpeg process is considered idle and killed. Defaults to 30s.
         enable_eviction: Whether to start the background eviction daemon.
             Defaults to False so unit tests don't leak threads — production
             code should pass True via the DI container.
-        ffmpeg_threads: Maximum worker threads each ffmpeg invocation may
-            use. ``None`` keeps ffmpeg's default (all cores). Applied via
-            ``-threads N`` on every transcoding and subtitle-extraction
-            command.
     """
 
     def __init__(
         self,
+        runtime_settings: RuntimeSettings,
         cache_dir: str = "./hls_cache",
         probe_service: MediaProbeService | None = None,
         idle_timeout: float = _DEFAULT_IDLE_TIMEOUT,
         enable_eviction: bool = False,
-        max_cache_size_mb: int = 5120,
-        ffmpeg_threads: int | None = None,
     ) -> None:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._probe = probe_service or MediaProbeService()
-        self._max_cache_bytes = max_cache_size_mb * 1024 * 1024
-        self._ffmpeg_threads = ffmpeg_threads
+        self._runtime_settings = runtime_settings
         self._processes: dict[str, list[subprocess.Popen[bytes]]] = {}
         # path_hash → monotonic timestamp of the most recent activity
         # (playlist request OR segment fetch). The eviction loop reads
@@ -196,7 +200,10 @@ class HlsService(HlsPlaylistPort):
 
         Returns the list of evicted path_hashes (useful for tests).
         """
-        if self._max_cache_bytes <= 0:
+        max_cache_bytes = (
+            self._runtime_settings.streaming_snapshot_sync().hls_cache_max_size_mb * 1024 * 1024
+        )
+        if max_cache_bytes <= 0:
             return []
 
         # Scan disk: collect (path_hash, size_bytes, last_access_time)
@@ -213,7 +220,7 @@ class HlsService(HlsPlaylistPort):
                 access_time = self._last_access.get(path_hash, entry.stat().st_mtime)
             buckets.append((path_hash, size, access_time))
 
-        if total_size <= self._max_cache_bytes:
+        if total_size <= max_cache_bytes:
             return []
 
         # Sort by access time ascending — oldest first
@@ -221,7 +228,7 @@ class HlsService(HlsPlaylistPort):
 
         evicted: list[str] = []
         for path_hash, size, _ in buckets:
-            if total_size <= self._max_cache_bytes:
+            if total_size <= max_cache_bytes:
                 break
             # Don't evict buckets with active ffmpeg processes
             with self._lock:
@@ -469,9 +476,12 @@ class HlsService(HlsPlaylistPort):
                     except OSError:
                         # File raced with eviction / clear; skip.
                         continue
+        max_bytes = (
+            self._runtime_settings.streaming_snapshot_sync().hls_cache_max_size_mb * 1024 * 1024
+        )
         return HlsCacheStats(
             size_bytes=total,
-            max_bytes=self._max_cache_bytes,
+            max_bytes=max_bytes,
             last_cleared_at=self._read_last_cleared_marker(),
         )
 
@@ -565,6 +575,11 @@ class HlsService(HlsPlaylistPort):
         # Probe outside the lock (potentially slow I/O)
         probe_result = self._probe.probe(safe_path)
 
+        # Snapshot ffmpeg_threads once per generation start so every
+        # command spawned for this path sees the same cap, even if
+        # an admin edit happens between spawns.
+        ffmpeg_threads = self._runtime_settings.streaming_snapshot_sync().ffmpeg_threads
+
         # Pick the subtitles we'll actually try to convert. Image-based
         # tracks (PGS, VOBSUB) and externals without a resolved file path
         # are filtered out so we don't create dangling readiness events
@@ -601,7 +616,7 @@ class HlsService(HlsPlaylistPort):
             video_dir.mkdir()
             cmd = with_ffmpeg_threads(
                 self._build_video_cmd(safe_path, video_dir, probe_result, bucket_start),
-                self._ffmpeg_threads,
+                ffmpeg_threads,
             )
             _logger.info("Starting video HLS for %s (offset=%ds)", safe_path, bucket_start)
             procs.append(
@@ -617,7 +632,7 @@ class HlsService(HlsPlaylistPort):
                 audio_dir.mkdir()
                 cmd = with_ffmpeg_threads(
                     self._build_audio_cmd(safe_path, audio_dir, track.index, bucket_start),
-                    self._ffmpeg_threads,
+                    ffmpeg_threads,
                 )
                 _logger.info(
                     "Starting audio HLS for track %d (%s) of %s (offset=%ds)",
@@ -951,6 +966,7 @@ class HlsService(HlsPlaylistPort):
         with no resolved file path). The cmd is wrapped through
         ``with_ffmpeg_threads`` so the global cap applies uniformly.
         """
+        ffmpeg_threads = self._runtime_settings.streaming_snapshot_sync().ffmpeg_threads
         if track.is_external:
             if track.file_path is None:
                 return None
@@ -966,7 +982,7 @@ class HlsService(HlsPlaylistPort):
                     "-y",
                     str(vtt_path),
                 ],
-                self._ffmpeg_threads,
+                ffmpeg_threads,
             )
             return cmd, f"external subtitle {track.file_path.value}"
         cmd = with_ffmpeg_threads(
@@ -983,7 +999,7 @@ class HlsService(HlsPlaylistPort):
                 "-y",
                 str(vtt_path),
             ],
-            self._ffmpeg_threads,
+            ffmpeg_threads,
         )
         return cmd, f"subtitle track {track.index}"
 

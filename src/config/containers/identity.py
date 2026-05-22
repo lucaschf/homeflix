@@ -57,14 +57,12 @@ class IdentityContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     session_factory = providers.Dependency()
     event_bus = providers.Dependency()
 
-    # Avatar storage configuration — wired from ``Settings`` at the
-    # composition root. Defaults are present so tests / standalone
-    # usage stay cheap to instantiate, but the production path
-    # always overrides them via ``providers.Container(...)``.
+    # Avatar storage configuration. ``thumbnails_directory`` stays a
+    # filesystem path bootstrap-style. The bucket fields (subdir,
+    # max_size, size_pixels) come from ``RuntimeSettings`` via ADR-013
+    # phase 3.
     thumbnails_directory = providers.Dependency(default="./thumbnails")
-    avatar_storage_subdir = providers.Dependency(default=".homeflix/avatars")
-    avatar_max_size_mb = providers.Dependency(default=2)
-    avatar_size_pixels = providers.Dependency(default=256)
+    runtime_settings = providers.Dependency()
 
     # =========================================================================
     # Unit of Work
@@ -81,10 +79,8 @@ class IdentityContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     avatar_storage = providers.Singleton(
         LocalAvatarStorage,
+        runtime_settings=runtime_settings,
         root_directory=thumbnails_directory,
-        subdirectory=avatar_storage_subdir,
-        max_size_mb=avatar_max_size_mb,
-        side_length=avatar_size_pixels,
     )
 
     password_hasher = providers.Singleton(FastApiUsersPasswordHasher)

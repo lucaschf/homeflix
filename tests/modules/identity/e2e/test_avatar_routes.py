@@ -42,22 +42,26 @@ def _png_bytes(width: int = 600, height: int = 400) -> bytes:
 @pytest.fixture(scope="function")
 def app_with_tmp_avatar_storage(app: FastAPI, tmp_path: Path) -> FastAPI:
     """Override the identity container's avatar storage to a tempdir."""
+    from unittest.mock import AsyncMock
+
+    from src.modules.settings.domain.value_objects import AvatarConfig
+
+    runtime_settings = AsyncMock()
+    runtime_settings.avatar = AsyncMock(
+        return_value=AvatarConfig(
+            storage_subdir=".homeflix/avatars",
+            max_size_mb=2,
+            size_pixels=64,  # tiny for faster Pillow round-trip
+        ),
+    )
     storage = LocalAvatarStorage(
+        runtime_settings,
         root_directory=str(tmp_path),
-        subdirectory=".homeflix/avatars",
-        max_size_mb=2,
-        side_length=64,  # tiny for faster Pillow round-trip
     )
     app.state.container.identity.avatar_storage.override(providers.Object(storage))
-    # Also override the settings the GET route reads to resolve the
-    # file path. ``get_settings`` is an ``lru_cache`` Singleton in
-    # ``src/config/settings.py``; the simplest knob in tests is the
-    # ``thumbnails_directory`` env var. Patch via monkeypatch in the
-    # actual test if needed — for now the GET route happens to take
-    # the same path the storage adapter writes to so a single
-    # override of ``thumbnails_directory`` would line them up. Skip
-    # the GET-route override here; the upload + delete tests don't
-    # depend on it.
+    # The GET route resolves the file path by asking the same
+    # ``avatar_storage`` instance (``resolve_path``), so the override
+    # above is enough — no separate Settings tweak required.
     yield app
     app.state.container.identity.avatar_storage.reset_override()
 

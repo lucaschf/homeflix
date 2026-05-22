@@ -32,6 +32,8 @@ from src.modules.media.infrastructure.streaming._subprocess import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
+
 _logger = logging.getLogger(__name__)
 
 SPRITE_FILENAME = "sprite.jpg"
@@ -74,13 +76,14 @@ class ThumbnailGenerationService:
     (the periodic backfill job).
 
     Args:
-        ffmpeg_threads: Maximum worker threads ffmpeg may use during
-            sprite rendering. ``None`` keeps ffmpeg's default. Applied
-            via ``-threads N`` on the render command.
+        runtime_settings: Snapshot facade for :class:`StreamingConfig`.
+            ``ffmpeg_threads`` is read via the sync snapshot on every
+            ``generate()`` call so admin edits propagate without
+            restart.
     """
 
-    def __init__(self, ffmpeg_threads: int | None = None) -> None:
-        self._ffmpeg_threads = ffmpeg_threads
+    def __init__(self, runtime_settings: RuntimeSettings) -> None:
+        self._runtime_settings = runtime_settings
 
     def generate(
         self,
@@ -127,8 +130,9 @@ class ThumbnailGenerationService:
         sprite_path = output_dir / SPRITE_FILENAME
         vtt_path = output_dir / VTT_FILENAME
 
+        ffmpeg_threads = self._runtime_settings.streaming_snapshot_sync().ffmpeg_threads
         if not self._render_sprite(
-            file_path, sprite_path, layout, interval_seconds, self._ffmpeg_threads
+            file_path, sprite_path, layout, interval_seconds, ffmpeg_threads
         ):
             return None
 

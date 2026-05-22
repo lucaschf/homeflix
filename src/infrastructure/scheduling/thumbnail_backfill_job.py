@@ -65,7 +65,9 @@ class ThumbnailBackfillJob:
     ) -> None:
         self._media_uow_factory = media_uow_factory
         self._runtime_settings = runtime_settings
-        self._thumbnail_service = thumbnail_service or ThumbnailGenerationService()
+        self._thumbnail_service = thumbnail_service or ThumbnailGenerationService(
+            runtime_settings=runtime_settings,
+        )
 
     async def run(self) -> None:
         """Process one batch of missing thumbnails.
