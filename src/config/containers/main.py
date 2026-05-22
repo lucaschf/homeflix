@@ -16,6 +16,7 @@ from src.config.containers.library import LibraryContainer
 from src.config.containers.media import MediaContainer
 from src.config.containers.notifications import NotificationsContainer
 from src.config.containers.preferences import PreferencesContainer
+from src.config.containers.settings import SettingsContainer
 from src.config.containers.watch_progress import WatchProgressContainer
 from src.config.settings import Settings
 from src.infrastructure.health import DatabaseProbe, FilesystemProbe
@@ -199,6 +200,14 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     # container parse order stays acyclic).
     notifications = providers.Container(
         NotificationsContainer,
+        session_factory=infrastructure.session_factory,
+    )
+
+    # Settings BC (ADR-013): persistence + RuntimeSettings snapshot
+    # facade. Phase 1 is foundation-only; no consumer reads
+    # ``runtime_settings`` yet.
+    settings = providers.Container(
+        SettingsContainer,
         session_factory=infrastructure.session_factory,
     )
 
