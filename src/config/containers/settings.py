@@ -1,16 +1,16 @@
 """Settings bounded context dependency container.
 
 Provides the persistence wiring for the ``app_settings`` table
-(ADR-013) and the :class:`RuntimeSettings` snapshot facade.
-
-Phase 1 is foundation-only: no consumer reads the facade yet,
-no use cases exist for admin writes, no routes are exposed.
-The container is wired now so subsequent phases can plug in
-without re-touching the composition root.
+(ADR-013), the :class:`RuntimeSettings` snapshot facade, and the
+admin-panel use cases (phase 4).
 """
 
 from dependency_injector import containers, providers
 
+from src.modules.settings.application.use_cases import (
+    ListSettingsUseCase,
+    UpdateSettingUseCase,
+)
 from src.modules.settings.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemySettingsUnitOfWorkFactory,
 )
@@ -22,10 +22,11 @@ class SettingsContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     Exposes:
         - The :class:`SettingsUnitOfWorkFactory` used by admin
-          write paths (phase 2).
-        - The :class:`RuntimeSettings` singleton — the typed,
-          cached, DB-backed facade consumers will read once
-          phase 2 migrates them off direct ``Settings`` access.
+          write paths.
+        - The :class:`RuntimeSettings` singleton — typed, cached,
+          DB-backed facade consumed by HLS / scheduler / avatar.
+        - Admin use cases that back ``GET`` and ``PATCH`` on
+          ``/api/v1/admin/settings`` (phase 4).
     """
 
     session_factory = providers.Dependency()
@@ -38,4 +39,15 @@ class SettingsContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     runtime_settings = providers.Singleton(
         RuntimeSettings,
         uow_factory=settings_unit_of_work_factory,
+    )
+
+    list_settings = providers.Factory(
+        ListSettingsUseCase,
+        uow_factory=settings_unit_of_work_factory,
+    )
+
+    update_setting = providers.Factory(
+        UpdateSettingUseCase,
+        uow_factory=settings_unit_of_work_factory,
+        runtime_settings=runtime_settings,
     )
