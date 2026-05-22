@@ -52,6 +52,7 @@ from src.modules.notifications.presentation.routes import notification_router
 from src.modules.preferences.presentation.routes.preferences_routes import (
     router as preferences_router,
 )
+from src.modules.settings.presentation.routes import admin_settings_router
 from src.modules.watch_progress.presentation.routes import progress_router
 
 #: Module paths whose ``@inject``-decorated callables are wired to the
@@ -84,6 +85,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.identity.presentation.routes.admin_user_routes",
     "src.modules.identity.presentation.routes.profile_routes",
     "src.modules.identity.presentation.routes.users_routes",
+    "src.modules.settings.presentation.routes.admin_settings_routes",
 )
 
 
@@ -415,6 +417,7 @@ def create_app() -> FastAPI:
     app.include_router(users_router)
     app.include_router(profile_router)
     app.include_router(admin_user_router)
+    app.include_router(admin_settings_router)
 
     return app
 
