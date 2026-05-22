@@ -23,6 +23,7 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-011](./ADR-011-authentication-strategy.md) | Authentication Strategy | ✅ Aceito | 2026-05-03 |
 | [ADR-012](./ADR-012-decentralized-error-http-mapping.md) | Registry Descentralizado de Error HTTP Mapping | ✅ Aceito | 2026-05-06 |
 | [ADR-013](./ADR-013-runtime-settings-db-backed.md) | Runtime Settings Persistidos em Banco para Tunables Operacionais | 🟡 Proposto | 2026-05-21 |
+| [ADR-014](./ADR-014-settings-per-bucket-aggregate.md) | Settings — Aggregate por Bucket (não Mega-Aggregate) | ✅ Aceito | 2026-05-21 |
 
 ## Como Criar um Novo ADR
 
