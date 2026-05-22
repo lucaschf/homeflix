@@ -23,6 +23,7 @@ Semantics:
 
 from __future__ import annotations
 
+import math
 import time
 from asyncio import Lock
 from typing import TYPE_CHECKING, cast
@@ -84,7 +85,11 @@ class RuntimeSettings:
         self._snapshot: dict[SettingKey, ConfigVO] = {
             key: vo_type() for key, vo_type in _DEFAULT_FACTORIES.items()
         }
-        self._snapshot_loaded_at: float = 0.0
+        # -inf so the first read always refreshes regardless of where
+        # ``time.monotonic()`` happens to be — a fresh CI worker starts
+        # with monotonic < TTL, which would otherwise mark the empty
+        # initial snapshot as fresh.
+        self._snapshot_loaded_at: float = -math.inf
         self._lock = Lock()
 
     async def refresh(self) -> None:
@@ -107,7 +112,7 @@ class RuntimeSettings:
     async def invalidate(self) -> None:
         """Force the next read to refresh from the DB."""
         async with self._lock:
-            self._snapshot_loaded_at = 0.0
+            self._snapshot_loaded_at = -math.inf
 
     async def _ensure_fresh(self) -> None:
         if time.monotonic() - self._snapshot_loaded_at <= self._ttl:

@@ -3,7 +3,13 @@
 from collections.abc import AsyncGenerator
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import StaticPool
 
 from src.infrastructure.persistence import Base
 from src.modules.settings.infrastructure.persistence.models import (  # noqa: F401 — registers ``app_settings`` on Base.metadata
@@ -11,10 +17,28 @@ from src.modules.settings.infrastructure.persistence.models import (  # noqa: F4
 )
 
 
+def _make_engine() -> AsyncEngine:
+    """Build an in-memory SQLite engine that survives across sessions.
+
+    ``sqlite:///:memory:`` opens a fresh DB per *connection*, so
+    multiple sessions from the same engine see different schemas.
+    ``StaticPool`` pins the engine to a single connection that all
+    sessions share — required for the
+    ``SqlAlchemySettingsUnitOfWorkFactory`` integration tests, where
+    one UoW seeds a row and a separate UoW reads it back.
+    """
+    return create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        echo=False,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+
+
 @pytest.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """In-memory SQLite session — one fresh schema per test."""
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = _make_engine()
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -38,7 +62,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 @pytest.fixture
 async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
     """Session factory bound to a fresh in-memory SQLite engine."""
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = _make_engine()
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
