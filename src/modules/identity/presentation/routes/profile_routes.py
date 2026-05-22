@@ -1,7 +1,6 @@
 """Profile CRUD + switch + avatar routes."""
 
 from dataclasses import asdict
-from pathlib import Path
 from typing import Any
 
 from dependency_injector.wiring import Provide, inject
@@ -10,7 +9,6 @@ from fastapi.responses import FileResponse
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.config.settings import get_settings
 from src.modules.identity.application.dtos.identity_dtos import (
     CreateProfileInput,
     DeleteProfileAvatarInput,
@@ -50,6 +48,7 @@ from src.modules.identity.infrastructure.auth import (
     get_session_token,
 )
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.storage import LocalAvatarStorage
 from src.modules.identity.presentation.schemas.profile_schemas import (
     CreateProfileRequest,
     UpdateProfileRequest,
@@ -231,23 +230,24 @@ async def delete_profile_avatar(
 
 
 @router.get("/{profile_id}/avatar")  # type: ignore[misc]
+@inject  # type: ignore[misc]
 async def get_profile_avatar(
     profile_id: str,
     _user: UserModel = Depends(current_active_user),
+    avatar_storage: LocalAvatarStorage = Depends(
+        Provide[ApplicationContainer.identity.avatar_storage],
+    ),
 ) -> FileResponse:
     """Serve the persisted avatar WebP for ``profile_id``.
 
     Auth-gated (``current_active_user``) but **not** ownership-gated:
     any authenticated household member needs to be able to render
-    siblings' avatars in the picker / AccountMenu. The file path is
-    deterministic from the profile id, so resolving it here doesn't
-    require a database round-trip — kept lean because the picker
-    fires one of these per profile on every render.
+    siblings' avatars in the picker / AccountMenu. Path resolution
+    is delegated to :class:`LocalAvatarStorage` so the route and the
+    writer always agree on where files live (the storage caches
+    ``storage_subdir`` on first use).
     """
-    settings = get_settings()
-    target = (
-        Path(settings.thumbnails_directory) / settings.avatar_storage_subdir / f"{profile_id}.webp"
-    )
+    target = await avatar_storage.resolve_path(profile_id)
     if not target.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

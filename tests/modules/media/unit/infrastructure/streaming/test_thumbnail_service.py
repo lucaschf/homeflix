@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import subprocess
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,9 +20,19 @@ from src.modules.media.infrastructure.streaming.thumbnail_service import (
     VTT_FILENAME,
     ThumbnailGenerationService,
 )
+from src.modules.settings.domain.value_objects import StreamingConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _fake_runtime_settings(*, ffmpeg_threads: int | None = None) -> MagicMock:
+    runtime = MagicMock()
+    runtime.streaming_snapshot_sync.return_value = StreamingConfig(
+        ffmpeg_threads=ffmpeg_threads,
+    )
+    return runtime
+
 
 _SUBPROCESS_TARGET = "src.modules.media.infrastructure.streaming.thumbnail_service.subprocess.run"
 _WHICH_TARGET = "src.modules.media.infrastructure.streaming.thumbnail_service.shutil.which"
@@ -47,7 +57,7 @@ class TestThumbnailGenerationService:
         output_dir = tmp_path / "thumbs"
         sprite_path = output_dir / SPRITE_FILENAME
 
-        service = ThumbnailGenerationService()
+        service = ThumbnailGenerationService(_fake_runtime_settings())
         with (
             patch(_WHICH_TARGET, return_value="/usr/bin/ffprobe"),
             patch(_SUBPROCESS_TARGET, side_effect=_ffmpeg_writes_sprite(sprite_path)),
@@ -70,7 +80,7 @@ class TestThumbnailGenerationService:
         def run(cmd, *_, **__):  # type: ignore[no-untyped-def]
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        service = ThumbnailGenerationService()
+        service = ThumbnailGenerationService(_fake_runtime_settings())
         with (
             patch(_WHICH_TARGET, return_value="/usr/bin/ffprobe"),
             patch(_SUBPROCESS_TARGET, side_effect=run) as mock_run,
@@ -88,7 +98,7 @@ class TestThumbnailGenerationService:
         def run(cmd, *_, **__):  # type: ignore[no-untyped-def]
             return subprocess.CompletedProcess(cmd, 0, stdout="3.0\n", stderr="")
 
-        service = ThumbnailGenerationService()
+        service = ThumbnailGenerationService(_fake_runtime_settings())
         with (
             patch(_WHICH_TARGET, return_value="/usr/bin/ffprobe"),
             patch(_SUBPROCESS_TARGET, side_effect=run) as mock_run,
@@ -107,7 +117,7 @@ class TestThumbnailGenerationService:
                 return subprocess.CompletedProcess(cmd, 0, stdout="120.0\n", stderr="")
             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
 
-        service = ThumbnailGenerationService()
+        service = ThumbnailGenerationService(_fake_runtime_settings())
         with (
             patch(_WHICH_TARGET, return_value="/usr/bin/ffprobe"),
             patch(_SUBPROCESS_TARGET, side_effect=run),
@@ -126,7 +136,7 @@ class TestThumbnailGenerationService:
                 return subprocess.CompletedProcess(cmd, 0, stdout="120.0\n", stderr="")
             raise subprocess.TimeoutExpired(cmd, timeout=1)
 
-        service = ThumbnailGenerationService()
+        service = ThumbnailGenerationService(_fake_runtime_settings())
         with (
             patch(_WHICH_TARGET, return_value="/usr/bin/ffprobe"),
             patch(_SUBPROCESS_TARGET, side_effect=run),
@@ -140,7 +150,7 @@ class TestThumbnailGenerationService:
     def test_returns_none_when_ffprobe_missing(self, tmp_path: Path) -> None:
         output_dir = tmp_path / "thumbs"
 
-        service = ThumbnailGenerationService()
+        service = ThumbnailGenerationService(_fake_runtime_settings())
         with patch(_WHICH_TARGET, return_value=None):
             result = service.generate("/fake/movie.mkv", output_dir)
 
@@ -152,7 +162,7 @@ class TestThumbnailGenerationService:
         output_dir = tmp_path / "deeply" / "nested" / "thumbs"
         sprite_path = output_dir / SPRITE_FILENAME
 
-        service = ThumbnailGenerationService()
+        service = ThumbnailGenerationService(_fake_runtime_settings())
         with (
             patch(_WHICH_TARGET, return_value="/usr/bin/ffprobe"),
             patch(_SUBPROCESS_TARGET, side_effect=_ffmpeg_writes_sprite(sprite_path)),
@@ -169,7 +179,7 @@ class TestThumbnailGenerationService:
         output_dir = tmp_path / "thumbs"
         sprite_path = output_dir / SPRITE_FILENAME
 
-        service = ThumbnailGenerationService()
+        service = ThumbnailGenerationService(_fake_runtime_settings())
         with (
             patch(_WHICH_TARGET, return_value="/usr/bin/ffprobe"),
             patch(_SUBPROCESS_TARGET, side_effect=_ffmpeg_writes_sprite(sprite_path)) as mock_run,

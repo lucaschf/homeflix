@@ -18,8 +18,23 @@ from src.modules.media.infrastructure.streaming.hls_service import (
     _shift_webvtt_to_bucket_local,
 )
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
+from src.modules.settings.domain.value_objects import StreamingConfig
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
+
+
+def _fake_runtime_settings(
+    *,
+    ffmpeg_threads: int | None = None,
+    hls_cache_max_size_mb: int = 5120,
+) -> MagicMock:
+    """Build a fake :class:`RuntimeSettings` exposing the sync streaming snapshot."""
+    runtime = MagicMock()
+    runtime.streaming_snapshot_sync.return_value = StreamingConfig(
+        ffmpeg_threads=ffmpeg_threads,
+        hls_cache_max_size_mb=hls_cache_max_size_mb,
+    )
+    return runtime
 
 
 def _make_audio_track(
@@ -75,12 +90,16 @@ class TestHlsServiceInit:
 
     def test_should_create_cache_directory(self, tmp_path: Path) -> None:
         cache = tmp_path / "hls"
-        HlsService(cache_dir=str(cache))
+        HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(cache))
         assert cache.is_dir()
 
     def test_should_accept_custom_probe_service(self, tmp_path: Path) -> None:
         custom_probe = MagicMock(spec=MediaProbeService)
-        service = HlsService(cache_dir=str(tmp_path / "hls"), probe_service=custom_probe)
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(),
+            cache_dir=str(tmp_path / "hls"),
+            probe_service=custom_probe,
+        )
         assert service._probe is custom_probe
 
 
@@ -89,7 +108,9 @@ class TestHlsServiceGetPathHash:
     """Tests for get_path_hash."""
 
     def test_should_return_md5_hash(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
+        )
         file_path = "/movies/inception.mkv"
 
         result = service.get_path_hash(file_path)
@@ -98,12 +119,16 @@ class TestHlsServiceGetPathHash:
         assert result == expected
 
     def test_should_be_deterministic(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
+        )
         path = "/movies/test.mkv"
         assert service.get_path_hash(path) == service.get_path_hash(path)
 
     def test_should_differ_for_different_paths(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
+        )
         assert service.get_path_hash("/a.mkv") != service.get_path_hash("/b.mkv")
 
     def test_should_match_legacy_hash_when_start_is_zero(self, tmp_path: Path) -> None:
@@ -111,7 +136,9 @@ class TestHlsServiceGetPathHash:
         # caches generated before the resume-offset refactor stay
         # addressable. This is the load-bearing contract for not
         # invalidating warm caches on deploy.
-        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
+        )
         path = "/movies/test.mkv"
         expected = hashlib.md5(path.encode()).hexdigest()
         assert service.get_path_hash(path) == expected
@@ -121,7 +148,9 @@ class TestHlsServiceGetPathHash:
         # Adjacent resume positions inside the same 5-minute window
         # collapse onto the same bucket so a player resuming at t=302
         # reuses the ffmpeg encode started at t=300.
-        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
+        )
         path = "/movies/test.mkv"
         # 299s rounds down to bucket 0 — same as default
         assert service.get_path_hash(path, start=299) == service.get_path_hash(path)
@@ -131,7 +160,9 @@ class TestHlsServiceGetPathHash:
         assert service.get_path_hash(path, start=300) != service.get_path_hash(path, start=600)
 
     def test_should_differ_across_buckets_for_same_file(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
+        )
         path = "/movies/test.mkv"
         assert service.get_path_hash(path, start=0) != service.get_path_hash(path, start=300)
         assert service.get_path_hash(path, start=300) != service.get_path_hash(path, start=600)
@@ -142,7 +173,7 @@ class TestHlsServiceGetFileByHash:
     """Tests for get_file_by_hash with path traversal protection."""
 
     def test_should_return_file_when_exists(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         hash_dir = tmp_path / "abc123"
         hash_dir.mkdir()
         target = hash_dir / "segment_0000.ts"
@@ -153,7 +184,7 @@ class TestHlsServiceGetFileByHash:
         assert result == target
 
     def test_should_return_none_when_file_missing(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         (tmp_path / "abc123").mkdir()
 
         result = service.get_file_by_hash("abc123", "missing.ts")
@@ -161,7 +192,7 @@ class TestHlsServiceGetFileByHash:
         assert result is None
 
     def test_should_block_path_traversal(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         (tmp_path / "abc123").mkdir()
         secret = tmp_path / "secret.txt"
         secret.write_text("secret")
@@ -171,7 +202,7 @@ class TestHlsServiceGetFileByHash:
         assert result is None
 
     def test_should_return_nested_file(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         nested = tmp_path / "abc" / "video"
         nested.mkdir(parents=True)
         target = nested / "playlist.m3u8"
@@ -187,12 +218,12 @@ class TestHlsServiceIsComplete:
     """Tests for is_complete."""
 
     def test_should_return_false_when_playlist_missing(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
 
         assert service.is_complete("abc123") is False
 
     def test_should_return_true_when_endlist_marker_present(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         video_dir = tmp_path / "abc123" / "video"
         video_dir.mkdir(parents=True)
         (video_dir / "playlist.m3u8").write_text(
@@ -202,7 +233,7 @@ class TestHlsServiceIsComplete:
         assert service.is_complete("abc123") is True
 
     def test_should_return_false_when_endlist_marker_missing(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         video_dir = tmp_path / "abc123" / "video"
         video_dir.mkdir(parents=True)
         (video_dir / "playlist.m3u8").write_text("#EXTM3U\n#EXTINF:10,\nsegment_0000.ts\n")
@@ -210,7 +241,7 @@ class TestHlsServiceIsComplete:
         assert service.is_complete("abc123") is False
 
     def test_should_fallback_to_flat_playlist(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         hash_dir = tmp_path / "abc123"
         hash_dir.mkdir()
         (hash_dir / "playlist.m3u8").write_text(
@@ -225,7 +256,7 @@ class TestHlsServiceGetMasterPlaylist:
     """Tests for get_master_playlist."""
 
     def test_should_return_master_playlist_content(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         hash_dir = tmp_path / "abc"
         hash_dir.mkdir()
         content = "#EXTM3U\n#EXT-X-VERSION:3\n"
@@ -236,7 +267,7 @@ class TestHlsServiceGetMasterPlaylist:
         assert result == content
 
     def test_should_fallback_to_legacy_playlist(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         hash_dir = tmp_path / "abc"
         hash_dir.mkdir()
         content = "#EXTM3U\n#EXT-X-VERSION:3\n"
@@ -247,7 +278,7 @@ class TestHlsServiceGetMasterPlaylist:
         assert result == content
 
     def test_should_return_none_when_missing(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         assert service.get_master_playlist("missing") is None
 
 
@@ -256,7 +287,7 @@ class TestHlsServiceGetCachedTracks:
     """Tests for get_cached_tracks."""
 
     def test_should_return_parsed_json(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         hash_dir = tmp_path / "abc"
         hash_dir.mkdir()
         data = {"audio_tracks": [{"index": 0, "language": "en"}]}
@@ -267,11 +298,11 @@ class TestHlsServiceGetCachedTracks:
         assert result == data
 
     def test_should_return_none_when_file_missing(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         assert service.get_cached_tracks("missing") is None
 
     def test_should_return_none_on_invalid_json(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         hash_dir = tmp_path / "abc"
         hash_dir.mkdir()
         (hash_dir / "tracks.json").write_text("not json")
@@ -359,7 +390,9 @@ class TestHlsServiceBuildVideoCmd:
     """Tests for _build_video_cmd with mocked codec probe."""
 
     def test_should_copy_video_for_h264(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
@@ -374,7 +407,9 @@ class TestHlsServiceBuildVideoCmd:
         # non-zero ``start`` the copy would land at the preceding
         # keyframe while audio lands at the exact second, so we force
         # the transcode to keep the two streams aligned.
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
@@ -384,7 +419,9 @@ class TestHlsServiceBuildVideoCmd:
         assert "copy" not in cmd
 
     def test_should_transcode_non_h264(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="hevc"):
@@ -393,7 +430,9 @@ class TestHlsServiceBuildVideoCmd:
         assert "libx264" in cmd
 
     def test_should_map_primary_audio_track(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
         probe = ProbeResult(
             audio_tracks=[_make_audio_track(index=3)],
         )
@@ -405,7 +444,9 @@ class TestHlsServiceBuildVideoCmd:
 
     def test_should_omit_seek_flag_when_start_is_zero(self, tmp_path: Path) -> None:
         # Default cold-cache transcode starts at t=0 — no ``-ss``.
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
@@ -417,7 +458,9 @@ class TestHlsServiceBuildVideoCmd:
         # Input seek for the video pipeline mirrors the audio one — the
         # seek is in source-time seconds and lands at the nearest
         # preceding keyframe before any encoding work begins.
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
@@ -433,7 +476,9 @@ class TestHlsServiceBuildVideoCmd:
         # Mirrors the audio-cmd test — without this, the video opens at
         # the preceding keyframe while audio opens at the exact seek
         # point and playback drifts audio-leads-video.
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
@@ -445,7 +490,9 @@ class TestHlsServiceBuildVideoCmd:
         assert accurate_index < input_index
 
     def test_should_normalize_negative_ts_when_start_positive(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
@@ -456,7 +503,9 @@ class TestHlsServiceBuildVideoCmd:
         assert cmd[idx + 1] == "make_zero"
 
     def test_should_not_emit_sync_flags_when_start_is_zero(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "cache"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
@@ -577,7 +626,11 @@ class TestHlsServiceProbeTracks:
 
     def test_should_return_cached_tracks_when_available(self, tmp_path: Path) -> None:
         probe_mock = MagicMock(spec=MediaProbeService)
-        service = HlsService(cache_dir=str(tmp_path), probe_service=probe_mock)
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(),
+            cache_dir=str(tmp_path),
+            probe_service=probe_mock,
+        )
 
         file_path = "/movies/test.mkv"
         path_hash = service.get_path_hash(file_path)
@@ -595,7 +648,11 @@ class TestHlsServiceProbeTracks:
     def test_should_call_probe_service_when_no_cache(self, tmp_path: Path) -> None:
         probe_mock = MagicMock(spec=MediaProbeService)
         probe_mock.probe.return_value = ProbeResult(audio_tracks=[_make_audio_track()])
-        service = HlsService(cache_dir=str(tmp_path), probe_service=probe_mock)
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(),
+            cache_dir=str(tmp_path),
+            probe_service=probe_mock,
+        )
 
         result = service.probe_tracks("/movies/test.mkv")
 
@@ -608,7 +665,7 @@ class TestHlsServiceClearCache:
     """Tests for clear_cache."""
 
     def test_should_clear_specific_file_cache(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         file_path = "/movies/test.mkv"
         path_hash = service.get_path_hash(file_path)
         (tmp_path / path_hash).mkdir()
@@ -619,7 +676,7 @@ class TestHlsServiceClearCache:
         assert not (tmp_path / path_hash).exists()
 
     def test_should_clear_all_cache_when_no_file(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         (tmp_path / "hash1").mkdir()
         (tmp_path / "hash2").mkdir()
 
@@ -632,19 +689,19 @@ class TestHlsServiceClearCache:
         assert remaining == []
 
     def test_should_not_fail_when_cache_missing(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         # Should not raise
         service.clear_cache("/nonexistent.mkv")
 
     def test_should_stamp_last_cleared_marker_on_global_clear(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
 
         service.clear_cache(None)
 
         assert (tmp_path / ".last_cleared").exists()
 
     def test_should_not_stamp_marker_on_per_file_clear(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
 
         service.clear_cache("/movies/test.mkv")
 
@@ -656,7 +713,10 @@ class TestHlsServiceGetCacheStats:
     """Tests for ``HlsService.get_cache_stats``."""
 
     def test_should_report_zero_bytes_when_cache_empty(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "hls"), max_cache_size_mb=100)
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=100),
+            cache_dir=str(tmp_path / "hls"),
+        )
 
         stats = service.get_cache_stats()
 
@@ -666,7 +726,10 @@ class TestHlsServiceGetCacheStats:
 
     def test_should_sum_file_sizes_across_nested_buckets(self, tmp_path: Path) -> None:
         cache = tmp_path / "hls"
-        service = HlsService(cache_dir=str(cache), max_cache_size_mb=50)
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=50),
+            cache_dir=str(cache),
+        )
         (cache / "h1").mkdir(parents=True)
         (cache / "h1" / "master.m3u8").write_bytes(b"x" * 10)
         (cache / "h2" / "nested").mkdir(parents=True)
@@ -678,7 +741,9 @@ class TestHlsServiceGetCacheStats:
         assert stats.max_bytes == 50 * 1024 * 1024
 
     def test_should_expose_last_cleared_after_global_clear(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path / "hls"))
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
+        )
 
         service.clear_cache(None)
         stats = service.get_cache_stats()
@@ -715,12 +780,16 @@ class TestHlsServiceEvictIdle:
         return proc
 
     def test_should_not_evict_when_no_processes(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path), idle_timeout=0.0)
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path), idle_timeout=0.0
+        )
         evicted = service.evict_idle()
         assert evicted == []
 
     def test_should_evict_process_idle_longer_than_timeout(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path), idle_timeout=0.5)
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path), idle_timeout=0.5
+        )
         proc = self._make_alive_proc()
         service._processes["abc"] = [proc]
         # Set last access far in the past
@@ -734,7 +803,9 @@ class TestHlsServiceEvictIdle:
         assert "abc" not in service._last_access
 
     def test_should_not_evict_recently_accessed_process(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path), idle_timeout=60.0)
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path), idle_timeout=60.0
+        )
         proc = self._make_alive_proc()
         service._processes["abc"] = [proc]
         # Touch with monotonic now — fresh
@@ -748,7 +819,9 @@ class TestHlsServiceEvictIdle:
         assert "abc" in service._processes
 
     def test_should_evict_only_stale_entries(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path), idle_timeout=0.5)
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path), idle_timeout=0.5
+        )
         stale_proc = self._make_alive_proc()
         fresh_proc = self._make_alive_proc()
         service._processes["stale"] = [stale_proc]
@@ -764,7 +837,7 @@ class TestHlsServiceEvictIdle:
         assert "fresh" in service._processes
 
     def test_get_file_by_hash_should_touch_access_on_hit(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         cache_dir = tmp_path / "abc"
         cache_dir.mkdir()
         (cache_dir / "segment_0000.ts").write_text("data")
@@ -775,14 +848,14 @@ class TestHlsServiceEvictIdle:
         assert "abc" in service._last_access
 
     def test_get_file_by_hash_should_not_touch_access_on_miss(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         result = service.get_file_by_hash("abc", "missing.ts")
 
         assert result is None
         assert "abc" not in service._last_access
 
     def test_get_master_playlist_should_touch_access_on_hit(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         cache_dir = tmp_path / "abc"
         cache_dir.mkdir()
         (cache_dir / "master.m3u8").write_text("#EXTM3U")
@@ -793,7 +866,7 @@ class TestHlsServiceEvictIdle:
         assert "abc" in service._last_access
 
     def test_kill_processes_should_remove_last_access_entry(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         service._processes["abc"] = [self._make_alive_proc()]
         service._touch_access("abc")
 
@@ -808,7 +881,7 @@ class TestHlsServiceWaitForSubtitle:
     """Tests for the per-subtitle readiness wait."""
 
     def test_should_return_true_immediately_when_no_event_registered(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
 
         # Untracked bucket → not being extracted → caller falls through
         # to a normal filesystem lookup, so we report ready.
@@ -817,7 +890,7 @@ class TestHlsServiceWaitForSubtitle:
     def test_should_return_true_when_event_is_already_set(self, tmp_path: Path) -> None:
         import threading
 
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         event = threading.Event()
         event.set()
         service._subtitle_events["abc"] = {2: event}
@@ -827,7 +900,7 @@ class TestHlsServiceWaitForSubtitle:
     def test_should_return_false_when_timeout_elapses(self, tmp_path: Path) -> None:
         import threading
 
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         # Unset event — wait will time out
         service._subtitle_events["abc"] = {0: threading.Event()}
 
@@ -836,7 +909,7 @@ class TestHlsServiceWaitForSubtitle:
     def test_should_unblock_after_event_is_set(self, tmp_path: Path) -> None:
         import threading
 
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         event = threading.Event()
         service._subtitle_events["abc"] = {0: event}
 
@@ -858,7 +931,7 @@ class TestHlsServiceExtractOneSubtitle:
     """Tests for the per-track subtitle extraction worker."""
 
     def _make_service(self, tmp_path: Path) -> tuple[HlsService, Path]:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         output_dir = tmp_path / "abc"
         output_dir.mkdir()
         return service, output_dir
@@ -1058,7 +1131,7 @@ class TestHlsServiceExtractOneSubtitle:
     def test_kill_processes_should_release_subtitle_waiters(self, tmp_path: Path) -> None:
         import threading
 
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         proc = MagicMock()
         proc.poll.return_value = None
         service._processes["abc"] = [proc]
@@ -1076,7 +1149,13 @@ class TestEvictLru:
     """LRU disk eviction behavior."""
 
     def test_should_delete_oldest_bucket_when_over_limit(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path), max_cache_size_mb=0)
+        # 1.5 MB cap is below the 2 MB on disk, forcing one bucket out.
+        # MB→bytes is integer-rounded in the service, so we ask for the
+        # smallest cap that yields 1.5 MB after the *1024*1024 conversion.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=1),
+            cache_dir=str(tmp_path),
+        )
 
         # Create two buckets: "old" (1 MB, accessed first) and "new" (1 MB, accessed later)
         old_dir = tmp_path / "old_hash"
@@ -1090,8 +1169,6 @@ class TestEvictLru:
         # Simulate access order: old first, new later
         service._last_access["old_hash"] = 100.0
         service._last_access["new_hash"] = 200.0
-        # max_cache_size_mb=0 means everything is over limit
-        service._max_cache_bytes = 1_500_000  # 1.5 MB — only room for one
 
         evicted = service.evict_lru()
 
@@ -1100,7 +1177,10 @@ class TestEvictLru:
         assert new_dir.exists()
 
     def test_should_not_evict_buckets_with_active_processes(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path), max_cache_size_mb=0)
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=1),
+            cache_dir=str(tmp_path),
+        )
 
         active_dir = tmp_path / "active"
         active_dir.mkdir()
@@ -1114,7 +1194,6 @@ class TestEvictLru:
         service._last_access["idle"] = 200.0
         # Mark "active" as having running ffmpeg — should be skipped
         service._processes["active"] = [MagicMock()]
-        service._max_cache_bytes = 1_500_000
 
         evicted = service.evict_lru()
 
@@ -1124,7 +1203,10 @@ class TestEvictLru:
         assert active_dir.exists()
 
     def test_should_not_evict_when_under_limit(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path), max_cache_size_mb=100)
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=100),
+            cache_dir=str(tmp_path),
+        )
 
         bucket = tmp_path / "small"
         bucket.mkdir()
@@ -1136,22 +1218,31 @@ class TestEvictLru:
         assert bucket.exists()
 
     def test_should_use_mtime_for_untracked_buckets(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path), max_cache_size_mb=0)
+        # Tight cap forces eviction even though the bucket is not in
+        # ``_last_access`` (the eviction loop falls back to directory mtime).
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=1),
+            cache_dir=str(tmp_path),
+        )
 
         # Create a bucket NOT in _last_access — should use mtime
         bucket = tmp_path / "untracked"
         bucket.mkdir()
-        (bucket / "segment.ts").write_bytes(b"\x00" * 1_000_000)
-        service._max_cache_bytes = 1  # Everything over limit
+        # 2 MB > 1 MB cap to guarantee eviction.
+        (bucket / "segment.ts").write_bytes(b"\x00" * 2_000_000)
 
         evicted = service.evict_lru()
 
         assert "untracked" in evicted
         assert not bucket.exists()
 
-    def test_should_return_empty_when_max_size_is_zero_or_negative(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
-        service._max_cache_bytes = -1
+    def test_should_return_empty_when_max_size_is_zero(self, tmp_path: Path) -> None:
+        # ``hls_cache_max_size_mb=0`` disables LRU eviction entirely
+        # (unbounded cache).
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=0),
+            cache_dir=str(tmp_path),
+        )
 
         evicted = service.evict_lru()
 
@@ -1305,7 +1396,7 @@ class TestHlsServiceIsCompleteAllPlaylists:
     """Tests for the all-playlists check in is_complete."""
 
     def test_should_return_true_when_every_nested_playlist_sealed(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         bucket = tmp_path / "abc"
         bucket.mkdir()
         for sub in ("video", "audio_1", "sub_0"):
@@ -1317,7 +1408,7 @@ class TestHlsServiceIsCompleteAllPlaylists:
         assert service.is_complete("abc") is True
 
     def test_should_return_false_when_one_playlist_missing_endlist(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         bucket = tmp_path / "abc"
         bucket.mkdir()
         # Video sealed, alt audio still growing (no ENDLIST)
@@ -1336,7 +1427,7 @@ class TestHlsServiceWatchForEndlist:
     """Tests for the daemon-thread encode watcher."""
 
     def test_should_seal_playlist_when_ffmpeg_exits_clean(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         playlist = tmp_path / "playlist.m3u8"
         playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
         proc = MagicMock()
@@ -1347,7 +1438,7 @@ class TestHlsServiceWatchForEndlist:
         assert "#EXT-X-ENDLIST" in playlist.read_text(encoding="utf-8")
 
     def test_should_not_seal_when_ffmpeg_exits_with_error(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         playlist = tmp_path / "playlist.m3u8"
         original = "#EXTM3U\n#EXTINF:10,\nseg.ts\n"
         playlist.write_text(original)
@@ -1362,7 +1453,7 @@ class TestHlsServiceWatchForEndlist:
         # SIGKILL gives a negative returncode on POSIX; the watcher must
         # treat this exactly like a hard failure and leave the playlist
         # growable so the next session regenerates.
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         playlist = tmp_path / "playlist.m3u8"
         original = "#EXTM3U\n#EXTINF:10,\nseg.ts\n"
         playlist.write_text(original)
@@ -1374,7 +1465,7 @@ class TestHlsServiceWatchForEndlist:
         assert playlist.read_text(encoding="utf-8") == original
 
     def test_should_swallow_wait_exceptions(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         playlist = tmp_path / "playlist.m3u8"
         original = "#EXTM3U\n#EXTINF:10,\nseg.ts\n"
         playlist.write_text(original)
@@ -1395,7 +1486,7 @@ class TestHlsServiceSpawnFfmpegWatcher:
     def test_should_start_watcher_thread_when_playlist_path_provided(self, tmp_path: Path) -> None:
         import threading as _threading
 
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         playlist = tmp_path / "playlist.m3u8"
         playlist.write_text("#EXTM3U\n#EXTINF:10,\nseg.ts\n")
 
@@ -1422,7 +1513,7 @@ class TestHlsServiceSpawnFfmpegWatcher:
         )
 
     def test_should_not_start_watcher_when_playlist_path_none(self, tmp_path: Path) -> None:
-        service = HlsService(cache_dir=str(tmp_path))
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         fake_proc = MagicMock()
 
         with patch("subprocess.Popen", return_value=fake_proc):

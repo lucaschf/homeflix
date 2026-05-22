@@ -85,41 +85,12 @@ class Settings(BaseSettings):  # type: ignore[misc]
         default="./hls_cache",
         description="Directory to store cached HLS segments",
     )
-    hls_cache_max_size_mb: int = Field(
-        default=5120,
-        description="Maximum HLS cache size in megabytes. When exceeded, "
-        "the least-recently-accessed buckets are deleted until the "
-        "cache fits. Default 5 GB.",
-    )
 
-    avatar_storage_subdir: str = Field(
-        default=".homeflix/avatars",
-        description="Subdirectory (relative to ``thumbnails_directory``) "
-        "where uploaded profile avatars are stored. The subdirectory is "
-        "created on first upload; the operator can change this without "
-        "manual filesystem migration as long as the new path is empty.",
-    )
-    avatar_max_size_mb: int = Field(
-        default=2,
-        ge=1,
-        le=20,
-        description="Maximum accepted upload size for a profile avatar, "
-        "in megabytes. Uploads above this cap are rejected with HTTP 413 "
-        "before the image is decoded. Default 2 MB is comfortably above "
-        "what a phone camera produces after the browser-side compression "
-        "and well below what a laptop would happily upload over a slow "
-        "connection.",
-    )
-    avatar_size_pixels: int = Field(
-        default=256,
-        ge=64,
-        le=1024,
-        description="Final square side length (in pixels) of the resized "
-        "avatar. The uploaded image is centre-cropped to a square and "
-        "scaled to this size before being persisted as WebP. 256 is the "
-        "size the picker / AccountMenu render at 1x; bumping it would "
-        "let those surfaces render crisper at 2x / 3x pixel density.",
-    )
+    # ``hls_cache_max_size_mb`` and the ``avatar_*`` knobs moved to
+    # ``app_settings`` in ADR-013 phase 3. Set them via the admin
+    # panel or ``UPDATE app_settings SET value_json=...``. The legacy
+    # env vars no longer take effect — startup warns if any of them
+    # are still set.
 
     @field_validator("media_directories", mode="before")
     @classmethod
@@ -148,27 +119,17 @@ class Settings(BaseSettings):  # type: ignore[misc]
     )
 
     # =========================================================================
-    # Scheduler / background jobs
+    # Scheduler / background jobs / streaming / avatar
     # =========================================================================
-    # All scheduler / thumbnail-backfill / intro-detection tunables moved
-    # to ``app_settings`` (ADR-013 phase 2). Set them via the admin
-    # panel or ``UPDATE app_settings SET value_json=...`` for ops
-    # overrides. Setting the legacy ``SCHEDULER_*``, ``THUMBNAIL_BACKFILL_*``
-    # or ``INTRO_DETECTION_*`` env vars now has no effect — startup
-    # warns about each one it sees (see ``main.py``).
-
-    ffmpeg_threads: int | None = Field(
-        default=None,
-        ge=1,
-        description="Maximum worker threads ffmpeg may use per invocation "
-        "(applied as ``-threads N`` on every ffmpeg call). ``None`` (the "
-        "default) leaves ffmpeg in 'auto' mode, which uses every logical "
-        "core. Set this to roughly ``cpu_count // 2`` to cap transcoding "
-        "to ~50%% of the host. Caps parallelism, not absolute CPU — there "
-        "is no portable hard cap; use cgroups or equivalent if you need "
-        "one. Applies to HLS transcoding, subtitle extraction, and "
-        "scrub-preview sprite generation.",
-    )
+    # All operational tunables (scheduler, thumbnail backfill, intro
+    # detection, streaming, avatar) moved to ``app_settings`` across
+    # ADR-013 phases 2 and 3. Set them via the admin panel or
+    # ``UPDATE app_settings SET value_json=...`` for ops overrides.
+    # The legacy ``SCHEDULER_*``, ``THUMBNAIL_BACKFILL_*``,
+    # ``INTRO_DETECTION_*``, ``FFMPEG_THREADS``,
+    # ``HLS_CACHE_MAX_SIZE_MB``, and ``AVATAR_*`` env vars now have
+    # no effect — startup warns about each one it sees
+    # (see ``main.py``).
 
     # =========================================================================
     # Identity / Auth (see ADR-010 / ADR-011)

@@ -130,6 +130,15 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         library_uow_factory=_library_uow_factory_for_media,
     )
 
+    # Settings BC (ADR-013): persistence + RuntimeSettings snapshot
+    # facade. Declared before Media + Identity because both inject
+    # ``runtime_settings`` for their consumers (HLS, ffmpeg helpers,
+    # avatar storage).
+    settings = providers.Container(
+        SettingsContainer,
+        session_factory=infrastructure.session_factory,
+    )
+
     # Catalog Requests is built before Media so its ACL adapter can be
     # plumbed into the Media container as the ``CatalogRequestLookupPort``
     # implementation. Catalog Requests itself takes no Media dependency,
@@ -150,8 +159,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         identity_uow_factory=_identity_uow_factory_for_profile_library_access,
         tmdb_api_key=config.provided.tmdb_api_key,
         hls_cache_directory=config.provided.hls_cache_directory,
-        hls_cache_max_size_mb=config.provided.hls_cache_max_size_mb,
-        ffmpeg_threads=config.provided.ffmpeg_threads,
+        runtime_settings=settings.runtime_settings,
     )
 
     library = providers.Container(
@@ -168,9 +176,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         session_factory=infrastructure.session_factory,
         event_bus=infrastructure.event_bus,
         thumbnails_directory=config.provided.thumbnails_directory,
-        avatar_storage_subdir=config.provided.avatar_storage_subdir,
-        avatar_max_size_mb=config.provided.avatar_max_size_mb,
-        avatar_size_pixels=config.provided.avatar_size_pixels,
+        runtime_settings=settings.runtime_settings,
     )
 
     preferences = providers.Container(
@@ -196,14 +202,6 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     # container parse order stays acyclic).
     notifications = providers.Container(
         NotificationsContainer,
-        session_factory=infrastructure.session_factory,
-    )
-
-    # Settings BC (ADR-013): persistence + RuntimeSettings snapshot
-    # facade. Phase 1 is foundation-only; no consumer reads
-    # ``runtime_settings`` yet.
-    settings = providers.Container(
-        SettingsContainer,
         session_factory=infrastructure.session_factory,
     )
 

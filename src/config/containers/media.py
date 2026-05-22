@@ -149,20 +149,17 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # for admin dashboard aggregation, not domain coupling.
     identity_uow_factory = providers.Dependency()
 
-    # Must be wired from parent container (Settings.hls_cache_directory / hls_cache_max_size_mb)
+    # Must be wired from parent container (Settings.hls_cache_directory).
+    # Only the filesystem path remains in ``.env``; ``ffmpeg_threads``
+    # and ``hls_cache_max_size_mb`` moved to ``StreamingConfig`` in
+    # ADR-013 phase 3 and are read from ``RuntimeSettings``.
     hls_cache_directory = providers.Dependency(default="./hls_cache")
-    hls_cache_max_size_mb = providers.Dependency(default=5120)
 
-    # Optional global cap on ffmpeg worker threads. ``None`` keeps the
-    # auto-default (all cores). Wired from ``Settings.ffmpeg_threads``.
-    ffmpeg_threads = providers.Dependency(default=None)
-
-    # Intro-detection algorithm tuning knobs now live in
-    # ``IntroDetectionConfig`` (ADR-013 phase 2). The intro-detection
-    # job snapshots :class:`RuntimeSettings` per run and forwards the
-    # tuning as :class:`IntroDetectorTuning` on each ``detect()`` call,
-    # so the detector itself no longer carries these as constructor
-    # state.
+    # RuntimeSettings facade — needed by HlsService, AudioExtractor,
+    # ThumbnailGenerationService for streaming config + by
+    # IntroDetectionJob (wired from the composition root) for intro
+    # tuning. ADR-013.
+    runtime_settings = providers.Dependency()
 
     # =========================================================================
     # Unit of Work
@@ -316,29 +313,28 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     hls_service = providers.Singleton(
         HlsService,
+        runtime_settings=runtime_settings,
         cache_dir=hls_cache_directory,
         probe_service=media_probe_service,
         enable_eviction=True,
-        max_cache_size_mb=hls_cache_max_size_mb,
-        ffmpeg_threads=ffmpeg_threads,
     )
 
     # Singleton because ``ThumbnailGenerationService`` is stateless apart
-    # from the configured thread cap; sharing one instance across the
-    # eager fire-and-forget path (``stream_routes``) and the periodic
-    # ``ThumbnailBackfillJob`` keeps configuration in one place.
+    # from the runtime config it reads per call; sharing one instance
+    # across the eager fire-and-forget path (``stream_routes``) and the
+    # periodic ``ThumbnailBackfillJob`` keeps configuration in one place.
     thumbnail_generation_service = providers.Singleton(
         ThumbnailGenerationService,
-        ffmpeg_threads=ffmpeg_threads,
+        runtime_settings=runtime_settings,
     )
 
     # Audio analysis primitives — shared by the periodic intro detection
     # job. Singletons because each wrapper is stateless apart from the
-    # configured ffmpeg threads / fpcalc timeout, and the job runs them
-    # serially per tick.
+    # runtime config it reads per call, and the job runs them serially
+    # per tick.
     audio_extractor = providers.Singleton(
         AudioExtractor,
-        ffmpeg_threads=ffmpeg_threads,
+        runtime_settings=runtime_settings,
     )
 
     chromaprint_service = providers.Singleton(ChromaprintService)

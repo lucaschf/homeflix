@@ -10,6 +10,15 @@ from src.modules.media.infrastructure.audio.audio_extractor import (
     AudioExtractor,
     _ffmpeg_path,
 )
+from src.modules.settings.domain.value_objects import StreamingConfig
+
+
+def _fake_runtime_settings(*, ffmpeg_threads: int | None = None) -> MagicMock:
+    runtime = MagicMock()
+    runtime.streaming_snapshot_sync.return_value = StreamingConfig(
+        ffmpeg_threads=ffmpeg_threads,
+    )
+    return runtime
 
 
 @pytest.fixture(autouse=True)  # type: ignore[misc]
@@ -46,13 +55,17 @@ class TestAudioExtractor:
             "src.modules.media.infrastructure.audio.audio_extractor.shutil.which",
             return_value=None,
         ):
-            result = AudioExtractor().extract("/series/show/s01e01.mkv", duration_seconds=10)
+            result = AudioExtractor(_fake_runtime_settings()).extract(
+                "/series/show/s01e01.mkv", duration_seconds=10
+            )
 
         assert result is None
 
     def test_returns_none_for_non_positive_duration(self, fake_ffmpeg: MagicMock) -> None:
         with patch("src.modules.media.infrastructure.audio.audio_extractor.subprocess.run") as run:
-            result = AudioExtractor().extract("/series/show/s01e01.mkv", duration_seconds=0)
+            result = AudioExtractor(_fake_runtime_settings()).extract(
+                "/series/show/s01e01.mkv", duration_seconds=0
+            )
 
         assert result is None
         run.assert_not_called()
@@ -70,7 +83,7 @@ class TestAudioExtractor:
             "src.modules.media.infrastructure.audio.audio_extractor.subprocess.run",
             side_effect=run_side_effect,
         ):
-            extractor = AudioExtractor()
+            extractor = AudioExtractor(_fake_runtime_settings())
             result = extractor.extract("/series/show/s01e01.mkv", duration_seconds=10)
 
         try:
@@ -102,7 +115,9 @@ class TestAudioExtractor:
             "src.modules.media.infrastructure.audio.audio_extractor.subprocess.run",
             side_effect=run_side_effect,
         ):
-            result = AudioExtractor().extract("/series/show/s01e01.mkv", duration_seconds=10)
+            result = AudioExtractor(_fake_runtime_settings()).extract(
+                "/series/show/s01e01.mkv", duration_seconds=10
+            )
 
         assert result is None
         assert leftover, "ffmpeg side-effect should have created the output stub"
@@ -121,7 +136,7 @@ class TestAudioExtractor:
             "src.modules.media.infrastructure.audio.audio_extractor.subprocess.run",
             side_effect=run_side_effect,
         ):
-            result = AudioExtractor(timeout_seconds=1).extract(
+            result = AudioExtractor(_fake_runtime_settings(), timeout_seconds=1).extract(
                 "/series/show/s01e01.mkv", duration_seconds=10
             )
 
@@ -141,7 +156,9 @@ class TestAudioExtractor:
             "src.modules.media.infrastructure.audio.audio_extractor.subprocess.run",
             side_effect=run_side_effect,
         ):
-            result = AudioExtractor().extract("/series/show/s01e01.mkv", duration_seconds=10)
+            result = AudioExtractor(_fake_runtime_settings()).extract(
+                "/series/show/s01e01.mkv", duration_seconds=10
+            )
 
         assert result is None
         assert not leftover[0].exists()
@@ -158,7 +175,7 @@ class TestAudioExtractor:
             "src.modules.media.infrastructure.audio.audio_extractor.subprocess.run",
             side_effect=run_side_effect,
         ):
-            extractor = AudioExtractor(ffmpeg_threads=2)
+            extractor = AudioExtractor(_fake_runtime_settings(ffmpeg_threads=2))
             result = extractor.extract("/series/show/s01e01.mkv", duration_seconds=5)
 
         try:
@@ -183,7 +200,7 @@ class TestAudioExtractor:
             "src.modules.media.infrastructure.audio.audio_extractor.subprocess.run",
             side_effect=run_side_effect,
         ):
-            result = AudioExtractor(sample_rate=48_000).extract(
+            result = AudioExtractor(_fake_runtime_settings(), sample_rate=48_000).extract(
                 "/series/show/s01e01.mkv", duration_seconds=5
             )
 
@@ -212,7 +229,9 @@ class TestAudioExtractor:
             "src.modules.media.infrastructure.audio.audio_extractor.subprocess.run",
             side_effect=run_side_effect,
         ):
-            result = AudioExtractor().extract("/series/show/s01e01.mkv", duration_seconds=5)
+            result = AudioExtractor(_fake_runtime_settings()).extract(
+                "/series/show/s01e01.mkv", duration_seconds=5
+            )
 
         assert result is None
         assert not leftover[0].exists()
@@ -236,7 +255,7 @@ class TestAudioExtractorContextManager:
                 "src.modules.media.infrastructure.audio.audio_extractor.subprocess.run",
                 side_effect=run_side_effect,
             ),
-            AudioExtractor().extract_temporary(
+            AudioExtractor(_fake_runtime_settings()).extract_temporary(
                 "/series/show/s01e01.mkv", duration_seconds=5
             ) as wav_path,
         ):
@@ -251,7 +270,7 @@ class TestAudioExtractorContextManager:
                 "src.modules.media.infrastructure.audio.audio_extractor.subprocess.run",
                 side_effect=OSError("boom"),
             ),
-            AudioExtractor().extract_temporary(
+            AudioExtractor(_fake_runtime_settings()).extract_temporary(
                 "/series/show/s01e01.mkv", duration_seconds=5
             ) as wav_path,
         ):

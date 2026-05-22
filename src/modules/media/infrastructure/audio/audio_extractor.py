@@ -10,19 +10,26 @@ The wrapper is synchronous; async callers should use
 ``HlsService._start_generation``.
 """
 
+from __future__ import annotations
+
 import functools
 import logging
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from src.modules.media.infrastructure.streaming._subprocess import (
     SUBPROCESS_TEXT_KWARGS,
     with_ffmpeg_threads,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = logging.getLogger(__name__)
 
@@ -54,11 +61,12 @@ class AudioExtractor:
         sample_rate: Output sample rate (Hz). Defaults to 11025 — high
             enough for fingerprinting and low enough to keep the temp
             file small.
-        ffmpeg_threads: Optional cap forwarded to ``-threads``. ``None``
-            (the default) lets ffmpeg use all logical cores.
+        runtime_settings: Snapshot facade for :class:`StreamingConfig`;
+            ``ffmpeg_threads`` is read via the sync snapshot on every
+            extraction so admin edits take effect on the next call.
 
     Example:
-        >>> extractor = AudioExtractor()
+        >>> extractor = AudioExtractor(runtime_settings=runtime_settings)
         >>> with extractor.extract_temporary(
         ...     "/series/show/s01e01.mkv",
         ...     duration_seconds=600,
@@ -69,14 +77,14 @@ class AudioExtractor:
 
     def __init__(
         self,
+        runtime_settings: RuntimeSettings,
         *,
         timeout_seconds: int = _DEFAULT_TIMEOUT_SECONDS,
         sample_rate: int = _DEFAULT_SAMPLE_RATE,
-        ffmpeg_threads: int | None = None,
     ) -> None:
+        self._runtime_settings = runtime_settings
         self._timeout = timeout_seconds
         self._sample_rate = sample_rate
-        self._ffmpeg_threads = ffmpeg_threads
 
     def extract(self, file_path: str, duration_seconds: int) -> Path | None:
         """Extract the first ``duration_seconds`` of audio to a temp WAV.
@@ -131,7 +139,7 @@ class AudioExtractor:
                 "wav",
                 str(output_path),
             ],
-            self._ffmpeg_threads,
+            self._runtime_settings.streaming_snapshot_sync().ffmpeg_threads,
         )
 
         if _run_ffmpeg(cmd, file_path, output_path, self._timeout):

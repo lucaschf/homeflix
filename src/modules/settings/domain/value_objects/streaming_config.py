@@ -21,14 +21,15 @@ class StreamingConfig(CompoundValueObject):
             When the directory exceeds this size, the least-recently-
             accessed buckets are deleted until the cache fits. Bump
             on large catalogs to avoid re-transcoding popular titles
-            on every visit.
+            on every visit. Set to ``0`` to disable LRU eviction
+            entirely (the cache will grow without bound).
 
     Example:
         >>> cfg = StreamingConfig(ffmpeg_threads=4, hls_cache_max_size_mb=10240)
     """
 
     ffmpeg_threads: int | None = Field(default=None, ge=1)
-    hls_cache_max_size_mb: int = Field(default=5120, ge=1)
+    hls_cache_max_size_mb: int = Field(default=5120, ge=0)
 
 
 __all__ = ["StreamingConfig"]
