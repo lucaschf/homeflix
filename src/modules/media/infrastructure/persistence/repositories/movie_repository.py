@@ -535,6 +535,23 @@ class SQLAlchemyMovieRepository(MovieRepository):
             if model.tmdb_id is not None
         }
 
+    async def find_all_by_tmdb_id(self, tmdb_id: int) -> list[Movie]:
+        """Return every non-deleted movie with the given TMDB id.
+
+        Preserves duplicates (unlike ``find_by_tmdb_ids`` which keys
+        by tmdb_id). No ACL filter — see the ABC docstring.
+        """
+        stmt = (
+            select(MovieModel)
+            .where(
+                MovieModel.tmdb_id == tmdb_id,
+                MovieModel.deleted_at.is_(None),
+            )
+            .options(selectinload(MovieModel.file_variants))
+        )
+        result = await self._session.execute(stmt)
+        return [MovieMapper.to_entity(model) for model in result.scalars().all()]
+
     async def find_by_file_path(self, file_path: FilePath) -> Movie | None:
         """Find a movie by any of its file variant paths.
 

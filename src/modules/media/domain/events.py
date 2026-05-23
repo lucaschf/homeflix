@@ -100,6 +100,32 @@ class MediaEnrichedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class MediaConflictDetectedEvent(DomainEvent):
+    """Emitted when the dedup detector queues a new conflict.
+
+    Fires after a content-identity match (ADR-015) creates a
+    ``MediaConflict`` row in the admin queue. Downstream handlers
+    can use it for notifications (e.g. "you have N pending
+    conflicts") without polling the table.
+
+    Attributes:
+        conflict_id: External id of the queued conflict (``cnf_xxx``).
+        candidate_a_id: One side of the matched pair.
+        candidate_b_id: The other side.
+        match_reason: Which identity rule fired (``tmdb_id`` or
+            ``title_year_fallback``).
+        suggested_action: Pre-computed hint shown to the admin
+            (``likely_same_release`` or ``different_edit_suspected``).
+    """
+
+    conflict_id: str = ""
+    candidate_a_id: str = ""
+    candidate_b_id: str = ""
+    match_reason: str = ""
+    suggested_action: str = ""
+
+
+@dataclass(frozen=True)
 class MoviePromotedToSeriesEvent(DomainEvent):
     """Emitted when an admin promotes a movie into a series.
 
@@ -135,6 +161,7 @@ __all__ = [
     "IntroClearedEvent",
     "IntroDetectedEvent",
     "IntroManuallySetEvent",
+    "MediaConflictDetectedEvent",
     "MediaCreatedEvent",
     "MediaEnrichedEvent",
     "MoviePromotedToSeriesEvent",

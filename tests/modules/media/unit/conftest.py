@@ -15,7 +15,11 @@ from src.modules.media.application.unit_of_work import (
     MediaUnitOfWork,
     MediaUnitOfWorkFactory,
 )
-from src.modules.media.domain.repositories import MovieRepository, SeriesRepository
+from src.modules.media.domain.repositories import (
+    MediaConflictRepository,
+    MovieRepository,
+    SeriesRepository,
+)
 
 
 @dataclass
@@ -28,12 +32,15 @@ class MediaUoWMocks:
             context manager returning itself on ``__aenter__``.
         movies: Mock ``MovieRepository`` exposed as ``uow.movies``.
         series: Mock ``SeriesRepository`` exposed as ``uow.series``.
+        media_conflicts: Mock ``MediaConflictRepository`` exposed as
+            ``uow.media_conflicts``.
     """
 
     factory: MediaUnitOfWorkFactory
     uow: MediaUnitOfWork
     movies: AsyncMock
     series: AsyncMock
+    media_conflicts: AsyncMock
 
 
 def make_media_uow_mock() -> MediaUoWMocks:
@@ -46,15 +53,23 @@ def make_media_uow_mock() -> MediaUoWMocks:
     """
     movies = AsyncMock(spec=MovieRepository)
     series = AsyncMock(spec=SeriesRepository)
+    media_conflicts = AsyncMock(spec=MediaConflictRepository)
 
     uow: MediaUnitOfWork = AsyncMock()
     uow.__aenter__.return_value = uow  # type: ignore[attr-defined]
     uow.__aexit__.return_value = None  # type: ignore[attr-defined]
     uow.movies = movies
     uow.series = series
+    uow.media_conflicts = media_conflicts
 
     factory = MagicMock(return_value=uow)
-    return MediaUoWMocks(factory=factory, uow=uow, movies=movies, series=series)
+    return MediaUoWMocks(
+        factory=factory,
+        uow=uow,
+        movies=movies,
+        series=series,
+        media_conflicts=media_conflicts,
+    )
 
 
 class FakeProfileLibraryAccessPort(ProfileLibraryAccessPort):

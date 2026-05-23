@@ -1,6 +1,9 @@
 """Media module ORM models."""
 
 from src.modules.media.infrastructure.persistence.models.episode import EpisodeModel
+from src.modules.media.infrastructure.persistence.models.media_conflict import (
+    MediaConflictModel,
+)
 from src.modules.media.infrastructure.persistence.models.media_file import MediaFileModel
 from src.modules.media.infrastructure.persistence.models.movie import MovieModel
 from src.modules.media.infrastructure.persistence.models.scan_run import ScanRunModel
@@ -9,6 +12,7 @@ from src.modules.media.infrastructure.persistence.models.series import SeriesMod
 
 __all__ = [
     "EpisodeModel",
+    "MediaConflictModel",
     "MediaFileModel",
     "MovieModel",
     "ScanRunModel",

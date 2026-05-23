@@ -1,0 +1,139 @@
+"""Integration tests for SqlAlchemyMediaConflictRepository."""
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.modules.media.domain.entities.media_conflict import (
+    MatchReason,
+    MediaConflict,
+    ResolutionAction,
+)
+from src.modules.media.infrastructure.persistence.repositories.media_conflict_repository import (
+    SqlAlchemyMediaConflictRepository,
+)
+
+
+def _new_conflict(
+    *,
+    a_id: str = "mov_aaaaaaaaaaaa",
+    b_id: str = "mov_bbbbbbbbbbbb",
+) -> MediaConflict:
+    return MediaConflict.detect(
+        candidate_a_id=a_id,
+        candidate_a_type="movie",
+        candidate_a_runtime_minutes=120.0,
+        candidate_b_id=b_id,
+        candidate_b_type="movie",
+        candidate_b_runtime_minutes=125.0,
+        match_reason=MatchReason.TMDB_ID,
+    )
+
+
+@pytest.mark.integration
+class TestSaveAndFind:
+    async def test_save_assigns_external_id_on_first_persist(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SqlAlchemyMediaConflictRepository(db_session)
+        saved = await repo.save(_new_conflict())
+
+        assert saved.id is not None
+        assert str(saved.id).startswith("cnf_")
+        assert saved.resolved_at is None
+
+    async def test_save_updates_in_place_after_resolution(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SqlAlchemyMediaConflictRepository(db_session)
+        saved = await repo.save(_new_conflict())
+
+        resolved = saved.resolve(ResolutionAction.MARK_DISTINCT)
+        await repo.save(resolved)
+        again = await repo.find_by_id(saved.id)  # type: ignore[arg-type]
+
+        assert again is not None
+        assert again.is_resolved is True
+        assert again.resolution is ResolutionAction.MARK_DISTINCT
+
+
+@pytest.mark.integration
+class TestFindPendingByPair:
+    async def test_returns_match_when_orientation_swapped(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SqlAlchemyMediaConflictRepository(db_session)
+        original = await repo.save(_new_conflict(a_id="mov_aaaaaaaaaaaa", b_id="mov_bbbbbbbbbbbb"))
+
+        # Same pair, reversed ids.
+        result = await repo.find_pending_by_pair(
+            "mov_bbbbbbbbbbbb",
+            "mov_aaaaaaaaaaaa",
+        )
+
+        assert result is not None
+        assert result.id == original.id
+
+    async def test_returns_none_when_pair_is_resolved(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SqlAlchemyMediaConflictRepository(db_session)
+        saved = await repo.save(_new_conflict())
+        await repo.save(saved.resolve(ResolutionAction.MERGE_REPLACE))
+
+        result = await repo.find_pending_by_pair(
+            saved.candidate_a_id,
+            saved.candidate_b_id,
+        )
+
+        assert result is None
+
+    async def test_returns_none_when_pair_is_unknown(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SqlAlchemyMediaConflictRepository(db_session)
+        result = await repo.find_pending_by_pair("mov_aaaaaaaaaaaa", "mov_bbbbbbbbbbbb")
+        assert result is None
+
+
+@pytest.mark.integration
+class TestListPending:
+    async def test_excludes_resolved_rows(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SqlAlchemyMediaConflictRepository(db_session)
+        pending = await repo.save(_new_conflict(a_id="mov_aaaaaaaaaaaa", b_id="mov_bbbbbbbbbbbb"))
+        resolved = await repo.save(_new_conflict(a_id="mov_cccccccccccc", b_id="mov_dddddddddddd"))
+        await repo.save(resolved.resolve(ResolutionAction.MERGE_KEEP_BOTH))
+
+        page = await repo.list_pending(limit=10)
+
+        assert [c.id for c in page.items] == [pending.id]
+
+    async def test_pagination_advances_via_cursor(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SqlAlchemyMediaConflictRepository(db_session)
+        # Insert 3 conflicts with distinct pairs so insertion order
+        # determines the newest-first ordering.
+        c1 = await repo.save(_new_conflict(a_id="mov_aaaaaaaaaaaa", b_id="mov_bbbbbbbbbbbb"))
+        c2 = await repo.save(_new_conflict(a_id="mov_cccccccccccc", b_id="mov_dddddddddddd"))
+        c3 = await repo.save(_new_conflict(a_id="mov_eeeeeeeeeeee", b_id="mov_ffffffffffff"))
+
+        first_page = await repo.list_pending(limit=2)
+        assert [c.id for c in first_page.items] == [c3.id, c2.id]
+        assert first_page.pagination.has_more is True
+        assert first_page.pagination.next_cursor is not None
+
+        second_page = await repo.list_pending(
+            cursor=first_page.pagination.next_cursor,
+            limit=2,
+        )
+        assert [c.id for c in second_page.items] == [c1.id]
+        assert second_page.pagination.has_more is False

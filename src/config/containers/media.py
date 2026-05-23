@@ -18,6 +18,9 @@ from src.modules.media.application.use_cases.clear_hls_cache_global import (
 )
 from src.modules.media.application.use_cases.delete_movie import DeleteMovieUseCase
 from src.modules.media.application.use_cases.delete_series import DeleteSeriesUseCase
+from src.modules.media.application.use_cases.detect_movie_conflicts import (
+    DetectMovieConflictsUseCase,
+)
 from src.modules.media.application.use_cases.enrich_movie_metadata import (
     EnrichMovieMetadataUseCase,
 )
@@ -49,6 +52,7 @@ from src.modules.media.application.use_cases.get_related_series import GetRelate
 from src.modules.media.application.use_cases.get_scan_run import GetScanRunUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
+from src.modules.media.application.use_cases.list_conflicts import ListConflictsUseCase
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
 from src.modules.media.application.use_cases.list_movies_by_actor import ListMoviesByActorUseCase
@@ -537,6 +541,21 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         metadata_provider=tmdb_client,
         enrich_series_use_case=enrich_series_metadata,
         event_bus=event_bus,
+    )
+
+    # =========================================================================
+    # Use Cases — Conflict Detection (ADR-015 Phase 1)
+    # =========================================================================
+
+    detect_movie_conflicts = providers.Factory(
+        DetectMovieConflictsUseCase,
+        uow_factory=media_unit_of_work_factory,
+        event_bus=event_bus,
+    )
+
+    list_conflicts = providers.Factory(
+        ListConflictsUseCase,
+        uow_factory=media_unit_of_work_factory,
     )
 
     # =========================================================================
