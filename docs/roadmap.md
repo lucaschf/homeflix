@@ -1,6 +1,6 @@
 # HomeFlix — Roadmap
 
-> Last updated: 2026-05-06
+> Last updated: 2026-05-23
 
 This roadmap captures **what comes next** after the Phase 1 foundation.
 Items are ordered so each tier builds on the previous one — both in
@@ -57,7 +57,16 @@ patterns are explicitly excluded.
   flag, per-profile watch progress / collections / preferences,
   `allowed_library_ids` ACL filtering catalog reads, profile picker
   + management UI, profile avatar upload (Pillow centre-crop to WebP).
-- 77 REST API endpoints across 7 bounded contexts, 2 200+ tests.
+- **4.3 Runtime Settings (DB-backed)** — ADR-013 + ADR-014. Five
+  operational tunable buckets (scheduler, thumbnail backfill, intro
+  detection, streaming, avatar) moved out of `.env` into the
+  `app_settings` table with per-bucket aggregates, snapshot+TTL
+  facade (`RuntimeSettings`), one-time seed migrations, and a typed
+  admin surface at `/api/v1/admin/settings`. Frontend forms ship at
+  `/admin/system/settings` so edits propagate to consumers in
+  seconds without restart (avatar storage subdir is the one caveat
+  — lazy-cached at startup).
+- 107 REST API endpoints across 9 bounded contexts, 2 530+ tests.
 
 ---
 
