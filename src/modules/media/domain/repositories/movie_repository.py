@@ -408,6 +408,28 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_all_by_tmdb_id(self, tmdb_id: int) -> list[Movie]:
+        """Return every non-deleted movie sharing the given TMDB id.
+
+        Used by the ADR-015 dedup detector: after enrichment locks a
+        movie onto a TMDB id, this returns ``[]`` (unique), one match
+        (just itself — caller filters out), or two+ matches (the
+        collision case the detector needs to materialise). Unlike
+        ``find_by_tmdb_ids`` which dict-keys by tmdb_id and silently
+        drops duplicates, this method preserves them.
+
+        No ACL filter — collision detection is operator-scoped and
+        intentionally cross-library.
+
+        Args:
+            tmdb_id: The TMDB numeric id to look up.
+
+        Returns:
+            All matching movies, in arbitrary order.
+        """
+        ...
+
+    @abstractmethod
     async def find_by_file_path(self, file_path: FilePath) -> Movie | None:
         """Find a movie by its file path.
 

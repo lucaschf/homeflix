@@ -1,6 +1,12 @@
 """Media domain entities."""
 
 from src.modules.media.domain.entities.episode import Episode
+from src.modules.media.domain.entities.media_conflict import (
+    MatchReason,
+    MediaConflict,
+    ResolutionAction,
+    SuggestedAction,
+)
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.entities.scan_run import (
     ScanRun,
@@ -17,11 +23,15 @@ Series.model_rebuild()
 
 __all__ = [
     "Episode",
+    "MatchReason",
+    "MediaConflict",
     "Movie",
+    "ResolutionAction",
     "ScanRun",
     "ScanRunKind",
     "ScanRunStatus",
     "ScanRunTrigger",
     "Season",
     "Series",
+    "SuggestedAction",
 ]

@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 
 from src.building_blocks.application.unit_of_work import UnitOfWork
 from src.modules.media.domain.repositories import (
+    MediaConflictRepository,
     MovieRepository,
     ScanRunRepository,
     SeriesRepository,
@@ -16,20 +17,21 @@ from src.modules.media.domain.repositories import (
 
 
 class MediaUnitOfWork(UnitOfWork):
-    """Transactional boundary for operations on movies, series and scan runs.
+    """Transactional boundary covering every media-side repository.
 
-    Subclasses populate ``movies``, ``series`` and ``scan_runs`` on
-    ``__aenter__`` so writes within the same ``async with`` block
-    share a transaction. Outside the context manager the attributes
-    are not guaranteed to exist — accessing them raises
-    ``AttributeError``, which surfaces misuse at the call site
-    instead of silently operating against a stale or foreign
+    Spans movies, series, scan runs, and media conflicts so writes
+    across those aggregates share one transaction. Subclasses populate
+    the repository attributes on ``__aenter__``; outside the context
+    manager the attributes are not guaranteed to exist — accessing
+    them raises ``AttributeError``, which surfaces misuse at the call
+    site instead of silently operating against a stale or foreign
     session.
     """
 
     movies: MovieRepository
     series: SeriesRepository
     scan_runs: ScanRunRepository
+    media_conflicts: MediaConflictRepository
 
 
 class MediaUnitOfWorkFactory(ABC):

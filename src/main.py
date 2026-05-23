@@ -33,6 +33,7 @@ from src.modules.library.presentation.routes.library_routes import (
     router as library_router,
 )
 from src.modules.media.presentation.routes import (
+    admin_conflicts_router,
     admin_overview_router,
     admin_relink_router,
     admin_scan_router,
@@ -60,6 +61,7 @@ from src.modules.watch_progress.presentation.routes import progress_router
 #: tests can build a container with the same wiring without copying the
 #: list (drift between the two would mean tests miss DI-resolved deps).
 WIRED_ROUTE_MODULES: tuple[str, ...] = (
+    "src.modules.media.presentation.routes.admin_conflicts_routes",
     "src.modules.media.presentation.routes.admin_overview_routes",
     "src.modules.media.presentation.routes.admin_relink_routes",
     "src.modules.media.presentation.routes.admin_scan_routes",
@@ -249,6 +251,9 @@ async def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     )
     from src.modules.identity.domain.events import UserDeletedEvent
     from src.modules.media.application.event_handlers import OnMediaCreatedHandler
+    from src.modules.media.application.event_handlers import (
+        OnMediaEnrichedHandler as MediaOnEnrichedConflictsHandler,
+    )
     from src.modules.media.domain.events import (
         MediaCreatedEvent,
         MediaEnrichedEvent,
@@ -282,6 +287,19 @@ async def _subscribe_event_handlers(container: ApplicationContainer) -> None:
         enrich_series_factory=container.media.enrich_series_metadata,
     )
     event_bus.subscribe(MediaCreatedEvent, media_created_handler)
+
+    # ``media`` runs the content-identity dedup detector (ADR-015
+    # Phase 1) for movies that just got a TMDB id — queues a
+    # ``MediaConflict`` whenever the new tmdb_id collides with an
+    # existing one. Factory is the provider itself: calling it
+    # returns an awaitable because the underlying UoW resource is
+    # async.
+    event_bus.subscribe(
+        MediaEnrichedEvent,
+        MediaOnEnrichedConflictsHandler(
+            detect_movie_conflicts_factory=container.media.detect_movie_conflicts,
+        ),
+    )
 
     # ``catalog_requests`` flips a pending request to fulfilled the
     # moment a matching title finishes enrichment with a TMDB id —
@@ -418,6 +436,7 @@ def create_app() -> FastAPI:
     app.include_router(profile_router)
     app.include_router(admin_user_router)
     app.include_router(admin_settings_router)
+    app.include_router(admin_conflicts_router)
 
     return app
 

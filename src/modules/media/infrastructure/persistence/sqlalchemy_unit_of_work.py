@@ -7,6 +7,9 @@ from src.modules.media.application.unit_of_work import (
     MediaUnitOfWork,
     MediaUnitOfWorkFactory,
 )
+from src.modules.media.infrastructure.persistence.repositories.media_conflict_repository import (
+    SqlAlchemyMediaConflictRepository,
+)
 from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
     SQLAlchemyMovieRepository,
 )
@@ -21,8 +24,8 @@ from src.modules.media.infrastructure.persistence.repositories.series_repository
 class SqlAlchemyMediaUnitOfWork(SqlAlchemyUnitOfWork, MediaUnitOfWork):
     """SQLAlchemy-backed Unit of Work for the media bounded context.
 
-    Exposes ``movies``, ``series`` and ``scan_runs`` repositories
-    bound to the active transaction. Lifecycle (session
+    Exposes ``movies``, ``series``, ``scan_runs`` and ``media_conflicts``
+    repositories bound to the active transaction. Lifecycle (session
     open/commit/rollback/close, nested-use guard) lives in
     :class:`SqlAlchemyUnitOfWork`.
     """
@@ -31,6 +34,7 @@ class SqlAlchemyMediaUnitOfWork(SqlAlchemyUnitOfWork, MediaUnitOfWork):
         self.movies = SQLAlchemyMovieRepository(session)
         self.series = SQLAlchemySeriesRepository(session)
         self.scan_runs = SqlAlchemyScanRunRepository(session)
+        self.media_conflicts = SqlAlchemyMediaConflictRepository(session)
 
 
 class SqlAlchemyMediaUnitOfWorkFactory(MediaUnitOfWorkFactory):
