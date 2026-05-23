@@ -1,6 +1,6 @@
 # ADR-013: Runtime settings persistidos em banco para tunables operacionais
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-05-21
 **Deciders:** Lucas Cristovam
 **Technical Story:** Planejamento 2026-05-21 de exposição de tunables operacionais via admin panel.
@@ -242,3 +242,4 @@ threshold = settings.intro_detection.min_confidence
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-05-21 | Lucas Cristovam | Criação inicial |
+| 2026-05-23 | Lucas Cristovam | Rollout completo — backend nas PRs #221 (foundation), #222 (scheduler/backfill/intro), #223 (streaming/avatar), #224 (admin routes); frontend em homeflix-web#156 (/admin/system/settings). Status: Aceito. |
