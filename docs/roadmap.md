@@ -1,6 +1,6 @@
 # HomeFlix — Roadmap
 
-> Last updated: 2026-05-23
+> Last updated: 2026-05-23 (afternoon)
 
 This roadmap captures **what comes next** after the Phase 1 foundation.
 Items are ordered so each tier builds on the previous one — both in
@@ -15,7 +15,7 @@ patterns are explicitly excluded.
 
 ---
 
-## Shipped (Phases 1–4)
+## Shipped (Phases 1–4 + ADR-015 Phase 1)
 
 ### Phase 1 — Foundation
 
@@ -68,6 +68,20 @@ patterns are explicitly excluded.
   — lazy-cached at startup).
 - 107 REST API endpoints across 9 bounded contexts, 2 530+ tests.
 
+### Phase 6 — Scanner Deduplication (ADR-015)
+
+- **6.1 Detection-only conflict queue** — ADR-015 Phase 1. New
+  `MediaConflict` aggregate in `modules/media/` materialises
+  content-identity collisions (Movie-vs-Movie TMDB id matches)
+  detected by a post-enrich hook on `MediaEnrichedEvent`. Suggested
+  action is pre-computed via a runtime-delta heuristic (`> 5 min` **and**
+  `> 10%` flags a suspected different edit, never auto-merges).
+  Read-only admin surface at `GET /api/v1/admin/conflicts` returns
+  the pending queue with title/year projections of both sides.
+  Polymorphic schema (`candidate_*_type` discriminator) ready for
+  Series/Episodes in later phases without a migration.
+- 108 REST API endpoints across 9 bounded contexts, 2 560+ tests.
+
 ---
 
 ## Open work
@@ -108,6 +122,35 @@ patterns are explicitly excluded.
 | **Unlocks** | 4K HEVC playback without melting the CPU |
 | **Scope** | Detect available HW encoders at startup, prefer HW pipeline in HLS generation, graceful fallback to software |
 | **Depends on** | 2.1 (Docker — GPU passthrough config) |
+
+### Phase 6 — Scanner Deduplication (remaining ADR-015 phases)
+
+#### 6.2 Admin resolve UI + endpoint
+
+| | |
+|---|---|
+| **Teaches** | Cross-BC fan-out (similar to `MoviePromotedToSeriesEvent`), aggregate merge with FK migration, transactional safety on destructive ops |
+| **Unlocks** | Operator can actually resolve queued conflicts (merge-keep-both / merge-replace / mark-distinct) |
+| **Scope** | `POST /api/v1/admin/conflicts/{id}/resolve` with action body, merge use case that moves file variants + watch progress + custom list memberships from loser → winner, soft-delete loser, frontend `/admin/conflicts` page in homeflix-web |
+| **Depends on** | 6.1 (shipped) |
+
+#### 6.3 Auto-merge silencioso (orphan + healthy library)
+
+| | |
+|---|---|
+| **Teaches** | Storage health probing, idempotent auto-actions with audit trail |
+| **Unlocks** | "Moved a file/folder" use case stops requiring admin clicks — the new path simply absorbs the orphaned entity |
+| **Scope** | Library-root health check before classifying as orphan, `MediaAutoMerged` event for audit, separate admin UI showing auto-action log |
+| **Depends on** | 6.2 |
+
+#### 6.4 Bulk resolve + tunable thresholds
+
+| | |
+|---|---|
+| **Teaches** | Bulk operations with criteria filters, surfacing tunables through the existing RuntimeSettings (ADR-013) pattern |
+| **Unlocks** | One-shot cleanup for large historical backlogs; threshold tuning without redeploy |
+| **Scope** | `scan_dedup` bucket in `app_settings` (runtime delta thresholds), bulk-resolve endpoint with `min_runtime_delta` filter, fallback `(normalized_original_title, year)` matcher for un-enriched candidates |
+| **Depends on** | 6.2 |
 
 ### Phase 5 — Observability & Resilience
 
