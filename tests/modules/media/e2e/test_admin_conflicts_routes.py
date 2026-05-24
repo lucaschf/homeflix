@@ -454,3 +454,99 @@ class TestAdminConflictsAuditView:
         await _login_as_admin(client, seed_user_with_profile)
         response = await client.get(f"{CONFLICTS_PATH}?state=frozen")
         assert response.status_code == 422
+
+
+_BULK_PATH = f"{CONFLICTS_PATH}/bulk-mark-distinct"
+
+
+@pytest.mark.e2e
+class TestAdminConflictsBulkMarkDistinct:
+    """``POST /admin/conflicts/bulk-mark-distinct`` (ADR-015 Phase 4)."""
+
+    async def test_unauthenticated_returns_401(self, client: AsyncClient) -> None:
+        response = await client.post(
+            _BULK_PATH,
+            json={"conflict_ids": ["cnf_xxxxxxxxxxxx"]},
+        )
+        assert response.status_code == 401
+
+    async def test_member_returns_403(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        member = await seed_user_with_profile(email="member@example.com", is_admin=False)
+        await _login(client, member)
+        response = await client.post(
+            _BULK_PATH,
+            json={"conflict_ids": ["cnf_xxxxxxxxxxxx"]},
+        )
+        assert response.status_code == 403
+
+    async def test_resolves_selection_and_clears_queue(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        await _login_as_admin(client, seed_user_with_profile)
+        first = await _seed_conflict(
+            session_factory, a_id="mov_aaaaaaaaaaaa", b_id="mov_bbbbbbbbbbbb"
+        )
+        second = await _seed_conflict(
+            session_factory, a_id="mov_cccccccccccc", b_id="mov_dddddddddddd"
+        )
+
+        response = await client.post(
+            _BULK_PATH,
+            json={"conflict_ids": [first, second]},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()["data"]
+        assert payload["requested"] == 2
+        assert sorted(payload["resolved_ids"]) == sorted([first, second])
+        assert payload["skipped"] == []
+
+        # Both leave the pending queue; they surface in the audit view.
+        assert (await client.get(CONFLICTS_PATH)).json()["data"] == []
+        audit = await client.get(f"{CONFLICTS_PATH}?state=resolved&source=manual")
+        assert len(audit.json()["data"]) == 2
+
+    async def test_reports_skipped_for_missing_and_resolved(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        await _login_as_admin(client, seed_user_with_profile)
+        pending = await _seed_conflict(
+            session_factory, a_id="mov_aaaaaaaaaaaa", b_id="mov_bbbbbbbbbbbb"
+        )
+        already = await _seed_conflict(
+            session_factory, a_id="mov_cccccccccccc", b_id="mov_dddddddddddd"
+        )
+        await client.post(_BULK_PATH, json={"conflict_ids": [already]})
+
+        response = await client.post(
+            _BULK_PATH,
+            json={"conflict_ids": [pending, already, "cnf_doesnotexist"]},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()["data"]
+        assert payload["resolved_ids"] == [pending]
+        skipped = {s["conflict_id"]: s["reason"] for s in payload["skipped"]}
+        assert skipped == {
+            already: "already_resolved",
+            "cnf_doesnotexist": "not_found",
+        }
+
+    async def test_empty_body_returns_422(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        await _login_as_admin(client, seed_user_with_profile)
+        response = await client.post(_BULK_PATH, json={"conflict_ids": []})
+        assert response.status_code == 422
