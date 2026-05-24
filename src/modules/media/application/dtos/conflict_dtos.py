@@ -95,6 +95,46 @@ class ConflictSummary:
 
 
 @dataclass(frozen=True)
+class ResolveMediaConflictInput:
+    """Input for the admin resolution endpoint.
+
+    Attributes:
+        conflict_id: External id of the conflict to resolve.
+        action: Which disposition the operator picked.
+        winner_id: Required for ``MERGE_KEEP_BOTH`` / ``MERGE_REPLACE``;
+            forbidden for ``MARK_DISTINCT``. Must equal one of the
+            conflict's candidate ids.
+    """
+
+    conflict_id: str
+    action: str
+    winner_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ResolveMediaConflictOutput:
+    """Result summary after the resolve use case commits.
+
+    Attributes:
+        conflict_id: External id of the resolved conflict.
+        action: The persisted resolution value.
+        winner_id: Surviving candidate for MERGE actions; ``None``
+            for MARK_DISTINCT.
+        loser_id: Soft-deleted candidate for MERGE actions; ``None``
+            for MARK_DISTINCT.
+        variants_transferred: For ``MERGE_KEEP_BOTH``, how many
+            file variants moved from loser → winner. ``0`` for the
+            other actions.
+    """
+
+    conflict_id: str
+    action: str
+    winner_id: str | None
+    loser_id: str | None
+    variants_transferred: int
+
+
+@dataclass(frozen=True)
 class ListConflictsOutput:
     """Paginated list of conflicts.
 
@@ -118,4 +158,6 @@ __all__ = [
     "DetectMovieConflictsOutput",
     "ListConflictsInput",
     "ListConflictsOutput",
+    "ResolveMediaConflictInput",
+    "ResolveMediaConflictOutput",
 ]

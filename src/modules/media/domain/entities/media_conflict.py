@@ -69,6 +69,9 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
             resolves the conflict.
         resolution: Action the admin chose. Always paired with
             ``resolved_at`` — both ``None`` or both set.
+        winner_id: For ``MERGE_*`` resolutions, the external id of the
+            candidate that survived. ``None`` for pending rows and
+            for ``MARK_DISTINCT`` (no winner — both sides survive).
     """
 
     # Class-level thresholds — ADR-015: delta must exceed BOTH the
@@ -91,6 +94,7 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
 
     resolved_at: datetime | None = None
     resolution: ResolutionAction | None = None
+    winner_id: str | None = None
 
     @model_validator(mode="after")
     def _validate_candidates_distinct(self) -> Self:
@@ -113,6 +117,20 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
         b_set = self.resolution is not None
         if a_set != b_set:
             raise ValueError("resolved_at and resolution must both be set or both be None")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_winner_id_paired_with_merge(self) -> Self:
+        """``winner_id`` is required for MERGE resolutions and forbidden otherwise."""
+        if self.resolution in {ResolutionAction.MERGE_KEEP_BOTH, ResolutionAction.MERGE_REPLACE}:
+            if self.winner_id is None:
+                raise ValueError(
+                    "winner_id is required for MERGE_KEEP_BOTH / MERGE_REPLACE resolutions",
+                )
+            if self.winner_id not in {self.candidate_a_id, self.candidate_b_id}:
+                raise ValueError("winner_id must be one of the conflict's candidates")
+        elif self.winner_id is not None:
+            raise ValueError("winner_id must be None for pending or MARK_DISTINCT rows")
         return self
 
     @classmethod
@@ -174,7 +192,7 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
             return SuggestedAction.DIFFERENT_EDIT_SUSPECTED
         return SuggestedAction.LIKELY_SAME_RELEASE
 
-    def resolve(self, action: ResolutionAction) -> Self:
+    def resolve(self, action: ResolutionAction, *, winner_id: str | None = None) -> Self:
         """Stamp the conflict as resolved with the chosen action.
 
         Idempotency: resolving an already-resolved conflict raises —
@@ -183,13 +201,22 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
 
         Args:
             action: Operator's chosen disposition.
+            winner_id: External id of the surviving candidate. Required
+                when ``action`` is ``MERGE_KEEP_BOTH`` or
+                ``MERGE_REPLACE``; must be ``None`` for
+                ``MARK_DISTINCT``. Validated against the candidate pair
+                so a stray id cannot land in the row.
 
         Returns:
-            New instance with ``resolved_at`` and ``resolution`` set.
+            New instance with ``resolved_at``, ``resolution`` and (for
+            MERGE actions) ``winner_id`` set.
 
         Raises:
             BusinessRuleViolationException: When the conflict has
                 already been resolved.
+            DomainValidationException: When ``winner_id`` is missing
+                for a MERGE action, provided for ``MARK_DISTINCT``, or
+                not one of the candidate ids.
         """
         if self.is_resolved:
             raise BusinessRuleViolationException(
@@ -200,12 +227,24 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
         return self.with_updates(
             resolved_at=datetime.now(UTC),
             resolution=action,
+            winner_id=winner_id,
         )
 
     @property
     def is_resolved(self) -> bool:
         """``True`` once the operator has dispositioned the conflict."""
         return self.resolved_at is not None
+
+    @property
+    def is_marked_distinct(self) -> bool:
+        """``True`` when the operator declared the pair to be distinct."""
+        return self.resolution is ResolutionAction.MARK_DISTINCT
+
+    def loser_id(self) -> str | None:
+        """For MERGE resolutions, the id of the soft-deleted side."""
+        if self.winner_id is None:
+            return None
+        return self.candidate_b_id if self.winner_id == self.candidate_a_id else self.candidate_a_id
 
 
 def _compute_runtime_delta(a: float | None, b: float | None) -> float | None:

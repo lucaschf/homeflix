@@ -46,6 +46,7 @@ class MediaConflictModel(Base):
         index=True,
     )
     resolution: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    winner_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
 
 __all__ = ["MediaConflictModel"]

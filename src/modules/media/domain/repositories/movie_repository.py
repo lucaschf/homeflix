@@ -493,6 +493,31 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def transfer_file_variants_between_movies(
+        self,
+        source_movie_id: MovieId,
+        target_movie_id: MovieId,
+    ) -> int:
+        """Re-attach all ``media_files`` rows from one movie to another.
+
+        Used by the ADR-015 Phase 2 ``MERGE_KEEP_BOTH`` resolution: the
+        loser movie's file variants are reassigned to the winner so
+        the operator can pick the best stream at playback time across
+        what used to be two catalog entries. Reuses the underlying
+        rows to avoid the ``UNIQUE(file_path)`` clash that would
+        happen if we tried to create new rows alongside the old
+        ones, and keeps the existing track/probe metadata intact.
+
+        Args:
+            source_movie_id: External id of the loser movie.
+            target_movie_id: External id of the winner movie.
+
+        Returns:
+            Number of media_files rows moved.
+        """
+        ...
+
+    @abstractmethod
     async def find_missing_scrub_preview(self, limit: int) -> Sequence[Movie]:
         """Return up to ``limit`` movies that have no scrub-preview thumbnails yet.
 

@@ -76,11 +76,14 @@ class DetectMovieConflictsUseCase:
             self_runtime = _runtime_minutes(self_movie)
 
             for other in others:
-                existing = await uow.media_conflicts.find_pending_by_pair(
+                blocker = await uow.media_conflicts.find_blocking_pair(
                     input_dto.media_id,
                     str(other.id),
                 )
-                if existing is not None:
+                if blocker is not None:
+                    # Either pending (no need to re-queue) or
+                    # MARK_DISTINCT-resolved (operator already said
+                    # the pair is intentionally distinct).
                     continue
 
                 conflict = MediaConflict.detect(

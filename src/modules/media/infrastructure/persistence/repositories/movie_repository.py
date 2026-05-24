@@ -650,6 +650,41 @@ class SQLAlchemyMovieRepository(MovieRepository):
         )
         return result.rowcount or 0
 
+    async def transfer_file_variants_between_movies(
+        self,
+        source_movie_id: MovieId,
+        target_movie_id: MovieId,
+    ) -> int:
+        """Re-FK media_files from one movie's row to another's.
+
+        Mirrors ``transfer_file_variants_to_episode`` — looks up both
+        internal primary keys via the external ids, then a single
+        ``UPDATE`` rewrites the ``movie_id`` on every matching row.
+        """
+        src_pk_stmt = select(MovieModel.id).where(
+            MovieModel.external_id == str(source_movie_id),
+        )
+        tgt_pk_stmt = select(MovieModel.id).where(
+            MovieModel.external_id == str(target_movie_id),
+        )
+        src_pk = (await self._session.execute(src_pk_stmt)).scalar_one_or_none()
+        tgt_pk = (await self._session.execute(tgt_pk_stmt)).scalar_one_or_none()
+        if src_pk is None or tgt_pk is None:
+            return 0
+
+        result = await self._session.execute(
+            text(
+                "UPDATE media_files SET movie_id = :tgt_pk WHERE movie_id = :src_pk",
+            ),
+            {"src_pk": src_pk, "tgt_pk": tgt_pk},
+        )
+        # Raw UPDATE bypasses the identity map, so any cached
+        # MovieModel instances still report the old file_variants
+        # relationship. Expire them so the next query reloads fresh
+        # from the database.
+        self._session.expire_all()
+        return result.rowcount or 0
+
     async def find_missing_scrub_preview(self, limit: int) -> Sequence[Movie]:
         """Return up to ``limit`` movies whose ``scrub_preview_path`` is null.
 

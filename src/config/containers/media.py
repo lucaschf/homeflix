@@ -75,6 +75,9 @@ from src.modules.media.application.use_cases.promote_movie_to_series import (
 )
 from src.modules.media.application.use_cases.relink_movie import RelinkMovieUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
+from src.modules.media.application.use_cases.resolve_media_conflict import (
+    ResolveMediaConflictUseCase,
+)
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
 )
@@ -556,6 +559,12 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     list_conflicts = providers.Factory(
         ListConflictsUseCase,
         uow_factory=media_unit_of_work_factory,
+    )
+
+    resolve_media_conflict = providers.Factory(
+        ResolveMediaConflictUseCase,
+        uow_factory=media_unit_of_work_factory,
+        event_bus=event_bus,
     )
 
     # =========================================================================

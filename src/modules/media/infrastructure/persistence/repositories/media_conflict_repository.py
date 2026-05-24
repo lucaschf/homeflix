@@ -9,7 +9,10 @@ from src.building_blocks.application.pagination import (
     decode_cursor,
     encode_cursor,
 )
-from src.modules.media.domain.entities.media_conflict import MediaConflict
+from src.modules.media.domain.entities.media_conflict import (
+    MediaConflict,
+    ResolutionAction,
+)
 from src.modules.media.domain.repositories.media_conflict_repository import (
     MediaConflictRepository,
 )
@@ -63,15 +66,17 @@ class SqlAlchemyMediaConflictRepository(MediaConflictRepository):
         model = (await self._session.execute(stmt)).scalar_one_or_none()
         return None if model is None else MediaConflictMapper.to_entity(model)
 
-    async def find_pending_by_pair(
+    async def find_blocking_pair(
         self,
         candidate_a_id: str,
         candidate_b_id: str,
     ) -> MediaConflict | None:
-        """Return the pending row for the unordered pair, if any.
+        """Return any pending or MARK_DISTINCT row for the unordered pair.
 
-        The detector queries this before persisting to avoid
-        re-queuing the same pair on every enrichment pass.
+        Newest row wins when multiple candidates exist — typical only
+        when the same pair was queued, marked distinct, and then a
+        future enrich pass tried to re-queue (which this query
+        prevents from succeeding).
         """
         a_b = (MediaConflictModel.candidate_a_id == candidate_a_id) & (
             MediaConflictModel.candidate_b_id == candidate_b_id
@@ -79,10 +84,22 @@ class SqlAlchemyMediaConflictRepository(MediaConflictRepository):
         b_a = (MediaConflictModel.candidate_a_id == candidate_b_id) & (
             MediaConflictModel.candidate_b_id == candidate_a_id
         )
-        stmt = select(MediaConflictModel).where(
-            or_(a_b, b_a),
-            MediaConflictModel.resolved_at.is_(None),
-            MediaConflictModel.deleted_at.is_(None),
+        # Block on either pending rows OR MARK_DISTINCT-resolved rows.
+        # MERGE-resolved rows are excluded — the loser is soft-deleted
+        # by the time we get here, so the detector cannot rediscover
+        # the pair.
+        stmt = (
+            select(MediaConflictModel)
+            .where(
+                or_(a_b, b_a),
+                MediaConflictModel.deleted_at.is_(None),
+                or_(
+                    MediaConflictModel.resolved_at.is_(None),
+                    MediaConflictModel.resolution == ResolutionAction.MARK_DISTINCT.value,
+                ),
+            )
+            .order_by(MediaConflictModel.id.desc())
+            .limit(1)
         )
         model = (await self._session.execute(stmt)).scalar_one_or_none()
         return None if model is None else MediaConflictMapper.to_entity(model)

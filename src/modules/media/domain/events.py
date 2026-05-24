@@ -126,6 +126,34 @@ class MediaConflictDetectedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
+class MovieMergedEvent(DomainEvent):
+    """Emitted when an admin merges two movies via the conflict queue.
+
+    Triggered by ADR-015 Phase 2 resolution endpoint. Carries the
+    cross-BC fan-out signal: ``watch_progress`` deletes the loser's
+    progress rows and ``collections`` repoints watchlist / custom-list
+    items from loser → winner. The loser movie itself is already
+    soft-deleted by the resolve use case before the event publishes,
+    so handlers don't need to touch the catalog row.
+
+    Attributes:
+        conflict_id: External id of the resolved conflict (``cnf_xxx``).
+        winner_id: External id of the surviving movie (``mov_xxx``).
+        loser_id: External id of the soft-deleted movie (``mov_xxx``).
+        keep_loser_variants: ``True`` when the resolution was
+            ``MERGE_KEEP_BOTH`` — the loser's file variants were
+            transferred to the winner; cross-BC handlers can treat
+            this identically to ``MERGE_REPLACE`` (rows still need to
+            be repointed). Surfaced for analytics / audit.
+    """
+
+    conflict_id: str = ""
+    winner_id: str = ""
+    loser_id: str = ""
+    keep_loser_variants: bool = False
+
+
+@dataclass(frozen=True)
 class MoviePromotedToSeriesEvent(DomainEvent):
     """Emitted when an admin promotes a movie into a series.
 
@@ -164,5 +192,6 @@ __all__ = [
     "MediaConflictDetectedEvent",
     "MediaCreatedEvent",
     "MediaEnrichedEvent",
+    "MovieMergedEvent",
     "MoviePromotedToSeriesEvent",
 ]

@@ -2,7 +2,7 @@
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
@@ -69,6 +69,76 @@ async def _seed_movies(repo: SQLAlchemyMovieRepository, count: int) -> list[Movi
     for movie in movies:
         await repo.save(movie)
     return movies
+
+
+@pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryTransferFileVariantsBetweenMovies:
+    async def test_moves_every_media_file_row_from_source_to_target(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        # The legacy ``movies.file_path`` column is written alongside
+        # ``media_files`` rows during ``save`` and is not touched by
+        # the transfer (the resolve use case soft-deletes the loser
+        # immediately after, so the legacy column is unreachable in
+        # production). The assertion focuses on the table this
+        # method actually rewires.
+        from sqlalchemy import text
+
+        source_id: MovieId
+        target_id: MovieId
+        async with session_factory() as setup_session:
+            repo = SQLAlchemyMovieRepository(setup_session)
+            source = _create_movie(title="Loser", file_path="/movies/loser.mkv")
+            target = _create_movie(title="Winner", file_path="/movies/winner.mkv")
+            await repo.save(source)
+            await repo.save(target)
+            await setup_session.commit()
+            source_id = _id_of(source)
+            target_id = _id_of(target)
+
+        async with session_factory() as transfer_session:
+            transfer_repo = SQLAlchemyMovieRepository(transfer_session)
+            moved = await transfer_repo.transfer_file_variants_between_movies(
+                source_movie_id=source_id,
+                target_movie_id=target_id,
+            )
+            await transfer_session.commit()
+            assert moved == 1
+
+        async with session_factory() as verify_session:
+            counts = (
+                await verify_session.execute(
+                    text(
+                        "SELECT movies.external_id, COUNT(media_files.id) "
+                        "FROM movies LEFT JOIN media_files "
+                        "ON media_files.movie_id = movies.id "
+                        "GROUP BY movies.external_id",
+                    ),
+                )
+            ).fetchall()
+            by_ext = dict(counts)
+            assert by_ext[str(source_id)] == 0
+            assert by_ext[str(target_id)] == 2
+
+    async def test_missing_source_returns_zero(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        async with session_factory() as setup_session:
+            repo = SQLAlchemyMovieRepository(setup_session)
+            target = _create_movie(title="Winner", file_path="/movies/winner.mkv")
+            await repo.save(target)
+            await setup_session.commit()
+            target_id = _id_of(target)
+
+        async with session_factory() as transfer_session:
+            transfer_repo = SQLAlchemyMovieRepository(transfer_session)
+            moved = await transfer_repo.transfer_file_variants_between_movies(
+                source_movie_id=MovieId.generate(),
+                target_movie_id=target_id,
+            )
+            assert moved == 0
 
 
 @pytest.mark.integration
