@@ -244,6 +244,9 @@ async def _subscribe_event_handlers(container: ApplicationContainer) -> None:
         OnMediaEnrichedHandler,
     )
     from src.modules.collections.application.event_handlers import (
+        OnMovieMergedHandler as CollectionsOnMovieMergedHandler,
+    )
+    from src.modules.collections.application.event_handlers import (
         OnMoviePromotedToSeriesHandler as CollectionsOnMoviePromotedHandler,
     )
     from src.modules.collections.application.event_handlers import (
@@ -257,7 +260,11 @@ async def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     from src.modules.media.domain.events import (
         MediaCreatedEvent,
         MediaEnrichedEvent,
+        MovieMergedEvent,
         MoviePromotedToSeriesEvent,
+    )
+    from src.modules.watch_progress.application.event_handlers import (
+        OnMovieMergedHandler as ProgressOnMovieMergedHandler,
     )
     from src.modules.watch_progress.application.event_handlers import (
         OnMoviePromotedToSeriesHandler as ProgressOnMoviePromotedHandler,
@@ -313,6 +320,19 @@ async def _subscribe_event_handlers(container: ApplicationContainer) -> None:
             uow_factory=catalog_requests_uow_factory,
             notification_publisher=notification_publisher,
         ),
+    )
+
+    # Cross-BC fan-out when two movies are merged via the conflict
+    # queue (ADR-015 Phase 2). watch_progress drops the loser's
+    # rows; collections rewrites watchlist + custom-list entries so
+    # users' lists keep the surviving id.
+    event_bus.subscribe(
+        MovieMergedEvent,
+        ProgressOnMovieMergedHandler(uow_factory=watch_progress_uow_factory),
+    )
+    event_bus.subscribe(
+        MovieMergedEvent,
+        CollectionsOnMovieMergedHandler(uow_factory=collections_uow_factory),
     )
 
     # Cross-BC fan-out when a movie is promoted into a series.

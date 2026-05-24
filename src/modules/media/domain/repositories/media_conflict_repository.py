@@ -37,24 +37,25 @@ class MediaConflictRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_pending_by_pair(
+    async def find_blocking_pair(
         self,
         candidate_a_id: str,
         candidate_b_id: str,
     ) -> MediaConflict | None:
-        """Find an unresolved conflict for the given candidate pair.
+        """Return any row that should suppress re-queueing for the pair.
 
-        The detector calls this before persisting a new row so the
-        same pair doesn't re-queue on every enrichment pass. The
-        comparison is unordered: ``(A, B)`` and ``(B, A)`` match
-        the same row.
-
-        Args:
-            candidate_a_id: One side of the pair.
-            candidate_b_id: The other side of the pair.
+        Used by the detector to skip pairs already queued *or* already
+        resolved as ``MARK_DISTINCT`` — the operator's "these are
+        intentionally distinct" verdict must persist across future
+        enrichment passes. Comparison is unordered: ``(A, B)`` and
+        ``(B, A)`` match the same row.
 
         Returns:
-            The pending conflict if one exists, ``None`` otherwise.
+            The blocking conflict (most recent if multiple), or
+            ``None`` when neither a pending nor a MARK_DISTINCT row
+            exists. MERGE-resolved rows do not block — by the time
+            they are queried the loser is soft-deleted and the
+            detector cannot rediscover the pair anyway.
         """
         ...
 

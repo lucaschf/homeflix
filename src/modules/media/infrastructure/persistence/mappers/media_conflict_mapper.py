@@ -29,6 +29,7 @@ class MediaConflictMapper:
             suggested_action=SuggestedAction(model.suggested_action),
             resolved_at=model.resolved_at,
             resolution=None if model.resolution is None else ResolutionAction(model.resolution),
+            winner_id=model.winner_id,
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -49,6 +50,7 @@ class MediaConflictMapper:
             suggested_action=entity.suggested_action.value,
             resolved_at=entity.resolved_at,
             resolution=None if entity.resolution is None else entity.resolution.value,
+            winner_id=entity.winner_id,
         )
 
     @staticmethod
@@ -63,6 +65,7 @@ class MediaConflictMapper:
         model.suggested_action = entity.suggested_action.value
         model.resolved_at = entity.resolved_at
         model.resolution = None if entity.resolution is None else entity.resolution.value
+        model.winner_id = entity.winner_id
 
 
 __all__ = ["MediaConflictMapper"]

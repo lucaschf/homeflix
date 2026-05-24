@@ -121,20 +121,44 @@ class TestResolve:
 
     def test_resolve_stamps_timestamp_and_action(self) -> None:
         conflict = _detect()
-        resolved = conflict.resolve(ResolutionAction.MERGE_KEEP_BOTH)
+        resolved = conflict.resolve(ResolutionAction.MERGE_KEEP_BOTH, winner_id=_A)
 
         assert resolved.is_resolved is True
         assert resolved.resolution is ResolutionAction.MERGE_KEEP_BOTH
         assert resolved.resolved_at is not None
+        assert resolved.winner_id == _A
+        assert resolved.loser_id() == _B
 
     def test_resolve_returns_a_new_instance(self) -> None:
         conflict = _detect()
         resolved = conflict.resolve(ResolutionAction.MARK_DISTINCT)
         assert resolved is not conflict
         assert conflict.is_resolved is False  # original untouched
+        assert resolved.is_marked_distinct is True
+        assert resolved.winner_id is None
+        assert resolved.loser_id() is None
 
     def test_resolving_twice_raises(self) -> None:
         conflict = _detect()
-        resolved = conflict.resolve(ResolutionAction.MERGE_REPLACE)
+        resolved = conflict.resolve(ResolutionAction.MERGE_REPLACE, winner_id=_B)
         with pytest.raises(BusinessRuleViolationException):
             resolved.resolve(ResolutionAction.MARK_DISTINCT)
+
+
+class TestWinnerIdInvariants:
+    """``winner_id`` semantics enforced by the aggregate."""
+
+    def test_merge_requires_winner_id(self) -> None:
+        conflict = _detect()
+        with pytest.raises(DomainValidationException):
+            conflict.resolve(ResolutionAction.MERGE_REPLACE)
+
+    def test_mark_distinct_rejects_winner_id(self) -> None:
+        conflict = _detect()
+        with pytest.raises(DomainValidationException):
+            conflict.resolve(ResolutionAction.MARK_DISTINCT, winner_id=_A)
+
+    def test_winner_id_must_be_one_of_candidates(self) -> None:
+        conflict = _detect()
+        with pytest.raises(DomainValidationException):
+            conflict.resolve(ResolutionAction.MERGE_REPLACE, winner_id="mov_cccccccccccc")

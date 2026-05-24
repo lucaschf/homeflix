@@ -56,7 +56,7 @@ class TestDetectMovieConflictsUseCase:
         self_movie = _build_movie(external_id="mov_abcdefghijkl", duration_seconds=7200)
         other = _build_movie(external_id="mov_mnopqrstuvwx", duration_seconds=7320)
         mocks.movies.find_all_by_tmdb_id.return_value = [self_movie, other]
-        mocks.media_conflicts.find_pending_by_pair.return_value = None
+        mocks.media_conflicts.find_blocking_pair.return_value = None
         mocks.media_conflicts.save.side_effect = _stamp_conflict_id
 
         event_bus = AsyncMock()
@@ -96,7 +96,7 @@ class TestDetectMovieConflictsUseCase:
             candidate_b_runtime_minutes=120.0,
             match_reason=MatchReason.TMDB_ID,
         )
-        mocks.media_conflicts.find_pending_by_pair.return_value = existing
+        mocks.media_conflicts.find_blocking_pair.return_value = existing
 
         event_bus = AsyncMock()
         use_case = DetectMovieConflictsUseCase(uow_factory=mocks.factory, event_bus=event_bus)

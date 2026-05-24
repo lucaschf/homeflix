@@ -59,7 +59,7 @@ class TestSaveAndFind:
 
 
 @pytest.mark.integration
-class TestFindPendingByPair:
+class TestFindBlockingPair:
     async def test_returns_match_when_orientation_swapped(
         self,
         db_session: AsyncSession,
@@ -68,7 +68,7 @@ class TestFindPendingByPair:
         original = await repo.save(_new_conflict(a_id="mov_aaaaaaaaaaaa", b_id="mov_bbbbbbbbbbbb"))
 
         # Same pair, reversed ids.
-        result = await repo.find_pending_by_pair(
+        result = await repo.find_blocking_pair(
             "mov_bbbbbbbbbbbb",
             "mov_aaaaaaaaaaaa",
         )
@@ -76,27 +76,52 @@ class TestFindPendingByPair:
         assert result is not None
         assert result.id == original.id
 
-    async def test_returns_none_when_pair_is_resolved(
+    async def test_merge_resolved_pair_does_not_block(
         self,
         db_session: AsyncSession,
     ) -> None:
+        # MERGE-resolved rows must not suppress re-queueing: by the
+        # time we look up the pair the loser is soft-deleted, so the
+        # detector cannot rediscover it anyway. The aggregate is
+        # excluded so a re-import under a fresh id can be detected.
         repo = SqlAlchemyMediaConflictRepository(db_session)
         saved = await repo.save(_new_conflict())
-        await repo.save(saved.resolve(ResolutionAction.MERGE_REPLACE))
+        await repo.save(
+            saved.resolve(ResolutionAction.MERGE_REPLACE, winner_id=saved.candidate_a_id)
+        )
 
-        result = await repo.find_pending_by_pair(
+        result = await repo.find_blocking_pair(
             saved.candidate_a_id,
             saved.candidate_b_id,
         )
 
         assert result is None
 
+    async def test_mark_distinct_pair_blocks_re_queueing(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        # MARK_DISTINCT is the operator's "do not re-flag this pair"
+        # verdict; it must persist across future enrich passes.
+        repo = SqlAlchemyMediaConflictRepository(db_session)
+        saved = await repo.save(_new_conflict())
+        resolved = await repo.save(saved.resolve(ResolutionAction.MARK_DISTINCT))
+
+        result = await repo.find_blocking_pair(
+            saved.candidate_a_id,
+            saved.candidate_b_id,
+        )
+
+        assert result is not None
+        assert result.id == resolved.id
+        assert result.is_marked_distinct is True
+
     async def test_returns_none_when_pair_is_unknown(
         self,
         db_session: AsyncSession,
     ) -> None:
         repo = SqlAlchemyMediaConflictRepository(db_session)
-        result = await repo.find_pending_by_pair("mov_aaaaaaaaaaaa", "mov_bbbbbbbbbbbb")
+        result = await repo.find_blocking_pair("mov_aaaaaaaaaaaa", "mov_bbbbbbbbbbbb")
         assert result is None
 
 
@@ -109,7 +134,12 @@ class TestListPending:
         repo = SqlAlchemyMediaConflictRepository(db_session)
         pending = await repo.save(_new_conflict(a_id="mov_aaaaaaaaaaaa", b_id="mov_bbbbbbbbbbbb"))
         resolved = await repo.save(_new_conflict(a_id="mov_cccccccccccc", b_id="mov_dddddddddddd"))
-        await repo.save(resolved.resolve(ResolutionAction.MERGE_KEEP_BOTH))
+        await repo.save(
+            resolved.resolve(
+                ResolutionAction.MERGE_KEEP_BOTH,
+                winner_id=resolved.candidate_a_id,
+            ),
+        )
 
         page = await repo.list_pending(limit=10)
 
