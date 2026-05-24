@@ -7,6 +7,7 @@ from httpx import AsyncClient
 
 from src.modules.settings.domain.value_objects import (
     IntroDetectionConfig,
+    ScanDedupConfig,
     SchedulerConfig,
 )
 from tests.modules.settings.e2e.conftest import SeededUser
@@ -92,6 +93,7 @@ class TestAdminSettingsList:
                 "intro_detection",
                 "streaming",
                 "avatar",
+                "scan_dedup",
             ]
         )
         for entry in body["data"]:
@@ -189,3 +191,37 @@ class TestAdminSettingsPatch:
         list_resp = await client.get(SETTINGS_ROOT)
         scheduler_entry = next(d for d in list_resp.json()["data"] if d["key"] == "scheduler")
         assert scheduler_entry["value"]["reconcile_interval_minutes"] == 7
+
+    async def test_scan_dedup_full_replace_persists_thresholds(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        admin = await _login_as_admin(client, seed_user_with_profile)
+
+        body = ScanDedupConfig(
+            runtime_delta_abs_minutes=3.0,
+            runtime_delta_relative=0.05,
+        ).model_dump(mode="json")
+        response = await client.patch(f"{SETTINGS_ROOT}/scan-dedup", json=body)
+
+        assert response.status_code == 200
+        payload = response.json()["data"]
+        assert payload["key"] == "scan_dedup"
+        assert payload["source"] == "admin"
+        assert payload["updated_by_user_id"] == admin.user_external_id
+        assert payload["value"]["runtime_delta_abs_minutes"] == 3.0
+        assert payload["value"]["runtime_delta_relative"] == 0.05
+
+    async def test_scan_dedup_rejects_out_of_range_relative(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        await _login_as_admin(client, seed_user_with_profile)
+
+        body = ScanDedupConfig().model_dump(mode="json")
+        body["runtime_delta_relative"] = 1.5
+        response = await client.patch(f"{SETTINGS_ROOT}/scan-dedup", json=body)
+
+        assert response.status_code == 422

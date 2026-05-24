@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     )
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities.movie import Movie
+    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = logging.getLogger(__name__)
 
@@ -63,6 +64,11 @@ class DetectMovieConflictsUseCase:
             and every collision goes to the queue.
         event_bus: Optional event bus. When ``None`` no events are
             published — handy for unit tests.
+        runtime_settings: Optional ``scan_dedup`` runtime settings
+            source (ADR-013). When provided, the runtime-delta
+            thresholds that classify a pending conflict come from the
+            persisted bucket; ``None`` keeps the ADR-015 class-level
+            defaults.
     """
 
     def __init__(
@@ -70,10 +76,12 @@ class DetectMovieConflictsUseCase:
         uow_factory: MediaUnitOfWorkFactory,
         library_health: LibraryHealthPort | None = None,
         event_bus: EventBus | None = None,
+        runtime_settings: RuntimeSettings | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._library_health = library_health
         self._event_bus = event_bus
+        self._runtime_settings = runtime_settings
 
     async def execute(
         self,
@@ -83,6 +91,8 @@ class DetectMovieConflictsUseCase:
         created_ids: list[str] = []
         detected_events: list[MediaConflictDetectedEvent] = []
         merged_events: list[MovieMergedEvent] = []
+
+        abs_threshold, relative_threshold = await self._delta_thresholds()
 
         async with self._uow_factory() as uow:
             candidates = await uow.movies.find_all_by_tmdb_id(input_dto.tmdb_id)
@@ -135,6 +145,8 @@ class DetectMovieConflictsUseCase:
                     candidate_b_type="movie",
                     candidate_b_runtime_minutes=_runtime_minutes(other),
                     match_reason=MatchReason.TMDB_ID,
+                    abs_threshold_minutes=abs_threshold,
+                    relative_threshold=relative_threshold,
                 )
                 persisted = await uow.media_conflicts.save(conflict)
                 created_ids.append(str(persisted.id))
@@ -160,6 +172,18 @@ class DetectMovieConflictsUseCase:
             conflicts_created=len(created_ids),
             conflict_ids=created_ids,
         )
+
+    async def _delta_thresholds(self) -> tuple[float | None, float | None]:
+        """Read the tunable runtime-delta bounds from ``scan_dedup``.
+
+        Returns ``(None, None)`` when no runtime-settings source is
+        wired, so :meth:`MediaConflict.detect` falls back to the
+        class-level defaults.
+        """
+        if self._runtime_settings is None:
+            return None, None
+        config = await self._runtime_settings.scan_dedup()
+        return config.runtime_delta_abs_minutes, config.runtime_delta_relative
 
     async def _is_orphan(self, movie: Movie) -> bool:
         """``True`` when every file of ``movie`` is missing and the library is healthy.

@@ -74,6 +74,64 @@ class TestDetect:
         assert conflict.suggested_action is SuggestedAction.LIKELY_SAME_RELEASE
 
 
+class TestTunableThresholds:
+    """``detect`` honours caller-supplied runtime-delta bounds (ADR-015 Phase 4)."""
+
+    def test_stricter_thresholds_flag_a_default_likely_same_pair(self) -> None:
+        # 5 min / 4.2% delta — LIKELY_SAME under the defaults.
+        baseline = MediaConflict.detect(
+            candidate_a_id=_A,
+            candidate_a_type="movie",
+            candidate_a_runtime_minutes=120.0,
+            candidate_b_id=_B,
+            candidate_b_type="movie",
+            candidate_b_runtime_minutes=125.0,
+            match_reason=MatchReason.TMDB_ID,
+        )
+        assert baseline.suggested_action is SuggestedAction.LIKELY_SAME_RELEASE
+
+        stricter = MediaConflict.detect(
+            candidate_a_id=_A,
+            candidate_a_type="movie",
+            candidate_a_runtime_minutes=120.0,
+            candidate_b_id=_B,
+            candidate_b_type="movie",
+            candidate_b_runtime_minutes=125.0,
+            match_reason=MatchReason.TMDB_ID,
+            abs_threshold_minutes=2.0,
+            relative_threshold=0.01,
+        )
+        assert stricter.suggested_action is SuggestedAction.DIFFERENT_EDIT_SUSPECTED
+
+    def test_looser_thresholds_absorb_a_default_different_edit_pair(self) -> None:
+        looser = MediaConflict.detect(
+            candidate_a_id=_A,
+            candidate_a_type="movie",
+            candidate_a_runtime_minutes=138.0,
+            candidate_b_id=_B,
+            candidate_b_type="movie",
+            candidate_b_runtime_minutes=192.0,
+            match_reason=MatchReason.TMDB_ID,
+            abs_threshold_minutes=60.0,
+            relative_threshold=0.50,
+        )
+        assert looser.suggested_action is SuggestedAction.LIKELY_SAME_RELEASE
+
+    def test_none_thresholds_fall_back_to_class_defaults(self) -> None:
+        explicit = MediaConflict.detect(
+            candidate_a_id=_A,
+            candidate_a_type="movie",
+            candidate_a_runtime_minutes=138.0,
+            candidate_b_id=_B,
+            candidate_b_type="movie",
+            candidate_b_runtime_minutes=192.0,
+            match_reason=MatchReason.TMDB_ID,
+            abs_threshold_minutes=None,
+            relative_threshold=None,
+        )
+        assert explicit.suggested_action is SuggestedAction.DIFFERENT_EDIT_SUSPECTED
+
+
 class TestInvariants:
     """Domain invariants enforced by the aggregate."""
 

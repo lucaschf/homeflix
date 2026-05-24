@@ -8,6 +8,7 @@ from src.modules.settings.domain.value_objects import (
     AvatarConfig,
     ConfigVO,
     IntroDetectionConfig,
+    ScanDedupConfig,
     SchedulerConfig,
     SettingKey,
     SettingSource,
@@ -35,6 +36,7 @@ class SettingMapper:
         SettingKey.INTRO_DETECTION: IntroDetectionConfig,
         SettingKey.STREAMING: StreamingConfig,
         SettingKey.AVATAR: AvatarConfig,
+        SettingKey.SCAN_DEDUP: ScanDedupConfig,
     }
 
     @staticmethod

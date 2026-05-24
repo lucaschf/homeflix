@@ -32,6 +32,7 @@ from src.modules.settings.domain.value_objects import (
     AvatarConfig,
     ConfigVO,
     IntroDetectionConfig,
+    ScanDedupConfig,
     SchedulerConfig,
     SettingKey,
     StreamingConfig,
@@ -50,6 +51,7 @@ _DEFAULT_FACTORIES: dict[SettingKey, type[ConfigVO]] = {
     SettingKey.INTRO_DETECTION: IntroDetectionConfig,
     SettingKey.STREAMING: StreamingConfig,
     SettingKey.AVATAR: AvatarConfig,
+    SettingKey.SCAN_DEDUP: ScanDedupConfig,
 }
 
 
@@ -163,6 +165,11 @@ class RuntimeSettings:
         """Return the current :class:`AvatarConfig` snapshot."""
         await self._ensure_fresh()
         return cast(AvatarConfig, self._snapshot[SettingKey.AVATAR])
+
+    async def scan_dedup(self) -> ScanDedupConfig:
+        """Return the current :class:`ScanDedupConfig` snapshot."""
+        await self._ensure_fresh()
+        return cast(ScanDedupConfig, self._snapshot[SettingKey.SCAN_DEDUP])
 
 
 __all__ = ["RuntimeSettings"]

@@ -560,6 +560,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         uow_factory=media_unit_of_work_factory,
         library_health=library_health,
         event_bus=event_bus,
+        runtime_settings=runtime_settings,
     )
 
     list_conflicts = providers.Factory(

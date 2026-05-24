@@ -20,6 +20,7 @@ class SettingKey(StrEnum):
     INTRO_DETECTION = "intro_detection"
     STREAMING = "streaming"
     AVATAR = "avatar"
+    SCAN_DEDUP = "scan_dedup"
 
 
 __all__ = ["SettingKey"]

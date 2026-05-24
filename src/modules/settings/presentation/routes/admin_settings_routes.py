@@ -25,6 +25,7 @@ from src.modules.settings.application.use_cases import (
 from src.modules.settings.domain.value_objects import (
     AvatarConfig,
     IntroDetectionConfig,
+    ScanDedupConfig,
     SchedulerConfig,
     SettingKey,
     StreamingConfig,
@@ -145,6 +146,26 @@ async def update_avatar_settings(
     detail = await use_case.execute(
         UpdateSettingInput(
             key=SettingKey.AVATAR.value,
+            value=body.model_dump(mode="json"),
+            acting_admin_id=admin.external_id,
+        ),
+    )
+    return api_single("setting", asdict(detail))
+
+
+@router.patch("/scan-dedup")
+@inject
+async def update_scan_dedup_settings(
+    body: ScanDedupConfig,
+    admin: UserModel = Depends(current_admin_user),
+    use_case: UpdateSettingUseCase = Depends(
+        Provide[ApplicationContainer.settings.update_setting],
+    ),
+) -> dict[str, Any]:
+    """Replace the persisted :class:`ScanDedupConfig`."""
+    detail = await use_case.execute(
+        UpdateSettingInput(
+            key=SettingKey.SCAN_DEDUP.value,
             value=body.model_dump(mode="json"),
             acting_admin_id=admin.external_id,
         ),
