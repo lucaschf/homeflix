@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     )
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities.movie import Movie
+    from src.modules.settings.domain.value_objects import ScanDedupConfig
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = logging.getLogger(__name__)
@@ -92,14 +93,15 @@ class DetectMovieConflictsUseCase:
         detected_events: list[MediaConflictDetectedEvent] = []
         merged_events: list[MovieMergedEvent] = []
 
-        abs_threshold, relative_threshold = await self._delta_thresholds()
+        config = await self._scan_config()
+        abs_threshold = None if config is None else config.runtime_delta_abs_minutes
+        relative_threshold = None if config is None else config.runtime_delta_relative
+        # Fallback is opt-out via settings, but stays off entirely when
+        # no runtime-settings source is wired (e.g. unit tests).
+        fallback_enabled = config is not None and config.title_year_fallback_enabled
 
         async with self._uow_factory() as uow:
             candidates = await uow.movies.find_all_by_tmdb_id(input_dto.tmdb_id)
-            others = [m for m in candidates if str(m.id) != input_dto.media_id]
-            if not others:
-                return DetectMovieConflictsOutput(conflicts_created=0, conflict_ids=[])
-
             self_movie = next(
                 (m for m in candidates if str(m.id) == input_dto.media_id),
                 None,
@@ -114,8 +116,12 @@ class DetectMovieConflictsUseCase:
                 return DetectMovieConflictsOutput(conflicts_created=0, conflict_ids=[])
 
             self_runtime = _runtime_minutes(self_movie)
+            others = [m for m in candidates if str(m.id) != input_dto.media_id]
+            handled_ids = {input_dto.media_id}
 
+            # --- Strong pass: TMDB-id collisions (auto-merge eligible). ---
             for other in others:
+                handled_ids.add(str(other.id))
                 blocker = await uow.media_conflicts.find_blocking_pair(
                     input_dto.media_id,
                     str(other.id),
@@ -137,28 +143,43 @@ class DetectMovieConflictsUseCase:
                     merged_events.append(merged_event)
                     continue
 
-                conflict = MediaConflict.detect(
-                    candidate_a_id=input_dto.media_id,
-                    candidate_a_type="movie",
-                    candidate_a_runtime_minutes=self_runtime,
-                    candidate_b_id=str(other.id),
-                    candidate_b_type="movie",
-                    candidate_b_runtime_minutes=_runtime_minutes(other),
+                persisted, detected = await self._queue_conflict(
+                    uow=uow,
+                    self_id=input_dto.media_id,
+                    self_runtime=self_runtime,
+                    other=other,
                     match_reason=MatchReason.TMDB_ID,
-                    abs_threshold_minutes=abs_threshold,
+                    abs_threshold=abs_threshold,
                     relative_threshold=relative_threshold,
                 )
-                persisted = await uow.media_conflicts.save(conflict)
                 created_ids.append(str(persisted.id))
-                detected_events.append(
-                    MediaConflictDetectedEvent(
-                        conflict_id=str(persisted.id),
-                        candidate_a_id=persisted.candidate_a_id,
-                        candidate_b_id=persisted.candidate_b_id,
-                        match_reason=persisted.match_reason.value,
-                        suggested_action=persisted.suggested_action.value,
-                    ),
+                detected_events.append(detected)
+
+            # --- Fallback pass: (normalized_original_title, year). ---
+            # Catches catalog entries whose enrichment never locked a
+            # TMDB id. Weaker identity → always queue, never auto-merge.
+            if fallback_enabled:
+                fallback_matches = await self._collect_title_year_matches(
+                    uow, self_movie, exclude=handled_ids
                 )
+                for other in fallback_matches:
+                    blocker = await uow.media_conflicts.find_blocking_pair(
+                        input_dto.media_id,
+                        str(other.id),
+                    )
+                    if blocker is not None:
+                        continue
+                    persisted, detected = await self._queue_conflict(
+                        uow=uow,
+                        self_id=input_dto.media_id,
+                        self_runtime=self_runtime,
+                        other=other,
+                        match_reason=MatchReason.TITLE_YEAR_FALLBACK,
+                        abs_threshold=abs_threshold,
+                        relative_threshold=relative_threshold,
+                    )
+                    created_ids.append(str(persisted.id))
+                    detected_events.append(detected)
 
         # Publish outside the UoW so a slow subscriber doesn't hold
         # the write transaction open. Auto-merge events fan out to
@@ -173,17 +194,71 @@ class DetectMovieConflictsUseCase:
             conflict_ids=created_ids,
         )
 
-    async def _delta_thresholds(self) -> tuple[float | None, float | None]:
-        """Read the tunable runtime-delta bounds from ``scan_dedup``.
+    async def _scan_config(self) -> ScanDedupConfig | None:
+        """Read the ``scan_dedup`` bucket, or ``None`` when not wired.
 
-        Returns ``(None, None)`` when no runtime-settings source is
-        wired, so :meth:`MediaConflict.detect` falls back to the
-        class-level defaults.
+        ``None`` makes the detector fall back to the ADR-015 class
+        defaults for the thresholds and disables the title+year
+        fallback pass entirely (the unit-test path).
         """
         if self._runtime_settings is None:
-            return None, None
-        config = await self._runtime_settings.scan_dedup()
-        return config.runtime_delta_abs_minutes, config.runtime_delta_relative
+            return None
+        return await self._runtime_settings.scan_dedup()
+
+    async def _queue_conflict(
+        self,
+        *,
+        uow: object,
+        self_id: str,
+        self_runtime: float | None,
+        other: Movie,
+        match_reason: MatchReason,
+        abs_threshold: float | None,
+        relative_threshold: float | None,
+    ) -> tuple[MediaConflict, MediaConflictDetectedEvent]:
+        """Persist a pending conflict for the pair and build its event."""
+        conflict = MediaConflict.detect(
+            candidate_a_id=self_id,
+            candidate_a_type="movie",
+            candidate_a_runtime_minutes=self_runtime,
+            candidate_b_id=str(other.id),
+            candidate_b_type="movie",
+            candidate_b_runtime_minutes=_runtime_minutes(other),
+            match_reason=match_reason,
+            abs_threshold_minutes=abs_threshold,
+            relative_threshold=relative_threshold,
+        )
+        persisted = await uow.media_conflicts.save(conflict)  # type: ignore[attr-defined]
+        event = MediaConflictDetectedEvent(
+            conflict_id=str(persisted.id),
+            candidate_a_id=persisted.candidate_a_id,
+            candidate_b_id=persisted.candidate_b_id,
+            match_reason=persisted.match_reason.value,
+            suggested_action=persisted.suggested_action.value,
+        )
+        return persisted, event
+
+    async def _collect_title_year_matches(
+        self,
+        uow: object,
+        self_movie: Movie,
+        *,
+        exclude: set[str],
+    ) -> list[Movie]:
+        """Find same-year movies whose normalized title matches ``self_movie``.
+
+        Compares on ``original_title`` (falling back to ``title``) using
+        the deterministic :attr:`Title.normalized` key, so casing /
+        accent differences still match. Ids in ``exclude`` (self + the
+        TMDB pass) are skipped to avoid double-queuing.
+        """
+        self_key = _normalized_identity_title(self_movie)
+        candidates = await uow.movies.find_all_by_year(self_movie.year.value)  # type: ignore[attr-defined]
+        return [
+            m
+            for m in candidates
+            if str(m.id) not in exclude and _normalized_identity_title(m) == self_key
+        ]
 
     async def _is_orphan(self, movie: Movie) -> bool:
         """``True`` when every file of ``movie`` is missing and the library is healthy.
@@ -263,6 +338,11 @@ def _runtime_minutes(movie: Movie) -> float | None:
     if movie.duration.value <= 0:
         return None
     return movie.duration.value / 60.0
+
+
+def _normalized_identity_title(movie: Movie) -> str:
+    """Comparison key for the title+year fallback (original title preferred)."""
+    return (movie.original_title or movie.title).normalized
 
 
 __all__ = ["DetectMovieConflictsUseCase"]

@@ -12,6 +12,12 @@ class TestScanDedupConfig:
 
         assert config.runtime_delta_abs_minutes == 5.0
         assert config.runtime_delta_relative == 0.10
+        assert config.title_year_fallback_enabled is True
+
+    def test_fallback_can_be_disabled(self) -> None:
+        config = ScanDedupConfig(title_year_fallback_enabled=False)
+
+        assert config.title_year_fallback_enabled is False
 
     def test_negative_abs_minutes_raises(self) -> None:
         with pytest.raises(DomainValidationException):

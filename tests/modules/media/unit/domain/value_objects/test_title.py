@@ -159,3 +159,27 @@ class TestTitleImmutability:
 
         with pytest.raises(DomainValidationException):
             title.root = "Interstellar"  # type: ignore[misc]
+
+
+class TestTitleNormalized:
+    """Tests for the content-identity ``normalized`` comparison key."""
+
+    def test_lowercases(self):
+        from src.modules.media.domain.value_objects import Title
+
+        assert Title("The Matrix").normalized == "the matrix"
+
+    def test_strips_diacritics(self):
+        from src.modules.media.domain.value_objects import Title
+
+        assert Title("Amélie").normalized == "amelie"
+
+    def test_case_and_accent_insensitive_equality(self):
+        from src.modules.media.domain.value_objects import Title
+
+        assert Title("A Viagem de Chihiro").normalized == Title("A VIAGEM DE CHIHIRO").normalized
+
+    def test_distinct_titles_stay_distinct(self):
+        from src.modules.media.domain.value_objects import Title
+
+        assert Title("Spirited Away").normalized != Title("Princess Mononoke").normalized

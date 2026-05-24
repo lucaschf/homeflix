@@ -430,6 +430,27 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_all_by_year(self, year: int) -> list[Movie]:
+        """Return every non-deleted movie released in ``year``.
+
+        Used by the ADR-015 dedup fallback: when a movie lacks a TMDB
+        match the detector pairs candidates by
+        ``(normalized_original_title, year)``. This narrows by the
+        cheap, indexed ``year`` column; the caller normalizes and
+        compares titles in memory.
+
+        No ACL filter — collision detection is operator-scoped and
+        intentionally cross-library.
+
+        Args:
+            year: The release year to look up.
+
+        Returns:
+            All movies released in ``year``, in arbitrary order.
+        """
+        ...
+
+    @abstractmethod
     async def find_by_file_path(self, file_path: FilePath) -> Movie | None:
         """Find a movie by its file path.
 
