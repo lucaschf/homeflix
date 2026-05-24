@@ -1,6 +1,6 @@
 # ADR-015: Scanner Deduplication by Content Identity
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-05-23
 **Deciders:** Lucas Cristovam
 **Technical Story:** Discussão de design — reorganização de pastas, troca por remaster, duplicatas acidentais
@@ -157,3 +157,4 @@ class MediaConflict(AggregateRoot):
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-05-23 | Lucas Cristovam | Criação inicial — Proposto |
+| 2026-05-24 | Lucas Cristovam | Fases 1–4 implementadas e enviadas — Aceito. Bulk resolve entregue como **mark-distinct only** (sem critério `min_runtime_delta`); merge segue 1-a-1. |
