@@ -1,25 +1,41 @@
-"""Admin-side conflict queue listing (ADR-015 Phase 1)."""
+"""Admin-side conflict queue + audit listing (ADR-015 Phases 1 + 3)."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.media.application.dtos.conflict_dtos import (
     ConflictCandidateSummary,
     ConflictSummary,
     ListConflictsInput,
     ListConflictsOutput,
 )
-from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
-from src.modules.media.domain.entities.media_conflict import MediaConflict
-from src.modules.media.domain.entities.movie import Movie
+from src.modules.media.domain.entities.media_conflict import (
+    MediaConflict,
+    ResolutionSource,
+)
 from src.modules.media.domain.value_objects import MovieId
+
+if TYPE_CHECKING:
+    from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+    from src.modules.media.domain.entities.movie import Movie
+
+_VALID_STATES = ("pending", "resolved")
+_VALID_SOURCES = ("manual", "auto")
 
 
 class ListConflictsUseCase:
-    """List pending content-identity conflicts for the admin queue.
+    """List content-identity conflicts for the admin UI.
+
+    Default state is ``pending`` (the operator queue). ``resolved``
+    powers the audit view; it accepts an optional ``source`` filter
+    so the UI can split admin actions from Phase 3 auto-merges.
 
     Hydrates each conflict with title/year projections of both
-    candidates so the UI doesn't have to make N follow-up calls.
-    Phase 1 resolves ``"movie"`` candidates via the Movie repository;
-    series candidates simply surface with ``title=None`` until the
-    Series support lands.
+    candidates so the UI doesn't have to make N follow-up calls. The
+    loser of a resolved-MERGE row is soft-deleted, so the repository
+    returns ``None`` for its title — surfaced verbatim.
 
     Args:
         uow_factory: Factory that opens a fresh media Unit of Work.
@@ -29,12 +45,39 @@ class ListConflictsUseCase:
         self._uow_factory = uow_factory
 
     async def execute(self, input_dto: ListConflictsInput) -> ListConflictsOutput:
-        """Return one page of pending conflicts, newest-first."""
-        async with self._uow_factory() as uow:
-            page = await uow.media_conflicts.list_pending(
-                cursor=input_dto.cursor,
-                limit=input_dto.limit,
+        """Return one page of conflicts matching the ``state`` filter."""
+        state = input_dto.state
+        if state not in _VALID_STATES:
+            raise DomainValidationException(
+                message=f"Unknown state '{state}'; must be one of {_VALID_STATES}",
+                message_code="MEDIA_CONFLICT_LIST_INVALID_STATE",
+                object_type="MediaConflict",
             )
+
+        source = _parse_source(input_dto.source)
+
+        if state == "pending" and source is not None:
+            # ``source`` only makes sense for resolved rows. Surface
+            # the misuse instead of silently ignoring.
+            raise DomainValidationException(
+                message="source filter is only valid for state=resolved",
+                message_code="MEDIA_CONFLICT_LIST_SOURCE_FOR_PENDING",
+                object_type="MediaConflict",
+            )
+
+        async with self._uow_factory() as uow:
+            if state == "pending":
+                page = await uow.media_conflicts.list_pending(
+                    cursor=input_dto.cursor,
+                    limit=input_dto.limit,
+                )
+            else:
+                page = await uow.media_conflicts.list_resolved(
+                    source=source,
+                    cursor=input_dto.cursor,
+                    limit=input_dto.limit,
+                )
+
             if not page.items:
                 return ListConflictsOutput(
                     items=[],
@@ -50,6 +93,18 @@ class ListConflictsUseCase:
                 next_cursor=page.pagination.next_cursor,
                 has_more=page.pagination.has_more,
             )
+
+
+def _parse_source(raw: str | None) -> ResolutionSource | None:
+    if raw is None:
+        return None
+    if raw not in _VALID_SOURCES:
+        raise DomainValidationException(
+            message=f"Unknown source '{raw}'; must be one of {_VALID_SOURCES}",
+            message_code="MEDIA_CONFLICT_LIST_INVALID_SOURCE",
+            object_type="MediaConflict",
+        )
+    return ResolutionSource(raw)
 
 
 def _collect_movie_ids(conflicts: list[MediaConflict]) -> list[MovieId]:
@@ -89,6 +144,12 @@ def _build_summary(
         runtime_delta_minutes=conflict.runtime_delta_minutes,
         suggested_action=conflict.suggested_action.value,
         detected_at=conflict.created_at,
+        resolved_at=conflict.resolved_at,
+        resolution=None if conflict.resolution is None else conflict.resolution.value,
+        winner_id=conflict.winner_id,
+        resolution_source=(
+            None if conflict.resolution_source is None else conflict.resolution_source.value
+        ),
     )
 
 

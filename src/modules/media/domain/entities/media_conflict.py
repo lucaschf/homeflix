@@ -40,6 +40,20 @@ class ResolutionAction(str, Enum):
     MARK_DISTINCT = "mark_distinct"
 
 
+class ResolutionSource(str, Enum):
+    """Who closed the conflict.
+
+    - ``MANUAL`` — the admin clicked through the resolve flow.
+    - ``AUTO`` — the post-enrich detector noticed one side was
+      orphaned (file missing + library root healthy) and merged it
+      silently. Surfaces in a separate audit view, not the operator
+      queue (see ADR-015 Phase 3).
+    """
+
+    MANUAL = "manual"
+    AUTO = "auto"
+
+
 class MediaConflict(AggregateRoot[MediaConflictId]):
     """A detected duplicate-identity collision awaiting resolution.
 
@@ -72,6 +86,11 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
         winner_id: For ``MERGE_*`` resolutions, the external id of the
             candidate that survived. ``None`` for pending rows and
             for ``MARK_DISTINCT`` (no winner — both sides survive).
+        resolution_source: ``MANUAL`` (admin via the resolve dialog)
+            or ``AUTO`` (post-enrich detector silently merging an
+            orphan). ``None`` while pending; always set on resolved
+            rows. Auto rows are only ever produced by ADR-015 Phase 3
+            and always carry a MERGE action.
     """
 
     # Class-level thresholds — ADR-015: delta must exceed BOTH the
@@ -95,6 +114,7 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
     resolved_at: datetime | None = None
     resolution: ResolutionAction | None = None
     winner_id: str | None = None
+    resolution_source: ResolutionSource | None = None
 
     @model_validator(mode="after")
     def _validate_candidates_distinct(self) -> Self:
@@ -131,6 +151,24 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
                 raise ValueError("winner_id must be one of the conflict's candidates")
         elif self.winner_id is not None:
             raise ValueError("winner_id must be None for pending or MARK_DISTINCT rows")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_resolution_source(self) -> Self:
+        """``resolution_source`` is required on resolved rows; AUTO only on MERGE."""
+        if self.resolved_at is None:
+            if self.resolution_source is not None:
+                raise ValueError("resolution_source must be None for pending rows")
+            return self
+        if self.resolution_source is None:
+            raise ValueError("resolution_source must be set on resolved rows")
+        if self.resolution_source is ResolutionSource.AUTO and self.resolution not in {
+            ResolutionAction.MERGE_KEEP_BOTH,
+            ResolutionAction.MERGE_REPLACE,
+        }:
+            raise ValueError(
+                "AUTO resolution_source is only valid for MERGE_KEEP_BOTH / MERGE_REPLACE",
+            )
         return self
 
     @classmethod
@@ -192,7 +230,13 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
             return SuggestedAction.DIFFERENT_EDIT_SUSPECTED
         return SuggestedAction.LIKELY_SAME_RELEASE
 
-    def resolve(self, action: ResolutionAction, *, winner_id: str | None = None) -> Self:
+    def resolve(
+        self,
+        action: ResolutionAction,
+        *,
+        winner_id: str | None = None,
+        source: ResolutionSource = ResolutionSource.MANUAL,
+    ) -> Self:
         """Stamp the conflict as resolved with the chosen action.
 
         Idempotency: resolving an already-resolved conflict raises —
@@ -206,6 +250,9 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
                 ``MERGE_REPLACE``; must be ``None`` for
                 ``MARK_DISTINCT``. Validated against the candidate pair
                 so a stray id cannot land in the row.
+            source: Where the resolution came from — ``MANUAL`` (admin)
+                or ``AUTO`` (Phase 3 silent merge of an orphan).
+                ``AUTO`` is only valid with a MERGE action.
 
         Returns:
             New instance with ``resolved_at``, ``resolution`` and (for
@@ -228,6 +275,7 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
             resolved_at=datetime.now(UTC),
             resolution=action,
             winner_id=winner_id,
+            resolution_source=source,
         )
 
     @property
@@ -239,6 +287,11 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
     def is_marked_distinct(self) -> bool:
         """``True`` when the operator declared the pair to be distinct."""
         return self.resolution is ResolutionAction.MARK_DISTINCT
+
+    @property
+    def is_auto_resolved(self) -> bool:
+        """``True`` when the post-enrich detector silently merged this row."""
+        return self.resolution_source is ResolutionSource.AUTO
 
     def loser_id(self) -> str | None:
         """For MERGE resolutions, the id of the soft-deleted side."""
@@ -258,5 +311,6 @@ __all__ = [
     "MatchReason",
     "MediaConflict",
     "ResolutionAction",
+    "ResolutionSource",
     "SuggestedAction",
 ]

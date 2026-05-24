@@ -42,11 +42,19 @@ class ListConflictsInput:
     """Input for the admin conflict-list endpoint.
 
     Attributes:
+        state: ``"pending"`` (default — the operator queue) or
+            ``"resolved"`` (audit view).
+        source: Optional resolution-source filter, only meaningful
+            when ``state == "resolved"``. ``"manual"`` shows admin
+            decisions, ``"auto"`` shows the post-enrich auto-merges
+            (ADR-015 Phase 3), ``None`` shows both.
         cursor: Opaque pagination cursor from the previous page.
         limit: Page size; the route already clamps to a sensible
             ``[1, MAX_PAGE_SIZE]`` range.
     """
 
+    state: str = "pending"
+    source: str | None = None
     cursor: str | None = None
     limit: int = 20
 
@@ -72,7 +80,7 @@ class ConflictCandidateSummary:
 
 @dataclass(frozen=True)
 class ConflictSummary:
-    """One row in the admin conflict queue.
+    """One row in the admin conflict queue or audit view.
 
     Attributes:
         conflict_id: External id of the conflict (``cnf_xxx``).
@@ -83,6 +91,14 @@ class ConflictSummary:
             minutes, or ``None`` when unavailable.
         suggested_action: Pre-computed hint for the admin UI.
         detected_at: When the conflict landed in the queue.
+        resolved_at: ``None`` while pending; ISO timestamp once the
+            row leaves the queue (manual resolve or auto-merge).
+        resolution: Resolution action that closed the row; ``None``
+            while pending.
+        winner_id: Surviving candidate for MERGE resolutions; ``None``
+            for pending or MARK_DISTINCT rows.
+        resolution_source: ``"manual"`` (admin endpoint) or
+            ``"auto"`` (Phase 3 detector); ``None`` while pending.
     """
 
     conflict_id: str
@@ -92,6 +108,10 @@ class ConflictSummary:
     runtime_delta_minutes: float | None
     suggested_action: str
     detected_at: datetime
+    resolved_at: datetime | None = None
+    resolution: str | None = None
+    winner_id: str | None = None
+    resolution_source: str | None = None
 
 
 @dataclass(frozen=True)

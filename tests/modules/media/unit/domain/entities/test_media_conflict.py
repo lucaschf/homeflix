@@ -12,6 +12,7 @@ from src.modules.media.domain.entities.media_conflict import (
     MatchReason,
     MediaConflict,
     ResolutionAction,
+    ResolutionSource,
     SuggestedAction,
 )
 
@@ -162,3 +163,47 @@ class TestWinnerIdInvariants:
         conflict = _detect()
         with pytest.raises(DomainValidationException):
             conflict.resolve(ResolutionAction.MERGE_REPLACE, winner_id="mov_cccccccccccc")
+
+
+class TestResolutionSourceInvariants:
+    """``resolution_source`` semantics enforced by the aggregate (ADR-015 Phase 3)."""
+
+    def test_manual_resolution_is_default_source(self) -> None:
+        conflict = _detect()
+        resolved = conflict.resolve(ResolutionAction.MERGE_REPLACE, winner_id=_A)
+        assert resolved.resolution_source is ResolutionSource.MANUAL
+        assert resolved.is_auto_resolved is False
+
+    def test_auto_source_explicitly_marks_aggregate(self) -> None:
+        conflict = _detect()
+        resolved = conflict.resolve(
+            ResolutionAction.MERGE_REPLACE,
+            winner_id=_A,
+            source=ResolutionSource.AUTO,
+        )
+        assert resolved.resolution_source is ResolutionSource.AUTO
+        assert resolved.is_auto_resolved is True
+
+    def test_auto_source_rejected_for_mark_distinct(self) -> None:
+        # AUTO is only for the orphan-merge path; MARK_DISTINCT is
+        # always a deliberate operator decision.
+        conflict = _detect()
+        with pytest.raises(DomainValidationException):
+            conflict.resolve(
+                ResolutionAction.MARK_DISTINCT,
+                source=ResolutionSource.AUTO,
+            )
+
+    def test_resolution_source_forbidden_on_pending_rows(self) -> None:
+        # Directly constructing a pending row with a source set is invalid.
+        with pytest.raises(DomainValidationException):
+            MediaConflict(
+                candidate_a_id=_A,
+                candidate_a_type="movie",
+                candidate_b_id=_B,
+                candidate_b_type="movie",
+                match_reason=MatchReason.TMDB_ID,
+                runtime_delta_minutes=0.0,
+                suggested_action=SuggestedAction.LIKELY_SAME_RELEASE,
+                resolution_source=ResolutionSource.MANUAL,
+            )
