@@ -182,12 +182,34 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
         candidate_b_type: str,
         candidate_b_runtime_minutes: float | None,
         match_reason: MatchReason,
+        abs_threshold_minutes: float | None = None,
+        relative_threshold: float | None = None,
     ) -> Self:
         """Build a fresh ``MediaConflict`` from a detected pair.
 
         Computes ``runtime_delta_minutes`` (when both runtimes are
-        available) and derives ``suggested_action`` using the
-        class-level thresholds.
+        available) and derives ``suggested_action`` from the
+        runtime-delta heuristic.
+
+        Args:
+            candidate_a_id: External id of one side (e.g. ``mov_xxx``).
+            candidate_a_type: ``"movie"`` (Phase 1) or ``"series"``.
+            candidate_a_runtime_minutes: Runtime of side A, in minutes,
+                or ``None`` when unknown.
+            candidate_b_id: External id of the other side.
+            candidate_b_type: Same contract as ``candidate_a_type``.
+            candidate_b_runtime_minutes: Runtime of side B, in minutes,
+                or ``None`` when unknown.
+            match_reason: Which identity rule fired the collision.
+            abs_threshold_minutes: Absolute runtime-delta ceiling, in
+                minutes. ``None`` falls back to
+                :attr:`RUNTIME_DELTA_ABS_MINUTES_THRESHOLD`. Supplied by
+                the detector from the ``scan_dedup`` runtime settings
+                bucket (ADR-013) so operators can tune it without a
+                deploy.
+            relative_threshold: Relative ceiling as a fraction of the
+                shorter runtime. ``None`` falls back to
+                :attr:`RUNTIME_DELTA_RELATIVE_THRESHOLD`.
 
         Returns:
             New ``MediaConflict`` instance, pending and unsaved.
@@ -197,7 +219,11 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
             candidate_b_runtime_minutes,
         )
         action = cls._derive_suggested_action(
-            delta, candidate_a_runtime_minutes, candidate_b_runtime_minutes
+            delta,
+            candidate_a_runtime_minutes,
+            candidate_b_runtime_minutes,
+            abs_threshold_minutes=abs_threshold_minutes,
+            relative_threshold=relative_threshold,
         )
         return cls(
             candidate_a_id=candidate_a_id,
@@ -215,8 +241,15 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
         delta_minutes: float | None,
         runtime_a: float | None,
         runtime_b: float | None,
+        *,
+        abs_threshold_minutes: float | None = None,
+        relative_threshold: float | None = None,
     ) -> SuggestedAction:
-        """Apply the two-bound rule from ADR-015 to derive the hint."""
+        """Apply the two-bound rule from ADR-015 to derive the hint.
+
+        ``None`` thresholds fall back to the class-level defaults, so
+        callers that don't tune the bounds keep the ADR-015 behaviour.
+        """
         if delta_minutes is None or runtime_a is None or runtime_b is None:
             return SuggestedAction.LIKELY_SAME_RELEASE
 
@@ -224,8 +257,19 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
         if smaller <= 0:
             return SuggestedAction.LIKELY_SAME_RELEASE
 
-        exceeds_abs = delta_minutes > cls.RUNTIME_DELTA_ABS_MINUTES_THRESHOLD
-        exceeds_rel = (delta_minutes / smaller) > cls.RUNTIME_DELTA_RELATIVE_THRESHOLD
+        abs_bound = (
+            cls.RUNTIME_DELTA_ABS_MINUTES_THRESHOLD
+            if abs_threshold_minutes is None
+            else abs_threshold_minutes
+        )
+        rel_bound = (
+            cls.RUNTIME_DELTA_RELATIVE_THRESHOLD
+            if relative_threshold is None
+            else relative_threshold
+        )
+
+        exceeds_abs = delta_minutes > abs_bound
+        exceeds_rel = (delta_minutes / smaller) > rel_bound
         if exceeds_abs and exceeds_rel:
             return SuggestedAction.DIFFERENT_EDIT_SUSPECTED
         return SuggestedAction.LIKELY_SAME_RELEASE

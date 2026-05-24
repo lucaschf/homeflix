@@ -10,6 +10,7 @@ from src.modules.settings.domain.value_objects.avatar_config import AvatarConfig
 from src.modules.settings.domain.value_objects.intro_detection_config import (
     IntroDetectionConfig,
 )
+from src.modules.settings.domain.value_objects.scan_dedup_config import ScanDedupConfig
 from src.modules.settings.domain.value_objects.scheduler_config import SchedulerConfig
 from src.modules.settings.domain.value_objects.setting_key import SettingKey
 from src.modules.settings.domain.value_objects.setting_source import SettingSource
@@ -24,6 +25,7 @@ ConfigVO = (
     | IntroDetectionConfig
     | StreamingConfig
     | AvatarConfig
+    | ScanDedupConfig
 )
 """Union of all configuration VOs persisted in ``app_settings``."""
 
@@ -31,6 +33,7 @@ __all__ = [
     "AvatarConfig",
     "ConfigVO",
     "IntroDetectionConfig",
+    "ScanDedupConfig",
     "SchedulerConfig",
     "SettingKey",
     "SettingSource",

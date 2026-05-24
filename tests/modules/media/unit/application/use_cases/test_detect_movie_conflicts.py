@@ -14,6 +14,7 @@ from src.modules.media.domain.entities.media_conflict import (
     MatchReason,
     ResolutionAction,
     ResolutionSource,
+    SuggestedAction,
 )
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.events import (
@@ -31,6 +32,7 @@ from src.modules.media.domain.value_objects import (
     Year,
 )
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
+from src.modules.settings.domain.value_objects import ScanDedupConfig
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
@@ -124,6 +126,35 @@ class TestDetectMovieConflictsUseCase:
         assert isinstance(published, MediaConflictDetectedEvent)
         assert published.candidate_a_id == "mov_abcdefghijkl"
         assert published.candidate_b_id == "mov_mnopqrstuvwx"
+
+    @pytest.mark.asyncio
+    async def test_tunable_thresholds_from_settings_flag_different_edit(self) -> None:
+        # delta 7320 - 7200 = 120s = 2.0 min — LIKELY_SAME under the
+        # ADR-015 defaults, but DIFFERENT_EDIT under the strict bucket.
+        mocks = make_media_uow_mock()
+        self_movie = _build_movie(external_id="mov_abcdefghijkl", duration_seconds=7200)
+        other = _build_movie(external_id="mov_mnopqrstuvwx", duration_seconds=7320)
+        mocks.movies.find_all_by_tmdb_id.return_value = [self_movie, other]
+        mocks.media_conflicts.find_blocking_pair.return_value = None
+        mocks.media_conflicts.save.side_effect = _stamp_conflict_id
+
+        runtime_settings = AsyncMock()
+        runtime_settings.scan_dedup.return_value = ScanDedupConfig(
+            runtime_delta_abs_minutes=1.0,
+            runtime_delta_relative=0.005,
+        )
+        use_case = DetectMovieConflictsUseCase(
+            uow_factory=mocks.factory,
+            runtime_settings=runtime_settings,
+        )
+
+        await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_abcdefghijkl", tmdb_id=27205),
+        )
+
+        saved_conflict = mocks.media_conflicts.save.call_args[0][0]
+        assert saved_conflict.suggested_action is SuggestedAction.DIFFERENT_EDIT_SUSPECTED
+        runtime_settings.scan_dedup.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_existing_pending_pair_is_skipped(self) -> None:

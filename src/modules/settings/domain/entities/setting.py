@@ -11,6 +11,7 @@ from src.modules.settings.domain.value_objects import (
     AvatarConfig,
     ConfigVO,
     IntroDetectionConfig,
+    ScanDedupConfig,
     SchedulerConfig,
     SettingKey,
     SettingSource,
@@ -64,6 +65,7 @@ class Setting(AggregateRoot[SettingKey]):
         SettingKey.INTRO_DETECTION: IntroDetectionConfig,
         SettingKey.STREAMING: StreamingConfig,
         SettingKey.AVATAR: AvatarConfig,
+        SettingKey.SCAN_DEDUP: ScanDedupConfig,
     }
 
     @model_validator(mode="after")
