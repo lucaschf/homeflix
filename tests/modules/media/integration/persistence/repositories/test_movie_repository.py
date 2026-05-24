@@ -286,15 +286,9 @@ class TestSQLAlchemyMovieRepository:
     ) -> None:
         """find_all_by_year filters by year and skips other years."""
         repo = SQLAlchemyMovieRepository(db_session)
-        await repo.save(
-            _create_movie(title="A", year=1997, file_path="/movies/a.mkv")
-        )
-        await repo.save(
-            _create_movie(title="B", year=1997, file_path="/movies/b.mkv")
-        )
-        await repo.save(
-            _create_movie(title="C", year=2001, file_path="/movies/c.mkv")
-        )
+        await repo.save(_create_movie(title="A", year=1997, file_path="/movies/a.mkv"))
+        await repo.save(_create_movie(title="B", year=1997, file_path="/movies/b.mkv"))
+        await repo.save(_create_movie(title="C", year=2001, file_path="/movies/c.mkv"))
 
         found = await repo.find_all_by_year(1997)
 

@@ -177,9 +177,7 @@ class TestTitleNormalized:
     def test_case_and_accent_insensitive_equality(self):
         from src.modules.media.domain.value_objects import Title
 
-        assert Title("A Viagem de Chihiro").normalized == Title(
-            "A VIAGEM DE CHIHIRO"
-        ).normalized
+        assert Title("A Viagem de Chihiro").normalized == Title("A VIAGEM DE CHIHIRO").normalized
 
     def test_distinct_titles_stay_distinct(self):
         from src.modules.media.domain.value_objects import Title
