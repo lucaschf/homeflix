@@ -191,6 +191,27 @@ class TestAdminConflictsList:
             "different_edit_suspected",
         }
 
+    async def test_candidate_embeds_file_variants(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        await _login_as_admin(client, seed_user_with_profile)
+        _, a_id, b_id = await _seed_pair_with_conflict(session_factory)
+
+        response = await client.get(CONFLICTS_PATH)
+
+        assert response.status_code == 200
+        row = response.json()["data"][0]
+        files = row["candidate_a"]["files"]
+        assert len(files) == 1
+        assert files[0]["file_path"] == f"/movies/{a_id}.mkv"
+        assert files[0]["resolution"] == "1080p"
+        assert files[0]["file_size"] == 1_000_000_000
+        assert files[0]["is_primary"] is True
+        assert row["candidate_b"]["files"][0]["file_path"] == f"/movies/{b_id}.mkv"
+
     async def test_pagination_returns_next_cursor(
         self,
         client: AsyncClient,

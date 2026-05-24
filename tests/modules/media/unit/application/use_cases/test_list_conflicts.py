@@ -15,11 +15,15 @@ from src.modules.media.domain.entities.media_conflict import (
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.value_objects import (
     Duration,
+    MediaFile,
     MovieId,
+    Resolution,
     Title,
+    VideoCodec,
     Year,
 )
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
+from src.shared_kernel.value_objects.file_path import FilePath
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
@@ -43,13 +47,20 @@ def _conflict(
     return detected.with_updates(id=MediaConflictId(conflict_id))
 
 
-def _movie(*, external_id: str, title: str, year: int = 2020) -> Movie:
+def _movie(
+    *,
+    external_id: str,
+    title: str,
+    year: int = 2020,
+    files: list[MediaFile] | None = None,
+) -> Movie:
     return Movie(
         id=MovieId(external_id),
         library_id="lib_test12345678",
         title=Title(title),
         year=Year(year),
         duration=Duration(7200),
+        files=files or [],
     )
 
 
@@ -118,6 +129,46 @@ class TestListConflictsUseCase:
         assert summary.candidate_a.title == "Lhs"
         assert summary.candidate_b.title is None
         assert summary.candidate_b.year is None
+
+    @pytest.mark.asyncio
+    async def test_projects_file_variants_for_movie_candidates(self) -> None:
+        mocks = make_media_uow_mock()
+        conflict = _conflict(a_id="mov_aaaaaaaaaaaa", b_id="mov_bbbbbbbbbbbb")
+        mocks.media_conflicts.list_pending.return_value = PaginatedResult(
+            items=[conflict],
+            pagination=Pagination(next_cursor=None, has_more=False),
+        )
+        mocks.movies.find_by_ids.return_value = {
+            "mov_aaaaaaaaaaaa": _movie(
+                external_id="mov_aaaaaaaaaaaa",
+                title="Lhs",
+                files=[
+                    MediaFile(
+                        file_path=FilePath("/movies/lhs_1080p.mkv"),
+                        file_size=4_000_000_000,
+                        resolution=Resolution("1080p"),
+                        video_codec=VideoCodec.H265,
+                        is_primary=True,
+                    ),
+                ],
+            ),
+            "mov_bbbbbbbbbbbb": _movie(external_id="mov_bbbbbbbbbbbb", title="Rhs"),
+        }
+
+        use_case = ListConflictsUseCase(uow_factory=mocks.factory)
+        result = await use_case.execute(ListConflictsInput())
+
+        summary = result.items[0]
+        assert len(summary.candidate_a.files) == 1
+        file = summary.candidate_a.files[0]
+        assert file.file_path == "/movies/lhs_1080p.mkv"
+        assert file.resolution == "1080p"
+        assert file.file_size == 4_000_000_000
+        assert file.video_codec == "h265"
+        assert file.hdr_format is None
+        assert file.is_primary is True
+        # A movie with no variants surfaces an empty list, not None.
+        assert summary.candidate_b.files == []
 
     @pytest.mark.asyncio
     async def test_series_candidate_skips_movie_lookup_for_that_side(self) -> None:
