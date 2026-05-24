@@ -552,6 +552,23 @@ class SQLAlchemyMovieRepository(MovieRepository):
         result = await self._session.execute(stmt)
         return [MovieMapper.to_entity(model) for model in result.scalars().all()]
 
+    async def find_all_by_year(self, year: int) -> list[Movie]:
+        """Return every non-deleted movie released in ``year``.
+
+        Feeds the ADR-015 ``(normalized_original_title, year)`` dedup
+        fallback. No ACL filter — see the ABC docstring.
+        """
+        stmt = (
+            select(MovieModel)
+            .where(
+                MovieModel.year == year,
+                MovieModel.deleted_at.is_(None),
+            )
+            .options(selectinload(MovieModel.file_variants))
+        )
+        result = await self._session.execute(stmt)
+        return [MovieMapper.to_entity(model) for model in result.scalars().all()]
+
     async def find_by_file_path(self, file_path: FilePath) -> Movie | None:
         """Find a movie by any of its file variant paths.
 

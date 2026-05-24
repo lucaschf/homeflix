@@ -41,6 +41,9 @@ def _build_movie(
     external_id: str,
     duration_seconds: int = 7200,
     file_paths: list[str] | None = None,
+    title: str = "Example",
+    year: int = 2020,
+    tmdb_id: int | None = 27205,
 ) -> Movie:
     files = [
         MediaFile(
@@ -54,11 +57,11 @@ def _build_movie(
     return Movie(
         id=MovieId(external_id),
         library_id="lib_test12345678",
-        title=Title("Example"),
-        year=Year(2020),
+        title=Title(title),
+        year=Year(year),
         duration=Duration(duration_seconds),
         files=files,
-        tmdb_id=TmdbId(27205),
+        tmdb_id=None if tmdb_id is None else TmdbId(tmdb_id),
     )
 
 
@@ -209,6 +212,163 @@ async def _stamp_conflict_id(conflict: MediaConflict) -> MediaConflict:
     return conflict.with_updates(
         id=MediaConflictId("cnf_stamped12345"),
     )
+
+
+def _settings_with(*, fallback: bool = True) -> AsyncMock:
+    rs = AsyncMock()
+    rs.scan_dedup.return_value = ScanDedupConfig(title_year_fallback_enabled=fallback)
+    return rs
+
+
+class TestTitleYearFallback:
+    """ADR-015 Phase 4c — (normalized_original_title, year) fallback."""
+
+    @pytest.mark.asyncio
+    async def test_matches_unenriched_duplicate_by_title_and_year(self) -> None:
+        mocks = make_media_uow_mock()
+        enriched = _build_movie(
+            external_id="mov_aaaaaaaaaaaa",
+            title="Princess Mononoke",
+            year=1997,
+            tmdb_id=27205,
+            file_paths=["/movies/a.mkv"],
+        )
+        unenriched = _build_movie(
+            external_id="mov_bbbbbbbbbbbb",
+            title="PRINCESS MONONOKE",
+            year=1997,
+            tmdb_id=None,
+            file_paths=["/movies/b.mkv"],
+        )
+        # No TMDB collision; the dup only surfaces via title+year.
+        mocks.movies.find_all_by_tmdb_id.return_value = [enriched]
+        mocks.movies.find_all_by_year.return_value = [enriched, unenriched]
+        mocks.media_conflicts.find_blocking_pair.return_value = None
+        mocks.media_conflicts.save.side_effect = _stamp_conflict_id
+
+        use_case = DetectMovieConflictsUseCase(
+            uow_factory=mocks.factory,
+            runtime_settings=_settings_with(fallback=True),
+        )
+        result = await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_aaaaaaaaaaaa", tmdb_id=27205),
+        )
+
+        assert result.conflicts_created == 1
+        saved = mocks.media_conflicts.save.call_args[0][0]
+        assert saved.match_reason is MatchReason.TITLE_YEAR_FALLBACK
+        mocks.movies.find_all_by_year.assert_awaited_once_with(1997)
+
+    @pytest.mark.asyncio
+    async def test_fallback_disabled_skips_year_lookup(self) -> None:
+        mocks = make_media_uow_mock()
+        enriched = _build_movie(external_id="mov_aaaaaaaaaaaa", tmdb_id=27205)
+        mocks.movies.find_all_by_tmdb_id.return_value = [enriched]
+
+        use_case = DetectMovieConflictsUseCase(
+            uow_factory=mocks.factory,
+            runtime_settings=_settings_with(fallback=False),
+        )
+        result = await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_aaaaaaaaaaaa", tmdb_id=27205),
+        )
+
+        assert result.conflicts_created == 0
+        mocks.movies.find_all_by_year.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_runtime_settings_disables_fallback(self) -> None:
+        mocks = make_media_uow_mock()
+        enriched = _build_movie(external_id="mov_aaaaaaaaaaaa", tmdb_id=27205)
+        mocks.movies.find_all_by_tmdb_id.return_value = [enriched]
+
+        use_case = DetectMovieConflictsUseCase(uow_factory=mocks.factory)
+        result = await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_aaaaaaaaaaaa", tmdb_id=27205),
+        )
+
+        assert result.conflicts_created == 0
+        mocks.movies.find_all_by_year.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fallback_match_queues_never_auto_merges_orphan(self) -> None:
+        mocks = make_media_uow_mock()
+        enriched = _build_movie(
+            external_id="mov_aaaaaaaaaaaa",
+            title="Princess Mononoke",
+            year=1997,
+            tmdb_id=27205,
+            file_paths=["/movies/a.mkv"],
+        )
+        orphan = _build_movie(
+            external_id="mov_bbbbbbbbbbbb",
+            title="Princess Mononoke",
+            year=1997,
+            tmdb_id=None,
+            file_paths=["/movies/missing.mkv"],
+        )
+        mocks.movies.find_all_by_tmdb_id.return_value = [enriched]
+        mocks.movies.find_all_by_year.return_value = [enriched, orphan]
+        mocks.media_conflicts.find_blocking_pair.return_value = None
+        mocks.media_conflicts.save.side_effect = _stamp_conflict_id
+
+        # Orphan would auto-merge under a TMDB match — but the weaker
+        # title+year identity must always queue instead.
+        library_health = _FakeLibraryHealth(
+            accessible_files={"/movies/a.mkv"},
+            healthy_libraries={"lib_test12345678"},
+        )
+        use_case = DetectMovieConflictsUseCase(
+            uow_factory=mocks.factory,
+            library_health=library_health,
+            runtime_settings=_settings_with(fallback=True),
+        )
+        result = await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_aaaaaaaaaaaa", tmdb_id=27205),
+        )
+
+        assert result.conflicts_created == 1
+        saved = mocks.media_conflicts.save.call_args[0][0]
+        assert saved.match_reason is MatchReason.TITLE_YEAR_FALLBACK
+        assert saved.is_resolved is False
+        mocks.movies.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fallback_skips_ids_already_handled_by_tmdb_pass(self) -> None:
+        mocks = make_media_uow_mock()
+        enriched = _build_movie(
+            external_id="mov_aaaaaaaaaaaa",
+            title="Princess Mononoke",
+            year=1997,
+            tmdb_id=27205,
+            file_paths=["/movies/a.mkv"],
+        )
+        # Same TMDB id AND same title+year — must produce a single
+        # conflict (TMDB pass), not a duplicate from the fallback.
+        other = _build_movie(
+            external_id="mov_bbbbbbbbbbbb",
+            title="Princess Mononoke",
+            year=1997,
+            tmdb_id=27205,
+            file_paths=["/movies/b.mkv"],
+        )
+        mocks.movies.find_all_by_tmdb_id.return_value = [enriched, other]
+        mocks.movies.find_all_by_year.return_value = [enriched, other]
+        mocks.media_conflicts.find_blocking_pair.return_value = None
+        mocks.media_conflicts.save.side_effect = _stamp_conflict_id
+
+        use_case = DetectMovieConflictsUseCase(
+            uow_factory=mocks.factory,
+            runtime_settings=_settings_with(fallback=True),
+        )
+        result = await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_aaaaaaaaaaaa", tmdb_id=27205),
+        )
+
+        assert result.conflicts_created == 1
+        assert mocks.media_conflicts.save.call_count == 1
+        saved = mocks.media_conflicts.save.call_args[0][0]
+        assert saved.match_reason is MatchReason.TMDB_ID
 
 
 class TestAutoMergeOrphans:

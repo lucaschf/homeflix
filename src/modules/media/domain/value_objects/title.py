@@ -1,6 +1,7 @@
 """Title value object for media content."""
 
 import re
+import unicodedata
 from typing import ClassVar
 
 from pydantic import model_validator
@@ -52,6 +53,26 @@ class Title(StringValueObject):
             raise ValueError(f"Title cannot exceed {cls.MAX_LENGTH} characters")
 
         return normalized
+
+    @property
+    def normalized(self) -> str:
+        """Canonical comparison key for content-identity matching.
+
+        Lower-cases (case-fold), strips diacritics (NFKD decomposition
+        dropping combining marks), and collapses whitespace, so titles
+        that differ only in casing or accents compare equal. Used by
+        the scanner's ``(normalized_original_title, year)`` dedup
+        fallback (ADR-015); deterministic so repeated scans agree.
+
+        Example:
+            >>> Title("A Viagem de Chihiro").normalized
+            'a viagem de chihiro'
+            >>> Title("Amélie").normalized == Title("AMELIE").normalized
+            True
+        """
+        decomposed = unicodedata.normalize("NFKD", self.value)
+        without_marks = "".join(c for c in decomposed if not unicodedata.combining(c))
+        return re.sub(r"\s+", " ", without_marks).strip().casefold()
 
 
 __all__ = ["Title"]
