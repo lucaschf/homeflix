@@ -12,6 +12,7 @@ from src.building_blocks.application.pagination import (
 from src.modules.media.domain.entities.media_conflict import (
     MediaConflict,
     ResolutionAction,
+    ResolutionSource,
 )
 from src.modules.media.domain.repositories.media_conflict_repository import (
     MediaConflictRepository,
@@ -115,6 +116,39 @@ class SqlAlchemyMediaConflictRepository(MediaConflictRepository):
             MediaConflictModel.resolved_at.is_(None),
             MediaConflictModel.deleted_at.is_(None),
         )
+
+        decoded = decode_cursor(cursor)
+        if decoded is not None:
+            stmt = stmt.where(MediaConflictModel.id < decoded.id)
+
+        stmt = stmt.order_by(MediaConflictModel.id.desc()).limit(limit + 1)
+
+        result = await self._session.execute(stmt)
+        models = list(result.scalars().all())
+
+        has_more = len(models) > limit
+        page_models = models[:limit] if has_more else models
+        next_cursor = encode_cursor(page_models[-1].id) if has_more and page_models else None
+
+        return PaginatedResult(
+            items=[MediaConflictMapper.to_entity(m) for m in page_models],
+            pagination=Pagination(next_cursor=next_cursor, has_more=has_more),
+        )
+
+    async def list_resolved(
+        self,
+        *,
+        source: ResolutionSource | None = None,
+        cursor: str | None = None,
+        limit: int = 20,
+    ) -> PaginatedResult[MediaConflict]:
+        """List resolved conflicts newest-first with opaque cursor pagination."""
+        stmt = select(MediaConflictModel).where(
+            MediaConflictModel.resolved_at.is_not(None),
+            MediaConflictModel.deleted_at.is_(None),
+        )
+        if source is not None:
+            stmt = stmt.where(MediaConflictModel.resolution_source == source.value)
 
         decoded = decode_cursor(cursor)
         if decoded is not None:

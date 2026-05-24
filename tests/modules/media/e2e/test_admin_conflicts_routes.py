@@ -370,3 +370,66 @@ class TestAdminConflictsResolveFailures:
             },
         )
         assert response.status_code == 422
+
+
+@pytest.mark.e2e
+class TestAdminConflictsAuditView:
+    """ADR-015 Phase 3 — GET supports state + source filters."""
+
+    async def test_state_resolved_shows_resolved_rows(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        await _login_as_admin(client, seed_user_with_profile)
+        conflict_id, _, _ = await _seed_pair_with_conflict(session_factory)
+        # Manually resolve via the endpoint so it appears in audit view.
+        resp = await client.post(
+            f"{CONFLICTS_PATH}/{conflict_id}/resolve",
+            json={"action": "mark_distinct"},
+        )
+        assert resp.status_code == 200
+
+        # Default state=pending excludes the resolved row.
+        pending = await client.get(CONFLICTS_PATH)
+        assert pending.json()["data"] == []
+
+        # state=resolved surfaces it with the resolution metadata.
+        resolved = await client.get(f"{CONFLICTS_PATH}?state=resolved")
+        assert resolved.status_code == 200
+        rows = resolved.json()["data"]
+        assert len(rows) == 1
+        assert rows[0]["conflict_id"] == conflict_id
+        assert rows[0]["resolution"] == "mark_distinct"
+        assert rows[0]["resolution_source"] == "manual"
+
+    async def test_state_resolved_with_source_filter(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        await _login_as_admin(client, seed_user_with_profile)
+        conflict_id, _, _ = await _seed_pair_with_conflict(session_factory)
+        await client.post(
+            f"{CONFLICTS_PATH}/{conflict_id}/resolve",
+            json={"action": "mark_distinct"},
+        )
+
+        # source=manual shows the row; source=auto returns empty
+        # (no auto-merges seeded in this test).
+        manual_resp = await client.get(f"{CONFLICTS_PATH}?state=resolved&source=manual")
+        auto_resp = await client.get(f"{CONFLICTS_PATH}?state=resolved&source=auto")
+
+        assert len(manual_resp.json()["data"]) == 1
+        assert auto_resp.json()["data"] == []
+
+    async def test_invalid_state_returns_422(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        await _login_as_admin(client, seed_user_with_profile)
+        response = await client.get(f"{CONFLICTS_PATH}?state=frozen")
+        assert response.status_code == 422

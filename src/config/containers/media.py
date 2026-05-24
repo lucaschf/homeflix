@@ -150,6 +150,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # ``scan_runs`` row. Keeps the cross-BC dependency explicit.
     library_uow_factory = providers.Dependency()
 
+    # Wired at the composition root — ADR-015 Phase 3 detector uses
+    # this port to distinguish a real orphan (file moved/deleted by
+    # the operator) from transient I/O failure (drive unmounted).
+    library_health = providers.Dependency()
+
     # Wired at the composition root — the OverviewStats aggregator
     # reads the users count from identity. Same pattern as
     # ``library_uow_factory`` above: a read-only cross-BC count
@@ -553,6 +558,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     detect_movie_conflicts = providers.Factory(
         DetectMovieConflictsUseCase,
         uow_factory=media_unit_of_work_factory,
+        library_health=library_health,
         event_bus=event_bus,
     )
 

@@ -3,11 +3,14 @@
 import pytest
 
 from src.building_blocks.application.pagination import PaginatedResult, Pagination
+from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.media.application.dtos.conflict_dtos import ListConflictsInput
 from src.modules.media.application.use_cases.list_conflicts import ListConflictsUseCase
 from src.modules.media.domain.entities.media_conflict import (
     MatchReason,
     MediaConflict,
+    ResolutionAction,
+    ResolutionSource,
 )
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.value_objects import (
@@ -141,3 +144,76 @@ class TestListConflictsUseCase:
         # with ``title=None`` so the admin UI can still render the row.
         assert summary.candidate_b.title is None
         assert summary.candidate_b.media_type == "series"
+
+
+class TestListResolvedConflicts:
+    """ADR-015 Phase 3 — audit view + source filters."""
+
+    @pytest.mark.asyncio
+    async def test_state_resolved_calls_list_resolved(self) -> None:
+        mocks = make_media_uow_mock()
+        mocks.media_conflicts.list_resolved.return_value = PaginatedResult(
+            items=[],
+            pagination=Pagination(next_cursor=None, has_more=False),
+        )
+
+        use_case = ListConflictsUseCase(uow_factory=mocks.factory)
+        await use_case.execute(ListConflictsInput(state="resolved"))
+
+        mocks.media_conflicts.list_resolved.assert_awaited_once_with(
+            source=None,
+            cursor=None,
+            limit=20,
+        )
+        mocks.media_conflicts.list_pending.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_state_resolved_with_source_auto_forwards_filter(self) -> None:
+        mocks = make_media_uow_mock()
+        resolved_auto = _conflict().with_updates(
+            resolved_at=__import__("datetime").datetime.now(),
+            resolution=ResolutionAction.MERGE_REPLACE,
+            winner_id="mov_aaaaaaaaaaaa",
+            resolution_source=ResolutionSource.AUTO,
+        )
+        mocks.media_conflicts.list_resolved.return_value = PaginatedResult(
+            items=[resolved_auto],
+            pagination=Pagination(next_cursor=None, has_more=False),
+        )
+        mocks.movies.find_by_ids.return_value = {}
+
+        use_case = ListConflictsUseCase(uow_factory=mocks.factory)
+        result = await use_case.execute(
+            ListConflictsInput(state="resolved", source="auto"),
+        )
+
+        mocks.media_conflicts.list_resolved.assert_awaited_once_with(
+            source=ResolutionSource.AUTO,
+            cursor=None,
+            limit=20,
+        )
+        summary = result.items[0]
+        assert summary.resolution == "merge_replace"
+        assert summary.resolution_source == "auto"
+        assert summary.winner_id == "mov_aaaaaaaaaaaa"
+
+    @pytest.mark.asyncio
+    async def test_invalid_state_raises_validation(self) -> None:
+        mocks = make_media_uow_mock()
+        use_case = ListConflictsUseCase(uow_factory=mocks.factory)
+        with pytest.raises(DomainValidationException):
+            await use_case.execute(ListConflictsInput(state="frozen"))
+
+    @pytest.mark.asyncio
+    async def test_source_filter_with_pending_state_raises_validation(self) -> None:
+        mocks = make_media_uow_mock()
+        use_case = ListConflictsUseCase(uow_factory=mocks.factory)
+        with pytest.raises(DomainValidationException):
+            await use_case.execute(ListConflictsInput(state="pending", source="auto"))
+
+    @pytest.mark.asyncio
+    async def test_invalid_source_raises_validation(self) -> None:
+        mocks = make_media_uow_mock()
+        use_case = ListConflictsUseCase(uow_factory=mocks.factory)
+        with pytest.raises(DomainValidationException):
+            await use_case.execute(ListConflictsInput(state="resolved", source="bogus"))

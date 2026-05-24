@@ -32,6 +32,7 @@ from src.modules.library.infrastructure.persistence.sqlalchemy_unit_of_work impo
     SqlAlchemyLibraryUnitOfWorkFactory,
 )
 from src.modules.media.infrastructure.acl import (
+    LibraryHealthAdapter,
     ProfileLibraryAccessAdapter,
     ProgressLookupAdapter,
 )
@@ -116,6 +117,15 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         session_factory=infrastructure.session_factory,
     )
 
+    # ADR-015 Phase 3: the auto-merge detector needs to ask "is
+    # this file accessible?" and "is the library root mounted?"
+    # before silently absorbing an orphan candidate. The adapter
+    # combines a Library UoW lookup with raw pathlib.exists.
+    _library_health_adapter = providers.Factory(
+        LibraryHealthAdapter,
+        library_uow_factory=_library_uow_factory_for_media,
+    )
+
     # Real readiness probes that back ``GET /health/ready`` — see
     # ``src/infrastructure/health/probes.py``. Singletons because
     # the probes are stateless and the underlying deps
@@ -156,6 +166,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         profile_library_access=_profile_library_access_adapter,
         catalog_request_lookup=catalog_requests.catalog_request_lookup,
         library_uow_factory=_library_uow_factory_for_media,
+        library_health=_library_health_adapter,
         identity_uow_factory=_identity_uow_factory_for_profile_library_access,
         tmdb_api_key=config.provided.tmdb_api_key,
         hls_cache_directory=config.provided.hls_cache_directory,

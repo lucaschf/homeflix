@@ -3,7 +3,10 @@
 from abc import ABC, abstractmethod
 
 from src.building_blocks.application.pagination import PaginatedResult
-from src.modules.media.domain.entities.media_conflict import MediaConflict
+from src.modules.media.domain.entities.media_conflict import (
+    MediaConflict,
+    ResolutionSource,
+)
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
 
 
@@ -74,6 +77,29 @@ class MediaConflictRepository(ABC):
 
         Returns:
             Paginated page of pending conflicts.
+        """
+        ...
+
+    @abstractmethod
+    async def list_resolved(
+        self,
+        *,
+        source: ResolutionSource | None = None,
+        cursor: str | None = None,
+        limit: int = 20,
+    ) -> PaginatedResult[MediaConflict]:
+        """List resolved conflicts (audit view), newest first.
+
+        Args:
+            source: Optional ``ResolutionSource`` filter. ``None``
+                returns every resolved row; ``AUTO`` returns only
+                rows the detector silently merged; ``MANUAL`` returns
+                only rows the admin resolved through the endpoint.
+            cursor: Opaque pagination cursor from the previous page.
+            limit: Page size.
+
+        Returns:
+            Paginated page of resolved conflicts.
         """
         ...
 

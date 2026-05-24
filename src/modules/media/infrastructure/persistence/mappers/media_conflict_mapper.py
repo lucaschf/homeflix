@@ -4,6 +4,7 @@ from src.modules.media.domain.entities.media_conflict import (
     MatchReason,
     MediaConflict,
     ResolutionAction,
+    ResolutionSource,
     SuggestedAction,
 )
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
@@ -30,6 +31,11 @@ class MediaConflictMapper:
             resolved_at=model.resolved_at,
             resolution=None if model.resolution is None else ResolutionAction(model.resolution),
             winner_id=model.winner_id,
+            resolution_source=(
+                None
+                if model.resolution_source is None
+                else ResolutionSource(model.resolution_source)
+            ),
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -51,6 +57,9 @@ class MediaConflictMapper:
             resolved_at=entity.resolved_at,
             resolution=None if entity.resolution is None else entity.resolution.value,
             winner_id=entity.winner_id,
+            resolution_source=(
+                None if entity.resolution_source is None else entity.resolution_source.value
+            ),
         )
 
     @staticmethod
@@ -66,6 +75,9 @@ class MediaConflictMapper:
         model.resolved_at = entity.resolved_at
         model.resolution = None if entity.resolution is None else entity.resolution.value
         model.winner_id = entity.winner_id
+        model.resolution_source = (
+            None if entity.resolution_source is None else entity.resolution_source.value
+        )
 
 
 __all__ = ["MediaConflictMapper"]

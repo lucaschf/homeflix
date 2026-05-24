@@ -1,13 +1,15 @@
 """Admin REST API for the media-conflict queue (ADR-015).
 
-``GET /`` lists pending content-identity collisions detected by the
-post-enrich hook (Phase 1). ``POST /{id}/resolve`` applies the
-operator's chosen disposition (Phase 2): mark-distinct, merge-keep-both,
-or merge-replace.
+``GET /?state=pending`` (default) lists content-identity collisions
+queued by the post-enrich hook for operator triage (Phase 1).
+``GET /?state=resolved&source=auto`` powers the audit view for
+Phase 3 silent auto-merges; ``source=manual`` shows admin decisions.
+``POST /{id}/resolve`` applies the operator's chosen disposition
+(Phase 2): mark-distinct, merge-keep-both, or merge-replace.
 """
 
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Literal
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Path, Query
@@ -61,6 +63,8 @@ router = APIRouter(prefix="/api/v1/admin/conflicts", tags=["Admin — Conflicts"
 @router.get("")
 @inject
 async def list_admin_conflicts(
+    state: Literal["pending", "resolved"] = Query(default="pending"),
+    source: Literal["manual", "auto"] | None = Query(default=None),
     cursor: str | None = Query(default=None),
     limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     _admin: UserModel = Depends(current_admin_user),
@@ -68,14 +72,20 @@ async def list_admin_conflicts(
         Provide[ApplicationContainer.media.list_conflicts],
     ),
 ) -> dict[str, Any]:
-    """Return the next page of pending content-identity conflicts.
+    """Return the next page of conflicts matching ``state`` (+ ``source``).
+
+    - ``state=pending`` (default): the operator queue — rows that
+      still need a decision.
+    - ``state=resolved``: audit view of closed rows. Combine with
+      ``source=manual`` (admin) or ``source=auto`` (Phase 3 silent
+      merge of orphans); omit ``source`` to see both.
 
     Items are newest-first. Each item embeds title + year projections
     for both sides so the admin UI does not need an extra round-trip
     to render the queue row.
     """
     output = await use_case.execute(
-        ListConflictsInput(cursor=cursor, limit=limit),
+        ListConflictsInput(state=state, source=source, cursor=cursor, limit=limit),
     )
     return api_list(
         [asdict(item) for item in output.items],

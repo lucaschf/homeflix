@@ -1,20 +1,31 @@
-"""Tests for DetectMovieConflictsUseCase (ADR-015 Phase 1)."""
+"""Tests for DetectMovieConflictsUseCase (ADR-015 Phases 1 + 3)."""
 
 from unittest.mock import AsyncMock
 
 import pytest
 
 from src.modules.media.application.dtos.conflict_dtos import DetectMovieConflictsInput
+from src.modules.media.application.ports.library_health_port import LibraryHealthPort
 from src.modules.media.application.use_cases.detect_movie_conflicts import (
     DetectMovieConflictsUseCase,
 )
 from src.modules.media.domain.entities import MediaConflict
-from src.modules.media.domain.entities.media_conflict import MatchReason
+from src.modules.media.domain.entities.media_conflict import (
+    MatchReason,
+    ResolutionAction,
+    ResolutionSource,
+)
 from src.modules.media.domain.entities.movie import Movie
-from src.modules.media.domain.events import MediaConflictDetectedEvent
+from src.modules.media.domain.events import (
+    MediaConflictDetectedEvent,
+    MovieMergedEvent,
+)
 from src.modules.media.domain.value_objects import (
     Duration,
+    FilePath,
+    MediaFile,
     MovieId,
+    Resolution,
     Title,
     TmdbId,
     Year,
@@ -23,15 +34,49 @@ from src.modules.media.domain.value_objects.media_conflict_id import MediaConfli
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
-def _build_movie(*, external_id: str, duration_seconds: int = 7200) -> Movie:
+def _build_movie(
+    *,
+    external_id: str,
+    duration_seconds: int = 7200,
+    file_paths: list[str] | None = None,
+) -> Movie:
+    files = [
+        MediaFile(
+            file_path=FilePath(p),
+            file_size=1_000_000_000,
+            resolution=Resolution("1080p"),
+            is_primary=True,
+        )
+        for p in (file_paths or [])
+    ]
     return Movie(
         id=MovieId(external_id),
         library_id="lib_test12345678",
         title=Title("Example"),
         year=Year(2020),
         duration=Duration(duration_seconds),
+        files=files,
         tmdb_id=TmdbId(27205),
     )
+
+
+class _FakeLibraryHealth(LibraryHealthPort):
+    """Deterministic LibraryHealthPort for unit tests."""
+
+    def __init__(
+        self,
+        *,
+        accessible_files: set[str] | None = None,
+        healthy_libraries: set[str] | None = None,
+    ) -> None:
+        self._accessible_files = accessible_files or set()
+        self._healthy_libraries = healthy_libraries or set()
+
+    async def is_file_accessible(self, file_path: str) -> bool:
+        return file_path in self._accessible_files
+
+    async def is_library_root_accessible(self, library_id: str) -> bool:
+        return library_id in self._healthy_libraries
 
 
 class TestDetectMovieConflictsUseCase:
@@ -133,3 +178,167 @@ async def _stamp_conflict_id(conflict: MediaConflict) -> MediaConflict:
     return conflict.with_updates(
         id=MediaConflictId("cnf_stamped12345"),
     )
+
+
+class TestAutoMergeOrphans:
+    """ADR-015 Phase 3 — silent absorption of orphan candidates."""
+
+    @pytest.mark.asyncio
+    async def test_orphan_other_triggers_auto_merge_and_skips_queue(self) -> None:
+        # Self has a live file; other's file is missing (orphan) but
+        # the library is mounted → auto-merge other into self.
+        mocks = make_media_uow_mock()
+        self_movie = _build_movie(
+            external_id="mov_abcdefghijkl",
+            file_paths=["/movies/self.mkv"],
+        )
+        orphan = _build_movie(
+            external_id="mov_mnopqrstuvwx",
+            file_paths=["/movies/missing.mkv"],
+        )
+        mocks.movies.find_all_by_tmdb_id.return_value = [self_movie, orphan]
+        mocks.media_conflicts.find_blocking_pair.return_value = None
+        mocks.media_conflicts.save.side_effect = _stamp_conflict_id
+        mocks.movies.delete.return_value = True
+
+        health = _FakeLibraryHealth(
+            accessible_files={"/movies/self.mkv"},  # orphan's path NOT here
+            healthy_libraries={"lib_test12345678"},
+        )
+        event_bus = AsyncMock()
+        use_case = DetectMovieConflictsUseCase(
+            uow_factory=mocks.factory,
+            library_health=health,
+            event_bus=event_bus,
+        )
+
+        result = await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_abcdefghijkl", tmdb_id=27205),
+        )
+
+        assert result.conflicts_created == 1
+        saved_conflict = mocks.media_conflicts.save.call_args[0][0]
+        assert saved_conflict.is_resolved is True
+        assert saved_conflict.resolution is ResolutionAction.MERGE_REPLACE
+        assert saved_conflict.resolution_source is ResolutionSource.AUTO
+        assert saved_conflict.winner_id == "mov_abcdefghijkl"
+
+        mocks.movies.delete.assert_awaited_once()
+        deleted_arg = mocks.movies.delete.await_args[0][0]
+        assert str(deleted_arg) == "mov_mnopqrstuvwx"
+
+        event_bus.publish.assert_awaited_once()
+        published = event_bus.publish.await_args[0][0]
+        assert isinstance(published, MovieMergedEvent)
+        assert published.is_auto is True
+        assert published.winner_id == "mov_abcdefghijkl"
+        assert published.loser_id == "mov_mnopqrstuvwx"
+
+    @pytest.mark.asyncio
+    async def test_unhealthy_library_falls_back_to_pending_queue(self) -> None:
+        # File missing but library inaccessible — could be transient
+        # I/O (drive unmounted); safer to queue the conflict.
+        mocks = make_media_uow_mock()
+        self_movie = _build_movie(
+            external_id="mov_abcdefghijkl",
+            file_paths=["/movies/self.mkv"],
+        )
+        other = _build_movie(
+            external_id="mov_mnopqrstuvwx",
+            file_paths=["/movies/elsewhere.mkv"],
+        )
+        mocks.movies.find_all_by_tmdb_id.return_value = [self_movie, other]
+        mocks.media_conflicts.find_blocking_pair.return_value = None
+        mocks.media_conflicts.save.side_effect = _stamp_conflict_id
+
+        health = _FakeLibraryHealth(
+            accessible_files={"/movies/self.mkv"},
+            healthy_libraries=set(),  # library NOT in healthy set
+        )
+        event_bus = AsyncMock()
+        use_case = DetectMovieConflictsUseCase(
+            uow_factory=mocks.factory,
+            library_health=health,
+            event_bus=event_bus,
+        )
+
+        result = await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_abcdefghijkl", tmdb_id=27205),
+        )
+
+        assert result.conflicts_created == 1
+        saved_conflict = mocks.media_conflicts.save.call_args[0][0]
+        # Falls back to the pending-conflict path; nothing is resolved.
+        assert saved_conflict.is_resolved is False
+        assert saved_conflict.resolution_source is None
+        mocks.movies.delete.assert_not_called()
+
+        # Detection event still fires; no merge event.
+        published_types = [
+            type(call.args[0]).__name__ for call in event_bus.publish.await_args_list
+        ]
+        assert published_types == ["MediaConflictDetectedEvent"]
+
+    @pytest.mark.asyncio
+    async def test_accessible_other_file_falls_back_to_pending_queue(self) -> None:
+        # Other's file IS accessible — not an orphan, so the operator
+        # must decide (Director's Cut? remaster?).
+        mocks = make_media_uow_mock()
+        self_movie = _build_movie(
+            external_id="mov_abcdefghijkl",
+            file_paths=["/movies/self.mkv"],
+        )
+        other = _build_movie(
+            external_id="mov_mnopqrstuvwx",
+            file_paths=["/movies/other.mkv"],
+        )
+        mocks.movies.find_all_by_tmdb_id.return_value = [self_movie, other]
+        mocks.media_conflicts.find_blocking_pair.return_value = None
+        mocks.media_conflicts.save.side_effect = _stamp_conflict_id
+
+        health = _FakeLibraryHealth(
+            accessible_files={"/movies/self.mkv", "/movies/other.mkv"},
+            healthy_libraries={"lib_test12345678"},
+        )
+        use_case = DetectMovieConflictsUseCase(
+            uow_factory=mocks.factory,
+            library_health=health,
+        )
+
+        await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_abcdefghijkl", tmdb_id=27205),
+        )
+
+        saved_conflict = mocks.media_conflicts.save.call_args[0][0]
+        assert saved_conflict.is_resolved is False
+        mocks.movies.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_library_health_not_wired_preserves_phase1_behavior(self) -> None:
+        # When the port is None, the use case never tries to detect
+        # orphans — every collision queues as a pending conflict.
+        mocks = make_media_uow_mock()
+        self_movie = _build_movie(
+            external_id="mov_abcdefghijkl",
+            file_paths=["/movies/self.mkv"],
+        )
+        other = _build_movie(
+            external_id="mov_mnopqrstuvwx",
+            file_paths=["/movies/missing.mkv"],
+        )
+        mocks.movies.find_all_by_tmdb_id.return_value = [self_movie, other]
+        mocks.media_conflicts.find_blocking_pair.return_value = None
+        mocks.media_conflicts.save.side_effect = _stamp_conflict_id
+
+        use_case = DetectMovieConflictsUseCase(
+            uow_factory=mocks.factory,
+            library_health=None,
+        )
+
+        await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_abcdefghijkl", tmdb_id=27205),
+        )
+
+        saved_conflict = mocks.media_conflicts.save.call_args[0][0]
+        assert saved_conflict.is_resolved is False
+        mocks.movies.delete.assert_not_called()

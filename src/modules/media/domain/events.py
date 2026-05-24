@@ -127,14 +127,16 @@ class MediaConflictDetectedEvent(DomainEvent):
 
 @dataclass(frozen=True)
 class MovieMergedEvent(DomainEvent):
-    """Emitted when an admin merges two movies via the conflict queue.
+    """Emitted when two movies are merged via the conflict queue.
 
-    Triggered by ADR-015 Phase 2 resolution endpoint. Carries the
-    cross-BC fan-out signal: ``watch_progress`` deletes the loser's
+    Triggered by either the admin resolve endpoint (ADR-015 Phase 2,
+    ``is_auto=False``) or the post-enrich detector silently absorbing
+    an orphaned candidate (ADR-015 Phase 3, ``is_auto=True``). Carries
+    the cross-BC fan-out signal: ``watch_progress`` deletes the loser's
     progress rows and ``collections`` repoints watchlist / custom-list
     items from loser → winner. The loser movie itself is already
-    soft-deleted by the resolve use case before the event publishes,
-    so handlers don't need to touch the catalog row.
+    soft-deleted by the trigger before the event publishes, so handlers
+    don't need to touch the catalog row.
 
     Attributes:
         conflict_id: External id of the resolved conflict (``cnf_xxx``).
@@ -145,12 +147,18 @@ class MovieMergedEvent(DomainEvent):
             transferred to the winner; cross-BC handlers can treat
             this identically to ``MERGE_REPLACE`` (rows still need to
             be repointed). Surfaced for analytics / audit.
+        is_auto: ``True`` when the merge was decided by the auto-merge
+            path (orphan + healthy library), ``False`` when an admin
+            picked the resolution. Cross-BC handlers apply the same
+            fan-out either way; the flag is surfaced for logs and
+            audit reports.
     """
 
     conflict_id: str = ""
     winner_id: str = ""
     loser_id: str = ""
     keep_loser_variants: bool = False
+    is_auto: bool = False
 
 
 @dataclass(frozen=True)

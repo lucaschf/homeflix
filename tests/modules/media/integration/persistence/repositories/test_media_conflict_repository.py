@@ -7,6 +7,7 @@ from src.modules.media.domain.entities.media_conflict import (
     MatchReason,
     MediaConflict,
     ResolutionAction,
+    ResolutionSource,
 )
 from src.modules.media.infrastructure.persistence.repositories.media_conflict_repository import (
     SqlAlchemyMediaConflictRepository,
@@ -167,3 +168,72 @@ class TestListPending:
         )
         assert [c.id for c in second_page.items] == [c1.id]
         assert second_page.pagination.has_more is False
+
+
+@pytest.mark.integration
+class TestListResolved:
+    """ADR-015 Phase 3 — audit view of resolved conflicts."""
+
+    async def test_excludes_pending_rows(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SqlAlchemyMediaConflictRepository(db_session)
+        # Pending: not in result.
+        await repo.save(_new_conflict(a_id="mov_aaaaaaaaaaaa", b_id="mov_bbbbbbbbbbbb"))
+        # Resolved manual:
+        manual = await repo.save(_new_conflict(a_id="mov_cccccccccccc", b_id="mov_dddddddddddd"))
+        await repo.save(
+            manual.resolve(ResolutionAction.MARK_DISTINCT),
+        )
+
+        page = await repo.list_resolved()
+
+        # Only the resolved row appears (pending excluded).
+        assert len(page.items) == 1
+        assert page.items[0].is_resolved is True
+
+    async def test_filters_by_source_auto(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SqlAlchemyMediaConflictRepository(db_session)
+        # Manual resolution:
+        manual = await repo.save(_new_conflict(a_id="mov_aaaaaaaaaaaa", b_id="mov_bbbbbbbbbbbb"))
+        await repo.save(manual.resolve(ResolutionAction.MARK_DISTINCT))
+        # Auto resolution:
+        auto = await repo.save(_new_conflict(a_id="mov_cccccccccccc", b_id="mov_dddddddddddd"))
+        auto_resolved = await repo.save(
+            auto.resolve(
+                ResolutionAction.MERGE_REPLACE,
+                winner_id=auto.candidate_a_id,
+                source=ResolutionSource.AUTO,
+            ),
+        )
+
+        page = await repo.list_resolved(source=ResolutionSource.AUTO)
+
+        assert [c.id for c in page.items] == [auto_resolved.id]
+        assert page.items[0].resolution_source is ResolutionSource.AUTO
+
+    async def test_source_none_returns_both_sources(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SqlAlchemyMediaConflictRepository(db_session)
+        manual = await repo.save(_new_conflict(a_id="mov_aaaaaaaaaaaa", b_id="mov_bbbbbbbbbbbb"))
+        await repo.save(manual.resolve(ResolutionAction.MARK_DISTINCT))
+        auto = await repo.save(_new_conflict(a_id="mov_cccccccccccc", b_id="mov_dddddddddddd"))
+        await repo.save(
+            auto.resolve(
+                ResolutionAction.MERGE_REPLACE,
+                winner_id=auto.candidate_a_id,
+                source=ResolutionSource.AUTO,
+            ),
+        )
+
+        page = await repo.list_resolved()
+
+        assert len(page.items) == 2
+        sources = {c.resolution_source for c in page.items}
+        assert sources == {ResolutionSource.MANUAL, ResolutionSource.AUTO}

@@ -5,6 +5,7 @@ from src.modules.media.domain.entities.media_conflict import (
     MatchReason,
     MediaConflict,
     ResolutionAction,
+    ResolutionSource,
     SuggestedAction,
 )
 from src.modules.media.domain.entities.movie import Movie
@@ -27,6 +28,7 @@ __all__ = [
     "MediaConflict",
     "Movie",
     "ResolutionAction",
+    "ResolutionSource",
     "ScanRun",
     "ScanRunKind",
     "ScanRunStatus",
