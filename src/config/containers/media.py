@@ -11,6 +11,9 @@ from src.modules.media.application.use_cases.add_file_variant import AddFileVari
 from src.modules.media.application.use_cases.bulk_enrich_metadata import (
     BulkEnrichMetadataUseCase,
 )
+from src.modules.media.application.use_cases.bulk_mark_distinct_conflicts import (
+    BulkMarkDistinctConflictsUseCase,
+)
 from src.modules.media.application.use_cases.clear_episode_intro import ClearEpisodeIntroUseCase
 from src.modules.media.application.use_cases.clear_hls_cache import ClearHlsCacheUseCase
 from src.modules.media.application.use_cases.clear_hls_cache_global import (
@@ -572,6 +575,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         ResolveMediaConflictUseCase,
         uow_factory=media_unit_of_work_factory,
         event_bus=event_bus,
+    )
+
+    bulk_mark_distinct_conflicts = providers.Factory(
+        BulkMarkDistinctConflictsUseCase,
+        uow_factory=media_unit_of_work_factory,
     )
 
     # =========================================================================

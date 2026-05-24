@@ -185,6 +185,48 @@ class ResolveMediaConflictOutput:
 
 
 @dataclass(frozen=True)
+class BulkMarkDistinctInput:
+    """Input for the bulk mark-distinct endpoint (ADR-015 Phase 4).
+
+    Attributes:
+        conflict_ids: External ids (``cnf_xxx``) of the pending
+            conflicts to mark as intentionally distinct. Duplicates
+            are de-duplicated; order is preserved.
+    """
+
+    conflict_ids: list[str]
+
+
+@dataclass(frozen=True)
+class BulkSkippedConflict:
+    """One conflict the bulk operation could not resolve.
+
+    Attributes:
+        conflict_id: External id that was skipped.
+        reason: ``"not_found"``, ``"already_resolved"`` or
+            ``"invalid_id"``.
+    """
+
+    conflict_id: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class BulkMarkDistinctOutput:
+    """Result summary after the bulk mark-distinct use case commits.
+
+    Attributes:
+        requested: How many distinct ids the caller asked to resolve.
+        resolved_ids: Ids that were pending and are now MARK_DISTINCT.
+        skipped: Ids that were not resolved, each with a reason.
+    """
+
+    requested: int
+    resolved_ids: list[str]
+    skipped: list[BulkSkippedConflict]
+
+
+@dataclass(frozen=True)
 class ListConflictsOutput:
     """Paginated list of conflicts.
 
@@ -202,6 +244,9 @@ class ListConflictsOutput:
 
 
 __all__ = [
+    "BulkMarkDistinctInput",
+    "BulkMarkDistinctOutput",
+    "BulkSkippedConflict",
     "ConflictCandidateFile",
     "ConflictCandidateSummary",
     "ConflictSummary",

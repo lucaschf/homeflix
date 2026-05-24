@@ -22,14 +22,20 @@ from src.config.containers import ApplicationContainer
 from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.media.application.dtos.conflict_dtos import (
+    BulkMarkDistinctInput,
     ListConflictsInput,
     ResolveMediaConflictInput,
+)
+from src.modules.media.application.use_cases.bulk_mark_distinct_conflicts import (
+    BulkMarkDistinctConflictsUseCase,
 )
 from src.modules.media.application.use_cases.list_conflicts import ListConflictsUseCase
 from src.modules.media.application.use_cases.resolve_media_conflict import (
     ResolveMediaConflictUseCase,
 )
 from src.modules.media.domain.entities.media_conflict import ResolutionAction
+
+_MAX_BULK_CONFLICTS = 200
 
 
 class ResolveConflictBody(BaseModel):
@@ -54,6 +60,22 @@ class ResolveConflictBody(BaseModel):
             "mark_distinct."
         ),
         max_length=50,
+    )
+
+
+class BulkMarkDistinctBody(BaseModel):
+    """Request body for ``POST /admin/conflicts/bulk-mark-distinct``.
+
+    ``conflict_ids`` is bounded so a single call can't sweep an
+    unbounded queue; the use case de-duplicates and skips ids that
+    are missing, malformed, or already resolved.
+    """
+
+    conflict_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=_MAX_BULK_CONFLICTS,
+        description="External ids (cnf_xxx) of pending conflicts to mark distinct.",
     )
 
 
@@ -127,6 +149,29 @@ async def resolve_admin_conflict(
         ),
     )
     return api_single("media_conflict_resolution", asdict(output))
+
+
+@router.post("/bulk-mark-distinct")
+@inject
+async def bulk_mark_distinct_conflicts(
+    body: BulkMarkDistinctBody,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: BulkMarkDistinctConflictsUseCase = Depends(
+        Provide[ApplicationContainer.media.bulk_mark_distinct_conflicts],
+    ),
+) -> dict[str, Any]:
+    """Mark a selection of pending conflicts as intentionally distinct.
+
+    Bulk resolution only supports ``mark_distinct`` — it needs no
+    per-conflict winner and triggers no soft-delete, so a whole
+    selection closes safely in one transaction. Ids that are missing,
+    malformed, or already resolved are reported under ``skipped``
+    instead of failing the request.
+    """
+    output = await use_case.execute(
+        BulkMarkDistinctInput(conflict_ids=body.conflict_ids),
+    )
+    return api_single("media_conflict_bulk_resolution", asdict(output))
 
 
 __all__ = ["router"]
