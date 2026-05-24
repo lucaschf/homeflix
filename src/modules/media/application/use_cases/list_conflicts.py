@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.media.application.dtos.conflict_dtos import (
+    ConflictCandidateFile,
     ConflictCandidateSummary,
     ConflictSummary,
     ListConflictsInput,
@@ -20,6 +21,7 @@ from src.modules.media.domain.value_objects import MovieId
 if TYPE_CHECKING:
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities.movie import Movie
+    from src.modules.media.domain.value_objects import MediaFile
 
 _VALID_STATES = ("pending", "resolved")
 _VALID_SOURCES = ("manual", "auto")
@@ -167,12 +169,26 @@ def _build_candidate(
                 media_type=media_type,
                 title=movie.title.value,
                 year=movie.year.value,
+                files=[_build_file(f) for f in movie.files],
             )
     return ConflictCandidateSummary(
         media_id=media_id,
         media_type=media_type,
         title=None,
         year=None,
+        files=[],
+    )
+
+
+def _build_file(file: MediaFile) -> ConflictCandidateFile:
+    """Project a ``MediaFile`` variant into its display DTO."""
+    return ConflictCandidateFile(
+        file_path=file.file_path.value,
+        resolution=file.resolution.value,
+        file_size=file.file_size,
+        video_codec=None if file.video_codec is None else file.video_codec.value,
+        hdr_format=None if file.hdr_format is None else file.hdr_format.value,
+        is_primary=file.is_primary,
     )
 
 

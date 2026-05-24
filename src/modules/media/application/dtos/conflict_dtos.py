@@ -60,6 +60,32 @@ class ListConflictsInput:
 
 
 @dataclass(frozen=True)
+class ConflictCandidateFile:
+    """Display-side projection of one file variant of a candidate.
+
+    Gives the operator the on-disk context needed to tell two
+    catalog entries apart (which is the 720p rip, which path moved,
+    etc.) without leaving the conflict queue.
+
+    Attributes:
+        file_path: Absolute path of the variant on disk.
+        resolution: Resolution label (e.g. ``"1080p"``).
+        file_size: Size in bytes; the UI formats it for display.
+        video_codec: Codec label (``"h265"``…) or ``None`` when
+            unprobed.
+        hdr_format: HDR label (``"dolby_vision"``…) or ``None``.
+        is_primary: Whether this is the preferred variant.
+    """
+
+    file_path: str
+    resolution: str
+    file_size: int
+    video_codec: str | None
+    hdr_format: str | None
+    is_primary: bool
+
+
+@dataclass(frozen=True)
 class ConflictCandidateSummary:
     """Display-side projection of one side of a conflict pair.
 
@@ -70,12 +96,16 @@ class ConflictCandidateSummary:
             the underlying entity has disappeared (soft-deleted or
             hard-deleted out of band).
         year: Release year, when available.
+        files: File variants of the candidate, so the operator can
+            compare paths / resolutions side by side. Empty when the
+            entity has vanished or carries no variants.
     """
 
     media_id: str
     media_type: str
     title: str | None
     year: int | None
+    files: list[ConflictCandidateFile]
 
 
 @dataclass(frozen=True)
@@ -172,6 +202,7 @@ class ListConflictsOutput:
 
 
 __all__ = [
+    "ConflictCandidateFile",
     "ConflictCandidateSummary",
     "ConflictSummary",
     "DetectMovieConflictsInput",
