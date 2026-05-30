@@ -92,6 +92,9 @@ from src.modules.media.application.use_cases.stream_file_range import StreamFile
 from src.modules.media.application.use_cases.sweep_interrupted_scan_runs import (
     SweepInterruptedScanRunsUseCase,
 )
+from src.modules.media.application.use_cases.sweep_movie_conflicts import (
+    SweepMovieConflictsUseCase,
+)
 from src.modules.media.application.use_cases.trigger_bulk_enrich import (
     TriggerBulkEnrichUseCase,
 )
@@ -580,6 +583,12 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     bulk_mark_distinct_conflicts = providers.Factory(
         BulkMarkDistinctConflictsUseCase,
         uow_factory=media_unit_of_work_factory,
+    )
+
+    sweep_movie_conflicts = providers.Factory(
+        SweepMovieConflictsUseCase,
+        uow_factory=media_unit_of_work_factory,
+        detect_use_case=detect_movie_conflicts,
     )
 
     # =========================================================================

@@ -334,6 +334,60 @@ class TestTitleYearFallback:
         mocks.movies.delete.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_sweep_path_none_tmdb_skips_tmdb_pass_runs_fallback(self) -> None:
+        # ADR-015 Phase 6.5 — the sweep invokes the detector with
+        # ``tmdb_id=None`` for movies that never matched TMDB. The
+        # detector must skip ``find_all_by_tmdb_id`` entirely and still
+        # run the title+year fallback pass.
+        mocks = make_media_uow_mock()
+        unenriched_self = _build_movie(
+            external_id="mov_aaaaaaaaaaaa",
+            title="Princess Mononoke",
+            year=1997,
+            tmdb_id=None,
+            file_paths=["/movies/a.mkv"],
+        )
+        unenriched_dup = _build_movie(
+            external_id="mov_bbbbbbbbbbbb",
+            title="Princess Mononoke",
+            year=1997,
+            tmdb_id=None,
+            file_paths=["/movies/b.mkv"],
+        )
+        mocks.movies.find_by_id.return_value = unenriched_self
+        mocks.movies.find_all_by_year.return_value = [unenriched_self, unenriched_dup]
+        mocks.media_conflicts.find_blocking_pair.return_value = None
+        mocks.media_conflicts.save.side_effect = _stamp_conflict_id
+
+        use_case = DetectMovieConflictsUseCase(
+            uow_factory=mocks.factory,
+            runtime_settings=_settings_with(fallback=True),
+        )
+        result = await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_aaaaaaaaaaaa", tmdb_id=None),
+        )
+
+        assert result.conflicts_created == 1
+        mocks.movies.find_all_by_tmdb_id.assert_not_called()
+        saved = mocks.media_conflicts.save.call_args[0][0]
+        assert saved.match_reason is MatchReason.TITLE_YEAR_FALLBACK
+
+    @pytest.mark.asyncio
+    async def test_sweep_path_none_tmdb_returns_empty_when_self_vanished(self) -> None:
+        # If the sweep's snapshot id no longer resolves (movie deleted
+        # mid-pass), the detector returns 0 instead of crashing.
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_id.return_value = None
+
+        use_case = DetectMovieConflictsUseCase(uow_factory=mocks.factory)
+        result = await use_case.execute(
+            DetectMovieConflictsInput(media_id="mov_aaaaaaaaaaaa", tmdb_id=None),
+        )
+
+        assert result.conflicts_created == 0
+        mocks.media_conflicts.save.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_fallback_skips_ids_already_handled_by_tmdb_pass(self) -> None:
         mocks = make_media_uow_mock()
         enriched = _build_movie(

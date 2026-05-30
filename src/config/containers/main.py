@@ -23,6 +23,7 @@ from src.infrastructure.health import DatabaseProbe, FilesystemProbe
 from src.infrastructure.scheduling import (
     IntroDetectionJob,
     LibraryScanScheduler,
+    ScanDedupSweepJob,
     ThumbnailBackfillJob,
 )
 from src.modules.identity.infrastructure.persistence.sqlalchemy_unit_of_work import (
@@ -242,6 +243,12 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         audio_extractor=media.audio_extractor,
         chromaprint_service=media.chromaprint_service,
         intro_detector=media.intro_detector,
+        runtime_settings=settings.runtime_settings,
+    )
+
+    scan_dedup_sweep_job = providers.Singleton(
+        ScanDedupSweepJob,
+        sweep_use_case=media.sweep_movie_conflicts,
         runtime_settings=settings.runtime_settings,
     )
 
