@@ -11,6 +11,7 @@ import shutil
 import struct
 import wave
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -18,6 +19,14 @@ from src.modules.media.infrastructure.audio.audio_extractor import (
     AudioExtractor,
     _ffmpeg_path,
 )
+from src.modules.settings.domain.value_objects import StreamingConfig
+
+
+def _fake_runtime_settings() -> MagicMock:
+    runtime = MagicMock()
+    runtime.streaming_snapshot_sync.return_value = StreamingConfig()
+    return runtime
+
 
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None,
@@ -58,7 +67,7 @@ class TestAudioExtractorReal:
         source = tmp_path / "source.wav"
         _write_sine_wav(source, duration_seconds=3.0)
 
-        extractor = AudioExtractor()
+        extractor = AudioExtractor(_fake_runtime_settings())
         captured_path: Path | None = None
         with extractor.extract_temporary(str(source), duration_seconds=2) as wav_path:
             assert wav_path is not None
@@ -82,5 +91,7 @@ class TestAudioExtractorReal:
         assert not captured_path.exists()
 
     def test_returns_none_when_input_does_not_exist(self, tmp_path: Path) -> None:
-        result = AudioExtractor().extract(str(tmp_path / "missing.mkv"), duration_seconds=5)
+        result = AudioExtractor(_fake_runtime_settings()).extract(
+            str(tmp_path / "missing.mkv"), duration_seconds=5
+        )
         assert result is None
