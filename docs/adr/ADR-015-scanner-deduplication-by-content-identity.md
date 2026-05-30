@@ -103,6 +103,12 @@ Computar hash de cada arquivo durante scan, usar como identity.
 
 **Rejeitado porque:** custo computacional altíssimo (hash de filme inteiro), e remaster não compartilharia hash com versão antiga mesmo sendo "o mesmo filme" logicamente — não resolve o caso de uso principal.
 
+### 5. Constraint `UNIQUE(original_title, year)` (ou normalizado) para impedir duplicatas no banco
+
+Em vez de detectar colisões, **proibir** que duas entidades com o mesmo (título, ano) coexistam, via índice único.
+
+**Rejeitado porque:** contraria a decisão central — `file_path` é a identidade primária e duplicatas de conteúdo são permitidas **transitoriamente** até o operador resolver. Um `UNIQUE` faria o `INSERT` do scanner **falhar** ao topar com uma duplicata (remaster swap, reorganização de disco, duplicata acidental), quebrando o scan em vez de sinalizar o conflito. Além disso: (a) `original_title` é nullable e no SQLite múltiplos `NULL` passam pelo índice único; (b) a chave de match é **normalizada** (casefold + sem diacríticos), que um índice na coluna crua não captura — exigiria coluna `normalized_original_title` materializada; (c) `(título, ano)` tem falsos positivos legítimos (remakes, colisões de tradução), então rejeitar no banco descartaria entradas válidas. A camada de detecção + fila do operador (mais o sweep agendado, Fase 4 / 6.5) é o mecanismo correto: acha as duplicatas sem derrubar o scan e deixa a decisão pro humano nos casos ambíguos.
+
 ## Referências
 
 - [ADR-006](./ADR-006-media-file-variants.md) — Variantes de Arquivo de Mídia (FileVariantMixin reusado no merge)
@@ -158,3 +164,4 @@ class MediaConflict(AggregateRoot):
 |------|-------|---------|
 | 2026-05-23 | Lucas Cristovam | Criação inicial — Proposto |
 | 2026-05-24 | Lucas Cristovam | Fases 1–4 implementadas e enviadas — Aceito. Bulk resolve entregue como **mark-distinct only** (sem critério `min_runtime_delta`); merge segue 1-a-1. |
+| 2026-05-24 | Lucas Cristovam | Adicionada alternativa 5 (constraint `UNIQUE` em content-identity) — rejeitada; documenta por que não impedimos duplicatas no banco. |
