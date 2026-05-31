@@ -85,6 +85,9 @@ from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
 )
 from src.modules.media.application.use_cases.search_catalog import SearchCatalogUseCase
+from src.modules.media.application.use_cases.search_tmdb_titles import (
+    SearchTmdbTitlesUseCase,
+)
 from src.modules.media.application.use_cases.serve_hls_file import ServeHlsFileUseCase
 from src.modules.media.application.use_cases.set_episode_intro import SetEpisodeIntroUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
@@ -540,6 +543,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     get_movie_tmdb_suggestions = providers.Factory(
         GetMovieTmdbSuggestionsUseCase,
         uow_factory=media_unit_of_work_factory,
+        metadata_provider=tmdb_client,
+    )
+
+    search_tmdb_titles = providers.Factory(
+        SearchTmdbTitlesUseCase,
         metadata_provider=tmdb_client,
     )
 
