@@ -98,14 +98,10 @@ class ResolveMediaConflictUseCase:
 
             if action is not ResolutionAction.MARK_DISTINCT:
                 _ensure_movie_pair(conflict)
-                _ensure_winner_in_pair(conflict, input_dto.winner_id)
-            elif input_dto.winner_id is not None:
-                raise DomainValidationException(
-                    message="winner_id must be None for mark_distinct",
-                    message_code="MEDIA_CONFLICT_WINNER_NOT_ALLOWED",
-                    object_type="MediaConflict",
-                )
 
+            # The winner rule (required + in-pair for MERGE, forbidden for
+            # MARK_DISTINCT) is owned by the aggregate; resolve() raises a
+            # clean DomainValidationException for any violation.
             resolved = conflict.resolve(action, winner_id=input_dto.winner_id)
             persisted = await uow.media_conflicts.save(resolved)
 
@@ -176,27 +172,6 @@ def _ensure_movie_pair(conflict: MediaConflict) -> None:
         raise DomainValidationException(
             message="ResolveMediaConflictUseCase only handles movie-vs-movie conflicts",
             message_code="MEDIA_CONFLICT_UNSUPPORTED_CANDIDATE_TYPE",
-            object_type="MediaConflict",
-        )
-
-
-def _ensure_winner_in_pair(conflict: MediaConflict, winner_id: str | None) -> None:
-    """Pre-validate ``winner_id`` so the aggregate's pydantic check never fires.
-
-    Validating here keeps the resulting ``DomainValidationException`` free
-    of pydantic-injected ``input`` metadata (which would carry the
-    aggregate's datetime fields and trip the JSON response serializer).
-    """
-    if winner_id is None:
-        raise DomainValidationException(
-            message="winner_id is required for merge_keep_both / merge_replace",
-            message_code="MEDIA_CONFLICT_WINNER_REQUIRED",
-            object_type="MediaConflict",
-        )
-    if winner_id not in {conflict.candidate_a_id, conflict.candidate_b_id}:
-        raise DomainValidationException(
-            message="winner_id must be one of the conflict's candidates",
-            message_code="MEDIA_CONFLICT_WINNER_NOT_IN_PAIR",
             object_type="MediaConflict",
         )
 

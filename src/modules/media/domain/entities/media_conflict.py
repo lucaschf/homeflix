@@ -9,7 +9,10 @@ from typing import ClassVar, Self
 from pydantic import Field, model_validator
 
 from src.building_blocks.domain import AggregateRoot
-from src.building_blocks.domain.errors import BusinessRuleViolationException
+from src.building_blocks.domain.errors import (
+    BusinessRuleViolationException,
+    DomainValidationException,
+)
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
 
@@ -315,12 +318,49 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
                 message_code=MediaRuleCodes.MEDIA_CONFLICT_ALREADY_RESOLVED,
                 rule_code=MediaRuleCodes.MEDIA_CONFLICT_ALREADY_RESOLVED,
             )
+        self._validate_winner(action, winner_id)
         return self.with_updates(
             resolved_at=datetime.now(UTC),
             resolution=action,
             winner_id=winner_id,
             resolution_source=source,
         )
+
+    def _validate_winner(self, action: ResolutionAction, winner_id: str | None) -> None:
+        """Validate ``winner_id`` against ``action``, raising clean domain errors.
+
+        This is the authoritative, user-facing check for the winner rule.
+        The ``_validate_winner_id_paired_with_merge`` model validator stays
+        as a structural invariant guarding direct construction; routing the
+        resolve flow through here keeps the raised error free of the
+        pydantic-injected ``input`` metadata (which would carry the
+        aggregate's datetime fields and trip the JSON response serializer).
+
+        Raises:
+            DomainValidationException: When ``winner_id`` is missing for a
+                MERGE action, not one of the candidates, or supplied for
+                ``MARK_DISTINCT``.
+        """
+        is_merge = action in {ResolutionAction.MERGE_KEEP_BOTH, ResolutionAction.MERGE_REPLACE}
+        if is_merge:
+            if winner_id is None:
+                raise DomainValidationException(
+                    message="winner_id is required for merge_keep_both / merge_replace",
+                    message_code=MediaRuleCodes.MEDIA_CONFLICT_WINNER_REQUIRED,
+                    object_type="MediaConflict",
+                )
+            if winner_id not in {self.candidate_a_id, self.candidate_b_id}:
+                raise DomainValidationException(
+                    message="winner_id must be one of the conflict's candidates",
+                    message_code=MediaRuleCodes.MEDIA_CONFLICT_WINNER_NOT_IN_PAIR,
+                    object_type="MediaConflict",
+                )
+        elif winner_id is not None:
+            raise DomainValidationException(
+                message="winner_id must be None for mark_distinct",
+                message_code=MediaRuleCodes.MEDIA_CONFLICT_WINNER_NOT_ALLOWED,
+                object_type="MediaConflict",
+            )
 
     @property
     def is_resolved(self) -> bool:
