@@ -15,6 +15,7 @@ from src.modules.media.domain.entities.media_conflict import (
     ResolutionSource,
     SuggestedAction,
 )
+from src.modules.media.domain.rule_codes import MediaRuleCodes
 
 _A = "mov_aaaaaaaaaaaa"
 _B = "mov_bbbbbbbbbbbb"
@@ -209,18 +210,21 @@ class TestWinnerIdInvariants:
 
     def test_merge_requires_winner_id(self) -> None:
         conflict = _detect()
-        with pytest.raises(DomainValidationException):
+        with pytest.raises(DomainValidationException) as exc_info:
             conflict.resolve(ResolutionAction.MERGE_REPLACE)
+        assert exc_info.value.message_code == MediaRuleCodes.MEDIA_CONFLICT_WINNER_REQUIRED
 
     def test_mark_distinct_rejects_winner_id(self) -> None:
         conflict = _detect()
-        with pytest.raises(DomainValidationException):
+        with pytest.raises(DomainValidationException) as exc_info:
             conflict.resolve(ResolutionAction.MARK_DISTINCT, winner_id=_A)
+        assert exc_info.value.message_code == MediaRuleCodes.MEDIA_CONFLICT_WINNER_NOT_ALLOWED
 
     def test_winner_id_must_be_one_of_candidates(self) -> None:
         conflict = _detect()
-        with pytest.raises(DomainValidationException):
+        with pytest.raises(DomainValidationException) as exc_info:
             conflict.resolve(ResolutionAction.MERGE_REPLACE, winner_id="mov_cccccccccccc")
+        assert exc_info.value.message_code == MediaRuleCodes.MEDIA_CONFLICT_WINNER_NOT_IN_PAIR
 
 
 class TestResolutionSourceInvariants:
