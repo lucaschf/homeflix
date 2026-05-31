@@ -10,6 +10,9 @@ from src.modules.media.application.dtos.enrichment_dtos import (
 )
 from src.modules.media.application.ports import MediaMetadata, MetadataProvider
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.use_cases._localized_metadata_helpers import (
+    merge_localized_metadata,
+)
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.events import MediaEnrichedEvent
 from src.modules.media.domain.value_objects import (
@@ -334,31 +337,7 @@ def _apply_credits(
         updates["content_rating"] = ContentRating(metadata.content_rating)
     if metadata.trailer_url and (force or not movie.trailer_url):
         updates["trailer_url"] = metadata.trailer_url
-    _apply_localized(updates, movie.localized, metadata)
-
-
-def _apply_localized(
-    updates: dict[str, object],
-    existing: dict[str, dict[str, object]],
-    metadata: MediaMetadata,
-) -> None:
-    """Merge per-language overrides from metadata into ``updates``."""
-    if not metadata.localized:
-        return
-    localized: dict[str, dict[str, object]] = {}
-    for lang, fields in metadata.localized.items():
-        candidates = {
-            "title": fields.title,
-            "synopsis": fields.synopsis,
-            "tagline": fields.tagline,
-            "genres": fields.genres or None,
-            "logo_path": fields.logo_url,
-        }
-        loc_entry: dict[str, object] = {k: v for k, v in candidates.items() if v}
-        if loc_entry:
-            localized[lang] = loc_entry
-    if localized:
-        updates["localized"] = {**existing, **localized}
+    merge_localized_metadata(updates, movie.localized, metadata)
 
 
 __all__ = ["EnrichMovieMetadataUseCase"]
