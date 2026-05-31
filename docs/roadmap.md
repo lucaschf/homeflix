@@ -1,6 +1,6 @@
 # HomeFlix — Roadmap
 
-> Last updated: 2026-05-23 (afternoon)
+> Last updated: 2026-05-31
 
 This roadmap captures **what comes next** after the Phase 1 foundation.
 Items are ordered so each tier builds on the previous one — both in
@@ -15,7 +15,7 @@ patterns are explicitly excluded.
 
 ---
 
-## Shipped (Phases 1–4 + ADR-015 Phases 1–4)
+## Shipped (Phases 1–4 + ADR-015 Phases 1–4 + 6.5)
 
 ### Phase 1 — Foundation
 
@@ -101,7 +101,17 @@ patterns are explicitly excluded.
   fallback matcher catches duplicates that never locked a TMDB id
   (queue-only, never auto-merged). Settings card + multi-select UI in
   homeflix-web.
-- 111 REST API endpoints across 9 bounded contexts, 2 600+ tests.
+- **6.5 Scheduled dedup sweep** — ADR-015 Phase 6.5. Periodic
+  scheduler job walks `movies.list_all()` and re-runs the detector
+  per movie — catches duplicates that landed after the original
+  enrich and pairs that never matched TMDB (the detector accepts
+  `tmdb_id=None` and runs the title+year fallback alone).
+  `scan_dedup` bucket gains `sweep_enabled` (off by default) and
+  `sweep_interval_minutes` (floor 15, default 1440); manual
+  `POST /api/v1/admin/conflicts/sweep` endpoint runs the same pass
+  on demand. Settings toggle + "Run sweep now" button in
+  homeflix-web. ADR-015 closed.
+- 112 REST API endpoints across 9 bounded contexts, 2 660+ tests.
 
 ---
 
@@ -143,19 +153,6 @@ patterns are explicitly excluded.
 | **Unlocks** | 4K HEVC playback without melting the CPU |
 | **Scope** | Detect available HW encoders at startup, prefer HW pipeline in HLS generation, graceful fallback to software |
 | **Depends on** | 2.1 (Docker — GPU passthrough config) |
-
-### Phase 6 — Scanner Deduplication (ADR-015)
-
-✅ **Shipped (6.1–6.4)** — see the Shipped section above. ADR-015 is
-**Accepted**. One deferred idea remains optional:
-
-#### 6.5 Scheduled dedup sweep (optional)
-
-| | |
-|---|---|
-| **Teaches** | Periodic batch jobs over the whole catalog vs event-driven hooks |
-| **Unlocks** | Catches duplicates without waiting for a re-enrich of each title — a recurring whole-catalog re-check |
-| **Scope** | Scheduler job (reuse `SchedulerConfig`) that walks existing movies and runs detection without re-enriching; today detection only fires on `MediaEnrichedEvent`, so a bulk re-enrich is the current way to re-check the backlog |
 
 ### Phase 5 — Observability & Resilience
 
