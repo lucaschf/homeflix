@@ -55,3 +55,58 @@ class TestCatalogRequest:
         assert updated.is_fulfilled is True
         assert updated.fulfilled_at == fixed
         assert request.is_fulfilled is False
+
+    def test_reconcile_backfills_only_unset_fields(self) -> None:
+        request = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+        )
+
+        reconciled = request.reconcile(
+            title="Alien",
+            requester_user_id="usr_aaaaaaaaaaaa",
+            notify=True,
+        )
+
+        assert reconciled is not None
+        assert reconciled.title == "Alien"
+        assert reconciled.requester_user_id == "usr_aaaaaaaaaaaa"
+        assert reconciled.notify_on_arrival is True
+
+    def test_reconcile_does_not_overwrite_first_owner(self) -> None:
+        request = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+            title="Alien",
+            requester_user_id="usr_aaaaaaaaaaaa",
+        )
+
+        reconciled = request.reconcile(
+            title="Aliens",
+            requester_user_id="usr_bbbbbbbbbbbb",
+        )
+
+        # First-owner-wins: title and requester are already set, and
+        # notify defaults to False, so nothing changes.
+        assert reconciled is None
+
+    def test_reconcile_notify_is_one_way(self) -> None:
+        request = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+            notify_on_arrival=True,
+        )
+
+        # Already subscribed and nothing to backfill → no-op.
+        assert request.reconcile(notify=True) is None
+
+    def test_reconcile_returns_none_when_nothing_changes(self) -> None:
+        request = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=RequestedMediaType.MOVIE,
+            title="Alien",
+            requester_user_id="usr_aaaaaaaaaaaa",
+            notify_on_arrival=True,
+        )
+
+        assert request.reconcile() is None

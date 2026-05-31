@@ -132,6 +132,51 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         """
         return self.with_updates(notify_on_arrival=True)
 
+    def reconcile(
+        self,
+        *,
+        title: str | None = None,
+        requester_user_id: str | None = None,
+        notify: bool = False,
+    ) -> CatalogRequest | None:
+        """Fold a repeat request's data into this existing one.
+
+        Both arrival entry points ("Solicitar inclusão" and "Avisar
+        quando chegar") hit the same ``(tmdb_id, media_type)`` row on a
+        re-submit and need to merge the incoming data the same way, so
+        the rule lives here instead of being copied into each use case.
+
+        First-owner-wins backfill: ``title`` and ``requester_user_id``
+        are only filled when currently unset, so a later requester never
+        overwrites the original owner's snapshot or reroutes their
+        notification. ``notify`` is one-way — it opts the request in to
+        the arrival notification but never turns an existing
+        subscription off.
+
+        Args:
+            title: Candidate title snapshot from the repeat request.
+            requester_user_id: Candidate requester from the repeat
+                request.
+            notify: Whether this entry point wants the arrival
+                notification enabled.
+
+        Returns:
+            A new instance with the merged changes, or ``None`` when the
+            incoming data adds nothing — letting the caller skip the
+            write and return the existing row unchanged.
+        """
+        updates: dict[str, object] = {}
+        if self.title is None and title:
+            updates["title"] = title
+        if self.requester_user_id is None and requester_user_id:
+            updates["requester_user_id"] = requester_user_id
+        if notify and not self.notify_on_arrival:
+            updates["notify_on_arrival"] = True
+
+        if not updates:
+            return None
+        return self.with_updates(**updates)
+
     def mark_fulfilled(self, fulfilled_at: datetime | None = None) -> CatalogRequest:
         """Return a copy stamped as fulfilled.
 
