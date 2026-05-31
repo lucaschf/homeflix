@@ -1,11 +1,15 @@
 """Tests for ``OnMediaEnrichedHandler``."""
 
+import logging
 from unittest.mock import AsyncMock
 
 import pytest
 
 from src.modules.catalog_requests.application.event_handlers import (
     OnMediaEnrichedHandler,
+)
+from src.modules.catalog_requests.application.event_handlers.on_media_enriched import (
+    _MEDIA_TYPE_TO_REQUESTED,
 )
 from src.modules.catalog_requests.application.ports import (
     CatalogArrivalNotification,
@@ -14,6 +18,7 @@ from src.modules.catalog_requests.application.ports import (
 from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
 from src.modules.media.domain.events import MediaCreatedEvent, MediaEnrichedEvent
+from src.shared_kernel.value_objects.media_type import MediaType
 from tests.modules.catalog_requests.unit.conftest import (
     make_catalog_requests_uow_mock,
 )
@@ -110,21 +115,24 @@ class TestOnMediaEnrichedHandler:
         mocks.catalog_requests.update.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_unknown_media_type(self) -> None:
-        """A garbled event payload (unknown ``media_type``) shouldn't
-        explode the bus — log and move on."""
+    async def test_skips_unknown_media_type(self, caplog: pytest.LogCaptureFixture) -> None:
+        """An unrecognized ``media_type`` must fail observably (ERROR log)
+        and skip — never silently drop, which would leave the matching
+        request unfulfilled forever."""
         mocks = make_catalog_requests_uow_mock()
         handler = OnMediaEnrichedHandler(uow_factory=mocks.factory)
 
-        await handler.handle(
-            MediaEnrichedEvent(
-                media_id="mov_abc",
-                media_type="episode",
-                tmdb_id=42,
-            ),
-        )
+        with caplog.at_level(logging.ERROR):
+            await handler.handle(
+                MediaEnrichedEvent(
+                    media_id="mov_abc",
+                    media_type="episode",
+                    tmdb_id=42,
+                ),
+            )
 
         mocks.catalog_requests.find_by_tmdb_id.assert_not_called()
+        assert any(record.levelno == logging.ERROR for record in caplog.records)
 
     @pytest.mark.asyncio
     async def test_matches_series_event(self) -> None:
@@ -337,3 +345,18 @@ class TestOnMediaEnrichedHandler:
 
         payload = publisher.publish_catalog_arrival.await_args.args[0]
         assert payload.title == "tmdb/movie/348"
+
+
+@pytest.mark.unit
+class TestMediaTypeAclMapping:
+    """The cross-BC ACL map must stay total over the canonical MediaType."""
+
+    def test_map_covers_every_media_type_member(self) -> None:
+        # If a MediaType member is added without a RequestedMediaType
+        # mapping, arrival events for it would be dropped (logged at
+        # ERROR) and the request never fulfilled. Fail here instead.
+        assert set(_MEDIA_TYPE_TO_REQUESTED) == set(MediaType)
+
+    def test_each_mapping_value_is_a_requested_media_type(self) -> None:
+        for mapped in _MEDIA_TYPE_TO_REQUESTED.values():
+            assert isinstance(mapped, RequestedMediaType)
