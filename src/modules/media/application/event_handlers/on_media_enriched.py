@@ -10,6 +10,7 @@ from src.modules.media.application.use_cases.detect_movie_conflicts import (
     DetectMovieConflictsUseCase,
 )
 from src.modules.media.domain.events import MediaEnrichedEvent
+from src.shared_kernel.value_objects.media_type import MediaType
 
 _logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class OnMediaEnrichedHandler(EventHandler):
         """Dispatch the detector for movie enrichments; ignore other media."""
         if not isinstance(event, MediaEnrichedEvent):
             return
-        if event.media_type != "movie":
+        if event.media_type is not MediaType.MOVIE:
             # Series/episode detection is out of Phase 1 scope.
             return
         if event.tmdb_id <= 0:

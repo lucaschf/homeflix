@@ -22,6 +22,7 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
+from src.shared_kernel.value_objects.media_type import MediaType
 
 if TYPE_CHECKING:
     from src.modules.media.domain.entities.season import Season
@@ -234,7 +235,7 @@ class Series(AggregateRoot[SeriesId]):
             start_year=start_year,
             **kwargs,
         )
-        series.add_event(MediaCreatedEvent(media_id=str(series_id), media_type="series"))
+        series.add_event(MediaCreatedEvent(media_id=str(series_id), media_type=MediaType.SERIES))
         return series
 
 

@@ -31,6 +31,11 @@ from src.modules.media.domain.value_objects import (
     Year,
 )
 
+# Aliased to avoid colliding with the scanner port's ``MediaType``
+# (movie | episode, a file-classification enum). This is the catalog
+# discriminator (movie | series) carried on domain events (ADR-016).
+from src.shared_kernel.value_objects.media_type import MediaType as CatalogMediaType
+
 
 class ScanMediaDirectoriesUseCase:
     """Scan filesystem directories and register discovered media files.
@@ -294,7 +299,9 @@ class ScanMediaDirectoriesUseCase:
             duration=Duration(0),
             files=[primary_file],
         )
-        movie.add_event(MediaCreatedEvent(media_id=str(movie_id), media_type="movie"))
+        movie.add_event(
+            MediaCreatedEvent(media_id=str(movie_id), media_type=CatalogMediaType.MOVIE)
+        )
         for path in paths[1:]:
             movie = movie.with_file(
                 await self._build_new_media_file(by_path[path], is_primary=False)

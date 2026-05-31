@@ -13,6 +13,7 @@ from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
 )
 from src.modules.media.domain.events import MediaCreatedEvent
+from src.shared_kernel.value_objects.media_type import MediaType
 
 _logger = logging.getLogger(__name__)
 
@@ -55,10 +56,10 @@ class OnMediaCreatedHandler(EventHandler):
 
         input_dto = EnrichMediaInput(media_id=event.media_id, force=False)
 
-        if event.media_type == "movie":
+        if event.media_type is MediaType.MOVIE:
             movie_uc = await self._enrich_movie_factory()
             result = await movie_uc.execute(input_dto)
-        elif event.media_type == "series":
+        elif event.media_type is MediaType.SERIES:
             series_uc = await self._enrich_series_factory()
             result = await series_uc.execute(input_dto)
         else:

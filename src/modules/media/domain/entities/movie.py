@@ -25,6 +25,7 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
+from src.shared_kernel.value_objects.media_type import MediaType
 
 
 class Movie(FileVariantMixin, AggregateRoot[MovieId]):
@@ -229,7 +230,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
             files=[file],
             **kwargs,
         )
-        movie.add_event(MediaCreatedEvent(media_id=str(movie_id), media_type="movie"))
+        movie.add_event(MediaCreatedEvent(media_id=str(movie_id), media_type=MediaType.MOVIE))
         return movie
 
 

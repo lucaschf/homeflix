@@ -28,6 +28,7 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
+from src.shared_kernel.value_objects.media_type import MediaType
 
 _logger = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ class EnrichMovieMetadataUseCase:
             await self._event_bus.publish(
                 MediaEnrichedEvent(
                     media_id=input_dto.media_id,
-                    media_type="movie",
+                    media_type=MediaType.MOVIE,
                     tmdb_id=enriched_tmdb_id,
                 ),
             )

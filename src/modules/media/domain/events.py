@@ -3,19 +3,20 @@
 from dataclasses import dataclass
 
 from src.building_blocks.domain.events import DomainEvent
+from src.shared_kernel.value_objects.media_type import MediaType
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class MediaCreatedEvent(DomainEvent):
     """Emitted when a new movie or series is created.
 
     Attributes:
         media_id: External ID of the media (mov_xxx or ser_xxx).
-        media_type: Type of media ("movie" or "series").
+        media_type: Type of media (:class:`MediaType`).
     """
 
     media_id: str = ""
-    media_type: str = ""
+    media_type: MediaType
 
 
 @dataclass(frozen=True)
@@ -72,7 +73,7 @@ class IntroClearedEvent(DomainEvent):
     series_id: str = ""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class MediaEnrichedEvent(DomainEvent):
     """Emitted when an enrichment pass finishes with a known TMDB id.
 
@@ -90,12 +91,12 @@ class MediaEnrichedEvent(DomainEvent):
     Attributes:
         media_id: External ID of the enriched media (mov_xxx or
             ser_xxx).
-        media_type: ``"movie"`` or ``"series"``.
+        media_type: :class:`MediaType` of the enriched media.
         tmdb_id: TMDB numeric id the enrichment locked onto.
     """
 
     media_id: str = ""
-    media_type: str = ""
+    media_type: MediaType
     tmdb_id: int = 0
 
 
