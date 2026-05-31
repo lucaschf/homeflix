@@ -596,3 +596,31 @@ class TestApplySeriesFields:
         saved = mocks.series.save.call_args[0][0]
         assert "pt-BR" in saved.localized
         assert saved.localized["pt-BR"]["synopsis"] == "Drama de crime."
+
+    async def test_should_carry_localized_tagline(self) -> None:
+        # Regression: the series localized merge used to drop tagline
+        # while the movie merge kept it. The shared helper now carries it
+        # for both media types so a provider tagline is never discarded.
+        series = _make_series()
+        metadata = MediaMetadata(
+            title="Breaking Bad",
+            tmdb_id=1396,
+            localized={
+                "pt-BR": LocalizedFields(
+                    title="Breaking Bad",
+                    tagline="Toda escolha tem consequências.",
+                ),
+            },
+        )
+
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = metadata
+
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        saved = mocks.series.save.call_args[0][0]
+        assert saved.localized["pt-BR"]["tagline"] == "Toda escolha tem consequências."

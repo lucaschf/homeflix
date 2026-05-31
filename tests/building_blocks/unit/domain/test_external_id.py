@@ -197,9 +197,26 @@ class SampleExternalIdWithMultiplePrefixes:
 
         # They have the same random part but different class and prefix
         assert tst_id.random_part == oth_id.random_part
-        # The ExternalId __eq__ compares values, not types,
-        # So these should not be equal since full values differ
+        # Equality is type-scoped, and the values differ by prefix anyway.
         assert tst_id != oth_id
+
+    def test_same_value_with_different_type_should_not_be_equal(self):
+        # Two subclasses are allowed to share a prefix, so the same full
+        # value can exist under two distinct id types. Equality must stay
+        # scoped to the concrete subclass, keeping the __eq__/__hash__
+        # contract consistent (the hash is type-scoped too).
+        class FooId(ExternalId):
+            EXPECTED_PREFIX: ClassVar[str] = "dup"
+
+        class BarId(ExternalId):
+            EXPECTED_PREFIX: ClassVar[str] = "dup"
+
+        foo = FooId("dup_abc123abc123")
+        bar = BarId("dup_abc123abc123")
+
+        assert foo.value == bar.value
+        assert foo != bar
+        assert hash(foo) != hash(bar)
 
 
 class TestExternalIdSubclassValidation:
