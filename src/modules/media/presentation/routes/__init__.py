@@ -25,6 +25,9 @@ from src.modules.media.presentation.routes.scan_routes import router as scan_rou
 from src.modules.media.presentation.routes.search_routes import router as search_router
 from src.modules.media.presentation.routes.series_routes import router as series_router
 from src.modules.media.presentation.routes.stream_routes import router as stream_router
+from src.modules.media.presentation.routes.tmdb_lookup_routes import (
+    router as tmdb_lookup_router,
+)
 
 __all__ = [
     "admin_conflicts_router",
@@ -42,4 +45,5 @@ __all__ = [
     "search_router",
     "series_router",
     "stream_router",
+    "tmdb_lookup_router",
 ]

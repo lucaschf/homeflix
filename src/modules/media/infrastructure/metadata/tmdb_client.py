@@ -193,6 +193,56 @@ class TmdbClient(MetadataProvider):
         results = resp.json().get("results", [])
         return [_to_series_candidate(r, self._image_url) for r in results[:limit]]
 
+    async def get_movie_summary_by_id(self, tmdb_id: int) -> SearchCandidate | None:
+        """Cheap ``/movie/{id}`` fetch shaped as a picker candidate."""
+        try:
+            resp = await self._client.get(
+                f"{self._base_url}/movie/{tmdb_id}",
+                params=self._params(),
+            )
+        except httpx.HTTPError:
+            return None
+        if resp.status_code == 404:
+            return None
+        if resp.status_code != 200:
+            return None
+        return _to_movie_candidate(resp.json(), self._image_url)
+
+    async def get_series_summary_by_id(self, tmdb_id: int) -> SearchCandidate | None:
+        """Cheap ``/tv/{id}`` fetch shaped as a picker candidate."""
+        try:
+            resp = await self._client.get(
+                f"{self._base_url}/tv/{tmdb_id}",
+                params=self._params(),
+            )
+        except httpx.HTTPError:
+            return None
+        if resp.status_code == 404:
+            return None
+        if resp.status_code != 200:
+            return None
+        return _to_series_candidate(resp.json(), self._image_url)
+
+    async def find_by_imdb_id(self, imdb_id: str) -> list[SearchCandidate]:
+        """Resolve an IMDb id via ``/find`` and return movie + TV hits.
+
+        The response carries separate ``movie_results`` and
+        ``tv_results`` arrays — same IMDb id can match both shapes
+        (rare, but happens for adaptations). Movies come first to
+        match the conventional "film over series" expectation when the
+        user pastes ``tt`` from a movie page; tests can stable-sort
+        on ``media_type`` afterwards if they need a stricter order.
+        """
+        resp = await self._client.get(
+            f"{self._base_url}/find/{imdb_id}",
+            params=self._params(external_source="imdb_id"),
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        movies = [_to_movie_candidate(r, self._image_url) for r in payload.get("movie_results", [])]
+        series = [_to_series_candidate(r, self._image_url) for r in payload.get("tv_results", [])]
+        return [*movies, *series]
+
     @staticmethod
     def _pick_year_match(
         results: list[dict[str, object]],

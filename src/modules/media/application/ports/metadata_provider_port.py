@@ -422,6 +422,52 @@ class MetadataProvider(ABC):
         ...
 
     @abstractmethod
+    async def get_movie_summary_by_id(self, tmdb_id: int) -> "SearchCandidate | None":
+        """Cheap card-level fetch for one movie by id.
+
+        Powers the catalog-request lookup dialog: when the user
+        pastes a bare TMDB id, this returns the single matching
+        candidate so the picker can render it. Distinct from
+        :meth:`get_movie_by_id` (which pulls full ``MediaMetadata``
+        with credits / recommendations / collection — way more than
+        a picker preview needs).
+
+        Args:
+            tmdb_id: TMDB numeric id.
+
+        Returns:
+            ``SearchCandidate`` when the id resolves to a movie;
+            ``None`` on 404 / network failure / malformed payload.
+        """
+        ...
+
+    @abstractmethod
+    async def get_series_summary_by_id(self, tmdb_id: int) -> "SearchCandidate | None":
+        """Cheap card-level fetch for one TV series by id."""
+        ...
+
+    @abstractmethod
+    async def find_by_imdb_id(self, imdb_id: str) -> list["SearchCandidate"]:
+        """Resolve an IMDb id (``tt1234567``) to TMDB candidates.
+
+        Powers the catalog-request lookup endpoint: when the user
+        pastes an IMDb id or URL, the dialog asks TMDB which titles it
+        corresponds to. The provider's ``/find`` route returns both
+        movie and TV hits — the same IMDb id can carry both when, for
+        example, an anime film also has a series entry. Callers render
+        the full list and let the user pick.
+
+        Args:
+            imdb_id: IMDb id (``tt`` followed by 7+ digits).
+
+        Returns:
+            All candidates matched by the id, in arbitrary order
+            (caller stable-sorts). Empty list when the provider has
+            no match for the id or the call fails.
+        """
+        ...
+
+    @abstractmethod
     async def get_movie_recommendations(self, tmdb_id: int) -> list[int]:
         """Return TMDB ids of movies recommended for ``tmdb_id``.
 
