@@ -211,6 +211,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 minutes=intro_cfg.interval_minutes,
                 job_id="homeflix:intro-detection",
             )
+        scan_dedup_cfg = await runtime_settings.scan_dedup()
+        if scan_dedup_cfg.sweep_enabled:
+            sweep_job = await container.scan_dedup_sweep_job()
+            scheduler.add_interval_job(
+                sweep_job.run,
+                minutes=scan_dedup_cfg.sweep_interval_minutes,
+                job_id="homeflix:scan-dedup-sweep",
+            )
         app.state.scheduler = scheduler
 
     logger.info("Application ready")

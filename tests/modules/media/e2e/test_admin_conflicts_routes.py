@@ -550,3 +550,39 @@ class TestAdminConflictsBulkMarkDistinct:
         await _login_as_admin(client, seed_user_with_profile)
         response = await client.post(_BULK_PATH, json={"conflict_ids": []})
         assert response.status_code == 422
+
+
+_SWEEP_PATH = f"{CONFLICTS_PATH}/sweep"
+
+
+@pytest.mark.e2e
+class TestAdminConflictsSweep:
+    """``POST /admin/conflicts/sweep`` (ADR-015 Phase 6.5)."""
+
+    async def test_unauthenticated_returns_401(self, client: AsyncClient) -> None:
+        response = await client.post(_SWEEP_PATH)
+        assert response.status_code == 401
+
+    async def test_member_returns_403(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        member = await seed_user_with_profile(email="member@example.com", is_admin=False)
+        await _login(client, member)
+        response = await client.post(_SWEEP_PATH)
+        assert response.status_code == 403
+
+    async def test_empty_catalog_returns_zero_counters(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        await _login_as_admin(client, seed_user_with_profile)
+        response = await client.post(_SWEEP_PATH)
+
+        assert response.status_code == 200
+        payload = response.json()["data"]
+        assert payload["movies_scanned"] == 0
+        assert payload["conflicts_created"] == 0
+        assert payload["conflict_ids"] == []

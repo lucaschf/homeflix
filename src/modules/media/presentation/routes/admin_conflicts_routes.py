@@ -33,6 +33,9 @@ from src.modules.media.application.use_cases.list_conflicts import ListConflicts
 from src.modules.media.application.use_cases.resolve_media_conflict import (
     ResolveMediaConflictUseCase,
 )
+from src.modules.media.application.use_cases.sweep_movie_conflicts import (
+    SweepMovieConflictsUseCase,
+)
 from src.modules.media.domain.entities.media_conflict import ResolutionAction
 
 _MAX_BULK_CONFLICTS = 200
@@ -172,6 +175,31 @@ async def bulk_mark_distinct_conflicts(
         BulkMarkDistinctInput(conflict_ids=body.conflict_ids),
     )
     return api_single("media_conflict_bulk_resolution", asdict(output))
+
+
+@router.post("/sweep")
+@inject
+async def sweep_admin_conflicts(
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: SweepMovieConflictsUseCase = Depends(
+        Provide[ApplicationContainer.media.sweep_movie_conflicts],
+    ),
+) -> dict[str, Any]:
+    """Trigger a one-off catalog-wide dedup sweep (ADR-015 Phase 6.5).
+
+    Re-runs the conflict detector against every movie in the catalog,
+    no enrichment required. Use it to catch duplicates the event-driven
+    handler missed — e.g. a second copy that landed *after* the first
+    was already enriched, or a pair where neither side ever locked a
+    TMDB id (handled by the title+year fallback).
+
+    The same pass also runs automatically when the scheduled sweep is
+    enabled in the ``scan_dedup`` settings bucket. The manual endpoint
+    ignores that flag so the operator can re-check on demand even when
+    the recurring job is off.
+    """
+    output = await use_case.execute()
+    return api_single("media_conflict_sweep", asdict(output))
 
 
 __all__ = ["router"]

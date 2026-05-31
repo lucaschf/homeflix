@@ -15,11 +15,15 @@ class DetectMovieConflictsInput:
 
     Attributes:
         media_id: External id of the just-enriched movie (``mov_xxx``).
-        tmdb_id: TMDB numeric id the enrichment locked onto.
+        tmdb_id: TMDB numeric id the enrichment locked onto. ``None``
+            when the detector is run by the scheduled sweep (ADR-015
+            Phase 6.5) against a movie that never matched a TMDB id —
+            the TMDB-id pass is skipped and only the title+year
+            fallback runs.
     """
 
     media_id: str
-    tmdb_id: int
+    tmdb_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -227,6 +231,24 @@ class BulkMarkDistinctOutput:
 
 
 @dataclass(frozen=True)
+class SweepMovieConflictsOutput:
+    """Result summary after a scheduled (or manual) dedup sweep.
+
+    Attributes:
+        movies_scanned: How many movies the sweep walked. Equal to the
+            catalog size at the moment the sweep snapshotted ``list_all``.
+        conflicts_created: Total ``MediaConflict`` rows persisted across
+            all per-movie detector invocations. Auto-merges are counted
+            here too — they create a resolved-AUTO row.
+        conflict_ids: External ids of the new rows, in insertion order.
+    """
+
+    movies_scanned: int
+    conflicts_created: int
+    conflict_ids: list[str]
+
+
+@dataclass(frozen=True)
 class ListConflictsOutput:
     """Paginated list of conflicts.
 
@@ -256,4 +278,5 @@ __all__ = [
     "ListConflictsOutput",
     "ResolveMediaConflictInput",
     "ResolveMediaConflictOutput",
+    "SweepMovieConflictsOutput",
 ]

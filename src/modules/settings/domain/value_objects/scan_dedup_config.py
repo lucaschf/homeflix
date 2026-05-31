@@ -29,6 +29,17 @@ class ScanDedupConfig(CompoundValueObject):
             entries whose enrichment never locked a TMDB id. Fallback
             matches always queue for the operator and are never
             silently auto-merged, since the identity is weaker.
+        sweep_enabled: When ``True``, a periodic background job
+            (ADR-015 Phase 6.5) walks every movie in the catalog and
+            re-runs the conflict detector — catching duplicates that
+            never fire ``MediaEnrichedEvent`` (un-enriched entries,
+            collisions introduced after the original enrich). Off by
+            default; manual trigger via the admin endpoint still works
+            regardless of this flag.
+        sweep_interval_minutes: Minutes between successive sweep
+            ticks when the job is enabled. Defaults to ``1440`` (one
+            run per day); the floor of ``15`` matches the operator
+            settings minimums elsewhere.
 
     Example:
         >>> cfg = ScanDedupConfig()
@@ -38,6 +49,8 @@ class ScanDedupConfig(CompoundValueObject):
     runtime_delta_abs_minutes: float = Field(default=5.0, ge=0.0)
     runtime_delta_relative: float = Field(default=0.10, ge=0.0, le=1.0)
     title_year_fallback_enabled: bool = Field(default=True)
+    sweep_enabled: bool = Field(default=False)
+    sweep_interval_minutes: int = Field(default=1440, ge=15)
 
 
 __all__ = ["ScanDedupConfig"]

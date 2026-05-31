@@ -101,22 +101,30 @@ class DetectMovieConflictsUseCase:
         fallback_enabled = config is not None and config.title_year_fallback_enabled
 
         async with self._uow_factory() as uow:
-            candidates = await uow.movies.find_all_by_tmdb_id(input_dto.tmdb_id)
-            self_movie = next(
-                (m for m in candidates if str(m.id) == input_dto.media_id),
-                None,
-            )
+            if input_dto.tmdb_id is None:
+                # Sweep path (ADR-015 Phase 6.5): the movie carries no
+                # TMDB id, so there is no strong pass to run. We only
+                # need the self entity for the fallback comparison.
+                self_movie = await uow.movies.find_by_id(MovieId(input_dto.media_id))
+                others: list[Movie] = []
+            else:
+                candidates = await uow.movies.find_all_by_tmdb_id(input_dto.tmdb_id)
+                self_movie = next(
+                    (m for m in candidates if str(m.id) == input_dto.media_id),
+                    None,
+                )
+                others = [m for m in candidates if str(m.id) != input_dto.media_id]
+
             if self_movie is None:
-                # Defensive: detector fired but the enriched movie
-                # vanished between commit and handler dispatch.
+                # Defensive: detector fired but the movie vanished
+                # between commit and handler dispatch.
                 _logger.warning(
-                    "Enriched movie %s not found during conflict detection",
+                    "Movie %s not found during conflict detection",
                     input_dto.media_id,
                 )
                 return DetectMovieConflictsOutput(conflicts_created=0, conflict_ids=[])
 
             self_runtime = _runtime_minutes(self_movie)
-            others = [m for m in candidates if str(m.id) != input_dto.media_id]
             handled_ids = {input_dto.media_id}
 
             # --- Strong pass: TMDB-id collisions (auto-merge eligible). ---
