@@ -11,6 +11,7 @@ from src.modules.media.domain.value_objects.media_conflict_id import MediaConfli
 from src.modules.media.infrastructure.persistence.models.media_conflict import (
     MediaConflictModel,
 )
+from src.shared_kernel.value_objects.media_type import MediaType
 
 
 class MediaConflictMapper:
@@ -22,9 +23,9 @@ class MediaConflictMapper:
         return MediaConflict(
             id=MediaConflictId(model.external_id),
             candidate_a_id=model.candidate_a_id,
-            candidate_a_type=model.candidate_a_type,
+            candidate_a_type=MediaType(model.candidate_a_type),
             candidate_b_id=model.candidate_b_id,
-            candidate_b_type=model.candidate_b_type,
+            candidate_b_type=MediaType(model.candidate_b_type),
             match_reason=MatchReason(model.match_reason),
             runtime_delta_minutes=model.runtime_delta_minutes,
             suggested_action=SuggestedAction(model.suggested_action),
@@ -48,9 +49,9 @@ class MediaConflictMapper:
         return MediaConflictModel(
             external_id=str(entity.id),
             candidate_a_id=entity.candidate_a_id,
-            candidate_a_type=entity.candidate_a_type,
+            candidate_a_type=entity.candidate_a_type.value,
             candidate_b_id=entity.candidate_b_id,
-            candidate_b_type=entity.candidate_b_type,
+            candidate_b_type=entity.candidate_b_type.value,
             match_reason=entity.match_reason.value,
             runtime_delta_minutes=entity.runtime_delta_minutes,
             suggested_action=entity.suggested_action.value,
@@ -66,9 +67,9 @@ class MediaConflictMapper:
     def update_model(model: MediaConflictModel, entity: MediaConflict) -> None:
         """Copy mutable fields from the entity onto an existing row."""
         model.candidate_a_id = entity.candidate_a_id
-        model.candidate_a_type = entity.candidate_a_type
+        model.candidate_a_type = entity.candidate_a_type.value
         model.candidate_b_id = entity.candidate_b_id
-        model.candidate_b_type = entity.candidate_b_type
+        model.candidate_b_type = entity.candidate_b_type.value
         model.match_reason = entity.match_reason.value
         model.runtime_delta_minutes = entity.runtime_delta_minutes
         model.suggested_action = entity.suggested_action.value

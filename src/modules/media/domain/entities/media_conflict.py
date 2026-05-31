@@ -15,6 +15,9 @@ from src.building_blocks.domain.errors import (
 )
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
+from src.shared_kernel.value_objects.media_type import (
+    MediaType,  # noqa: TCH001 — runtime for Pydantic
+)
 
 
 class MatchReason(str, Enum):
@@ -106,9 +109,9 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
     id: MediaConflictId | None = Field(default=None)
 
     candidate_a_id: str
-    candidate_a_type: str
+    candidate_a_type: MediaType
     candidate_b_id: str
-    candidate_b_type: str
+    candidate_b_type: MediaType
 
     match_reason: MatchReason
     runtime_delta_minutes: float | None = None
@@ -179,10 +182,10 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
         cls,
         *,
         candidate_a_id: str,
-        candidate_a_type: str,
+        candidate_a_type: MediaType,
         candidate_a_runtime_minutes: float | None,
         candidate_b_id: str,
-        candidate_b_type: str,
+        candidate_b_type: MediaType,
         candidate_b_runtime_minutes: float | None,
         match_reason: MatchReason,
         abs_threshold_minutes: float | None = None,
