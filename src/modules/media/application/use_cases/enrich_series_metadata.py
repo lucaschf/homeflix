@@ -18,6 +18,9 @@ from src.modules.media.application.ports import (
     SeasonMetadata,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.use_cases._localized_metadata_helpers import (
+    merge_localized_metadata,
+)
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.events import MediaEnrichedEvent
 from src.modules.media.domain.value_objects import (
@@ -149,31 +152,6 @@ class EnrichSeriesMetadataUseCase:
         return None, None
 
 
-def _apply_localized(
-    updates: dict[str, object],
-    existing: dict[str, dict[str, object]],
-    metadata: MediaMetadata,
-) -> None:
-    """Apply localized metadata overrides from provider."""
-    if not metadata.localized:
-        return
-    localized: dict[str, dict[str, object]] = {}
-    for lang, fields in metadata.localized.items():
-        loc_entry: dict[str, object] = {}
-        if fields.title:
-            loc_entry["title"] = fields.title
-        if fields.synopsis:
-            loc_entry["synopsis"] = fields.synopsis
-        if fields.genres:
-            loc_entry["genres"] = fields.genres
-        if fields.logo_url:
-            loc_entry["logo_path"] = fields.logo_url
-        if loc_entry:
-            localized[lang] = loc_entry
-    if localized:
-        updates["localized"] = {**existing, **localized}
-
-
 def _set_if_missing(
     updates: dict[str, object],
     metadata: MediaMetadata,
@@ -236,7 +214,7 @@ def _apply_series_metadata(series: Series, metadata: MediaMetadata) -> Series:
             for p in metadata.cast
         ]
 
-    _apply_localized(updates, series.localized, metadata)
+    merge_localized_metadata(updates, series.localized, metadata)
 
     if updates:
         series = series.with_updates(**updates)
