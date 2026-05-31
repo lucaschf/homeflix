@@ -20,6 +20,7 @@ from src.modules.media.domain.events import (
     MovieMergedEvent,
 )
 from src.modules.media.domain.value_objects import MovieId
+from src.shared_kernel.value_objects.media_type import MediaType
 
 if TYPE_CHECKING:
     from src.building_blocks.application.event_bus import EventBus
@@ -227,10 +228,10 @@ class DetectMovieConflictsUseCase:
         """Persist a pending conflict for the pair and build its event."""
         conflict = MediaConflict.detect(
             candidate_a_id=self_id,
-            candidate_a_type="movie",
+            candidate_a_type=MediaType.MOVIE,
             candidate_a_runtime_minutes=self_runtime,
             candidate_b_id=str(other.id),
-            candidate_b_type="movie",
+            candidate_b_type=MediaType.MOVIE,
             candidate_b_runtime_minutes=_runtime_minutes(other),
             match_reason=match_reason,
             abs_threshold_minutes=abs_threshold,
@@ -299,10 +300,10 @@ class DetectMovieConflictsUseCase:
         # ``async with`` block above.
         conflict = MediaConflict.detect(
             candidate_a_id=str(self_movie.id),
-            candidate_a_type="movie",
+            candidate_a_type=MediaType.MOVIE,
             candidate_a_runtime_minutes=self_runtime,
             candidate_b_id=str(orphan.id),
-            candidate_b_type="movie",
+            candidate_b_type=MediaType.MOVIE,
             candidate_b_runtime_minutes=_runtime_minutes(orphan),
             match_reason=MatchReason.TMDB_ID,
         )

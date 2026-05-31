@@ -22,6 +22,7 @@ from src.modules.media.domain.events import MovieMergedEvent
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import MovieId
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
+from src.shared_kernel.value_objects.media_type import MediaType
 
 if TYPE_CHECKING:
     from src.building_blocks.application.event_bus import EventBus
@@ -168,7 +169,10 @@ class ResolveMediaConflictUseCase:
 
 def _ensure_movie_pair(conflict: MediaConflict) -> None:
     """Reject cross-type conflicts the use case is not equipped to handle."""
-    if conflict.candidate_a_type != "movie" or conflict.candidate_b_type != "movie":
+    if (
+        conflict.candidate_a_type is not MediaType.MOVIE
+        or conflict.candidate_b_type is not MediaType.MOVIE
+    ):
         raise DomainValidationException(
             message="ResolveMediaConflictUseCase only handles movie-vs-movie conflicts",
             message_code="MEDIA_CONFLICT_UNSUPPORTED_CANDIDATE_TYPE",

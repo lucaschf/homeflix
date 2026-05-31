@@ -17,6 +17,7 @@ from src.modules.media.domain.entities.media_conflict import (
     ResolutionSource,
 )
 from src.modules.media.domain.value_objects import MovieId
+from src.shared_kernel.value_objects.media_type import MediaType
 
 if TYPE_CHECKING:
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
@@ -118,7 +119,7 @@ def _collect_movie_ids(conflicts: list[MediaConflict]) -> list[MovieId]:
             (c.candidate_a_id, c.candidate_a_type),
             (c.candidate_b_id, c.candidate_b_type),
         ):
-            if candidate_type != "movie" or candidate_id in seen:
+            if candidate_type is not MediaType.MOVIE or candidate_id in seen:
                 continue
             seen.add(candidate_id)
             out.append(MovieId(candidate_id))
