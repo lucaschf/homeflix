@@ -54,23 +54,16 @@ class SubscribeCatalogNotificationUseCase:
                 input_dto.media_type,
             )
             if existing is not None:
-                title_backfill = (
-                    input_dto.title if existing.title is None and input_dto.title else None
+                # Same merge as the "Solicitar inclusão" path, but this
+                # entry point always wants the notification on.
+                reconciled = existing.reconcile(
+                    title=input_dto.title,
+                    requester_user_id=input_dto.requester_user_id,
+                    notify=True,
                 )
-                user_backfill = (
-                    input_dto.requester_user_id
-                    if existing.requester_user_id is None and input_dto.requester_user_id
-                    else None
-                )
-                if existing.notify_on_arrival and not title_backfill and not user_backfill:
+                if reconciled is None:
                     return CatalogRequestOutput.from_entity(existing)
-                updates: dict[str, object] = {"notify_on_arrival": True}
-                if title_backfill:
-                    updates["title"] = title_backfill
-                if user_backfill:
-                    updates["requester_user_id"] = user_backfill
-                updated = existing.with_updates(**updates)
-                persisted = await uow.catalog_requests.update(updated)
+                persisted = await uow.catalog_requests.update(reconciled)
                 return CatalogRequestOutput.from_entity(persisted)
 
             request = CatalogRequest.create(

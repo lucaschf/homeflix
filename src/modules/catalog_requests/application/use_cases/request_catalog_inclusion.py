@@ -62,34 +62,18 @@ class RequestCatalogInclusionUseCase:
                 input_dto.media_type,
             )
             if existing is not None:
-                # Repeat submit: flip the notify flag on if the caller
-                # asked for it, and backfill the title /
-                # requester_user_id when a legacy row was created
-                # before those columns existed. We don't *replace*
-                # an existing requester_user_id — first-owner wins
-                # so an A-then-B subscribe doesn't reroute A's
-                # notification away.
-                title_backfill = (
-                    input_dto.title if existing.title is None and input_dto.title else None
+                # Repeat submit: let the aggregate fold in the new data
+                # (first-owner-wins backfill + one-way notify opt-in).
+                # ``None`` means nothing changed, so skip the write.
+                reconciled = existing.reconcile(
+                    title=input_dto.title,
+                    requester_user_id=input_dto.requester_user_id,
+                    notify=input_dto.notify_on_arrival,
                 )
-                user_backfill = (
-                    input_dto.requester_user_id
-                    if existing.requester_user_id is None and input_dto.requester_user_id
-                    else None
-                )
-                wants_notify = input_dto.notify_on_arrival and not existing.notify_on_arrival
-                if title_backfill or user_backfill or wants_notify:
-                    updates: dict[str, object] = {}
-                    if title_backfill:
-                        updates["title"] = title_backfill
-                    if user_backfill:
-                        updates["requester_user_id"] = user_backfill
-                    if wants_notify:
-                        updates["notify_on_arrival"] = True
-                    updated = existing.with_updates(**updates)
-                    persisted = await uow.catalog_requests.update(updated)
-                    return CatalogRequestOutput.from_entity(persisted)
-                return CatalogRequestOutput.from_entity(existing)
+                if reconciled is None:
+                    return CatalogRequestOutput.from_entity(existing)
+                persisted = await uow.catalog_requests.update(reconciled)
+                return CatalogRequestOutput.from_entity(persisted)
 
             request = CatalogRequest.create(
                 tmdb_id=input_dto.tmdb_id,
