@@ -143,14 +143,19 @@ class ExternalId(StringValueObject):
         return f"{self.__class__.__name__}({self.value!r})"
 
     def __eq__(self, other: object) -> bool:
-        """Check equality with another ExternalId."""
-        if not isinstance(other, ExternalId):
+        """Check equality with another ExternalId of the same type.
+
+        Equality is scoped to the concrete subclass so that distinct id
+        types never compare equal, keeping the ``__eq__``/``__hash__``
+        contract consistent (the hash is already type-scoped).
+        """
+        if not isinstance(other, self.__class__):
             return NotImplemented
         return self.value == other.value
 
     def __hash__(self) -> int:
         """Return hash for use in sets and dicts."""
-        return hash((self.__class__.__name__, self.value))
+        return hash((self.__class__, self.value))
 
 
 __all__ = [

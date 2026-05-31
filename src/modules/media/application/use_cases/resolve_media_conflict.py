@@ -73,7 +73,7 @@ class ResolveMediaConflictUseCase:
         except ValueError as exc:
             raise DomainValidationException(
                 message=f"Unknown resolution action '{input_dto.action}'",
-                message_code=MediaRuleCodes.INVALID_MEDIA_ID_FORMAT,
+                message_code=MediaRuleCodes.INVALID_RESOLUTION_ACTION,
                 object_type="MediaConflict",
             ) from exc
 
@@ -127,8 +127,8 @@ class ResolveMediaConflictUseCase:
             if winner_id is None or loser_id is None:
                 raise BusinessRuleViolationException(
                     message="MERGE resolution did not populate winner/loser",
-                    message_code=MediaRuleCodes.MEDIA_CONFLICT_ALREADY_RESOLVED,
-                    rule_code=MediaRuleCodes.MEDIA_CONFLICT_ALREADY_RESOLVED,
+                    message_code=MediaRuleCodes.MEDIA_CONFLICT_MERGE_INCOMPLETE,
+                    rule_code=MediaRuleCodes.MEDIA_CONFLICT_MERGE_INCOMPLETE,
                 )
 
             if action is ResolutionAction.MERGE_KEEP_BOTH:
