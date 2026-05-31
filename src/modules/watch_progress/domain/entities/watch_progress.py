@@ -57,12 +57,26 @@ class WatchProgress(AggregateRoot[ProgressId]):
     last_watched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
 
+    @staticmethod
+    def _watched_ratio(position_seconds: int, duration_seconds: int | None) -> float:
+        """Fraction of the media watched (0.0+); 0.0 when duration is unknown.
+
+        Single source of the position/duration formula shared by
+        ``percentage`` and the completion check so the two never drift.
+        """
+        if not duration_seconds:
+            return 0.0
+        return position_seconds / duration_seconds
+
+    @classmethod
+    def _reaches_completion(cls, position_seconds: int, duration_seconds: int | None) -> bool:
+        """Whether the watched ratio crosses the completion threshold."""
+        return cls._watched_ratio(position_seconds, duration_seconds) >= _COMPLETION_THRESHOLD
+
     @property
     def percentage(self) -> float:
         """Calculate watch percentage (0-100)."""
-        if self.duration_seconds == 0:
-            return 0.0
-        return min(100.0, (self.position_seconds / self.duration_seconds) * 100)
+        return min(100.0, self._watched_ratio(self.position_seconds, self.duration_seconds) * 100)
 
     @property
     def is_completed(self) -> bool:
@@ -91,8 +105,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
         """
         now = datetime.now(UTC)
         effective_duration = duration_seconds or self.duration_seconds
-        ratio = position_seconds / effective_duration if effective_duration else 0
-        is_complete = ratio >= _COMPLETION_THRESHOLD
+        is_complete = self._reaches_completion(position_seconds, effective_duration)
 
         updates: dict[str, object] = {
             "position_seconds": position_seconds,
@@ -140,8 +153,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
             A new WatchProgress instance.
         """
         now = datetime.now(UTC)
-        ratio = position_seconds / duration_seconds if duration_seconds else 0
-        is_complete = ratio >= _COMPLETION_THRESHOLD
+        is_complete = cls._reaches_completion(position_seconds, duration_seconds)
 
         return cls(
             id=ProgressId.generate(),
