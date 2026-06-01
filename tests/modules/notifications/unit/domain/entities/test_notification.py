@@ -4,11 +4,13 @@ from datetime import UTC, datetime
 
 import pytest
 
+from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.notifications.domain.entities import Notification
 from src.modules.notifications.domain.value_objects import (
     NotificationId,
     NotificationKind,
 )
+from src.shared_kernel.value_objects.media_type import MediaType
 
 
 @pytest.mark.unit
@@ -62,3 +64,38 @@ class TestNotification:
         read = notification.mark_read(read_at=fixed)
 
         assert read.read_at == fixed
+
+
+@pytest.mark.unit
+class TestNotificationPayloadMediaType:
+    """The free-form payload's ``media_type`` is validated (ADR-016)."""
+
+    @pytest.mark.parametrize("value", [MediaType.MOVIE, MediaType.SERIES, "movie", "series"])
+    def test_accepts_valid_media_type(self, value: object) -> None:
+        notification = Notification.create(
+            recipient_user_id="usr_alice",
+            kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
+            title="Alien",
+            payload={"media_type": value},
+        )
+
+        assert notification.payload["media_type"] == value
+
+    def test_rejects_unknown_media_type(self) -> None:
+        with pytest.raises(DomainValidationException, match="media_type"):
+            Notification.create(
+                recipient_user_id="usr_alice",
+                kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
+                title="Alien",
+                payload={"media_type": "film"},
+            )
+
+    def test_payload_without_media_type_is_allowed(self) -> None:
+        notification = Notification.create(
+            recipient_user_id="usr_alice",
+            kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
+            title="Alien",
+            payload={"tmdb_id": 348},
+        )
+
+        assert "media_type" not in notification.payload

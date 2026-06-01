@@ -5,13 +5,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from src.building_blocks.domain import AggregateRoot
 from src.modules.notifications.domain.value_objects import (
     NotificationId,
     NotificationKind,
 )
+from src.shared_kernel.value_objects.media_type import MediaType
+
+_PAYLOAD_MEDIA_TYPE_KEY = "media_type"
 
 
 class Notification(AggregateRoot[NotificationId]):
@@ -61,6 +64,25 @@ class Notification(AggregateRoot[NotificationId]):
     body: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     read_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _validate_payload_media_type(self) -> Notification:
+        """Reject a ``media_type`` in the payload that isn't a real MediaType.
+
+        The payload is free-form JSON, but the renderer keys deep-links
+        off ``media_type``. Validating it here (ADR-016) turns a producer
+        typo into an immediate error at write time instead of a silently
+        broken click-through that only surfaces in the frontend.
+        """
+        raw = self.payload.get(_PAYLOAD_MEDIA_TYPE_KEY)
+        if raw is not None:
+            try:
+                MediaType(raw)
+            except ValueError as exc:
+                raise ValueError(
+                    f"payload {_PAYLOAD_MEDIA_TYPE_KEY!r} must be a valid MediaType, got {raw!r}"
+                ) from exc
+        return self
 
     @classmethod
     def create(
