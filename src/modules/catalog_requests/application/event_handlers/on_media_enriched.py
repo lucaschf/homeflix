@@ -12,6 +12,7 @@ from src.modules.catalog_requests.application.ports import (
 )
 from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
 from src.modules.media.domain.events import MediaEnrichedEvent
+from src.shared_kernel.value_objects.media_type import MediaType
 
 if TYPE_CHECKING:
     from src.building_blocks.domain.events import DomainEvent
@@ -21,6 +22,15 @@ if TYPE_CHECKING:
     from src.modules.catalog_requests.domain.entities import CatalogRequest
 
 _logger = logging.getLogger(__name__)
+
+# Explicit ACL mapping from the Media BC's canonical MediaType to this
+# BC's RequestedMediaType. Kept total over MediaType by a contract test
+# so adding a MediaType member without a mapping fails CI rather than
+# silently dropping arrival events in production (ADR-016).
+_MEDIA_TYPE_TO_REQUESTED: dict[MediaType, RequestedMediaType] = {
+    MediaType.MOVIE: RequestedMediaType.MOVIE,
+    MediaType.SERIES: RequestedMediaType.SERIES,
+}
 
 
 class OnMediaEnrichedHandler(EventHandler):
@@ -70,13 +80,9 @@ class OnMediaEnrichedHandler(EventHandler):
         """Handle ``MediaEnrichedEvent`` by marking matching request fulfilled."""
         if not isinstance(event, MediaEnrichedEvent):
             return
-        try:
-            media_type = RequestedMediaType(event.media_type)
-        except ValueError:
-            _logger.warning(
-                "MediaEnrichedEvent carried unknown media_type=%r — skipping",
-                event.media_type,
-            )
+
+        media_type = self._to_requested_media_type(event.media_type)
+        if media_type is None:
             return
 
         async with self._uow_factory() as uow:
@@ -98,6 +104,37 @@ class OnMediaEnrichedHandler(EventHandler):
         )
 
         await self._maybe_publish_arrival(existing, event)
+
+    @staticmethod
+    def _to_requested_media_type(raw: str) -> RequestedMediaType | None:
+        """Translate the event's media_type to this BC's enum via the ACL map.
+
+        Returns ``None`` (and logs at ERROR) when the value can't be
+        mapped — either an unrecognized vocabulary (e.g. a stray TMDB
+        ``"tv"`` that should have been mapped upstream) or a known
+        :class:`MediaType` member missing from the cross-BC map. Both
+        are contract bugs that must be loud, not silently dropped:
+        otherwise the matching catalog request would never be marked
+        fulfilled and would linger in the admin queue forever.
+        """
+        try:
+            canonical = MediaType(raw)
+        except ValueError:
+            _logger.error(
+                "MediaEnrichedEvent carried unrecognized media_type=%r; "
+                "cannot fulfill the matching catalog request",
+                raw,
+            )
+            return None
+
+        mapped = _MEDIA_TYPE_TO_REQUESTED.get(canonical)
+        if mapped is None:
+            _logger.error(
+                "No RequestedMediaType mapping for MediaType.%s; cross-BC "
+                "ACL is incomplete (see _MEDIA_TYPE_TO_REQUESTED)",
+                canonical.name,
+            )
+        return mapped
 
     async def _maybe_publish_arrival(
         self,
