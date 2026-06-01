@@ -39,8 +39,8 @@ class UpdatePreferencesUseCase:
             saved = await uow.preferences.save(updated)
 
         return PreferencesOutput(
-            audio_lang=saved.audio_lang,
-            subtitle_lang=saved.subtitle_lang,
+            audio_lang=saved.audio_lang.value,
+            subtitle_lang=saved.subtitle_lang.value,
             subtitle_mode=saved.subtitle_mode.value,
             default_quality=saved.default_quality.value,
             speed=saved.speed.value,

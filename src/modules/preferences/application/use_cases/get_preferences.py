@@ -33,8 +33,8 @@ class GetPreferencesUseCase:
 def _to_output(entity: PlaybackPreferences) -> PreferencesOutput:
     """Project the entity into the transport DTO."""
     return PreferencesOutput(
-        audio_lang=entity.audio_lang,
-        subtitle_lang=entity.subtitle_lang,
+        audio_lang=entity.audio_lang.value,
+        subtitle_lang=entity.subtitle_lang.value,
         subtitle_mode=entity.subtitle_mode.value,
         default_quality=entity.default_quality.value,
         speed=entity.speed.value,
