@@ -40,8 +40,8 @@ class PreferencesMapper:
         return PreferencesModel(
             external_id=str(entity.id),
             profile_id=str(entity.profile_id),
-            audio_lang=entity.audio_lang,
-            subtitle_lang=entity.subtitle_lang,
+            audio_lang=entity.audio_lang.value,
+            subtitle_lang=entity.subtitle_lang.value,
             subtitle_mode=entity.subtitle_mode.value,
             default_quality=entity.default_quality.value,
             speed=entity.speed.value,
@@ -58,8 +58,8 @@ class PreferencesMapper:
         ``model`` in the first place, and it's part of the singleton
         invariant enforced by the unique index.
         """
-        model.audio_lang = entity.audio_lang
-        model.subtitle_lang = entity.subtitle_lang
+        model.audio_lang = entity.audio_lang.value
+        model.subtitle_lang = entity.subtitle_lang.value
         model.subtitle_mode = entity.subtitle_mode.value
         model.default_quality = entity.default_quality.value
         model.speed = entity.speed.value

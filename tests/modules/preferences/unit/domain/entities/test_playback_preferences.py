@@ -17,8 +17,8 @@ class TestDefaultFactory:
         prefs = PlaybackPreferences.default_for(_PROFILE_ID)
 
         assert prefs.profile_id == _PROFILE_ID
-        assert prefs.audio_lang == "pt-BR"
-        assert prefs.subtitle_lang == "pt-BR"
+        assert prefs.audio_lang.value == "pt-BR"
+        assert prefs.subtitle_lang.value == "pt-BR"
         assert prefs.subtitle_mode is SubtitleMode.FOREIGN_ONLY
         assert prefs.default_quality is Quality.BEST
         assert prefs.speed == Speed(1.0)
@@ -47,7 +47,7 @@ class TestApplyUpdates:
         assert updated.speed.value == 1.5
         assert updated.subtitle_mode is SubtitleMode.ALWAYS
         # Untouched fields remain at defaults
-        assert updated.audio_lang == "pt-BR"
+        assert updated.audio_lang.value == "pt-BR"
         assert updated.default_quality is Quality.BEST
 
     def test_should_coerce_quality_from_string(self) -> None:
@@ -69,3 +69,14 @@ class TestApplyUpdates:
         prefs = PlaybackPreferences.default_for(_PROFILE_ID)
         with pytest.raises(DomainValidationException):
             prefs.apply_updates(default_quality="ultra")
+
+    def test_should_reject_garbage_audio_lang(self) -> None:
+        prefs = PlaybackPreferences.default_for(_PROFILE_ID)
+        with pytest.raises(DomainValidationException):
+            prefs.apply_updates(audio_lang="portugues")
+
+    def test_should_normalize_language_tag(self) -> None:
+        prefs = PlaybackPreferences.default_for(_PROFILE_ID)
+        updated = prefs.apply_updates(audio_lang="en-us", subtitle_lang="PT-br")
+        assert updated.audio_lang.value == "en-US"
+        assert updated.subtitle_lang.value == "pt-BR"

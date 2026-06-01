@@ -13,6 +13,7 @@ from src.modules.preferences.domain.value_objects import (
     Speed,
     SubtitleMode,
 )
+from src.shared_kernel.value_objects.language_tag import LanguageTag
 from src.shared_kernel.value_objects.profile_id import ProfileId  # noqa: TCH001
 
 DEFAULT_AUDIO_LANG = "pt-BR"
@@ -31,9 +32,11 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
     (``PreferencesId``) stay in lockstep without an extra mapping
     table.
 
-    Languages are kept as plain strings (not ``LanguageCode``) because
-    the frontend persists IETF tags like ``"pt-BR"``/``"en-US"`` that
-    don't match the shared kernel's strict ISO 639-1 shape.
+    Languages are :class:`LanguageTag` (IETF tags like ``"pt-BR"`` /
+    ``"en-US"``) rather than the strict ISO 639-1 ``LanguageCode`` used
+    for media tracks: the player persists region-qualified tags that the
+    strict code rejects. The tag is still validated on write, so garbage
+    can't round-trip to the database or out to the client.
 
     Example:
         >>> profile = ProfileId("prf_test12345678")
@@ -47,11 +50,17 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
     id: PreferencesId | None = Field(default=None)
 
     profile_id: ProfileId
-    audio_lang: str = DEFAULT_AUDIO_LANG
-    subtitle_lang: str = DEFAULT_SUBTITLE_LANG
+    audio_lang: LanguageTag = Field(default_factory=lambda: LanguageTag(DEFAULT_AUDIO_LANG))
+    subtitle_lang: LanguageTag = Field(default_factory=lambda: LanguageTag(DEFAULT_SUBTITLE_LANG))
     subtitle_mode: SubtitleMode = DEFAULT_SUBTITLE_MODE
     default_quality: Quality = DEFAULT_QUALITY
     speed: Speed = Field(default_factory=lambda: Speed(DEFAULT_SPEED))
+
+    @field_validator("audio_lang", "subtitle_lang", mode="before")
+    @classmethod
+    def _coerce_language_tag(cls, value: Any) -> LanguageTag:
+        """Accept raw IETF strings alongside ``LanguageTag`` instances."""
+        return value if isinstance(value, LanguageTag) else LanguageTag(value)
 
     @field_validator("speed", mode="before")
     @classmethod
