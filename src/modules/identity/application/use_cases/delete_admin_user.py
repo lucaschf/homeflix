@@ -7,10 +7,10 @@ from src.modules.identity.application.dtos.identity_dtos import DeleteAdminUserI
 from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
 from src.modules.identity.domain.errors import (
     CannotDeleteSelfError,
-    CannotDemoteLastAdminError,
     UserNotFoundException,
 )
 from src.modules.identity.domain.events import UserDeletedEvent
+from src.modules.identity.domain.services import AdminQuorum
 from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -57,14 +57,9 @@ class DeleteAdminUserUseCase:
             if user is None or user.id is None:
                 raise UserNotFoundException.for_resource("User", input_dto.user_id)
 
-            if user.role == UserRole.ADMIN:
+            if user.role is UserRole.ADMIN:
                 admin_count = await uow.users.count_active_admins()
-                if admin_count <= 1:
-                    raise CannotDemoteLastAdminError(
-                        message=(
-                            "Cannot delete the last active admin — " "promote another user first."
-                        ),
-                    )
+                AdminQuorum.ensure_can_remove_admin(user, admin_count)
 
             profiles = await uow.profiles.find_by_user(user.id)
             profile_ids = tuple(str(p.id) for p in profiles if p.id is not None)
