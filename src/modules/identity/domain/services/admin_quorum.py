@@ -1,4 +1,4 @@
-"""Domain service guarding the always-one-active-admin invariant (ADR-019)."""
+"""Domain service guarding the always-one-active-admin invariant (ADR-017)."""
 
 from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.errors import CannotDemoteLastAdminError
@@ -13,7 +13,7 @@ class AdminQuorum:
     passes it here. Call this on every operation that strips a user's
     admin access — demote-to-member, delete, or deactivate — so the rule
     lives in one place instead of being re-implemented (and diverging)
-    per use case (ADR-019).
+    per use case (ADR-017).
     """
 
     @staticmethod

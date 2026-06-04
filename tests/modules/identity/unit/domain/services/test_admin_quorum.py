@@ -15,7 +15,7 @@ def _user(role: UserRole) -> User:
 
 @pytest.mark.unit
 class TestAdminQuorum:
-    """The guard refuses to strip the last active admin (ADR-019)."""
+    """The guard refuses to strip the last active admin (ADR-017)."""
 
     def test_raises_when_admin_is_the_last_one(self) -> None:
         with pytest.raises(CannotDemoteLastAdminError):
