@@ -36,6 +36,8 @@ Dois mecanismos, conforme o escopo da invariante:
 
 2. **Factory do aggregate** quando a invariante guarda a criação. `CustomList.create(profile_id, name, *, existing_count)` recebe a contagem como **keyword-only obrigatório** — é impossível construir via factory sem fornecer o fato, eliminando o bypass por omissão. Alinha o aggregate ao seu próprio padrão (`MAX_ITEMS_PER_LIST` já era imposto internamente).
 
+**Diretriz geral:** toda regra "não passe de N / não fique abaixo de N" sobre um agregado mora numa factory/método do agregado ou num domain service que recebe a contagem — nunca replicada em use case. Um segundo call-site herda a regra automaticamente, em vez de re-implementá-la (e divergir).
+
 **O que permanece no use case:** orquestração, busca das contagens (`count_active_admins()`, `custom_lists.count(profile_id)`) e checks que exigem query além de contagem — a unicidade de nome de lista (`find_by_name`) continua na application por ora; movê-la exigiria o mesmo padrão (`name_taken: bool`) sem dano concreto hoje que o justifique.
 
 ## Consequências
@@ -128,3 +130,4 @@ def create(
 |------|-------|---------|
 | 2026-06-04 | Lucas Cristovam | Criação inicial (Proposto) |
 | 2026-06-04 | Lucas Cristovam | Aceito |
+| 2026-06-04 | Lucas Cristovam | Consolida e substitui o ADR-019 duplicado (PR #252), absorvendo sua diretriz geral |

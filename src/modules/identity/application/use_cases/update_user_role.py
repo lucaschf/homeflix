@@ -5,10 +5,8 @@ from src.modules.identity.application.dtos.identity_dtos import (
     UserSummary,
 )
 from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
-from src.modules.identity.domain.errors import (
-    CannotDemoteLastAdminError,
-    UserNotFoundException,
-)
+from src.modules.identity.domain.errors import UserNotFoundException
+from src.modules.identity.domain.services import AdminQuorum
 from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -39,14 +37,10 @@ class UpdateUserRoleUseCase:
             if user is None or user.id is None:
                 raise UserNotFoundException.for_resource("User", input_dto.user_id)
 
-            if user.role != new_role and user.role == UserRole.ADMIN:
+            demoting_admin = user.role is UserRole.ADMIN and new_role is not UserRole.ADMIN
+            if demoting_admin:
                 admin_count = await uow.users.count_active_admins()
-                if admin_count <= 1:
-                    raise CannotDemoteLastAdminError(
-                        message=(
-                            "Cannot demote the last active admin — " "promote another user first."
-                        ),
-                    )
+                AdminQuorum.ensure_can_remove_admin(user, admin_count)
 
             if user.role != new_role:
                 updated = user.with_role(new_role)
