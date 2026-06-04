@@ -1,6 +1,6 @@
 # ADR-017: Invariantes de domínio na camada de domínio
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-06-04
 **Deciders:** Lucas Cristovam
 **Technical Story:** Revisão de code smells (Fase 3) — invariantes de negócio implementadas (e duplicadas) na application layer em vez do domínio.
@@ -127,3 +127,4 @@ def create(
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-06-04 | Lucas Cristovam | Criação inicial (Proposto) |
+| 2026-06-04 | Lucas Cristovam | Aceito |
