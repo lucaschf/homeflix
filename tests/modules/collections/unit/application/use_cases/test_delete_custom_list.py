@@ -19,7 +19,7 @@ class TestDeleteCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_delete_successfully(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="To Delete")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="To Delete", existing_count=0)
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
         mock_repo.remove.return_value = True

@@ -6,7 +6,7 @@ from src.modules.collections.application.dtos import (
     CustomListOutput,
 )
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
-from src.modules.collections.domain.entities import MAX_LISTS, CustomList
+from src.modules.collections.domain.entities import CustomList
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -25,12 +25,12 @@ class CreateCustomListUseCase:
         profile_id = ProfileId(input_dto.profile_id)
         async with self._uow_factory() as uow:
             current_count = await uow.custom_lists.count(profile_id)
-            if current_count >= MAX_LISTS:
-                raise BusinessRuleViolationException(
-                    message=f"Cannot create more than {MAX_LISTS} custom lists",
-                    message_code="CUSTOM_LIST_LIMIT_EXCEEDED",
-                    rule_code="CUSTOM_LIST_LIMIT_EXCEEDED",
-                )
+            # The factory enforces the MAX_LISTS limit (ADR-017).
+            custom_list = CustomList.create(
+                profile_id=profile_id,
+                name=input_dto.name,
+                existing_count=current_count,
+            )
 
             existing = await uow.custom_lists.find_by_name(input_dto.name.strip(), profile_id)
             if existing:
@@ -40,7 +40,6 @@ class CreateCustomListUseCase:
                     rule_code="CUSTOM_LIST_NAME_DUPLICATE",
                 )
 
-            custom_list = CustomList.create(profile_id=profile_id, name=input_dto.name)
             saved = await uow.custom_lists.add(custom_list)
         return CustomListOutput.from_entity(saved)
 

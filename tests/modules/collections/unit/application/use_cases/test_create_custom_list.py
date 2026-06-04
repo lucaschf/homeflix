@@ -26,7 +26,9 @@ class TestCreateCustomListUseCase:
         mock_repo = mocks.custom_lists
         mock_repo.count.return_value = 0
         mock_repo.find_by_name.return_value = None
-        saved_list = CustomList.create(profile_id=_PROFILE_ID, name="Action Movies")
+        saved_list = CustomList.create(
+            profile_id=_PROFILE_ID, name="Action Movies", existing_count=0
+        )
         mock_repo.add.return_value = saved_list
         use_case = CreateCustomListUseCase(uow_factory=mocks.factory)
 
@@ -60,7 +62,7 @@ class TestCreateCustomListUseCase:
         mock_repo = mocks.custom_lists
         mock_repo.count.return_value = 1
         mock_repo.find_by_name.return_value = CustomList.create(
-            profile_id=_PROFILE_ID, name="Action Movies"
+            profile_id=_PROFILE_ID, name="Action Movies", existing_count=0
         )
         use_case = CreateCustomListUseCase(uow_factory=mocks.factory)
 
@@ -78,7 +80,9 @@ class TestCreateCustomListUseCase:
         mock_repo = mocks.custom_lists
         mock_repo.count.return_value = 0
         mock_repo.find_by_name.return_value = None
-        saved_list = CustomList.create(profile_id=_PROFILE_ID, name="Action Movies")
+        saved_list = CustomList.create(
+            profile_id=_PROFILE_ID, name="Action Movies", existing_count=0
+        )
         mock_repo.add.return_value = saved_list
         use_case = CreateCustomListUseCase(uow_factory=mocks.factory)
 

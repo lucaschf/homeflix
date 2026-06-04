@@ -21,7 +21,7 @@ def _create_list(
     name: str = "Test List",
     profile_id: ProfileId = _PROFILE_ID,
 ) -> CustomList:
-    return CustomList.create(profile_id=profile_id, name=name)
+    return CustomList.create(profile_id=profile_id, name=name, existing_count=0)
 
 
 def _create_item(

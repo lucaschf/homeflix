@@ -91,7 +91,9 @@ class CustomList(AggregateRoot[ListId]):
         item_count: Number of items currently in the list.
 
     Example:
-        >>> custom_list = CustomList.create(name="Action Movies")
+        >>> custom_list = CustomList.create(
+        ...     profile_id=profile_id, name="Action Movies", existing_count=0
+        ... )
     """
 
     id: ListId | None = Field(default=None)
@@ -107,18 +109,40 @@ class CustomList(AggregateRoot[ListId]):
         return ListName(v) if isinstance(v, str) else v
 
     @classmethod
-    def create(cls, profile_id: ProfileId, name: str | ListName) -> CustomList:
+    def create(
+        cls,
+        profile_id: ProfileId,
+        name: str | ListName,
+        *,
+        existing_count: int,
+    ) -> CustomList:
         """Factory method with automatic ID generation.
+
+        Enforces the per-profile list limit (ADR-017): the caller fetches
+        how many lists the profile already has and the factory decides.
+        The keyword-only argument makes the check impossible to bypass
+        by omission.
 
         Args:
             profile_id: Owning profile (``prf_xxx``). Every list is scoped
                 to a single profile so multi-profile households keep
                 their lists separate.
             name: Display name for the list.
+            existing_count: Number of lists the profile already has.
 
         Returns:
             A new CustomList instance.
+
+        Raises:
+            BusinessRuleViolationException: When the profile already has
+                ``MAX_LISTS`` lists.
         """
+        if existing_count >= MAX_LISTS:
+            raise BusinessRuleViolationException(
+                message=f"Cannot create more than {MAX_LISTS} custom lists",
+                message_code="CUSTOM_LIST_LIMIT_EXCEEDED",
+                rule_code="CUSTOM_LIST_LIMIT_EXCEEDED",
+            )
         return cls(
             id=ListId.generate(),
             profile_id=profile_id,

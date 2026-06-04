@@ -22,8 +22,8 @@ class TestListCustomListsUseCase:
     @pytest.mark.asyncio
     async def test_should_return_all_lists(self) -> None:
         lists = [
-            CustomList.create(profile_id=_PROFILE_ID, name="Action"),
-            CustomList.create(profile_id=_PROFILE_ID, name="Comedy"),
+            CustomList.create(profile_id=_PROFILE_ID, name="Action", existing_count=0),
+            CustomList.create(profile_id=_PROFILE_ID, name="Comedy", existing_count=0),
         ]
         mocks = make_collections_uow_mock()
         mocks.custom_lists.list_all.return_value = lists
