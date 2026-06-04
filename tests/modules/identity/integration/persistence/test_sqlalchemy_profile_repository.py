@@ -12,6 +12,7 @@ from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.modules.identity.infrastructure.persistence.models.profile_model import (
     ProfileModel,
 )
+from src.shared_kernel.value_objects.library_id import LibraryId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -123,7 +124,7 @@ class TestSqlAlchemyProfileRepositorySave:
             found = await uow.profiles.find_by_id(saved.id)
 
         assert found is not None
-        assert found.allowed_library_ids == granted
+        assert found.allowed_library_ids == [LibraryId(library_id) for library_id in granted]
 
     async def test_should_default_allowed_library_ids_to_empty_when_unset(
         self, uow_factory: IdentityUnitOfWorkFactory
@@ -184,6 +185,40 @@ class TestSqlAlchemyProfileRepositorySave:
         assert after is not None
         assert after.allowed_library_ids == []
 
+    async def test_should_drop_invalid_entries_from_allowed_library_ids(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+    ) -> None:
+        # Default-deny per entry (ADR-018): a malformed id inside an
+        # otherwise valid list is dropped with a WARNING — it must
+        # neither grant access nor make the whole profile unreadable.
+        owner = await _seed_user(uow_factory)
+        assert owner.id is not None
+
+        async with uow_factory() as uow:
+            saved = await uow.profiles.save(
+                Profile.create(
+                    user_id=owner.id,
+                    name=ProfileName("L"),
+                    allowed_library_ids=["lib_originaltttt"],
+                )
+            )
+
+        assert saved.id is not None
+        await db_session.execute(
+            update(ProfileModel)
+            .where(ProfileModel.external_id == saved.id.value)
+            .values(allowed_library_ids='["lib_originaltttt", "not-a-lib-id", "mov_wrongprefix1"]')
+        )
+        await db_session.commit()
+
+        async with uow_factory() as uow:
+            after = await uow.profiles.find_by_id(saved.id)
+
+        assert after is not None
+        assert after.allowed_library_ids == [LibraryId("lib_originaltttt")]
+
     async def test_save_should_replace_allowed_library_ids_on_update(
         self, uow_factory: IdentityUnitOfWorkFactory
     ):
@@ -198,7 +233,7 @@ class TestSqlAlchemyProfileRepositorySave:
                 Profile.create(
                     user_id=owner.id,
                     name=ProfileName("L"),
-                    allowed_library_ids=["lib_a", "lib_b"],
+                    allowed_library_ids=["lib_aaaaaaaaaaaa", "lib_bbbbbbbbbbbb"],
                 )
             )
 

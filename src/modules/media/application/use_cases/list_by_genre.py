@@ -23,6 +23,7 @@ from src.modules.media.application.ports.profile_library_access_port import (
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.value_objects import Genre
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 _T = TypeVar("_T")
 
@@ -188,7 +189,7 @@ class ListByGenreUseCase:
         decoded: DualCursorValue,
         limit: int,
         media_type: Literal["movie", "series"] | None,
-        allowed_library_ids: Sequence[str],
+        allowed_library_ids: Sequence[LibraryId],
     ) -> tuple[PaginatedResult[Movie], PaginatedResult[Series]]:
         """Fetch the movie and series pages, honoring the media-type filter.
 
@@ -241,7 +242,7 @@ class ListByGenreUseCase:
         genre: Genre,
         cursor: str | None,
         limit: int,
-        allowed_library_ids: Sequence[str],
+        allowed_library_ids: Sequence[LibraryId],
     ) -> PaginatedResult[Movie]:
         async with self._uow_factory() as uow:
             return await uow.movies.list_paginated_by_genre(
@@ -257,7 +258,7 @@ class ListByGenreUseCase:
         genre: Genre,
         cursor: str | None,
         limit: int,
-        allowed_library_ids: Sequence[str],
+        allowed_library_ids: Sequence[LibraryId],
     ) -> PaginatedResult[Series]:
         async with self._uow_factory() as uow:
             return await uow.series.list_paginated_by_genre(

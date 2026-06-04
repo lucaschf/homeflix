@@ -21,6 +21,7 @@ from src.modules.media.domain.value_objects import (
 from src.modules.media.domain.value_objects.cast_member import CastMember
 from src.modules.media.infrastructure.persistence.models import MovieModel
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemyMovieRepository
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 _LIBRARY_ID = "lib_test12345678"
 _LIBRARY_ID_OTHER = "lib_otherlibrary"
@@ -1376,7 +1377,7 @@ class TestAllowedLibraryIdsFilter:
         page = await repo.list_paginated(
             cursor=None,
             limit=10,
-            allowed_library_ids=[_LIBRARY_ID],
+            allowed_library_ids=[LibraryId(_LIBRARY_ID)],
         )
 
         titles = {m.title.value for m in page.items}
@@ -1402,7 +1403,7 @@ class TestAllowedLibraryIdsFilter:
         page = await repo.list_paginated(
             cursor=None,
             limit=10,
-            allowed_library_ids=[_LIBRARY_ID_OTHER],
+            allowed_library_ids=[LibraryId(_LIBRARY_ID_OTHER)],
         )
 
         titles = {m.title.value for m in page.items}
@@ -1421,7 +1422,7 @@ class TestAllowedLibraryIdsFilter:
         assert movie.id is not None
 
         # Caller is restricted to library A — must NOT see the row.
-        found = await repo.find_by_id(movie.id, allowed_library_ids=[_LIBRARY_ID])
+        found = await repo.find_by_id(movie.id, allowed_library_ids=[LibraryId(_LIBRARY_ID)])
 
         assert found is None
 
@@ -1433,7 +1434,7 @@ class TestAllowedLibraryIdsFilter:
         await repo.save(movie)
         assert movie.id is not None
 
-        found = await repo.find_by_id(movie.id, allowed_library_ids=[_LIBRARY_ID])
+        found = await repo.find_by_id(movie.id, allowed_library_ids=[LibraryId(_LIBRARY_ID)])
 
         assert found is not None
         assert found.title.value == "Allowed"

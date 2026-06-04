@@ -11,6 +11,7 @@ from src.modules.identity.application.unit_of_work import (
 from src.modules.media.application.ports.profile_library_access_port import (
     ProfileLibraryAccessPort,
 )
+from src.shared_kernel.value_objects.library_id import LibraryId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -20,8 +21,8 @@ class ProfileLibraryAccessAdapter(ProfileLibraryAccessPort):
     def __init__(self, identity_uow_factory: IdentityUnitOfWorkFactory) -> None:
         self._identity_uow_factory = identity_uow_factory
 
-    async def find_for_profile(self, profile_id: str) -> list[str]:
-        """Return the prefixed library_ids the profile may see.
+    async def find_for_profile(self, profile_id: str) -> list[LibraryId]:
+        """Return the typed library ids the profile may see.
 
         A missing profile returns an empty list — deny-all is the
         safer default than raising. The use cases short-circuit on

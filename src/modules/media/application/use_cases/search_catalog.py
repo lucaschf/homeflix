@@ -13,6 +13,7 @@ from src.modules.media.application.ports.profile_library_access_port import (
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie, Series
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 class SearchCatalogUseCase:
@@ -85,7 +86,7 @@ class SearchCatalogUseCase:
         return SearchOutput(items=items, total=len(combined))
 
     async def _search_movies(
-        self, input_dto: SearchInput, allowed_library_ids: Sequence[str]
+        self, input_dto: SearchInput, allowed_library_ids: Sequence[LibraryId]
     ) -> list[tuple[Movie, float]]:
         async with self._uow_factory() as uow:
             return await uow.movies.search(
@@ -98,7 +99,7 @@ class SearchCatalogUseCase:
             )
 
     async def _search_series(
-        self, input_dto: SearchInput, allowed_library_ids: Sequence[str]
+        self, input_dto: SearchInput, allowed_library_ids: Sequence[LibraryId]
     ) -> list[tuple[Series, float]]:
         async with self._uow_factory() as uow:
             return await uow.series.search(
