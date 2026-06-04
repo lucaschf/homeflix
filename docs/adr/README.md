@@ -27,6 +27,7 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-015](./ADR-015-scanner-deduplication-by-content-identity.md) | Scanner Deduplication by Content Identity | 🟡 Proposto | 2026-05-23 |
 | [ADR-016](./ADR-016-media-type-value-object.md) | MediaType como Value Object compartilhado | 🟡 Proposto | 2026-05-31 |
 | [ADR-017](./ADR-017-domain-invariants-in-domain-layer.md) | Invariantes de domínio na camada de domínio | ✅ Aceito | 2026-06-04 |
+| [ADR-018](./ADR-018-domain-identifiers-as-vos-at-boundaries.md) | Identificadores de domínio como Value Objects nas fronteiras | 🟡 Proposto | 2026-06-04 |
 
 ## Como Criar um Novo ADR
 
