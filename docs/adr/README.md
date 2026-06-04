@@ -26,6 +26,7 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-014](./ADR-014-settings-per-bucket-aggregate.md) | Settings — Aggregate por Bucket (não Mega-Aggregate) | ✅ Aceito | 2026-05-21 |
 | [ADR-015](./ADR-015-scanner-deduplication-by-content-identity.md) | Scanner Deduplication by Content Identity | 🟡 Proposto | 2026-05-23 |
 | [ADR-016](./ADR-016-media-type-value-object.md) | MediaType como Value Object compartilhado | 🟡 Proposto | 2026-05-31 |
+| [ADR-019](./ADR-019-domain-invariants-in-domain.md) | Invariantes de contagem/limite moram no domínio | 🟡 Proposto | 2026-05-31 |
 
 ## Como Criar um Novo ADR
 
