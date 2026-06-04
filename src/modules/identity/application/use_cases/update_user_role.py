@@ -30,7 +30,9 @@ class UpdateUserRoleUseCase:
     async def execute(self, input_dto: UpdateUserRoleInput) -> UserSummary:
         """Apply the requested role and return the refreshed summary."""
         user_id = UserId(input_dto.user_id)
-        new_role = UserRole(input_dto.role)
+        # role arrives as a validated UserRole — converted at the
+        # presentation boundary (ADR-018).
+        new_role = input_dto.role
 
         async with self._uow_factory() as uow:
             user = await uow.users.find_by_id(user_id)

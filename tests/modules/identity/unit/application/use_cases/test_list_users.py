@@ -52,7 +52,7 @@ class TestListUsersUseCase:
         await _seed_user(fake_uow, email="root@example.com", role=UserRole.ADMIN)
 
         rows = await ListUsersUseCase(uow_factory=fake_uow_factory).execute(
-            ListUsersInput(role="admin"),
+            ListUsersInput(role=UserRole.ADMIN),
         )
 
         assert [r.email for r in rows] == ["root@example.com"]

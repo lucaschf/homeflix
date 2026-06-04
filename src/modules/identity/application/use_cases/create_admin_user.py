@@ -9,7 +9,6 @@ from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFact
 from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.errors import UserEmailAlreadyExistsError
 from src.modules.identity.domain.value_objects.email import Email
-from src.modules.identity.domain.value_objects.user_role import UserRole
 
 
 class CreateAdminUserUseCase:
@@ -39,7 +38,9 @@ class CreateAdminUserUseCase:
     async def execute(self, input_dto: CreateAdminUserInput) -> UserSummary:
         """Hash the password, persist a new user, return the summary."""
         email = Email(input_dto.email)
-        role = UserRole(input_dto.role)
+        # role arrives as a validated UserRole — converted at the
+        # presentation boundary (ADR-018).
+        role = input_dto.role
         hashed = self._password_hasher.hash(input_dto.password)
 
         async with self._uow_factory() as uow:
