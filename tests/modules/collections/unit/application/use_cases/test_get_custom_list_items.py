@@ -38,7 +38,7 @@ class TestGetCustomListItemsUseCase:
     async def test_should_return_items_with_metadata(
         self, movie_summary: MediaSummaryFactory
     ) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=0)
         items = [
             CustomListItem.create(
                 media_id="mov_abc123def456",
@@ -92,7 +92,7 @@ class TestGetCustomListItemsUseCase:
 
     @pytest.mark.asyncio
     async def test_should_return_empty_list_when_no_items(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Empty List")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Empty List", existing_count=0)
         mocks = make_collections_uow_mock()
         mocks.custom_lists.find_by_id.return_value = custom_list
         mocks.custom_lists.list_items.return_value = []
@@ -112,7 +112,7 @@ class TestGetCustomListItemsUseCase:
 
     @pytest.mark.asyncio
     async def test_should_skip_missing_media(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=0)
         items = [
             CustomListItem.create(
                 media_id="mov_missing00000",
@@ -144,7 +144,7 @@ class TestGetCustomListItemsUseCase:
         movie_summary: MediaSummaryFactory,
         series_summary: MediaSummaryFactory,
     ) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Mixed")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Mixed", existing_count=0)
         items = [
             CustomListItem.create(
                 media_id="mov_abc123def456",
@@ -186,7 +186,7 @@ class TestGetCustomListItemsUseCase:
     async def test_should_pass_language_to_media_lookup(
         self, movie_summary: MediaSummaryFactory
     ) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=0)
         items = [
             CustomListItem.create(
                 media_id="mov_abc123def456",

@@ -6,6 +6,7 @@ from src.building_blocks.domain import BusinessRuleViolationException
 from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.collections.domain.entities import (
     MAX_ITEMS_PER_LIST,
+    MAX_LISTS,
     CustomList,
     CustomListItem,
 )
@@ -41,7 +42,9 @@ class TestCustomListCreation:
         assert custom_list.name.value == "Action Movies"
 
     def test_should_create_via_factory_with_auto_id(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Action Movies")
+        custom_list = CustomList.create(
+            profile_id=_PROFILE_ID, name="Action Movies", existing_count=0
+        )
 
         assert custom_list.id is not None
         assert isinstance(custom_list.id, ListId)
@@ -49,17 +52,19 @@ class TestCustomListCreation:
 
     def test_factory_should_accept_list_name_instance(self) -> None:
         name = ListName("Action Movies")
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name=name)
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name=name, existing_count=0)
 
         assert custom_list.name.value == "Action Movies"
 
     def test_factory_should_strip_name_whitespace(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="  Action Movies  ")
+        custom_list = CustomList.create(
+            profile_id=_PROFILE_ID, name="  Action Movies  ", existing_count=0
+        )
 
         assert custom_list.name.value == "Action Movies"
 
     def test_factory_should_initialize_item_count_to_zero(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="My List")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="My List", existing_count=0)
 
         assert custom_list.item_count == 0
 
@@ -70,16 +75,33 @@ class TestCustomListCreation:
         assert custom_list.id == list_id
 
     def test_should_be_frozen(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=0)
 
         with pytest.raises(DomainValidationException):
             custom_list.name = "New Name"  # type: ignore[misc, assignment]
 
     def test_should_have_timestamps(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=0)
 
         assert custom_list.created_at is not None
         assert custom_list.updated_at is not None
+
+    def test_factory_should_raise_when_list_limit_reached(self) -> None:
+        with pytest.raises(BusinessRuleViolationException) as exc_info:
+            CustomList.create(profile_id=_PROFILE_ID, name="One Too Many", existing_count=MAX_LISTS)
+
+        assert exc_info.value.message_code == "CUSTOM_LIST_LIMIT_EXCEEDED"
+
+    def test_factory_should_raise_when_count_exceeds_limit(self) -> None:
+        with pytest.raises(BusinessRuleViolationException):
+            CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=MAX_LISTS + 1)
+
+    def test_factory_should_allow_creation_at_limit_minus_one(self) -> None:
+        custom_list = CustomList.create(
+            profile_id=_PROFILE_ID, name="Last Slot", existing_count=MAX_LISTS - 1
+        )
+
+        assert custom_list.name.value == "Last Slot"
 
 
 @pytest.mark.unit
@@ -87,33 +109,33 @@ class TestCustomListRename:
     """Tests for CustomList.rename()."""
 
     def test_should_return_new_instance_with_updated_name(self) -> None:
-        original = CustomList.create(profile_id=_PROFILE_ID, name="Old Name")
+        original = CustomList.create(profile_id=_PROFILE_ID, name="Old Name", existing_count=0)
         renamed = original.rename("New Name")
 
         assert renamed.name.value == "New Name"
         assert original.name.value == "Old Name"
 
     def test_should_accept_list_name_instance(self) -> None:
-        original = CustomList.create(profile_id=_PROFILE_ID, name="Old Name")
+        original = CustomList.create(profile_id=_PROFILE_ID, name="Old Name", existing_count=0)
         new_name = ListName("New Name")
         renamed = original.rename(new_name)
 
         assert renamed.name.value == "New Name"
 
     def test_should_preserve_id(self) -> None:
-        original = CustomList.create(profile_id=_PROFILE_ID, name="Old Name")
+        original = CustomList.create(profile_id=_PROFILE_ID, name="Old Name", existing_count=0)
         renamed = original.rename("New Name")
 
         assert renamed.id == original.id
 
     def test_should_strip_new_name_whitespace(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Original")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Original", existing_count=0)
         renamed = custom_list.rename("  Renamed  ")
 
         assert renamed.name.value == "Renamed"
 
     def test_should_preserve_item_count(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Original")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Original", existing_count=0)
         incremented = custom_list.increment_item_count()
         renamed = incremented.rename("Renamed")
 
@@ -125,14 +147,14 @@ class TestCustomListItemCount:
     """Tests for increment/decrement item count."""
 
     def test_should_increment_item_count(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=0)
         updated = custom_list.increment_item_count()
 
         assert updated.item_count == 1
         assert custom_list.item_count == 0
 
     def test_should_increment_multiple_times(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=0)
         updated = custom_list.increment_item_count()
         updated = updated.increment_item_count()
         updated = updated.increment_item_count()
@@ -176,7 +198,7 @@ class TestCustomListItemCount:
         assert updated.item_count == 4
 
     def test_should_not_go_below_zero_on_decrement(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=0)
         updated = custom_list.decrement_item_count()
 
         assert updated.item_count == 0
@@ -194,8 +216,8 @@ class TestCustomListEquality:
         assert list_a == list_b
 
     def test_should_not_be_equal_with_different_ids(self) -> None:
-        list_a = CustomList.create(profile_id=_PROFILE_ID, name="A")
-        list_b = CustomList.create(profile_id=_PROFILE_ID, name="A")
+        list_a = CustomList.create(profile_id=_PROFILE_ID, name="A", existing_count=0)
+        list_b = CustomList.create(profile_id=_PROFILE_ID, name="A", existing_count=0)
 
         assert list_a != list_b
 
@@ -206,7 +228,7 @@ class TestCustomListEquality:
         assert list_a != list_b
 
     def test_should_be_hashable(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=0)
 
         assert hash(custom_list) is not None
         assert {custom_list}

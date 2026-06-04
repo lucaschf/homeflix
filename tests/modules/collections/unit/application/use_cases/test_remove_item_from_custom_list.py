@@ -21,9 +21,9 @@ class TestRemoveItemFromCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_remove_item_successfully(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test").with_updates(
-            item_count=3
-        )
+        custom_list = CustomList.create(
+            profile_id=_PROFILE_ID, name="Test", existing_count=0
+        ).with_updates(item_count=3)
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
@@ -64,7 +64,7 @@ class TestRemoveItemFromCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_raise_when_item_not_in_list(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=0)
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
@@ -84,9 +84,9 @@ class TestRemoveItemFromCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_decrement_item_count_after_removal(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test").with_updates(
-            item_count=5
-        )
+        custom_list = CustomList.create(
+            profile_id=_PROFILE_ID, name="Test", existing_count=0
+        ).with_updates(item_count=5)
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list

@@ -20,7 +20,9 @@ _PROFILE_ID = ProfileId("prf_test12345678")
 
 
 def _create_list(name: str = "Test List", item_count: int = 0) -> CustomList:
-    return CustomList.create(profile_id=_PROFILE_ID, name=name).with_updates(item_count=item_count)
+    return CustomList.create(profile_id=_PROFILE_ID, name=name, existing_count=0).with_updates(
+        item_count=item_count
+    )
 
 
 @pytest.mark.unit

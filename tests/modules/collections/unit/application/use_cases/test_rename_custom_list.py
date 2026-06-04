@@ -23,7 +23,7 @@ class TestRenameCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_rename_successfully(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Old Name")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Old Name", existing_count=0)
         renamed = custom_list.rename("New Name")
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
@@ -64,8 +64,8 @@ class TestRenameCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_raise_when_name_taken_by_other_list(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="My List")
-        other_list = CustomList.create(profile_id=_PROFILE_ID, name="Taken Name")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="My List", existing_count=0)
+        other_list = CustomList.create(profile_id=_PROFILE_ID, name="Taken Name", existing_count=0)
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
@@ -85,7 +85,7 @@ class TestRenameCustomListUseCase:
 
     @pytest.mark.asyncio
     async def test_should_allow_renaming_to_same_name(self) -> None:
-        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Same Name")
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Same Name", existing_count=0)
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
         mock_repo.find_by_id.return_value = custom_list
