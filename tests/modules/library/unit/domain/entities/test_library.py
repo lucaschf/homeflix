@@ -215,46 +215,6 @@ class TestLibraryFactoryCreate:
         assert library.settings.preferred_audio_language.value == "en"
 
 
-class TestLibrarySpecializedFactories:
-    """Tests for specialized Library factory methods."""
-
-    def test_create_movie_library_should_use_tmdb_and_omdb(self):
-        library = Library.create_movie_library(
-            name="Movies",
-            paths=["/media/movies"],
-        )
-
-        assert library.library_type == LibraryType.MOVIES
-        providers = library.get_enabled_providers()
-        assert len(providers) == 2
-        assert providers[0].provider.value == "tmdb"
-        assert providers[1].provider.value == "omdb"
-
-    def test_create_series_library_should_use_tvdb_and_tmdb(self):
-        library = Library.create_series_library(
-            name="TV Shows",
-            paths=["/media/series"],
-        )
-
-        assert library.library_type == LibraryType.SERIES
-        providers = library.get_enabled_providers()
-        assert len(providers) == 2
-        assert providers[0].provider.value == "tvdb"
-        assert providers[1].provider.value == "tmdb"
-
-    def test_create_anime_library_should_use_japanese_and_english_subs(self):
-        library = Library.create_anime_library(
-            name="Anime",
-            paths=["/media/anime"],
-        )
-
-        assert library.library_type == LibraryType.SERIES
-        assert library.language.value == "ja"
-        assert library.settings.preferred_audio_language.value == "ja"
-        assert library.settings.preferred_subtitle_language is not None
-        assert library.settings.preferred_subtitle_language.value == "en"
-
-
 class TestLibraryImmutability:
     """Tests for Library frozen (immutable) behavior."""
 

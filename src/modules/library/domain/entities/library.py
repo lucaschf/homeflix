@@ -16,7 +16,9 @@ from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.library.domain.value_objects.library_name import LibraryName
 from src.modules.library.domain.value_objects.library_settings import LibrarySettings
 from src.modules.library.domain.value_objects.library_type import LibraryType
-from src.modules.library.domain.value_objects.metadata_provider import MetadataProviderConfig
+from src.modules.library.domain.value_objects.metadata_provider import (  # noqa: TCH001 - Pydantic field type, needed at runtime
+    MetadataProviderConfig,
+)
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
 
@@ -246,89 +248,6 @@ class Library(AggregateRoot[LibraryId]):
             metadata_providers=metadata_providers or [],
             settings=settings or LibrarySettings.default(),
             **kwargs,
-        )
-
-    @classmethod
-    def create_movie_library(
-        cls,
-        name: str,
-        paths: Sequence[str],
-        language: str = "en",
-    ) -> Library:
-        """Create a library optimized for movies.
-
-        Args:
-            name: Library display name.
-            paths: Filesystem paths to scan.
-            language: Preferred metadata language.
-
-        Returns:
-            A new movie Library with TMDB as primary provider.
-        """
-        return cls.create(
-            name=name,
-            library_type=LibraryType.MOVIES,
-            paths=paths,
-            language=language,
-            metadata_providers=[
-                MetadataProviderConfig.tmdb(priority=1),
-                MetadataProviderConfig.omdb(priority=2),
-            ],
-        )
-
-    @classmethod
-    def create_series_library(
-        cls,
-        name: str,
-        paths: Sequence[str],
-        language: str = "en",
-    ) -> Library:
-        """Create a library optimized for TV series.
-
-        Args:
-            name: Library display name.
-            paths: Filesystem paths to scan.
-            language: Preferred metadata language.
-
-        Returns:
-            A new series Library with TVDB as primary provider.
-        """
-        return cls.create(
-            name=name,
-            library_type=LibraryType.SERIES,
-            paths=paths,
-            language=language,
-            metadata_providers=[
-                MetadataProviderConfig.tvdb(priority=1),
-                MetadataProviderConfig.tmdb(priority=2),
-            ],
-        )
-
-    @classmethod
-    def create_anime_library(
-        cls,
-        name: str,
-        paths: Sequence[str],
-    ) -> Library:
-        """Create a library optimized for anime.
-
-        Args:
-            name: Library display name.
-            paths: Filesystem paths to scan.
-
-        Returns:
-            A new anime Library with Japanese metadata and English subtitles.
-        """
-        return cls.create(
-            name=name,
-            library_type=LibraryType.SERIES,
-            paths=paths,
-            language="ja",
-            metadata_providers=[
-                MetadataProviderConfig.tvdb(priority=1),
-                MetadataProviderConfig.tmdb(priority=2),
-            ],
-            settings=LibrarySettings.for_anime(),
         )
 
 

@@ -46,34 +46,5 @@ class LibrarySettings(CompoundValueObject):
         """
         return cls()
 
-    @classmethod
-    def for_anime(cls) -> "LibrarySettings":
-        """Create settings optimized for anime libraries.
-
-        Returns:
-            LibrarySettings with Japanese audio, English subtitles,
-            and always-on subtitle mode.
-        """
-        return cls(
-            preferred_audio_language=LanguageCode("ja"),
-            preferred_subtitle_language=LanguageCode("en"),
-            subtitle_mode=SubtitleMode.ALWAYS,
-        )
-
-    @classmethod
-    def for_foreign_films(cls, subtitle_language: str = "en") -> "LibrarySettings":
-        """Create settings optimized for foreign film libraries.
-
-        Args:
-            subtitle_language: Preferred subtitle language code.
-
-        Returns:
-            LibrarySettings with foreign audio mode.
-        """
-        return cls(
-            preferred_subtitle_language=LanguageCode(subtitle_language),
-            subtitle_mode=SubtitleMode.FOREIGN_AUDIO_ONLY,
-        )
-
 
 __all__ = ["LibrarySettings"]

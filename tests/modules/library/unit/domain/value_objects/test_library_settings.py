@@ -45,21 +45,3 @@ class TestLibrarySettingsFactories:
         assert settings.preferred_audio_language.value == "en"
         assert settings.preferred_subtitle_language is None
         assert settings.subtitle_mode == SubtitleMode.FOREIGN_AUDIO_ONLY
-
-    def test_for_anime_should_return_japanese_audio_english_subtitles(self):
-        settings = LibrarySettings.for_anime()
-
-        assert settings.preferred_audio_language.value == "ja"
-        assert settings.preferred_subtitle_language.value == "en"  # type: ignore[union-attr]
-        assert settings.subtitle_mode == SubtitleMode.ALWAYS
-
-    def test_for_foreign_films_should_return_foreign_audio_mode(self):
-        settings = LibrarySettings.for_foreign_films()
-
-        assert settings.preferred_subtitle_language.value == "en"  # type: ignore[union-attr]
-        assert settings.subtitle_mode == SubtitleMode.FOREIGN_AUDIO_ONLY
-
-    def test_for_foreign_films_should_accept_custom_subtitle_language(self):
-        settings = LibrarySettings.for_foreign_films(subtitle_language="pt")
-
-        assert settings.preferred_subtitle_language.value == "pt"  # type: ignore[union-attr]
