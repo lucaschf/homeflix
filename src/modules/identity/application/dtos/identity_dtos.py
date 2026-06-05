@@ -5,11 +5,18 @@ domain VOs) so the application layer is callable from any context
 (tests, CLI, HTTP routes) without forcing the caller to import
 domain VOs. The use cases are responsible for converting str → VO
 and validating format at the application boundary.
+
+``role`` is the exception (ADR-018): inputs carry the ``UserRole``
+enum, converted/validated at the presentation boundary, so an invalid
+role never reaches the use case. Outputs keep ``str`` — they are wire
+payloads.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from src.modules.identity.domain.value_objects.user_role import UserRole
 
 
 @dataclass(frozen=True)
@@ -162,7 +169,7 @@ class UserDetail:
 class ListUsersInput:
     """Input for ``ListUsersUseCase``."""
 
-    role: str | None = None
+    role: UserRole | None = None
     limit: int = 50
     offset: int = 0
 
@@ -187,7 +194,7 @@ class CreateAdminUserInput:
 
     email: str
     password: str
-    role: str = "member"
+    role: UserRole = UserRole.MEMBER
 
 
 @dataclass(frozen=True)
@@ -201,7 +208,7 @@ class UpdateUserRoleInput:
     """
 
     user_id: str
-    role: str
+    role: UserRole
     acting_admin_id: str
 
 

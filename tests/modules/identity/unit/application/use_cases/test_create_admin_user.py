@@ -10,6 +10,7 @@ from src.modules.identity.application.use_cases.create_admin_user import (
 from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.errors import UserEmailAlreadyExistsError
 from src.modules.identity.domain.value_objects.email import Email
+from src.modules.identity.domain.value_objects.user_role import UserRole
 
 from .conftest import FakeIdentityUnitOfWork, FakeIdentityUnitOfWorkFactory
 
@@ -36,7 +37,7 @@ class TestCreateAdminUserUseCase:
             CreateAdminUserInput(
                 email="new@example.com",
                 password="hunter22ish",
-                role="member",
+                role=UserRole.MEMBER,
             ),
         )
 

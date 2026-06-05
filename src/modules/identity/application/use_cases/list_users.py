@@ -6,7 +6,6 @@ from src.modules.identity.application.dtos.identity_dtos import (
 )
 from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
 from src.modules.identity.domain.entities.user import User
-from src.modules.identity.domain.value_objects.user_role import UserRole
 
 
 class ListUsersUseCase:
@@ -24,11 +23,11 @@ class ListUsersUseCase:
 
     async def execute(self, input_dto: ListUsersInput) -> list[UserSummary]:
         """Return the requested page of users."""
-        role = UserRole(input_dto.role) if input_dto.role else None
-
         async with self._uow_factory() as uow:
             users = await uow.users.list_paginated(
-                role=role,
+                # role arrives as a validated UserRole | None —
+                # converted at the presentation boundary (ADR-018).
+                role=input_dto.role,
                 limit=input_dto.limit,
                 offset=input_dto.offset,
             )
