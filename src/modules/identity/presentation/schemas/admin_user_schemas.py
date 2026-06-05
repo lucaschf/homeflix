@@ -1,6 +1,15 @@
-"""Pydantic request schemas for the admin user endpoints."""
+"""Pydantic request schemas for the admin user endpoints.
+
+``role`` fields are typed with the ``UserRole`` enum (ADR-018): an
+invalid role fails validation at the HTTP boundary as a 422 — with
+the allowed values documented in the OpenAPI schema — instead of
+travelling through the application layer as a raw string and blowing
+up inside the use case.
+"""
 
 from pydantic import BaseModel, Field
+
+from src.modules.identity.domain.value_objects.user_role import UserRole
 
 
 class CreateAdminUserRequest(BaseModel):
@@ -14,7 +23,7 @@ class CreateAdminUserRequest(BaseModel):
 
     email: str = Field(..., max_length=320)
     password: str = Field(..., min_length=8, max_length=128)
-    role: str = Field(default="member")
+    role: UserRole = Field(default=UserRole.MEMBER)
 
 
 class UpdateUserRoleRequest(BaseModel):
@@ -26,7 +35,7 @@ class UpdateUserRoleRequest(BaseModel):
     splitting the route.
     """
 
-    role: str
+    role: UserRole
 
 
 __all__ = ["CreateAdminUserRequest", "UpdateUserRoleRequest"]

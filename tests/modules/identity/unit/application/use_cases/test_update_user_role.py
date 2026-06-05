@@ -36,7 +36,7 @@ class TestUpdateUserRoleUseCase:
         result = await UpdateUserRoleUseCase(uow_factory=fake_uow_factory).execute(
             UpdateUserRoleInput(
                 user_id=str(target.id),
-                role="admin",
+                role=UserRole.ADMIN,
                 acting_admin_id=str(UserId.generate()),
             ),
         )
@@ -54,7 +54,7 @@ class TestUpdateUserRoleUseCase:
             await UpdateUserRoleUseCase(uow_factory=fake_uow_factory).execute(
                 UpdateUserRoleInput(
                     user_id=str(only_admin.id),
-                    role="member",
+                    role=UserRole.MEMBER,
                     acting_admin_id=str(only_admin.id),
                 ),
             )
@@ -70,7 +70,7 @@ class TestUpdateUserRoleUseCase:
         result = await UpdateUserRoleUseCase(uow_factory=fake_uow_factory).execute(
             UpdateUserRoleInput(
                 user_id=str(a2.id),
-                role="member",
+                role=UserRole.MEMBER,
                 acting_admin_id=str(a2.id),
             ),
         )
@@ -85,7 +85,7 @@ class TestUpdateUserRoleUseCase:
             await UpdateUserRoleUseCase(uow_factory=fake_uow_factory).execute(
                 UpdateUserRoleInput(
                     user_id=str(UserId.generate()),
-                    role="admin",
+                    role=UserRole.ADMIN,
                     acting_admin_id=str(UserId.generate()),
                 ),
             )

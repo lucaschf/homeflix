@@ -34,6 +34,7 @@ from src.modules.identity.application.use_cases.list_users import ListUsersUseCa
 from src.modules.identity.application.use_cases.update_user_role import (
     UpdateUserRoleUseCase,
 )
+from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.identity.presentation.schemas import (
@@ -47,7 +48,7 @@ router = APIRouter(prefix="/api/v1/admin/users", tags=["Admin — Users"])
 @router.get("")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def list_admin_users(
-    role: str | None = None,
+    role: UserRole | None = None,
     limit: int = 50,
     offset: int = 0,
     _admin: UserModel = Depends(current_admin_user),
