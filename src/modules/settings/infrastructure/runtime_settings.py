@@ -29,6 +29,7 @@ from asyncio import Lock
 from typing import TYPE_CHECKING, cast
 
 from src.modules.settings.domain.value_objects import (
+    SETTING_VO_TYPES,
     AvatarConfig,
     ConfigVO,
     IntroDetectionConfig,
@@ -44,15 +45,6 @@ if TYPE_CHECKING:
         SettingsUnitOfWorkFactory,
     )
     from src.modules.settings.domain.entities import Setting
-
-_DEFAULT_FACTORIES: dict[SettingKey, type[ConfigVO]] = {
-    SettingKey.SCHEDULER: SchedulerConfig,
-    SettingKey.THUMBNAIL_BACKFILL: ThumbnailBackfillConfig,
-    SettingKey.INTRO_DETECTION: IntroDetectionConfig,
-    SettingKey.STREAMING: StreamingConfig,
-    SettingKey.AVATAR: AvatarConfig,
-    SettingKey.SCAN_DEDUP: ScanDedupConfig,
-}
 
 
 class RuntimeSettings:
@@ -85,7 +77,7 @@ class RuntimeSettings:
         self._uow_factory = uow_factory
         self._ttl = cache_ttl_seconds
         self._snapshot: dict[SettingKey, ConfigVO] = {
-            key: vo_type() for key, vo_type in _DEFAULT_FACTORIES.items()
+            key: vo_type() for key, vo_type in SETTING_VO_TYPES.items()
         }
         # -inf so the first read always refreshes regardless of where
         # ``time.monotonic()`` happens to be — a fresh CI worker starts
@@ -104,7 +96,7 @@ class RuntimeSettings:
         async with self._uow_factory() as uow:
             rows: list[Setting] = list(await uow.settings.list_all())
         new_snapshot: dict[SettingKey, ConfigVO] = {
-            key: vo_type() for key, vo_type in _DEFAULT_FACTORIES.items()
+            key: vo_type() for key, vo_type in SETTING_VO_TYPES.items()
         }
         for row in rows:
             new_snapshot[row.id] = row.value

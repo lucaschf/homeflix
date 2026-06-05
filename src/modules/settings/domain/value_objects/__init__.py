@@ -14,6 +14,10 @@ from src.modules.settings.domain.value_objects.scan_dedup_config import ScanDedu
 from src.modules.settings.domain.value_objects.scheduler_config import SchedulerConfig
 from src.modules.settings.domain.value_objects.setting_key import SettingKey
 from src.modules.settings.domain.value_objects.setting_source import SettingSource
+from src.modules.settings.domain.value_objects.setting_vo_registry import (
+    SETTING_VO_TYPES,
+    vo_type_for,
+)
 from src.modules.settings.domain.value_objects.streaming_config import StreamingConfig
 from src.modules.settings.domain.value_objects.thumbnail_backfill_config import (
     ThumbnailBackfillConfig,
@@ -32,6 +36,7 @@ ConfigVO = (
 __all__ = [
     "AvatarConfig",
     "ConfigVO",
+    "SETTING_VO_TYPES",
     "IntroDetectionConfig",
     "ScanDedupConfig",
     "SchedulerConfig",
@@ -39,4 +44,5 @@ __all__ = [
     "SettingSource",
     "StreamingConfig",
     "ThumbnailBackfillConfig",
+    "vo_type_for",
 ]

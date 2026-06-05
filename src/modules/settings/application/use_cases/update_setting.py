@@ -9,8 +9,8 @@ from src.modules.settings.domain.entities import Setting
 from src.modules.settings.domain.value_objects import (
     SettingKey,
     SettingSource,
+    vo_type_for,
 )
-from src.modules.settings.infrastructure.runtime_settings import _DEFAULT_FACTORIES
 
 if TYPE_CHECKING:
     from src.modules.settings.application.unit_of_work import (
@@ -53,7 +53,7 @@ class UpdateSettingUseCase:
     async def execute(self, input_dto: UpdateSettingInput) -> SettingDetail:
         """Validate, upsert, invalidate cache, return the refreshed detail."""
         key = SettingKey(input_dto.key)
-        vo_type = _DEFAULT_FACTORIES[key]
+        vo_type = vo_type_for(key)
         value_vo = vo_type.model_validate(input_dto.value)
 
         setting = Setting(
