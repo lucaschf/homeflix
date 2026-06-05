@@ -5,6 +5,7 @@ import pytest
 from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
+from src.shared_kernel.value_objects.library_id import LibraryId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -107,35 +108,61 @@ class TestProfileAllowedLibraryIds:
             allowed_library_ids=["lib_movies123456", "lib_series123456"],
         )
 
-        assert profile.allowed_library_ids == ["lib_movies123456", "lib_series123456"]
+        # Raw strings are converted to typed LibraryId on assignment (ADR-018).
+        assert profile.allowed_library_ids == [
+            LibraryId("lib_movies123456"),
+            LibraryId("lib_series123456"),
+        ]
 
     def test_factory_should_copy_input_list(self):
         # The aggregate must not alias caller-owned lists; otherwise
         # an outside mutation would leak past the with_* boundary.
-        ids = ["lib_a"]
+        ids = ["lib_aaaaaaaaaaaa"]
         profile = Profile.create(user_id=_user_id(), name=ProfileName("L"), allowed_library_ids=ids)
-        ids.append("lib_b")
+        ids.append("lib_bbbbbbbbbbbb")
 
-        assert profile.allowed_library_ids == ["lib_a"]
+        assert profile.allowed_library_ids == [LibraryId("lib_aaaaaaaaaaaa")]
+
+    def test_should_accept_typed_library_ids_at_creation(self):
+        library_id = LibraryId("lib_movies123456")
+
+        profile = Profile.create(
+            user_id=_user_id(), name=ProfileName("L"), allowed_library_ids=[library_id]
+        )
+
+        assert profile.allowed_library_ids == [library_id]
+
+    def test_should_reject_malformed_library_id(self):
+        # A malformed id must fail at write time instead of becoming a
+        # silent default-deny in the catalog filter (ADR-018).
+        with pytest.raises(DomainValidationException):
+            Profile.create(
+                user_id=_user_id(),
+                name=ProfileName("L"),
+                allowed_library_ids=["not-a-library-id"],
+            )
 
     def test_with_allowed_library_ids_should_replace_entirely(self):
         original = Profile.create(
             user_id=_user_id(),
             name=ProfileName("L"),
-            allowed_library_ids=["lib_old"],
+            allowed_library_ids=["lib_oldoldoldold"],
         )
 
-        updated = original.with_allowed_library_ids(["lib_new1", "lib_new2"])
+        updated = original.with_allowed_library_ids(["lib_new1new1new1", "lib_new2new2new2"])
 
-        assert original.allowed_library_ids == ["lib_old"]
-        assert updated.allowed_library_ids == ["lib_new1", "lib_new2"]
+        assert original.allowed_library_ids == [LibraryId("lib_oldoldoldold")]
+        assert updated.allowed_library_ids == [
+            LibraryId("lib_new1new1new1"),
+            LibraryId("lib_new2new2new2"),
+        ]
         assert updated is not original
 
     def test_with_allowed_library_ids_should_accept_empty_list_to_revoke(self):
         original = Profile.create(
             user_id=_user_id(),
             name=ProfileName("L"),
-            allowed_library_ids=["lib_a", "lib_b"],
+            allowed_library_ids=["lib_aaaaaaaaaaaa", "lib_bbbbbbbbbbbb"],
         )
 
         revoked = original.with_allowed_library_ids([])

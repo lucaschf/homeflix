@@ -25,7 +25,7 @@ def profile_to_output(profile: Profile) -> ProfileOutput:
         name=profile.name.value,
         avatar_url=profile.avatar_url,
         is_kids=profile.is_kids,
-        allowed_library_ids=list(profile.allowed_library_ids),
+        allowed_library_ids=[library_id.value for library_id in profile.allowed_library_ids],
         created_at=profile.created_at.isoformat(),
         updated_at=profile.updated_at.isoformat(),
     )

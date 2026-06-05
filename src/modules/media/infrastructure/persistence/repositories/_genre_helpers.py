@@ -35,6 +35,7 @@ from src.building_blocks.application.pagination import (
 )
 from src.modules.media.domain.repositories.movie_repository import GenreRow
 from src.modules.media.domain.value_objects import Genre
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 TModel = TypeVar("TModel")
 TEntity = TypeVar("TEntity")
@@ -82,7 +83,7 @@ async def fetch_genre_rows(
     model: Any,
     lang: str,
     *,
-    allowed_library_ids: Sequence[str] | None = None,
+    allowed_library_ids: Sequence[LibraryId] | None = None,
 ) -> list[GenreRow]:
     """Project the lightweight genre data of every non-deleted row.
 
@@ -102,7 +103,9 @@ async def fetch_genre_rows(
         model.genres.is_not(None),
     )
     if allowed_library_ids is not None:
-        stmt = stmt.where(model.library_id.in_(allowed_library_ids))
+        stmt = stmt.where(
+            model.library_id.in_([library_id.value for library_id in allowed_library_ids])
+        )
     result = await session.execute(stmt)
     return [
         GenreRow(
@@ -122,7 +125,7 @@ async def fetch_genre_paginated_page(
     genre: Genre,
     cursor: str | None,
     limit: int,
-    allowed_library_ids: Sequence[str] | None = None,
+    allowed_library_ids: Sequence[LibraryId] | None = None,
 ) -> PaginatedResult[TEntity]:
     """Run one page of the title-sorted by-genre listing for ``model``.
 
@@ -178,7 +181,9 @@ async def fetch_genre_paginated_page(
     )
 
     if allowed_library_ids is not None:
-        stmt = stmt.where(model.library_id.in_(allowed_library_ids))
+        stmt = stmt.where(
+            model.library_id.in_([library_id.value for library_id in allowed_library_ids])
+        )
 
     if decoded is not None:
         # Composite ascending: anything strictly after the cursor

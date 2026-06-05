@@ -15,6 +15,7 @@ from src.modules.identity.infrastructure.persistence.sqlalchemy_unit_of_work imp
     SqlAlchemyIdentityUnitOfWorkFactory,
 )
 from src.modules.media.infrastructure.acl import ProfileLibraryAccessAdapter
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 async def _seed_profile(
@@ -61,7 +62,9 @@ class TestProfileLibraryAccessAdapter:
         adapter = _make_adapter(session_factory)
 
         assert profile.id is not None
-        assert await adapter.find_for_profile(profile.id.value) == granted
+        assert await adapter.find_for_profile(profile.id.value) == [
+            LibraryId(library_id) for library_id in granted
+        ]
 
     async def test_should_return_empty_list_for_default_deny_profile(
         self,
@@ -100,18 +103,21 @@ class TestProfileLibraryAccessAdapter:
             factory,
             email="a@homeflix.local",
             profile_name="A",
-            allowed_library_ids=["lib_a"],
+            allowed_library_ids=["lib_aaaaaaaaaaaa"],
         )
         b = await _seed_profile(
             factory,
             email="b@homeflix.local",
             profile_name="B",
-            allowed_library_ids=["lib_b1", "lib_b2"],
+            allowed_library_ids=["lib_bbbbbbbbbb01", "lib_bbbbbbbbbb02"],
         )
 
         adapter = _make_adapter(session_factory)
 
         assert a.id is not None
         assert b.id is not None
-        assert await adapter.find_for_profile(a.id.value) == ["lib_a"]
-        assert await adapter.find_for_profile(b.id.value) == ["lib_b1", "lib_b2"]
+        assert await adapter.find_for_profile(a.id.value) == [LibraryId("lib_aaaaaaaaaaaa")]
+        assert await adapter.find_for_profile(b.id.value) == [
+            LibraryId("lib_bbbbbbbbbb01"),
+            LibraryId("lib_bbbbbbbbbb02"),
+        ]

@@ -243,7 +243,7 @@ class TestUpdateProfile:
         await _login(client, user)
         await client.put(
             f"{PROFILES_PATH}/{user.profile_external_id}",
-            json={"allowed_library_ids": ["lib_keepvalue12"]},
+            json={"allowed_library_ids": ["lib_keepvalue123"]},
         )
 
         response = await client.put(
@@ -254,7 +254,7 @@ class TestUpdateProfile:
         assert response.status_code == 200
         body = response.json()["data"]
         assert body["name"] == "Renamed"
-        assert body["allowed_library_ids"] == ["lib_keepvalue12"]
+        assert body["allowed_library_ids"] == ["lib_keepvalue123"]
 
 
 class TestDeleteProfile:

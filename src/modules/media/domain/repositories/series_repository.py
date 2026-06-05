@@ -19,6 +19,7 @@ from src.modules.media.domain.value_objects import (
     SeriesId,
     Title,
 )
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 class SeriesRepository(ABC):
@@ -33,7 +34,7 @@ class SeriesRepository(ABC):
         self,
         series_id: SeriesId,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Series | None:
         """Find a series by its ID (includes seasons and episodes).
 
@@ -92,7 +93,7 @@ class SeriesRepository(ABC):
         limit: int,
         *,
         include_total: bool = False,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
         library_id: str | None = None,
         has_tmdb_id: bool | None = None,
         q: str | None = None,
@@ -144,7 +145,7 @@ class SeriesRepository(ABC):
         self,
         limit: int,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Sequence[Series]:
         """List the most recently added series.
 
@@ -171,7 +172,7 @@ class SeriesRepository(ABC):
         self,
         lang: str,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted series row.
 
@@ -189,7 +190,7 @@ class SeriesRepository(ABC):
         cursor: str | None,
         limit: int,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Series]:
         """List series belonging to a specific genre, paginated.
 
@@ -210,7 +211,7 @@ class SeriesRepository(ABC):
         year_min: int | None = None,
         year_max: int | None = None,
         limit: int = 20,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> list[tuple[Series, float]]:
         """Full-text search over title, synopsis, and genres.
 
@@ -225,7 +226,7 @@ class SeriesRepository(ABC):
         limit: int,
         *,
         with_backdrop: bool = False,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Sequence[Series]:
         """Return random series, optionally filtering to those with backdrop.
 
@@ -247,7 +248,7 @@ class SeriesRepository(ABC):
         self,
         series_ids: Sequence[SeriesId],
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> dict[str, Series]:
         """Find multiple series by their IDs in a single query.
 
@@ -268,7 +269,7 @@ class SeriesRepository(ABC):
         self,
         tmdb_ids: Sequence[int],
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> dict[int, Series]:
         """Find series whose ``tmdb_id`` matches any of ``tmdb_ids``.
 
@@ -295,7 +296,7 @@ class SeriesRepository(ABC):
         self,
         episode_id: EpisodeId,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Series | None:
         """Find a series containing an episode with this ID.
 
@@ -316,7 +317,7 @@ class SeriesRepository(ABC):
         self,
         title: Title,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Series | None:
         """Find a series by its title (case-insensitive).
 

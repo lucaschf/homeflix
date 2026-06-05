@@ -12,12 +12,14 @@ import json
 import uuid
 from datetime import UTC, datetime
 
+from src.building_blocks.domain.errors import DomainValidationException
 from src.config.logging import get_logger
 from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.modules.identity.infrastructure.persistence.models.profile_model import (
     ProfileModel,
 )
+from src.shared_kernel.value_objects.library_id import LibraryId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -31,13 +33,18 @@ def _ensure_utc(value: datetime | None) -> datetime | None:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
-def _decode_allowed_libraries(profile_external_id: str, raw: str | None) -> list[str]:
-    """Decode the JSON-encoded allowed_library_ids column.
+def _decode_allowed_libraries(profile_external_id: str, raw: str | None) -> list[LibraryId]:
+    """Decode the JSON-encoded allowed_library_ids column into ``LibraryId``s.
 
     A null or unparsable value is coerced to an empty list so a bad
     row can never silently grant access — but the coercion is logged
     at WARNING so corrupted ACLs are observable in dashboards rather
     than disappearing into a silent default-deny.
+
+    Individual entries that fail ``LibraryId`` validation are dropped
+    with the same WARNING treatment (default-deny per entry, ADR-018):
+    a corrupted entry must neither grant access nor make the whole
+    profile unreadable.
     """
     if raw is None:
         return []
@@ -59,7 +66,17 @@ def _decode_allowed_libraries(profile_external_id: str, raw: str | None) -> list
             decoded_type=type(decoded).__name__,
         )
         return []
-    return [str(item) for item in decoded]
+    valid: list[LibraryId] = []
+    for item in decoded:
+        try:
+            valid.append(LibraryId(str(item)))
+        except DomainValidationException:
+            _logger.warning(
+                "[identity] Invalid library id in allowed_library_ids; dropping entry",
+                profile_external_id=profile_external_id,
+                entry=item,
+            )
+    return valid
 
 
 class ProfileMapper:
@@ -90,7 +107,9 @@ class ProfileMapper:
             name=entity.name.value,
             avatar_url=entity.avatar_url,
             is_kids=entity.is_kids,
-            allowed_library_ids=json.dumps(entity.allowed_library_ids),
+            allowed_library_ids=json.dumps(
+                [library_id.value for library_id in entity.allowed_library_ids]
+            ),
         )
 
     @staticmethod
@@ -139,7 +158,9 @@ class ProfileMapper:
         model.name = entity.name.value
         model.avatar_url = entity.avatar_url
         model.is_kids = entity.is_kids
-        model.allowed_library_ids = json.dumps(entity.allowed_library_ids)
+        model.allowed_library_ids = json.dumps(
+            [library_id.value for library_id in entity.allowed_library_ids]
+        )
         return model
 
 

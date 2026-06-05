@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
-from pydantic import Field
+from pydantic import Field, field_validator
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 from src.building_blocks.domain.entity import AggregateRoot
 from src.modules.identity.domain.value_objects.profile_name import (  # noqa: TCH001
     ProfileName,
 )
+from src.shared_kernel.value_objects.library_id import LibraryId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId  # noqa: TCH001
 
@@ -37,12 +41,15 @@ class Profile(AggregateRoot[ProfileId]):
         is_kids: Marks the profile as kids-mode. Independent of the
             ACL list — the kids flag is a UX hint; the ACL is the
             actual authorization gate.
-        allowed_library_ids: Library external ids (``lib_xxx``) this
-            profile is allowed to see in the catalog. Default-deny:
-            an empty list means the profile sees nothing. The catalog
-            filter (see PR 6c) is a no-op when this list is empty
-            beyond returning empty pages — the field is the source
-            of truth, not a hint.
+        allowed_library_ids: Typed ``LibraryId`` ACL (``lib_xxx``) of
+            the libraries this profile may see in the catalog. Raw
+            strings are converted (and validated) on assignment, so a
+            malformed id fails at write time instead of becoming a
+            silent default-deny (ADR-018). Default-deny: an empty
+            list means the profile sees nothing. The catalog filter
+            (see PR 6c) is a no-op when this list is empty beyond
+            returning empty pages — the field is the source of truth,
+            not a hint.
 
     Example:
         >>> profile = Profile.create(
@@ -60,7 +67,15 @@ class Profile(AggregateRoot[ProfileId]):
     name: ProfileName
     avatar_url: str | None = None
     is_kids: bool = False
-    allowed_library_ids: list[str] = Field(default_factory=list)
+    allowed_library_ids: list[LibraryId] = Field(default_factory=list)
+
+    @field_validator("allowed_library_ids", mode="before")
+    @classmethod
+    def convert_allowed_library_ids(cls, v: Sequence[str | LibraryId] | None) -> list[LibraryId]:
+        """Convert raw strings to ``LibraryId``, validating the format."""
+        if v is None:
+            return []
+        return [item if isinstance(item, LibraryId) else LibraryId(item) for item in v]
 
     @classmethod
     def create(
@@ -70,7 +85,7 @@ class Profile(AggregateRoot[ProfileId]):
         *,
         is_kids: bool = False,
         avatar_url: str | None = None,
-        allowed_library_ids: list[str] | None = None,
+        allowed_library_ids: Sequence[str | LibraryId] | None = None,
     ) -> Profile:
         """Build a fresh ``Profile`` (id assigned at persistence time)."""
         return cls(
@@ -93,7 +108,7 @@ class Profile(AggregateRoot[ProfileId]):
         """Return a copy with the given avatar URL (or ``None`` to clear)."""
         return self.with_updates(avatar_url=avatar_url)
 
-    def with_allowed_library_ids(self, library_ids: list[str]) -> Self:
+    def with_allowed_library_ids(self, library_ids: Sequence[str | LibraryId]) -> Self:
         """Return a copy whose ACL is replaced by ``library_ids``.
 
         Replaces the list entirely — there is no partial-add or

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from src.building_blocks.application.pagination import PaginatedResult
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.value_objects import EpisodeId, FilePath, Genre, MovieId
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,7 @@ class MovieRepository(ABC):
         self,
         movie_id: MovieId,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Movie | None:
         """Find a movie by its ID.
 
@@ -96,7 +97,7 @@ class MovieRepository(ABC):
         limit: int,
         *,
         include_total: bool = False,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
         library_id: str | None = None,
         has_tmdb_id: bool | None = None,
         needs_enrichment_review: bool | None = None,
@@ -154,7 +155,7 @@ class MovieRepository(ABC):
         self,
         limit: int,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Sequence[Movie]:
         """List the most recently added movies.
 
@@ -184,7 +185,7 @@ class MovieRepository(ABC):
         self,
         lang: str,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted row.
 
@@ -215,7 +216,7 @@ class MovieRepository(ABC):
         cursor: str | None,
         limit: int,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies belonging to a specific genre, paginated.
 
@@ -260,7 +261,7 @@ class MovieRepository(ABC):
         cursor: str | None,
         limit: int,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies whose cast includes a member named ``actor_name``.
 
@@ -304,7 +305,7 @@ class MovieRepository(ABC):
         year_min: int | None = None,
         year_max: int | None = None,
         limit: int = 20,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> list[tuple[Movie, float]]:
         """Full-text search over title, synopsis, cast, and genres.
 
@@ -336,7 +337,7 @@ class MovieRepository(ABC):
         limit: int,
         *,
         with_backdrop: bool = False,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Sequence[Movie]:
         """Return random movies, optionally filtering to those with backdrop.
 
@@ -358,7 +359,7 @@ class MovieRepository(ABC):
         self,
         movie_ids: Sequence[MovieId],
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> dict[str, Movie]:
         """Find multiple movies by their IDs in a single query.
 
@@ -379,7 +380,7 @@ class MovieRepository(ABC):
         self,
         tmdb_ids: Sequence[int],
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> dict[int, Movie]:
         """Find movies whose ``tmdb_id`` is in ``tmdb_ids``.
 
@@ -466,7 +467,7 @@ class MovieRepository(ABC):
     async def find_needs_enrichment_review(
         self,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Sequence[Movie]:
         """Return movies flagged for admin enrichment review.
 

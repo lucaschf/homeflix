@@ -45,11 +45,12 @@ from src.modules.media.infrastructure.persistence.repositories._genre_helpers im
 from src.modules.media.infrastructure.persistence.repositories._path_prefix_helpers import (
     build_path_prefix_filters,
 )
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 def _series_filter_conditions(
     *,
-    allowed_library_ids: Sequence[str] | None,
+    allowed_library_ids: Sequence[LibraryId] | None,
     library_id: str | None,
     has_tmdb_id: bool | None,
     fts_matching_ids: Sequence[int] | None,
@@ -63,7 +64,9 @@ def _series_filter_conditions(
     """
     conditions: list = []
     if allowed_library_ids is not None:
-        conditions.append(SeriesModel.library_id.in_(allowed_library_ids))
+        conditions.append(
+            SeriesModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
+        )
     if library_id is not None:
         conditions.append(SeriesModel.library_id == library_id)
     if has_tmdb_id is not None:
@@ -133,7 +136,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         self,
         series_id: SeriesId,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Series | None:
         """Find a series by its ID (includes seasons and episodes).
 
@@ -154,7 +157,9 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .execution_options(populate_existing=True)
         )
         if allowed_library_ids is not None:
-            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+            stmt = stmt.where(
+                SeriesModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
+            )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
 
@@ -253,7 +258,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         limit: int,
         *,
         include_total: bool = False,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
         library_id: str | None = None,
         has_tmdb_id: bool | None = None,
         q: str | None = None,
@@ -341,7 +346,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         self,
         limit: int,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Sequence[Series]:
         """Return the top ``limit`` non-deleted series, newest first.
 
@@ -357,7 +362,9 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .options(*self._series_load_options())
         )
         if allowed_library_ids is not None:
-            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+            stmt = stmt.where(
+                SeriesModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
+            )
         stmt = stmt.order_by(SeriesModel.id.desc()).limit(limit)
         result = await self._session.execute(stmt)
         return [SeriesMapper.to_entity(m) for m in result.scalars().all()]
@@ -366,7 +373,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         self,
         lang: str,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted series row."""
         return await fetch_genre_rows(
@@ -382,7 +389,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         cursor: str | None,
         limit: int,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Series]:
         """List series for a single genre, paginated and sorted by title.
 
@@ -409,7 +416,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         limit: int,
         *,
         with_backdrop: bool = False,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Sequence[Series]:
         """Return random series."""
         from sqlalchemy.sql.expression import func
@@ -425,7 +432,9 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 SeriesModel.backdrop_path != "",
             )
         if allowed_library_ids is not None:
-            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+            stmt = stmt.where(
+                SeriesModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
+            )
         stmt = stmt.order_by(func.random()).limit(limit)
         result = await self._session.execute(stmt)
         return [SeriesMapper.to_entity(m) for m in result.scalars().all()]
@@ -434,7 +443,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         self,
         title: Title,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Series | None:
         """Find a series by its title (case-insensitive).
 
@@ -455,7 +464,9 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .execution_options(populate_existing=True)
         )
         if allowed_library_ids is not None:
-            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+            stmt = stmt.where(
+                SeriesModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
+            )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
 
@@ -465,7 +476,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         self,
         series_ids: Sequence[SeriesId],
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> dict[str, Series]:
         """Find multiple series by their IDs in a single query."""
         if not series_ids:
@@ -482,7 +493,9 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .execution_options(populate_existing=True)
         )
         if allowed_library_ids is not None:
-            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+            stmt = stmt.where(
+                SeriesModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
+            )
         result = await self._session.execute(stmt)
         return {
             model.external_id: SeriesMapper.to_entity(model) for model in result.scalars().all()
@@ -492,7 +505,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         self,
         tmdb_ids: Sequence[int],
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> dict[int, Series]:
         """Find series whose ``tmdb_id`` matches any of ``tmdb_ids``.
 
@@ -513,7 +526,9 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .execution_options(populate_existing=True)
         )
         if allowed_library_ids is not None:
-            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+            stmt = stmt.where(
+                SeriesModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
+            )
         result = await self._session.execute(stmt)
         return {
             model.tmdb_id: SeriesMapper.to_entity(model)
@@ -525,7 +540,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         self,
         episode_id: EpisodeId,
         *,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> Series | None:
         """Find a series containing an episode with this ID.
 
@@ -930,7 +945,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         year_min: int | None = None,
         year_max: int | None = None,
         limit: int = 20,
-        allowed_library_ids: Sequence[str] | None = None,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> list[tuple[Series, float]]:
         """Full-text search using FTS5.
 
@@ -982,7 +997,9 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         if year_max is not None:
             stmt = stmt.where(SeriesModel.start_year <= year_max)
         if allowed_library_ids is not None:
-            stmt = stmt.where(SeriesModel.library_id.in_(allowed_library_ids))
+            stmt = stmt.where(
+                SeriesModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
+            )
 
         result = await self._session.execute(stmt)
         models = result.scalars().unique().all()

@@ -13,6 +13,7 @@ from src.modules.media.application.ports.profile_library_access_port import (
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie, Series
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 class ListRecentlyAddedCatalogUseCase:
@@ -93,7 +94,7 @@ class ListRecentlyAddedCatalogUseCase:
         )
 
     async def _fetch_recent_movies(
-        self, limit: int, allowed_library_ids: Sequence[str]
+        self, limit: int, allowed_library_ids: Sequence[LibraryId]
     ) -> list[Movie]:
         async with self._uow_factory() as uow:
             return list(
@@ -104,7 +105,7 @@ class ListRecentlyAddedCatalogUseCase:
             )
 
     async def _fetch_recent_series(
-        self, limit: int, allowed_library_ids: Sequence[str]
+        self, limit: int, allowed_library_ids: Sequence[LibraryId]
     ) -> list[Series]:
         async with self._uow_factory() as uow:
             return list(
