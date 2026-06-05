@@ -1,6 +1,6 @@
 # ADR-018: Identificadores de domínio como Value Objects nas fronteiras
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-06-04
 **Deciders:** Lucas Cristovam
 **Technical Story:** Revisão de code smells (Fase 4) — identificadores e enums de domínio atravessando fronteiras de camada e de Bounded Context como `str` cru, sem validação.
@@ -142,3 +142,4 @@ class UpdateUserRoleRequest(BaseModel):
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-06-04 | Lucas Cristovam | Criação inicial (Proposto) |
+| 2026-06-04 | Lucas Cristovam | Aceito |
