@@ -1,19 +1,13 @@
 """Bidirectional mapper between :class:`Setting` and :class:`SettingModel`."""
 
-from typing import Any, ClassVar
+from typing import Any
 
-from src.building_blocks.domain.value_objects import CompoundValueObject
 from src.modules.settings.domain.entities import Setting
 from src.modules.settings.domain.value_objects import (
-    AvatarConfig,
     ConfigVO,
-    IntroDetectionConfig,
-    ScanDedupConfig,
-    SchedulerConfig,
     SettingKey,
     SettingSource,
-    StreamingConfig,
-    ThumbnailBackfillConfig,
+    vo_type_for,
 )
 from src.modules.settings.infrastructure.persistence.models import SettingModel
 
@@ -22,22 +16,14 @@ class SettingMapper:
     """Map between :class:`Setting` domain entity and ORM model.
 
     The mapper owns the polymorphic deserialization: it inspects
-    ``model.key`` to pick the correct ``ConfigVO`` subtype and
-    rehydrates the row's ``value_json`` into it.
+    ``model.key`` to pick the correct ``ConfigVO`` subtype — via the
+    domain's ``setting_vo_registry`` — and rehydrates the row's
+    ``value_json`` into it.
 
     Example:
         >>> model = SettingMapper.to_model(setting)
         >>> setting = SettingMapper.to_entity(model)
     """
-
-    _KEY_TO_VO_TYPE: ClassVar[dict[SettingKey, type[CompoundValueObject]]] = {
-        SettingKey.SCHEDULER: SchedulerConfig,
-        SettingKey.THUMBNAIL_BACKFILL: ThumbnailBackfillConfig,
-        SettingKey.INTRO_DETECTION: IntroDetectionConfig,
-        SettingKey.STREAMING: StreamingConfig,
-        SettingKey.AVATAR: AvatarConfig,
-        SettingKey.SCAN_DEDUP: ScanDedupConfig,
-    }
 
     @staticmethod
     def to_model(entity: Setting) -> SettingModel:
@@ -49,8 +35,8 @@ class SettingMapper:
             updated_by_user_id=entity.updated_by_user_id,
         )
 
-    @classmethod
-    def to_entity(cls, model: SettingModel) -> Setting:
+    @staticmethod
+    def to_entity(model: SettingModel) -> Setting:
         """Convert ORM model to :class:`Setting` entity.
 
         Raises:
@@ -58,7 +44,7 @@ class SettingMapper:
                 :class:`SettingKey`.
         """
         key = SettingKey(model.key)
-        vo_type = cls._KEY_TO_VO_TYPE[key]
+        vo_type = vo_type_for(key)
         payload: dict[str, Any] = dict(model.value_json or {})
         value: ConfigVO = vo_type.model_validate(payload)  # type: ignore[assignment]
         return Setting(

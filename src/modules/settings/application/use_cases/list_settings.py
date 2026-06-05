@@ -5,8 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from src.modules.settings.application.dtos import SettingDetail
-from src.modules.settings.domain.value_objects import SettingKey
-from src.modules.settings.infrastructure.runtime_settings import _DEFAULT_FACTORIES
+from src.modules.settings.domain.value_objects import SettingKey, vo_type_for
 
 if TYPE_CHECKING:
     from src.modules.settings.application.unit_of_work import (
@@ -56,7 +55,7 @@ def _to_detail(setting: Setting) -> SettingDetail:
 
 
 def _default_detail(key: SettingKey) -> SettingDetail:
-    vo_type = _DEFAULT_FACTORIES[key]
+    vo_type = vo_type_for(key)
     return SettingDetail(
         key=key.value,
         value=vo_type().model_dump(mode="json"),

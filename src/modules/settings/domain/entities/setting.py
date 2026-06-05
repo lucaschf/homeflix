@@ -2,21 +2,16 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, Self
+from typing import Self
 
 from pydantic import model_validator
 
 from src.building_blocks.domain.entity import AggregateRoot
 from src.modules.settings.domain.value_objects import (
-    AvatarConfig,
     ConfigVO,
-    IntroDetectionConfig,
-    ScanDedupConfig,
-    SchedulerConfig,
     SettingKey,
     SettingSource,
-    StreamingConfig,
-    ThumbnailBackfillConfig,
+    vo_type_for,
 )
 
 
@@ -33,8 +28,8 @@ class Setting(AggregateRoot[SettingKey]):
     Attributes:
         id: Which configuration bucket this row carries.
         value: The current configuration. Its concrete type must
-            match the type expected for ``id`` (see
-            :attr:`_KEY_TO_VO_TYPE`).
+            match the type registered for ``id`` in the
+            ``setting_vo_registry`` (see :func:`vo_type_for`).
         source: Provenance of the value — migration seed, admin edit,
             or manual SQL override.
         updated_by_user_id: Identifier of the user that last wrote
@@ -59,18 +54,9 @@ class Setting(AggregateRoot[SettingKey]):
     source: SettingSource
     updated_by_user_id: str | None = None
 
-    _KEY_TO_VO_TYPE: ClassVar[dict[SettingKey, type]] = {
-        SettingKey.SCHEDULER: SchedulerConfig,
-        SettingKey.THUMBNAIL_BACKFILL: ThumbnailBackfillConfig,
-        SettingKey.INTRO_DETECTION: IntroDetectionConfig,
-        SettingKey.STREAMING: StreamingConfig,
-        SettingKey.AVATAR: AvatarConfig,
-        SettingKey.SCAN_DEDUP: ScanDedupConfig,
-    }
-
     @model_validator(mode="after")
     def _validate_value_matches_key(self) -> Self:
-        expected = self._KEY_TO_VO_TYPE[self.id]
+        expected = vo_type_for(self.id)
         if not isinstance(self.value, expected):
             raise ValueError(
                 f"Setting with key {self.id.value!r} requires value of type "
