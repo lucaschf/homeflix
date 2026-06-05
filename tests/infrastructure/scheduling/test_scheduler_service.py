@@ -21,7 +21,6 @@ from src.infrastructure.scheduling.scheduler_service import (
     _job_id_for,
 )
 from src.modules.library.domain.entities.library import Library
-from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.library.domain.value_objects.library_type import LibraryType
 from src.modules.media.domain.entities.scan_run import (
     ScanRun,
@@ -30,6 +29,7 @@ from src.modules.media.domain.entities.scan_run import (
     ScanRunTrigger,
 )
 from src.modules.media.domain.value_objects.scan_run_id import ScanRunId
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 class _FakeJob:

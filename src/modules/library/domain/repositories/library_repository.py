@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from src.modules.library.domain.entities.library import Library
-from src.modules.library.domain.value_objects.library_id import LibraryId
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 class LibraryRepository(ABC):

@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 
 from src.building_blocks.domain.entity import AggregateRoot
 from src.modules.library.domain.rule_codes import LibraryRuleCodes
-from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.library.domain.value_objects.library_name import LibraryName
 from src.modules.library.domain.value_objects.library_settings import LibrarySettings
 from src.modules.library.domain.value_objects.library_type import LibraryType
@@ -21,6 +20,7 @@ from src.modules.library.domain.value_objects.metadata_provider import (  # noqa
 )
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 class Library(AggregateRoot[LibraryId]):

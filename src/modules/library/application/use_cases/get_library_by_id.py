@@ -9,7 +9,7 @@ from src.modules.library.application.ports import MediaCountQueryPort
 from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
 from src.modules.library.application.use_cases._counts import resolve_counts
 from src.modules.library.application.use_cases._to_output import library_to_output
-from src.modules.library.domain.value_objects.library_id import LibraryId
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 class GetLibraryByIdUseCase:

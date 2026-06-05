@@ -3,7 +3,7 @@
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.library.application.dtos.library_dtos import DeleteLibraryInput
 from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
-from src.modules.library.domain.value_objects.library_id import LibraryId
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 class DeleteLibraryUseCase:

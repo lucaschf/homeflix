@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.media.application.dtos.scan_run_dtos import TriggerScanInput
 from src.modules.media.application.use_cases.trigger_scan import (
     LibraryNotFoundForScanError,
@@ -17,6 +16,7 @@ from src.modules.media.domain.entities.scan_run import (
     ScanRunTrigger,
 )
 from src.modules.media.domain.value_objects.scan_run_id import ScanRunId
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 def _build_library_uow_factory(library_repo: AsyncMock) -> MagicMock:

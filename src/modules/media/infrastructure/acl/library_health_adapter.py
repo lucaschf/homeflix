@@ -11,10 +11,10 @@ from pathlib import Path
 from src.modules.library.application.unit_of_work import (
     LibraryUnitOfWorkFactory,
 )
-from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.media.application.ports.library_health_port import (
     LibraryHealthPort,
 )
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 class LibraryHealthAdapter(LibraryHealthPort):

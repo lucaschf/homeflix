@@ -17,8 +17,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.config.logging import get_logger
-from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.media.domain.entities.scan_run import ScanRunTrigger
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable

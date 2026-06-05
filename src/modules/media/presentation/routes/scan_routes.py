@@ -11,12 +11,12 @@ from src.config.containers import ApplicationContainer
 from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
-from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
 )
 from src.modules.media.presentation.schemas import ScanMediaRequest
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 router = APIRouter(prefix="/api/v1/scan", tags=["Scan"])
 
