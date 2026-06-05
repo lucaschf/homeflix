@@ -3,6 +3,12 @@
 from dataclasses import dataclass
 
 from src.building_blocks.domain.events import DomainEvent
+from src.shared_kernel.value_objects.media_id import (
+    EpisodeId,
+    MovieId,
+    SeasonId,
+    SeriesId,
+)
 from src.shared_kernel.value_objects.media_type import MediaType
 
 
@@ -15,32 +21,32 @@ class MediaCreatedEvent(DomainEvent):
         media_type: Type of media (:class:`MediaType`).
     """
 
-    media_id: str = ""
+    media_id: MovieId | SeriesId
     media_type: MediaType
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class IntroDetectedEvent(DomainEvent):
     """Emitted when the auto-detection job persists an intro marker.
 
     Attributes:
         episode_id: External ID of the episode (epi_xxx).
-        season_id: External ID of the parent season (sea_xxx).
+        season_id: External ID of the parent season (ssn_xxx).
         series_id: External ID of the parent series (ser_xxx).
         start_seconds: Start of the detected intro segment.
         end_seconds: End of the detected intro segment.
         confidence: Detection confidence in ``[0.0, 1.0]``.
     """
 
-    episode_id: str = ""
-    season_id: str = ""
-    series_id: str = ""
+    episode_id: EpisodeId
+    season_id: SeasonId
+    series_id: SeriesId
     start_seconds: int = 0
     end_seconds: int = 0
     confidence: float = 0.0
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class IntroManuallySetEvent(DomainEvent):
     """Emitted when a user sets or edits an intro marker via the API.
 
@@ -51,13 +57,13 @@ class IntroManuallySetEvent(DomainEvent):
         end_seconds: End of the manually-set intro segment.
     """
 
-    episode_id: str = ""
-    series_id: str = ""
+    episode_id: EpisodeId
+    series_id: SeriesId
     start_seconds: int = 0
     end_seconds: int = 0
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class IntroClearedEvent(DomainEvent):
     """Emitted when an episode's intro marker is removed.
 
@@ -69,8 +75,8 @@ class IntroClearedEvent(DomainEvent):
         series_id: External ID of the parent series (ser_xxx).
     """
 
-    episode_id: str = ""
-    series_id: str = ""
+    episode_id: EpisodeId
+    series_id: SeriesId
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -95,12 +101,12 @@ class MediaEnrichedEvent(DomainEvent):
         tmdb_id: TMDB numeric id the enrichment locked onto.
     """
 
-    media_id: str = ""
+    media_id: MovieId | SeriesId
     media_type: MediaType
     tmdb_id: int = 0
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class MediaConflictDetectedEvent(DomainEvent):
     """Emitted when the dedup detector queues a new conflict.
 
@@ -120,13 +126,13 @@ class MediaConflictDetectedEvent(DomainEvent):
     """
 
     conflict_id: str = ""
-    candidate_a_id: str = ""
-    candidate_b_id: str = ""
+    candidate_a_id: MovieId | SeriesId
+    candidate_b_id: MovieId | SeriesId
     match_reason: str = ""
     suggested_action: str = ""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class MovieMergedEvent(DomainEvent):
     """Emitted when two movies are merged via the conflict queue.
 
@@ -156,13 +162,13 @@ class MovieMergedEvent(DomainEvent):
     """
 
     conflict_id: str = ""
-    winner_id: str = ""
-    loser_id: str = ""
+    winner_id: MovieId
+    loser_id: MovieId
     keep_loser_variants: bool = False
     is_auto: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class MoviePromotedToSeriesEvent(DomainEvent):
     """Emitted when an admin promotes a movie into a series.
 
@@ -189,9 +195,9 @@ class MoviePromotedToSeriesEvent(DomainEvent):
             that now owns the movie's file variants.
     """
 
-    movie_id: str = ""
-    series_id: str = ""
-    first_episode_id: str = ""
+    movie_id: MovieId
+    series_id: SeriesId
+    first_episode_id: EpisodeId
 
 
 __all__ = [

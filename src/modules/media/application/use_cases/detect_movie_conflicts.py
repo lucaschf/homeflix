@@ -240,8 +240,8 @@ class DetectMovieConflictsUseCase:
         persisted = await uow.media_conflicts.save(conflict)  # type: ignore[attr-defined]
         event = MediaConflictDetectedEvent(
             conflict_id=str(persisted.id),
-            candidate_a_id=persisted.candidate_a_id,
-            candidate_b_id=persisted.candidate_b_id,
+            candidate_a_id=MovieId(persisted.candidate_a_id),
+            candidate_b_id=MovieId(persisted.candidate_b_id),
             match_reason=persisted.match_reason.value,
             suggested_action=persisted.suggested_action.value,
         )
@@ -317,6 +317,9 @@ class DetectMovieConflictsUseCase:
         loser_id = persisted.loser_id()
         if loser_id is None:  # pragma: no cover — guarded by aggregate
             raise RuntimeError("auto-merge resolved row missing loser_id")
+        winner_id = self_movie.id
+        if winner_id is None:  # pragma: no cover — loaded from the repository
+            raise RuntimeError("auto-merge winner movie missing id")
 
         deleted = await uow.movies.delete(MovieId(loser_id))  # type: ignore[attr-defined]
         if not deleted:
@@ -328,8 +331,8 @@ class DetectMovieConflictsUseCase:
 
         event = MovieMergedEvent(
             conflict_id=str(persisted.id),
-            winner_id=str(self_movie.id),
-            loser_id=loser_id,
+            winner_id=winner_id,
+            loser_id=MovieId(loser_id),
             keep_loser_variants=False,
             is_auto=True,
         )

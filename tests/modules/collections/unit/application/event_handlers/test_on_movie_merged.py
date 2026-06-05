@@ -11,6 +11,7 @@ from src.modules.media.domain.events import (
     MediaCreatedEvent,
     MovieMergedEvent,
 )
+from src.shared_kernel.value_objects.media_id import MovieId
 
 
 def _uow_mock() -> tuple[MagicMock, AsyncMock, AsyncMock]:
@@ -37,19 +38,19 @@ class TestOnMovieMergedHandlerCollections:
         await handler.handle(
             MovieMergedEvent(
                 conflict_id="cnf_xxxxxxxxxxxx",
-                winner_id="mov_winneraaaaa",
-                loser_id="mov_loserbbbbbb",
+                winner_id=MovieId("mov_winneraaaaaa"),
+                loser_id=MovieId("mov_loserbbbbbbb"),
             ),
         )
 
         watchlist.rewrite_media_id.assert_awaited_once_with(
-            from_media_id="mov_loserbbbbbb",
-            to_media_id="mov_winneraaaaa",
+            from_media_id="mov_loserbbbbbbb",
+            to_media_id="mov_winneraaaaaa",
             to_media_type="movie",
         )
         custom_lists.rewrite_item_media_id.assert_awaited_once_with(
-            from_media_id="mov_loserbbbbbb",
-            to_media_id="mov_winneraaaaa",
+            from_media_id="mov_loserbbbbbbb",
+            to_media_id="mov_winneraaaaaa",
             to_media_type="movie",
         )
 
@@ -59,7 +60,7 @@ class TestOnMovieMergedHandlerCollections:
         handler = OnMovieMergedHandler(uow_factory=factory)
 
         await handler.handle(
-            MediaCreatedEvent(media_id="mov_abcdefghijkl", media_type="movie"),
+            MediaCreatedEvent(media_id=MovieId("mov_abcdefghijkl"), media_type="movie"),
         )
 
         factory.assert_not_called()

@@ -127,8 +127,8 @@ class TestDetectMovieConflictsUseCase:
         event_bus.publish.assert_awaited_once()
         published = event_bus.publish.await_args[0][0]
         assert isinstance(published, MediaConflictDetectedEvent)
-        assert published.candidate_a_id == "mov_abcdefghijkl"
-        assert published.candidate_b_id == "mov_mnopqrstuvwx"
+        assert published.candidate_a_id.value == "mov_abcdefghijkl"
+        assert published.candidate_b_id.value == "mov_mnopqrstuvwx"
 
     @pytest.mark.asyncio
     async def test_tunable_thresholds_from_settings_flag_different_edit(self) -> None:
@@ -476,8 +476,8 @@ class TestAutoMergeOrphans:
         published = event_bus.publish.await_args[0][0]
         assert isinstance(published, MovieMergedEvent)
         assert published.is_auto is True
-        assert published.winner_id == "mov_abcdefghijkl"
-        assert published.loser_id == "mov_mnopqrstuvwx"
+        assert published.winner_id.value == "mov_abcdefghijkl"
+        assert published.loser_id.value == "mov_mnopqrstuvwx"
 
     @pytest.mark.asyncio
     async def test_unhealthy_library_falls_back_to_pending_queue(self) -> None:

@@ -448,7 +448,7 @@ class TestMovieEvents:
         from src.shared_kernel.value_objects.media_type import MediaType
 
         assert isinstance(events[0], MediaCreatedEvent)
-        assert events[0].media_id == str(movie.id)
+        assert events[0].media_id == movie.id
         assert events[0].media_type is MediaType.MOVIE
         assert movie.has_pending_events is False
 

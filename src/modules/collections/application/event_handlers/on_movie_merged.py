@@ -37,13 +37,13 @@ class OnMovieMergedHandler(EventHandler):
 
         async with self._uow_factory() as uow:
             watchlist_updated = await uow.watchlist.rewrite_media_id(
-                from_media_id=event.loser_id,
-                to_media_id=event.winner_id,
+                from_media_id=event.loser_id.value,
+                to_media_id=event.winner_id.value,
                 to_media_type="movie",
             )
             lists_updated = await uow.custom_lists.rewrite_item_media_id(
-                from_media_id=event.loser_id,
-                to_media_id=event.winner_id,
+                from_media_id=event.loser_id.value,
+                to_media_id=event.winner_id.value,
                 to_media_type="movie",
             )
 

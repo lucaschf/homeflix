@@ -11,6 +11,7 @@ from src.modules.media.domain.events import (
 from src.modules.watch_progress.application.event_handlers.on_movie_merged import (
     OnMovieMergedHandler,
 )
+from src.shared_kernel.value_objects.media_id import MovieId
 
 
 def _uow_mock() -> tuple[MagicMock, AsyncMock]:
@@ -34,12 +35,12 @@ class TestOnMovieMergedHandlerWatchProgress:
         await handler.handle(
             MovieMergedEvent(
                 conflict_id="cnf_xxxxxxxxxxxx",
-                winner_id="mov_winneraaaaa",
-                loser_id="mov_loserbbbbbb",
+                winner_id=MovieId("mov_winneraaaaaa"),
+                loser_id=MovieId("mov_loserbbbbbbb"),
             ),
         )
 
-        progress.delete_all_for_movie.assert_awaited_once_with("mov_loserbbbbbb")
+        progress.delete_all_for_movie.assert_awaited_once_with("mov_loserbbbbbbb")
 
     @pytest.mark.asyncio
     async def test_ignores_unrelated_events(self) -> None:
@@ -47,7 +48,7 @@ class TestOnMovieMergedHandlerWatchProgress:
         handler = OnMovieMergedHandler(uow_factory=factory)
 
         await handler.handle(
-            MediaCreatedEvent(media_id="mov_abcdefghijkl", media_type="movie"),
+            MediaCreatedEvent(media_id=MovieId("mov_abcdefghijkl"), media_type="movie"),
         )
 
         factory.assert_not_called()

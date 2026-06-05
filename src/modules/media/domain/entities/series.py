@@ -235,7 +235,7 @@ class Series(AggregateRoot[SeriesId]):
             start_year=start_year,
             **kwargs,
         )
-        series.add_event(MediaCreatedEvent(media_id=str(series_id), media_type=MediaType.SERIES))
+        series.add_event(MediaCreatedEvent(media_id=series_id, media_type=MediaType.SERIES))
         return series
 
 

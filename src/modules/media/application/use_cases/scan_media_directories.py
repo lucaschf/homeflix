@@ -299,9 +299,7 @@ class ScanMediaDirectoriesUseCase:
             duration=Duration(0),
             files=[primary_file],
         )
-        movie.add_event(
-            MediaCreatedEvent(media_id=str(movie_id), media_type=CatalogMediaType.MOVIE)
-        )
+        movie.add_event(MediaCreatedEvent(media_id=movie_id, media_type=CatalogMediaType.MOVIE))
         for path in paths[1:]:
             movie = movie.with_file(
                 await self._build_new_media_file(by_path[path], is_primary=False)

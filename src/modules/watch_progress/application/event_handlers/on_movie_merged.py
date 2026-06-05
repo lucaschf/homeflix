@@ -36,7 +36,7 @@ class OnMovieMergedHandler(EventHandler):
             return
 
         async with self._uow_factory() as uow:
-            deleted = await uow.progress.delete_all_for_movie(event.loser_id)
+            deleted = await uow.progress.delete_all_for_movie(event.loser_id.value)
 
         if deleted:
             _logger.info(

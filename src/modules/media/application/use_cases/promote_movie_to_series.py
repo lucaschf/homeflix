@@ -108,9 +108,9 @@ class PromoteMovieToSeriesUseCase:
         # handlers observe the post-promote state.
         await self._event_bus.publish(
             MoviePromotedToSeriesEvent(
-                movie_id=input_dto.movie_id,
-                series_id=series_id,
-                first_episode_id=first_episode_id,
+                movie_id=MovieId(input_dto.movie_id),
+                series_id=SeriesId(series_id),
+                first_episode_id=EpisodeId(first_episode_id),
             ),
         )
 

@@ -55,7 +55,7 @@ class OnMediaEnrichedHandler(EventHandler):
         use_case = await self._detect_movie_conflicts_factory()
         result = await use_case.execute(
             DetectMovieConflictsInput(
-                media_id=event.media_id,
+                media_id=event.media_id.value,
                 tmdb_id=event.tmdb_id,
             ),
         )

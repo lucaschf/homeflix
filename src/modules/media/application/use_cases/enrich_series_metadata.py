@@ -105,7 +105,7 @@ class EnrichSeriesMetadataUseCase:
         if enriched_tmdb_id is not None and self._event_bus is not None:
             await self._event_bus.publish(
                 MediaEnrichedEvent(
-                    media_id=input_dto.media_id,
+                    media_id=SeriesId(input_dto.media_id),
                     media_type=MediaType.SERIES,
                     tmdb_id=enriched_tmdb_id,
                 ),

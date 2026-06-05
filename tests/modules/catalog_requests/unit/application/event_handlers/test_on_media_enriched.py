@@ -18,6 +18,7 @@ from src.modules.catalog_requests.application.ports import (
 from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
 from src.modules.media.domain.events import MediaCreatedEvent, MediaEnrichedEvent
+from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 from src.shared_kernel.value_objects.media_type import MediaType
 from tests.modules.catalog_requests.unit.conftest import (
     make_catalog_requests_uow_mock,
@@ -48,7 +49,7 @@ class TestOnMediaEnrichedHandler:
 
         await handler.handle(
             MediaEnrichedEvent(
-                media_id="mov_abc",
+                media_id=MovieId("mov_abcabcabcabc"),
                 media_type="movie",
                 tmdb_id=348,
             ),
@@ -69,7 +70,7 @@ class TestOnMediaEnrichedHandler:
 
         await handler.handle(
             MediaEnrichedEvent(
-                media_id="mov_abc",
+                media_id=MovieId("mov_abcabcabcabc"),
                 media_type="movie",
                 tmdb_id=348,
             ),
@@ -91,7 +92,7 @@ class TestOnMediaEnrichedHandler:
 
         await handler.handle(
             MediaEnrichedEvent(
-                media_id="mov_abc",
+                media_id=MovieId("mov_abcabcabcabc"),
                 media_type="movie",
                 tmdb_id=348,
             ),
@@ -108,7 +109,7 @@ class TestOnMediaEnrichedHandler:
         handler = OnMediaEnrichedHandler(uow_factory=mocks.factory)
 
         await handler.handle(
-            MediaCreatedEvent(media_id="mov_abc", media_type="movie"),
+            MediaCreatedEvent(media_id=MovieId("mov_abcabcabcabc"), media_type="movie"),
         )
 
         mocks.catalog_requests.find_by_tmdb_id.assert_not_called()
@@ -125,7 +126,7 @@ class TestOnMediaEnrichedHandler:
         with caplog.at_level(logging.ERROR):
             await handler.handle(
                 MediaEnrichedEvent(
-                    media_id="mov_abc",
+                    media_id=MovieId("mov_abcabcabcabc"),
                     media_type="episode",
                     tmdb_id=42,
                 ),
@@ -147,7 +148,7 @@ class TestOnMediaEnrichedHandler:
 
         await handler.handle(
             MediaEnrichedEvent(
-                media_id="ser_xyz",
+                media_id=SeriesId("ser_xyzxyzxyzxyz"),
                 media_type="series",
                 tmdb_id=1399,
             ),
@@ -182,7 +183,7 @@ class TestOnMediaEnrichedHandler:
 
         await handler.handle(
             MediaEnrichedEvent(
-                media_id="mov_abc",
+                media_id=MovieId("mov_abcabcabcabc"),
                 media_type="movie",
                 tmdb_id=348,
             ),
@@ -194,7 +195,7 @@ class TestOnMediaEnrichedHandler:
         assert payload.recipient_user_id == "usr_alice"
         assert payload.title == "Alien"
         assert payload.tmdb_id == 348
-        assert payload.media_id == "mov_abc"
+        assert payload.media_id == "mov_abcabcabcabc"
         assert payload.media_type == "movie"
 
     @pytest.mark.asyncio
@@ -217,7 +218,7 @@ class TestOnMediaEnrichedHandler:
 
         await handler.handle(
             MediaEnrichedEvent(
-                media_id="mov_abc",
+                media_id=MovieId("mov_abcabcabcabc"),
                 media_type="movie",
                 tmdb_id=348,
             ),
@@ -247,7 +248,7 @@ class TestOnMediaEnrichedHandler:
 
         await handler.handle(
             MediaEnrichedEvent(
-                media_id="mov_abc",
+                media_id=MovieId("mov_abcabcabcabc"),
                 media_type="movie",
                 tmdb_id=348,
             ),
@@ -275,7 +276,7 @@ class TestOnMediaEnrichedHandler:
         # No publisher injected: should not raise, fulfillment still happens.
         await handler.handle(
             MediaEnrichedEvent(
-                media_id="mov_abc",
+                media_id=MovieId("mov_abcabcabcabc"),
                 media_type="movie",
                 tmdb_id=348,
             ),
@@ -307,7 +308,7 @@ class TestOnMediaEnrichedHandler:
 
         await handler.handle(
             MediaEnrichedEvent(
-                media_id="mov_abc",
+                media_id=MovieId("mov_abcabcabcabc"),
                 media_type="movie",
                 tmdb_id=348,
             ),
@@ -337,7 +338,7 @@ class TestOnMediaEnrichedHandler:
 
         await handler.handle(
             MediaEnrichedEvent(
-                media_id="mov_abc",
+                media_id=MovieId("mov_abcabcabcabc"),
                 media_type="movie",
                 tmdb_id=348,
             ),
