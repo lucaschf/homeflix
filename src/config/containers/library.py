@@ -11,7 +11,6 @@ from src.modules.library.application.use_cases.delete_library import DeleteLibra
 from src.modules.library.application.use_cases.get_library_by_id import GetLibraryByIdUseCase
 from src.modules.library.application.use_cases.list_libraries import ListLibrariesUseCase
 from src.modules.library.application.use_cases.update_library import UpdateLibraryUseCase
-from src.modules.library.domain.services.track_selector import TrackSelector
 from src.modules.library.infrastructure.acl import MediaCountQueryAdapter
 from src.modules.library.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyLibraryUnitOfWorkFactory,
@@ -85,9 +84,3 @@ class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         DeleteLibraryUseCase,
         uow_factory=library_unit_of_work_factory,
     )
-
-    # =========================================================================
-    # Domain Services
-    # =========================================================================
-
-    track_selector = providers.Factory(TrackSelector)
