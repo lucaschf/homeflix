@@ -6,6 +6,15 @@ from src.shared_kernel.value_objects.image_url import ImageUrl
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.language_tag import LanguageTag
 from src.shared_kernel.value_objects.library_id import LibraryId
+from src.shared_kernel.value_objects.media_id import (
+    EpisodeId,
+    MediaId,
+    MediaIdRuleCodes,
+    MovieId,
+    SeasonId,
+    SeriesId,
+    parse_media_id,
+)
 from src.shared_kernel.value_objects.media_type import CollectionMediaType, MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
@@ -15,13 +24,20 @@ __all__ = [
     "AudioTrack",
     "CollectionMediaType",
     "EpisodeCompositeId",
+    "EpisodeId",
     "FilePath",
     "ImageUrl",
     "LanguageCode",
     "LanguageTag",
     "LibraryId",
+    "MediaId",
+    "MediaIdRuleCodes",
     "MediaType",
+    "MovieId",
     "ProfileId",
+    "SeasonId",
+    "SeriesId",
     "SubtitleTrack",
     "UserId",
+    "parse_media_id",
 ]
