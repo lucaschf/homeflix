@@ -4,7 +4,6 @@ import asyncio
 import logging
 
 from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
-from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.media.application.dtos.scan_run_dtos import (
     ScanRunOutput,
     TriggerScanInput,
@@ -14,6 +13,7 @@ from src.modules.media.application.use_cases._to_scan_run_output import (
     scan_run_to_output,
 )
 from src.modules.media.domain.entities.scan_run import ScanRunTrigger
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 _logger = logging.getLogger(__name__)
 

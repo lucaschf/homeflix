@@ -6,7 +6,7 @@ from tests.modules.library.unit.conftest import make_library_uow_mock
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.library.application.dtos.library_dtos import DeleteLibraryInput
 from src.modules.library.application.use_cases.delete_library import DeleteLibraryUseCase
-from src.modules.library.domain.value_objects.library_id import LibraryId
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 @pytest.mark.unit

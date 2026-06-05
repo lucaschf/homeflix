@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.modules.library.domain.entities.library import Library
-from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.library.domain.value_objects.library_name import LibraryName
 from src.modules.library.domain.value_objects.library_settings import LibrarySettings
 from src.modules.library.domain.value_objects.library_type import LibraryType
@@ -17,6 +16,7 @@ from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
 from src.modules.library.infrastructure.persistence.models.library_model import LibraryModel
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 def _ensure_utc(value: datetime | None) -> datetime | None:

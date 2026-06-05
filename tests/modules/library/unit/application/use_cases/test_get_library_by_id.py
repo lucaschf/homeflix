@@ -12,7 +12,7 @@ from src.modules.library.application.use_cases.get_library_by_id import (
     GetLibraryByIdUseCase,
 )
 from src.modules.library.domain.entities.library import Library
-from src.modules.library.domain.value_objects.library_id import LibraryId
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 def _make_media_count_query() -> AsyncMock:

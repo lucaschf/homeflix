@@ -12,7 +12,6 @@ from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactor
 from src.modules.library.application.use_cases._counts import resolve_counts
 from src.modules.library.application.use_cases._to_output import library_to_output
 from src.modules.library.application.use_cases.create_library import _build_settings
-from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.library.domain.value_objects.library_name import LibraryName
 from src.modules.library.domain.value_objects.library_type import LibraryType
 from src.modules.library.domain.value_objects.metadata_provider import (
@@ -21,6 +20,7 @@ from src.modules.library.domain.value_objects.metadata_provider import (
 )
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 class UpdateLibraryUseCase:

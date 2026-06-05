@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.library.domain.entities.library import Library
 from src.modules.library.domain.repositories.library_repository import LibraryRepository
-from src.modules.library.domain.value_objects.library_id import LibraryId
 from src.modules.library.infrastructure.persistence.mappers.library_mapper import LibraryMapper
 from src.modules.library.infrastructure.persistence.models.library_model import LibraryModel
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 class SqlAlchemyLibraryRepository(LibraryRepository):
