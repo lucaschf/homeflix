@@ -147,8 +147,8 @@ class ResolveMediaConflictUseCase:
 
             event_to_publish = MovieMergedEvent(
                 conflict_id=str(persisted.id),
-                winner_id=winner_id,
-                loser_id=loser_id,
+                winner_id=MovieId(winner_id),
+                loser_id=MovieId(loser_id),
                 keep_loser_variants=action is ResolutionAction.MERGE_KEEP_BOTH,
             )
 

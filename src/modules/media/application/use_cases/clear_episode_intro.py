@@ -60,12 +60,12 @@ class ClearEpisodeIntroUseCase:
             if had_marker:
                 await uow.series.update_episode_intro(episode_id, None)
 
-            series_id = str(episode.series_id)
+            series_id = episode.series_id
 
         if had_marker and self._event_bus is not None:
             await self._event_bus.publish(
                 IntroClearedEvent(
-                    episode_id=str(episode_id),
+                    episode_id=episode_id,
                     series_id=series_id,
                 )
             )

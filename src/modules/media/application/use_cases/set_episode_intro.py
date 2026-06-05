@@ -87,12 +87,12 @@ class SetEpisodeIntroUseCase:
             episode.with_intro_marker(marker)
 
             await uow.series.update_episode_intro(episode_id, marker)
-            series_id = str(episode.series_id)
+            series_id = episode.series_id
 
         if self._event_bus is not None:
             await self._event_bus.publish(
                 IntroManuallySetEvent(
-                    episode_id=str(episode_id),
+                    episode_id=episode_id,
                     series_id=series_id,
                     start_seconds=marker.start_seconds,
                     end_seconds=marker.end_seconds,

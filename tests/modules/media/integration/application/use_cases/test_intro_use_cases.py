@@ -152,7 +152,7 @@ class TestSetEpisodeIntroIntegration:
         event_bus.publish.assert_awaited_once()
         published = event_bus.publish.await_args_list[0].args[0]
         assert isinstance(published, IntroManuallySetEvent)
-        assert published.episode_id == str(episode_id)
+        assert published.episode_id == episode_id
 
     async def test_rejects_intro_exceeding_duration(
         self,

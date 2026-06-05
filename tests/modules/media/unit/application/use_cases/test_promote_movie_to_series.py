@@ -111,9 +111,9 @@ class TestPromoteMovieToSeries:
         bus.publish.assert_awaited_once()
         event = bus.publish.await_args.args[0]
         assert isinstance(event, MoviePromotedToSeriesEvent)
-        assert event.movie_id == str(movie.id)
-        assert event.series_id == output.series_id
-        assert event.first_episode_id == output.first_episode_id
+        assert event.movie_id == movie.id
+        assert event.series_id.value == output.series_id
+        assert event.first_episode_id.value == output.first_episode_id
         # Re-enrich was triggered with force=True.
         enrich.execute.assert_awaited_once()
         enrich_input = enrich.execute.await_args.args[0]

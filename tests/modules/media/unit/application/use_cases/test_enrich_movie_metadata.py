@@ -547,7 +547,7 @@ class TestEnrichMovieMetadataEvents:
         assert isinstance(published, MediaEnrichedEvent)
         assert published.media_type == "movie"
         assert published.tmdb_id == 27205
-        assert published.media_id == str(movie.id)
+        assert published.media_id == movie.id
 
     @pytest.mark.asyncio
     async def test_no_event_when_enrichment_fails(self) -> None:

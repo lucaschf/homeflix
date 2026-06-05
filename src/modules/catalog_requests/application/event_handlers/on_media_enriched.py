@@ -162,7 +162,7 @@ class OnMediaEnrichedHandler(EventHandler):
                     recipient_user_id=request.requester_user_id,
                     title=request.title or f"tmdb/{event.media_type}/{event.tmdb_id}",
                     tmdb_id=event.tmdb_id,
-                    media_id=event.media_id,
+                    media_id=event.media_id.value,
                     media_type=event.media_type,
                 ),
             )

@@ -26,7 +26,9 @@ class OnMediaCreatedHandler(EventHandler):
 
     Example:
         >>> handler = OnMediaCreatedHandler(movie_uc_factory, series_uc_factory)
-        >>> await handler.handle(MediaCreatedEvent(media_id="mov_abc", media_type="movie"))
+        >>> await handler.handle(
+        ...     MediaCreatedEvent(media_id=MovieId("mov_2xK9mPqR7nL4"), media_type="movie")
+        ... )
     """
 
     def __init__(
@@ -54,7 +56,7 @@ class OnMediaCreatedHandler(EventHandler):
 
         _logger.info("Auto-enriching %s %s", event.media_type, event.media_id)
 
-        input_dto = EnrichMediaInput(media_id=event.media_id, force=False)
+        input_dto = EnrichMediaInput(media_id=event.media_id.value, force=False)
 
         if event.media_type is MediaType.MOVIE:
             movie_uc = await self._enrich_movie_factory()

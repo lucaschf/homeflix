@@ -230,7 +230,7 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
             files=[file],
             **kwargs,
         )
-        movie.add_event(MediaCreatedEvent(media_id=str(movie_id), media_type=MediaType.MOVIE))
+        movie.add_event(MediaCreatedEvent(media_id=movie_id, media_type=MediaType.MOVIE))
         return movie
 
 

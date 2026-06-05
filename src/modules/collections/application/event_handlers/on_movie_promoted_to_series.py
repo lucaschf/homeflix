@@ -37,13 +37,13 @@ class OnMoviePromotedToSeriesHandler(EventHandler):
 
         async with self._uow_factory() as uow:
             watchlist_updated = await uow.watchlist.rewrite_media_id(
-                from_media_id=event.movie_id,
-                to_media_id=event.series_id,
+                from_media_id=event.movie_id.value,
+                to_media_id=event.series_id.value,
                 to_media_type="series",
             )
             lists_updated = await uow.custom_lists.rewrite_item_media_id(
-                from_media_id=event.movie_id,
-                to_media_id=event.series_id,
+                from_media_id=event.movie_id.value,
+                to_media_id=event.series_id.value,
                 to_media_type="series",
             )
 

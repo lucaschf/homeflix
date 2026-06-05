@@ -74,8 +74,8 @@ class TestClearEpisodeIntroUseCase:
         event_bus.publish.assert_awaited_once()
         published_event = event_bus.publish.await_args_list[0].args[0]
         assert isinstance(published_event, IntroClearedEvent)
-        assert published_event.episode_id == str(episode.id)
-        assert published_event.series_id == str(episode.series_id)
+        assert published_event.episode_id == episode.id
+        assert published_event.series_id == episode.series_id
 
     @pytest.mark.asyncio
     async def test_idempotent_when_marker_already_absent(self) -> None:

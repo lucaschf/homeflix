@@ -188,7 +188,7 @@ class TestSeriesEvents:
         from src.shared_kernel.value_objects.media_type import MediaType
 
         assert isinstance(events[0], MediaCreatedEvent)
-        assert events[0].media_id == str(series.id)
+        assert events[0].media_id == series.id
         assert events[0].media_type is MediaType.SERIES
         assert series.has_pending_events is False
 

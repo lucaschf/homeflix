@@ -110,8 +110,8 @@ class TestMergeReplace:
         event_bus.publish.assert_awaited_once()
         published = event_bus.publish.await_args[0][0]
         assert isinstance(published, MovieMergedEvent)
-        assert published.winner_id == _WINNER
-        assert published.loser_id == _LOSER
+        assert published.winner_id.value == _WINNER
+        assert published.loser_id.value == _LOSER
         assert published.keep_loser_variants is False
 
 
