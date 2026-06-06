@@ -5,7 +5,10 @@ from src.modules.watch_progress.application.unit_of_work import (
     WatchProgressUnitOfWorkFactory,
 )
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.value_objects import WatchableMediaType
+from src.modules.watch_progress.domain.value_objects import (
+    WatchableMediaId,
+    WatchableMediaType,
+)
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -18,8 +21,9 @@ class SaveProgressUseCase:
     async def execute(self, input_dto: SaveProgressInput) -> ProgressOutput:
         """Persist progress for the caller's profile."""
         profile_id = ProfileId(input_dto.profile_id)
+        media_id = WatchableMediaId(input_dto.media_id)
         async with self._uow_factory() as uow:
-            existing = await uow.progress.find_by_media_id(input_dto.media_id, profile_id)
+            existing = await uow.progress.find_by_media_id(media_id, profile_id)
 
             if existing:
                 progress = existing.update_position(
@@ -31,7 +35,7 @@ class SaveProgressUseCase:
             else:
                 progress = WatchProgress.create(
                     profile_id=profile_id,
-                    media_id=input_dto.media_id,
+                    media_id=media_id,
                     media_type=WatchableMediaType(input_dto.media_type),
                     position_seconds=input_dto.position_seconds,
                     duration_seconds=input_dto.duration_seconds,

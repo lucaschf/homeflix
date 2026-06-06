@@ -14,6 +14,7 @@ from src.modules.media.application.ports.progress_lookup_port import (
 from src.modules.watch_progress.application.unit_of_work import (
     WatchProgressUnitOfWorkFactory,
 )
+from src.modules.watch_progress.domain.value_objects import WatchableMediaId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -33,8 +34,9 @@ class ProgressLookupAdapter(ProgressLookupPort):
         if not media_ids:
             return {}
         profile = ProfileId(profile_id)
+        typed_ids = [WatchableMediaId(media_id) for media_id in media_ids]
         async with self._watch_progress_uow_factory() as uow:
-            progress_map = await uow.progress.find_by_media_ids(list(media_ids), profile)
+            progress_map = await uow.progress.find_by_media_ids(typed_ids, profile)
         return {
             media_id: ProgressSummary(
                 media_id=media_id,

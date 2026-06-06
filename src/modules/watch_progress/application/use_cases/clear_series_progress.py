@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from src.modules.watch_progress.application.unit_of_work import (
     WatchProgressUnitOfWorkFactory,
 )
+from src.shared_kernel.value_objects.media_id import SeriesId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -33,7 +34,7 @@ class ClearSeriesProgressUseCase:
         """Soft-delete every episode-progress row for the series, return count."""
         async with self._uow_factory() as uow:
             return await uow.progress.delete_by_series(
-                input_dto.series_id,
+                SeriesId(input_dto.series_id),
                 ProfileId(input_dto.profile_id),
             )
 

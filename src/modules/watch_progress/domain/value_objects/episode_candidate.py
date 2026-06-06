@@ -19,6 +19,9 @@ from typing import TYPE_CHECKING, ClassVar
 from pydantic import ConfigDict
 
 from src.building_blocks.domain.value_objects import CompoundValueObject
+from src.modules.watch_progress.domain.value_objects.watchable_media_id import (  # noqa: TCH001 - Pydantic field type, needed at runtime
+    WatchableMediaId,
+)
 
 if TYPE_CHECKING:
     from src.modules.watch_progress.domain.entities import WatchProgress
@@ -29,7 +32,7 @@ class EpisodeCandidate(CompoundValueObject):
 
     Attributes:
         series_id: External series id (``ser_...``).
-        media_id: Composite episode id keyed by ``WatchProgressRepository``.
+        media_id: Typed composite episode id keyed by ``WatchProgressRepository``.
         season_number: One-based season number.
         episode_number: One-based episode number within the season.
         episode_title: Display title of the episode (already localized
@@ -52,7 +55,7 @@ class EpisodeCandidate(CompoundValueObject):
     )
 
     series_id: str
-    media_id: str
+    media_id: WatchableMediaId
     season_number: int
     episode_number: int
     episode_title: str

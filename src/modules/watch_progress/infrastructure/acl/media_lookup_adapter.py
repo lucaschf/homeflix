@@ -6,13 +6,13 @@ Media BC. Above the adapter, the use cases only see
 """
 
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
-from src.modules.media.domain.value_objects import MovieId, SeriesId
 from src.modules.watch_progress.application.ports.media_lookup_port import (
     EpisodeInfo,
     MediaLookupPort,
     MovieDisplayInfo,
     SeriesWithEpisodesInfo,
 )
+from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 
 
 class MediaLookupAdapter(MediaLookupPort):
@@ -21,14 +21,14 @@ class MediaLookupAdapter(MediaLookupPort):
     def __init__(self, media_uow_factory: MediaUnitOfWorkFactory) -> None:
         self._media_uow_factory = media_uow_factory
 
-    async def get_movie(self, media_id: str, lang: str) -> MovieDisplayInfo | None:
+    async def get_movie(self, movie_id: MovieId, lang: str) -> MovieDisplayInfo | None:
         """Map a ``Movie`` entity to a display DTO, or ``None`` when absent."""
         async with self._media_uow_factory() as uow:
-            movie = await uow.movies.find_by_id(MovieId(media_id))
+            movie = await uow.movies.find_by_id(movie_id)
         if movie is None:
             return None
         return MovieDisplayInfo(
-            media_id=media_id,
+            media_id=movie_id.value,
             title=movie.get_title(lang),
             poster_path=movie.poster_path.value if movie.poster_path else None,
             backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
@@ -36,12 +36,12 @@ class MediaLookupAdapter(MediaLookupPort):
 
     async def get_series_with_episodes(
         self,
-        series_id: str,
+        series_id: SeriesId,
         lang: str,
     ) -> SeriesWithEpisodesInfo | None:
         """Flatten a ``Series`` into display + sorted-episode DTOs."""
         async with self._media_uow_factory() as uow:
-            series = await uow.series.find_by_id(SeriesId(series_id))
+            series = await uow.series.find_by_id(series_id)
         if series is None:
             return None
 
@@ -58,7 +58,7 @@ class MediaLookupAdapter(MediaLookupPort):
                 )
 
         return SeriesWithEpisodesInfo(
-            series_id=series_id,
+            series_id=series_id.value,
             title=series.get_title(lang),
             poster_path=series.poster_path.value if series.poster_path else None,
             backdrop_path=series.backdrop_path.value if series.backdrop_path else None,

@@ -3,6 +3,7 @@
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.value_objects import (
     ProgressId,
+    WatchableMediaId,
     WatchableMediaType,
     WatchStatus,
 )
@@ -34,7 +35,7 @@ class WatchProgressMapper:
         return WatchProgressModel(
             external_id=str(entity.id),
             profile_id=str(entity.profile_id),
-            media_id=entity.media_id,
+            media_id=entity.media_id.value,
             media_type=entity.media_type,
             position_seconds=entity.position_seconds,
             duration_seconds=entity.duration_seconds,
@@ -51,7 +52,7 @@ class WatchProgressMapper:
         return WatchProgress(
             id=ProgressId(model.external_id),
             profile_id=ProfileId(model.profile_id),
-            media_id=model.media_id,
+            media_id=WatchableMediaId(model.media_id),
             media_type=WatchableMediaType(model.media_type),
             position_seconds=model.position_seconds,
             duration_seconds=model.duration_seconds,

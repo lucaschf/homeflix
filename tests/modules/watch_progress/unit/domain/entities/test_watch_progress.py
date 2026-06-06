@@ -89,10 +89,10 @@ class TestWatchProgress:
 
     def test_create_with_episode(self):
         progress = _create_progress(
-            media_id="epi_abc123def456",
+            media_id="epi_ser_abc123def456_1_2",
             media_type=WatchableMediaType.EPISODE,
             position_seconds=300,
             duration_seconds=2700,
         )
         assert progress.media_type == "episode"
-        assert progress.media_id == "epi_abc123def456"
+        assert progress.media_id.value == "epi_ser_abc123def456_1_2"

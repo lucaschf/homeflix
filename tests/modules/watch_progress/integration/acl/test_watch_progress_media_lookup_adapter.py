@@ -112,7 +112,7 @@ class TestWatchProgressMediaLookupAdapter:
         await db_session.commit()
 
         adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
-        result = await adapter.get_movie(str(movie_id), "en")
+        result = await adapter.get_movie(movie_id, "en")
 
         assert result is not None
         assert result.media_id == str(movie_id)
@@ -126,7 +126,7 @@ class TestWatchProgressMediaLookupAdapter:
     ) -> None:
         adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
 
-        assert await adapter.get_movie("mov_missing00000", "en") is None
+        assert await adapter.get_movie(MovieId("mov_missing00000"), "en") is None
 
     async def test_get_series_with_episodes_returns_sorted_list(
         self,
@@ -143,7 +143,7 @@ class TestWatchProgressMediaLookupAdapter:
         await db_session.commit()
 
         adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
-        result = await adapter.get_series_with_episodes(str(series_id), "en")
+        result = await adapter.get_series_with_episodes(series_id, "en")
 
         assert result is not None
         assert result.title == "Breaking Bad"
@@ -161,4 +161,4 @@ class TestWatchProgressMediaLookupAdapter:
     ) -> None:
         adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
 
-        assert await adapter.get_series_with_episodes("ser_missing00000", "en") is None
+        assert await adapter.get_series_with_episodes(SeriesId("ser_missing00000"), "en") is None

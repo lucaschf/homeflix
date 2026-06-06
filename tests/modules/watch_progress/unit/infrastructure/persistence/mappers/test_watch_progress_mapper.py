@@ -111,7 +111,7 @@ class TestWatchProgressMapperToEntity:
         model = WatchProgressModel(
             external_id=str(progress_id),
             profile_id=str(_PROFILE_ID),
-            media_id="epi_xyz789abc123",
+            media_id="epi_ser_xyz789abc123_1_2",
             media_type="episode",
             position_seconds=900,
             duration_seconds=3600,
@@ -128,7 +128,7 @@ class TestWatchProgressMapperToEntity:
 
         assert entity.id == progress_id
         assert entity.profile_id == _PROFILE_ID
-        assert entity.media_id == "epi_xyz789abc123"
+        assert entity.media_id.value == "epi_ser_xyz789abc123_1_2"
         assert entity.media_type == "episode"
         assert entity.position_seconds == 900
         assert entity.status == "in_progress"

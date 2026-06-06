@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 
 from src.modules.watch_progress.domain.entities import WatchProgress
+from src.modules.watch_progress.domain.value_objects import WatchableMediaId
+from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -16,21 +18,21 @@ class WatchProgressRepository(ABC):
 
     Example:
         >>> progress = await repo.find_by_media_id(
-        ...     "mov_abc123def456", caller_profile_id
+        ...     WatchableMediaId("mov_abc123def456"), caller_profile_id
         ... )
     """
 
     @abstractmethod
     async def find_by_media_id(
         self,
-        media_id: str,
+        media_id: WatchableMediaId,
         profile_id: ProfileId,
     ) -> WatchProgress | None:
         """Find progress by media + profile.
 
         Args:
-            media_id: External ID of the media (``mov_xxx`` or
-                ``epi_xxx``).
+            media_id: Typed watchable id (``mov_xxx`` or composite
+                ``epi_ser_xxx_S_E``).
             profile_id: The caller's profile.
 
         Returns:
@@ -71,27 +73,27 @@ class WatchProgressRepository(ABC):
     @abstractmethod
     async def find_by_media_ids(
         self,
-        media_ids: list[str],
+        media_ids: list[WatchableMediaId],
         profile_id: ProfileId,
     ) -> dict[str, WatchProgress]:
         """Find progress for multiple media items in a single query.
 
         Args:
-            media_ids: List of external media IDs to look up.
+            media_ids: Typed watchable ids to look up.
             profile_id: The caller's profile — only their rows match.
 
         Returns:
-            Dict mapping ``media_id`` to ``WatchProgress`` for found
+            Dict mapping raw ``media_id`` strings to ``WatchProgress`` for found
             rows. Missing keys mean no progress exists for that
             media in this profile.
         """
 
     @abstractmethod
-    async def delete(self, media_id: str, profile_id: ProfileId) -> bool:
+    async def delete(self, media_id: WatchableMediaId, profile_id: ProfileId) -> bool:
         """Soft-delete progress for a media item in this profile.
 
         Args:
-            media_id: External ID of the media.
+            media_id: Typed watchable id of the media.
             profile_id: The caller's profile.
 
         Returns:
@@ -101,7 +103,7 @@ class WatchProgressRepository(ABC):
     @abstractmethod
     async def delete_by_series(
         self,
-        series_id: str,
+        series_id: SeriesId,
         profile_id: ProfileId,
     ) -> int:
         """Soft-delete every episode progress for a series in this profile.
@@ -141,7 +143,7 @@ class WatchProgressRepository(ABC):
         """
 
     @abstractmethod
-    async def delete_all_for_movie(self, movie_id: str) -> int:
+    async def delete_all_for_movie(self, movie_id: MovieId) -> int:
         """Soft-delete every progress row that points at a movie id.
 
         Cross-BC operation driven by ``MoviePromotedToSeriesEvent``:

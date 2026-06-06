@@ -118,16 +118,6 @@ class TestEnrichEpisode:
         assert item.episode_number == 2
 
     @pytest.mark.asyncio
-    async def test_enrich_returns_none_for_standard_episode_id(self, repos):
-        mocks, _ = repos
-        mocks.progress.list_recently_watched.return_value = [
-            _make_progress("epi_03ZzYaQ77FaB"),
-        ]
-
-        result = await _make_use_case(repos).execute(_input())
-        assert len(result.items) == 0
-
-    @pytest.mark.asyncio
     async def test_enrich_returns_none_for_missing_series(self, repos):
         mocks, media_lookup = repos
         mocks.progress.list_recently_watched.return_value = [
@@ -162,16 +152,6 @@ class TestEnrichEpisode:
             "epi_ser_Hy9VjMfILYZe_3_99": progress,
         }
         media_lookup.get_series_with_episodes.return_value = series
-
-        result = await _make_use_case(repos).execute(_input())
-        assert len(result.items) == 0
-
-    @pytest.mark.asyncio
-    async def test_enrich_returns_none_for_malformed_media_id(self, repos):
-        mocks, _ = repos
-        mocks.progress.list_recently_watched.return_value = [
-            _make_progress("epi_ser_broken"),
-        ]
 
         result = await _make_use_case(repos).execute(_input())
         assert len(result.items) == 0
@@ -287,9 +267,9 @@ class TestSeriesDeduplication:
         series_b = _make_series_info("ser_BBBBBBBBBBBB", {1: [1]}, title="Series B")
 
         async def get_series_side_effect(sid, lang):
-            if sid == "ser_AAAAAAAAAAAA":
+            if sid.value == "ser_AAAAAAAAAAAA":
                 return series_a
-            if sid == "ser_BBBBBBBBBBBB":
+            if sid.value == "ser_BBBBBBBBBBBB":
                 return series_b
             return None
 
@@ -300,10 +280,11 @@ class TestSeriesDeduplication:
         mocks.progress.list_recently_watched.return_value = [pa, pb]
 
         def find_by_media_ids_side_effect(ids, profile_id):
+            id_values = [media_id.value for media_id in ids]
             result: dict[str, WatchProgress] = {}
-            if "epi_ser_AAAAAAAAAAAA_1_1" in ids:
+            if "epi_ser_AAAAAAAAAAAA_1_1" in id_values:
                 result["epi_ser_AAAAAAAAAAAA_1_1"] = pa
-            if "epi_ser_BBBBBBBBBBBB_1_1" in ids:
+            if "epi_ser_BBBBBBBBBBBB_1_1" in id_values:
                 result["epi_ser_BBBBBBBBBBBB_1_1"] = pb
             return result
 

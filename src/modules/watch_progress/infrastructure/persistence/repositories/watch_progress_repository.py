@@ -1,17 +1,24 @@
 """SQLAlchemy implementation of WatchProgressRepository."""
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.repositories import WatchProgressRepository
+from src.modules.watch_progress.domain.value_objects import WatchableMediaId
 from src.modules.watch_progress.infrastructure.persistence.mappers import (
     WatchProgressMapper,
 )
 from src.modules.watch_progress.infrastructure.persistence.models import (
     WatchProgressModel,
 )
+from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 from src.shared_kernel.value_objects.profile_id import ProfileId
+
+_logger = logging.getLogger(__name__)
 
 
 class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
@@ -26,7 +33,7 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
     Example:
         >>> repo = SQLAlchemyWatchProgressRepository(session)
         >>> progress = await repo.find_by_media_id(
-        ...     "mov_abc123def456", caller_profile_id
+        ...     WatchableMediaId("mov_abc123def456"), caller_profile_id
         ... )
     """
 
@@ -35,12 +42,12 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
 
     async def find_by_media_id(
         self,
-        media_id: str,
+        media_id: WatchableMediaId,
         profile_id: ProfileId,
     ) -> WatchProgress | None:
         """Look up a non-deleted row scoped to ``(media_id, profile_id)``."""
         stmt = select(WatchProgressModel).where(
-            WatchProgressModel.media_id == media_id,
+            WatchProgressModel.media_id == media_id.value,
             WatchProgressModel.profile_id == str(profile_id),
             WatchProgressModel.deleted_at.is_(None),
         )
@@ -57,7 +64,7 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
         index.
         """
         stmt = select(WatchProgressModel).where(
-            WatchProgressModel.media_id == progress.media_id,
+            WatchProgressModel.media_id == progress.media_id.value,
             WatchProgressModel.profile_id == str(progress.profile_id),
         )
         result = await self._session.execute(stmt)
@@ -93,7 +100,7 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
             .limit(limit)
         )
         result = await self._session.execute(stmt)
-        return [WatchProgressMapper.to_entity(m) for m in result.scalars().all()]
+        return self._to_entities_dropping_invalid(result.scalars().all())
 
     async def list_recently_watched(
         self,
@@ -112,11 +119,35 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
             .limit(limit)
         )
         result = await self._session.execute(stmt)
-        return [WatchProgressMapper.to_entity(m) for m in result.scalars().all()]
+        return self._to_entities_dropping_invalid(result.scalars().all())
+
+    @staticmethod
+    def _to_entities_dropping_invalid(
+        models: list[WatchProgressModel],
+    ) -> list[WatchProgress]:
+        """Map rows to entities, dropping (and logging) corrupt media ids.
+
+        Rows persisted before media-id validation existed may carry a
+        ``media_id`` that no longer parses as :class:`WatchableMediaId`.
+        Such rows were already invisible downstream (Continue Watching
+        silently skipped them); dropping them here with a WARNING makes
+        the corrupt state observable instead of silent.
+        """
+        entities: list[WatchProgress] = []
+        for model in models:
+            try:
+                entities.append(WatchProgressMapper.to_entity(model))
+            except DomainValidationException:
+                _logger.warning(
+                    "Dropping watch-progress row %s with invalid media_id %r",
+                    model.id,
+                    model.media_id,
+                )
+        return entities
 
     async def find_by_media_ids(
         self,
-        media_ids: list[str],
+        media_ids: list[WatchableMediaId],
         profile_id: ProfileId,
     ) -> dict[str, WatchProgress]:
         """Bulk-look-up rows for the profile, returned as ``{media_id: progress}``."""
@@ -124,16 +155,16 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
             return {}
         stmt = select(WatchProgressModel).where(
             WatchProgressModel.profile_id == str(profile_id),
-            WatchProgressModel.media_id.in_(media_ids),
+            WatchProgressModel.media_id.in_([media_id.value for media_id in media_ids]),
             WatchProgressModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
         return {m.media_id: WatchProgressMapper.to_entity(m) for m in result.scalars().all()}
 
-    async def delete(self, media_id: str, profile_id: ProfileId) -> bool:
+    async def delete(self, media_id: WatchableMediaId, profile_id: ProfileId) -> bool:
         """Soft-delete the row for (profile_id, media_id), if any."""
         stmt = select(WatchProgressModel).where(
-            WatchProgressModel.media_id == media_id,
+            WatchProgressModel.media_id == media_id.value,
             WatchProgressModel.profile_id == str(profile_id),
             WatchProgressModel.deleted_at.is_(None),
         )
@@ -149,11 +180,11 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
 
     async def delete_by_series(
         self,
-        series_id: str,
+        series_id: SeriesId,
         profile_id: ProfileId,
     ) -> int:
         """Soft-delete every episode-progress row for this series in the profile."""
-        prefix = f"epi_{series_id}_"
+        prefix = f"epi_{series_id.value}_"
         stmt = select(WatchProgressModel).where(
             WatchProgressModel.profile_id == str(profile_id),
             WatchProgressModel.media_id.startswith(prefix),
@@ -187,7 +218,7 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
             await self._session.flush()
         return len(models)
 
-    async def delete_all_for_movie(self, movie_id: str) -> int:
+    async def delete_all_for_movie(self, movie_id: MovieId) -> int:
         """Soft-delete every (cross-profile) progress row on a movie id.
 
         Driven by ``MoviePromotedToSeriesEvent`` — see the interface
@@ -196,7 +227,7 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
         almost guaranteed to be wrong).
         """
         stmt = select(WatchProgressModel).where(
-            WatchProgressModel.media_id == movie_id,
+            WatchProgressModel.media_id == movie_id.value,
             WatchProgressModel.media_type == "movie",
             WatchProgressModel.deleted_at.is_(None),
         )

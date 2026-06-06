@@ -41,7 +41,7 @@ def _candidate(
     episode: int,
     *,
     progress: WatchProgress | None = None,
-    series_id: str = "ser_ABC",
+    series_id: str = "ser_abc123def456",
 ) -> EpisodeCandidate:
     """Build an EpisodeCandidate with derived composite id."""
     media_id = f"epi_{series_id}_{season}_{episode}"
@@ -73,14 +73,14 @@ class TestContinueWatchingSelectorEmptyCases:
 @pytest.mark.unit
 class TestInProgressPriority:
     def test_single_in_progress_episode_is_selected(self) -> None:
-        cand = _candidate(2, 3, progress=_progress("epi_ser_ABC_2_3"))
+        cand = _candidate(2, 3, progress=_progress("epi_ser_abc123def456_2_3"))
         result = ContinueWatchingSelector().pick([cand])
         assert result.candidate is cand
 
     def test_highest_numbered_in_progress_wins_against_earlier_ones(self) -> None:
-        early = _candidate(1, 1, progress=_progress("epi_ser_ABC_1_1"))
-        mid = _candidate(1, 5, progress=_progress("epi_ser_ABC_1_5"))
-        later = _candidate(2, 1, progress=_progress("epi_ser_ABC_2_1"))
+        early = _candidate(1, 1, progress=_progress("epi_ser_abc123def456_1_1"))
+        mid = _candidate(1, 5, progress=_progress("epi_ser_abc123def456_1_5"))
+        later = _candidate(2, 1, progress=_progress("epi_ser_abc123def456_2_1"))
 
         result = ContinueWatchingSelector().pick([early, mid, later])
 
@@ -90,9 +90,9 @@ class TestInProgressPriority:
         completed = _candidate(
             2,
             5,
-            progress=_progress("epi_ser_ABC_2_5", status=WatchStatus.COMPLETED),
+            progress=_progress("epi_ser_abc123def456_2_5", status=WatchStatus.COMPLETED),
         )
-        in_progress = _candidate(1, 2, progress=_progress("epi_ser_ABC_1_2"))
+        in_progress = _candidate(1, 2, progress=_progress("epi_ser_abc123def456_1_2"))
 
         result = ContinueWatchingSelector().pick([in_progress, completed])
 
@@ -103,10 +103,10 @@ class TestInProgressPriority:
 class TestNextUnwatchedFallback:
     def test_first_unwatched_after_last_completed_is_selected(self) -> None:
         s01e01 = _candidate(
-            1, 1, progress=_progress("epi_ser_ABC_1_1", status=WatchStatus.COMPLETED)
+            1, 1, progress=_progress("epi_ser_abc123def456_1_1", status=WatchStatus.COMPLETED)
         )
         s01e02 = _candidate(
-            1, 2, progress=_progress("epi_ser_ABC_1_2", status=WatchStatus.COMPLETED)
+            1, 2, progress=_progress("epi_ser_abc123def456_1_2", status=WatchStatus.COMPLETED)
         )
         s01e03 = _candidate(1, 3)
         s01e04 = _candidate(1, 4)
@@ -117,10 +117,10 @@ class TestNextUnwatchedFallback:
 
     def test_completed_with_no_unwatched_after_returns_none(self) -> None:
         s01e01 = _candidate(
-            1, 1, progress=_progress("epi_ser_ABC_1_1", status=WatchStatus.COMPLETED)
+            1, 1, progress=_progress("epi_ser_abc123def456_1_1", status=WatchStatus.COMPLETED)
         )
         s01e02 = _candidate(
-            1, 2, progress=_progress("epi_ser_ABC_1_2", status=WatchStatus.COMPLETED)
+            1, 2, progress=_progress("epi_ser_abc123def456_1_2", status=WatchStatus.COMPLETED)
         )
 
         result = ContinueWatchingSelector().pick([s01e01, s01e02])
@@ -131,7 +131,7 @@ class TestNextUnwatchedFallback:
         """Gaps in the "watched" history don't force the user back to them."""
         s01e01 = _candidate(1, 1)  # skipped entirely
         s01e02 = _candidate(
-            1, 2, progress=_progress("epi_ser_ABC_1_2", status=WatchStatus.COMPLETED)
+            1, 2, progress=_progress("epi_ser_abc123def456_1_2", status=WatchStatus.COMPLETED)
         )
         s01e03 = _candidate(1, 3)
 
@@ -149,12 +149,12 @@ class TestLatestWatchedAt:
         s01e01 = _candidate(
             1,
             1,
-            progress=_progress("epi_ser_ABC_1_1", last_watched_at=older),
+            progress=_progress("epi_ser_abc123def456_1_1", last_watched_at=older),
         )
         s01e02 = _candidate(
             1,
             2,
-            progress=_progress("epi_ser_ABC_1_2", last_watched_at=newer),
+            progress=_progress("epi_ser_abc123def456_1_2", last_watched_at=newer),
         )
 
         result = ContinueWatchingSelector().pick([s01e01, s01e02])
@@ -169,12 +169,12 @@ class TestLatestWatchedAt:
         s01e01 = _candidate(
             1,
             1,
-            progress=_progress("epi_ser_ABC_1_1", WatchStatus.COMPLETED, older),
+            progress=_progress("epi_ser_abc123def456_1_1", WatchStatus.COMPLETED, older),
         )
         s01e02 = _candidate(
             1,
             2,
-            progress=_progress("epi_ser_ABC_1_2", WatchStatus.COMPLETED, newer),
+            progress=_progress("epi_ser_abc123def456_1_2", WatchStatus.COMPLETED, newer),
         )
 
         result = ContinueWatchingSelector().pick([s01e01, s01e02])
