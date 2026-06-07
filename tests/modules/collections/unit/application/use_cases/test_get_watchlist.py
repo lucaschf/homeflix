@@ -19,6 +19,7 @@ from src.modules.collections.application.ports import MediaLookupPort
 from src.modules.collections.application.use_cases import GetWatchlistUseCase
 from src.modules.collections.domain.entities import WatchlistItem
 from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects.media_id import MovieId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 if TYPE_CHECKING:
@@ -170,7 +171,7 @@ class TestGetWatchlistUseCase:
         await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value, lang="pt-BR"))
 
         media_lookup.get_many.assert_awaited_once_with(
-            ["mov_abc123def456"],
+            [MovieId("mov_abc123def456")],
             [],
             "pt-BR",
         )

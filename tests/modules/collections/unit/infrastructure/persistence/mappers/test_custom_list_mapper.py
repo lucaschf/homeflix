@@ -158,7 +158,7 @@ class TestCustomListItemMapper:
         entity = CustomListItemMapper.to_entity(model)
 
         assert entity.id == item_id
-        assert entity.media_id == "ser_xyz789abc123"
+        assert entity.media_id.value == "ser_xyz789abc123"
         assert entity.media_type == CollectionMediaType.SERIES
         assert entity.position == 0
         assert entity.added_at == added_at

@@ -6,6 +6,7 @@ from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 from src.modules.collections.application.dtos import CheckWatchlistInput
 from src.modules.collections.application.use_cases import CheckWatchlistUseCase
+from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _PROFILE_ID = ProfileId("prf_test12345678")
@@ -29,7 +30,9 @@ class TestCheckWatchlistUseCase:
         )
 
         assert result is True
-        mocks.watchlist.exists.assert_called_once_with("mov_abc123def456", _PROFILE_ID)
+        mocks.watchlist.exists.assert_called_once_with(
+            CollectionMediaId("mov_abc123def456"), _PROFILE_ID
+        )
 
     @pytest.mark.asyncio
     async def test_should_return_false_when_not_in_watchlist(self) -> None:

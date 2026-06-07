@@ -105,7 +105,7 @@ class CustomListItemOutput:
     ) -> CustomListItemOutput:
         """Create output DTO from a CustomListItem entity with metadata."""
         return cls(
-            media_id=entity.media_id,
+            media_id=entity.media_id.value,
             media_type=entity.media_type,
             title=title,
             poster_path=poster_path,

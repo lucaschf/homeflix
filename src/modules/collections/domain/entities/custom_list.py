@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Self
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from src.building_blocks.domain import (
     AggregateRoot,
@@ -12,12 +13,13 @@ from src.building_blocks.domain import (
     DomainEntity,
 )
 from src.modules.collections.domain.value_objects import (
+    CollectionMediaId,  # — runtime for Pydantic
     CustomListItemId,
     ListId,
     ListName,
 )
 from src.shared_kernel.value_objects import (
-    CollectionMediaType,  # noqa: TCH001 — runtime for Pydantic
+    CollectionMediaType,  # — runtime for Pydantic
 )
 from src.shared_kernel.value_objects.profile_id import ProfileId  # noqa: TCH001
 
@@ -32,14 +34,15 @@ class CustomListItem(DomainEntity[CustomListItemId]):
 
     Attributes:
         id: External ID (cli_xxx format).
-        media_id: External ID of the media (mov_xxx or ser_xxx).
+        media_id: Typed catalog id (``mov_xxx`` or ``ser_xxx``); must
+            match ``media_type``.
         media_type: Type of media (movie or series).
         position: Ordering position within the list.
         added_at: Timestamp when the item was added.
 
     Example:
         >>> item = CustomListItem.create(
-        ...     media_id="mov_abc123def456",
+        ...     media_id=CollectionMediaId("mov_abc123def456"),
         ...     media_type=CollectionMediaType.MOVIE,
         ...     position=0,
         ... )
@@ -47,22 +50,32 @@ class CustomListItem(DomainEntity[CustomListItemId]):
 
     id: CustomListItemId | None = Field(default=None)
 
-    media_id: str
+    media_id: CollectionMediaId
     media_type: CollectionMediaType
     position: int = 0
     added_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+    @model_validator(mode="after")
+    def _validate_media_id_matches_type(self) -> Self:
+        """Reject a movie id paired with series type and vice versa."""
+        if self.media_id.is_movie != (self.media_type is CollectionMediaType.MOVIE):
+            raise ValueError(
+                f"media_id '{self.media_id.value}' does not match "
+                f"media_type '{self.media_type.value}'",
+            )
+        return self
+
     @classmethod
     def create(
         cls,
-        media_id: str,
+        media_id: CollectionMediaId,
         media_type: CollectionMediaType,
         position: int = 0,
     ) -> CustomListItem:
         """Factory method with automatic ID generation.
 
         Args:
-            media_id: External ID of the media (mov_xxx or ser_xxx).
+            media_id: Typed catalog id (``mov_xxx`` or ``ser_xxx``).
             media_type: Type of media (movie or series).
             position: Ordering position within the list.
 

@@ -69,14 +69,18 @@ class GetCustomListItemsUseCase:
         if not items:
             return []
 
-        movie_ids = [i.media_id for i in items if i.media_type == CollectionMediaType.MOVIE]
-        series_ids = [i.media_id for i in items if i.media_type == CollectionMediaType.SERIES]
+        movie_ids = [
+            i.media_id.as_movie_id() for i in items if i.media_type == CollectionMediaType.MOVIE
+        ]
+        series_ids = [
+            i.media_id.as_series_id() for i in items if i.media_type == CollectionMediaType.SERIES
+        ]
 
         summaries = await self._media_lookup.get_many(movie_ids, series_ids, input_dto.lang)
 
         result: list[CustomListItemOutput] = []
         for item in items:
-            summary = summaries.get((item.media_type, item.media_id))
+            summary = summaries.get((item.media_type, item.media_id.value))
             if summary is None:
                 _logger.warning(
                     "Could not find media for custom list item: %s",

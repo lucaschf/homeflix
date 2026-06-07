@@ -1,7 +1,11 @@
 """Mapper between CustomList/CustomListItem entities and ORM models."""
 
 from src.modules.collections.domain.entities import CustomList, CustomListItem
-from src.modules.collections.domain.value_objects import CustomListItemId, ListId
+from src.modules.collections.domain.value_objects import (
+    CollectionMediaId,
+    CustomListItemId,
+    ListId,
+)
 from src.modules.collections.infrastructure.persistence.models import (
     CustomListItemModel,
     CustomListModel,
@@ -60,7 +64,7 @@ class CustomListItemMapper:
         return CustomListItemModel(
             external_id=str(entity.id),
             custom_list_id=list_internal_id,
-            media_id=entity.media_id,
+            media_id=entity.media_id.value,
             media_type=entity.media_type,
             position=entity.position,
             added_at=entity.added_at,
@@ -71,7 +75,7 @@ class CustomListItemMapper:
         """Convert ORM model to CustomListItem entity."""
         return CustomListItem(
             id=CustomListItemId(model.external_id),
-            media_id=model.media_id,
+            media_id=CollectionMediaId(model.media_id),
             media_type=CollectionMediaType(model.media_type),
             position=model.position,
             added_at=model.added_at,

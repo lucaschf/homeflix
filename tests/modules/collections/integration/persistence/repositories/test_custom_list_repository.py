@@ -4,15 +4,16 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.collections.domain.entities import CustomList, CustomListItem
+from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.modules.collections.infrastructure.persistence.repositories import (
     SQLAlchemyCustomListRepository,
 )
 from src.shared_kernel.value_objects import CollectionMediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
-SAMPLE_MOVIE_ID = "mov_abc123def456"
+SAMPLE_MOVIE_ID = CollectionMediaId("mov_abc123def456")
 MISSING_LIST_ID = "lst_nonexistent00"
-MISSING_ITEM_ID = "mov_notinlist0000"
+MISSING_ITEM_ID = CollectionMediaId("mov_notinlist000")
 _PROFILE_ID = ProfileId("prf_test12345678")
 _OTHER_PROFILE_ID = ProfileId("prf_otherprofile")
 
@@ -25,7 +26,7 @@ def _create_list(
 
 
 def _create_item(
-    media_id: str = SAMPLE_MOVIE_ID,
+    media_id: CollectionMediaId | str = SAMPLE_MOVIE_ID,
     media_type: CollectionMediaType = CollectionMediaType.MOVIE,
     position: int = 0,
 ) -> CustomListItem:
@@ -386,7 +387,7 @@ class TestSQLAlchemyCustomListRepositoryItems:
 
         items = await repo.list_items(str(custom_list.id), _PROFILE_ID)
 
-        assert [item.media_id for item in items] == [
+        assert [item.media_id.value for item in items] == [
             "mov_first0000000",
             "mov_second000000",
             "mov_third0000000",

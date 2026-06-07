@@ -11,8 +11,8 @@ from src.modules.collections.application.ports.media_lookup_port import (
     MediaSummary,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
-from src.modules.media.domain.value_objects import MovieId, SeriesId
 from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 
 
 class MediaLookupAdapter(MediaLookupPort):
@@ -23,8 +23,8 @@ class MediaLookupAdapter(MediaLookupPort):
 
     async def get_many(
         self,
-        movie_ids: Sequence[str],
-        series_ids: Sequence[str],
+        movie_ids: Sequence[MovieId],
+        series_ids: Sequence[SeriesId],
         lang: str,
     ) -> dict[tuple[CollectionMediaType, str], MediaSummary]:
         """Batch-resolve display metadata via a single Media UoW."""
@@ -35,9 +35,7 @@ class MediaLookupAdapter(MediaLookupPort):
 
         async with self._media_uow_factory() as uow:
             if movie_ids:
-                movies_map = await uow.movies.find_by_ids(
-                    [MovieId(mid) for mid in movie_ids],
-                )
+                movies_map = await uow.movies.find_by_ids(list(movie_ids))
                 for media_id, movie in movies_map.items():
                     result[(CollectionMediaType.MOVIE, media_id)] = MediaSummary(
                         media_id=media_id,
@@ -47,9 +45,7 @@ class MediaLookupAdapter(MediaLookupPort):
                     )
 
             if series_ids:
-                series_map = await uow.series.find_by_ids(
-                    [SeriesId(sid) for sid in series_ids],
-                )
+                series_map = await uow.series.find_by_ids(list(series_ids))
                 for media_id, series in series_map.items():
                     result[(CollectionMediaType.SERIES, media_id)] = MediaSummary(
                         media_id=media_id,

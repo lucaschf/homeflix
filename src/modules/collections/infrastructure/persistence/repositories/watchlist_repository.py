@@ -5,12 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.collections.domain.entities import WatchlistItem
 from src.modules.collections.domain.repositories import WatchlistRepository
+from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.modules.collections.infrastructure.persistence.mappers import (
     WatchlistItemMapper,
 )
 from src.modules.collections.infrastructure.persistence.models import (
     WatchlistItemModel,
 )
+from src.shared_kernel.value_objects import CollectionMediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -27,12 +29,12 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
 
     async def find_by_media_id(
         self,
-        media_id: str,
+        media_id: CollectionMediaId,
         profile_id: ProfileId,
     ) -> WatchlistItem | None:
         """Find a row scoped to ``(media_id, profile_id)``."""
         stmt = select(WatchlistItemModel).where(
-            WatchlistItemModel.media_id == media_id,
+            WatchlistItemModel.media_id == media_id.value,
             WatchlistItemModel.profile_id == str(profile_id),
             WatchlistItemModel.deleted_at.is_(None),
         )
@@ -49,7 +51,7 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
         constraint would refuse the insert).
         """
         stmt = select(WatchlistItemModel).where(
-            WatchlistItemModel.media_id == item.media_id,
+            WatchlistItemModel.media_id == item.media_id.value,
             WatchlistItemModel.profile_id == str(item.profile_id),
             WatchlistItemModel.deleted_at.is_not(None),
         )
@@ -69,10 +71,10 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
         await self._session.refresh(model)
         return WatchlistItemMapper.to_entity(model)
 
-    async def remove(self, media_id: str, profile_id: ProfileId) -> bool:
+    async def remove(self, media_id: CollectionMediaId, profile_id: ProfileId) -> bool:
         """Soft-delete the row for (media_id, profile_id)."""
         stmt = select(WatchlistItemModel).where(
-            WatchlistItemModel.media_id == media_id,
+            WatchlistItemModel.media_id == media_id.value,
             WatchlistItemModel.profile_id == str(profile_id),
             WatchlistItemModel.deleted_at.is_(None),
         )
@@ -104,13 +106,13 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
         result = await self._session.execute(stmt)
         return [WatchlistItemMapper.to_entity(m) for m in result.scalars().all()]
 
-    async def exists(self, media_id: str, profile_id: ProfileId) -> bool:
+    async def exists(self, media_id: CollectionMediaId, profile_id: ProfileId) -> bool:
         """Check whether ``media_id`` is on ``profile_id``'s watchlist."""
         stmt = (
             select(func.count())
             .select_from(WatchlistItemModel)
             .where(
-                WatchlistItemModel.media_id == media_id,
+                WatchlistItemModel.media_id == media_id.value,
                 WatchlistItemModel.profile_id == str(profile_id),
                 WatchlistItemModel.deleted_at.is_(None),
             )
@@ -136,20 +138,20 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
 
     async def rewrite_media_id(
         self,
-        from_media_id: str,
-        to_media_id: str,
-        to_media_type: str,
+        from_media_id: CollectionMediaId,
+        to_media_id: CollectionMediaId,
+        to_media_type: CollectionMediaType,
     ) -> int:
         """Repoint every watchlist row (across profiles) to a new media id."""
         stmt = select(WatchlistItemModel).where(
-            WatchlistItemModel.media_id == from_media_id,
+            WatchlistItemModel.media_id == from_media_id.value,
             WatchlistItemModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
         models = result.scalars().all()
         for model in models:
-            model.media_id = to_media_id
-            model.media_type = to_media_type
+            model.media_id = to_media_id.value
+            model.media_type = to_media_type.value
         if models:
             await self._session.flush()
         return len(models)

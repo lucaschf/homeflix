@@ -3,6 +3,7 @@
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.collections.application.dtos import RemoveItemFromCustomListInput
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
+from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -21,7 +22,7 @@ class RemoveItemFromCustomListUseCase:
                 raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
 
             removed = await uow.custom_lists.remove_item(
-                input_dto.list_id, input_dto.media_id, profile_id
+                input_dto.list_id, CollectionMediaId(input_dto.media_id), profile_id
             )
             if not removed:
                 raise ResourceNotFoundException.for_resource("CustomListItem", input_dto.media_id)

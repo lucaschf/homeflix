@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 
 from src.modules.collections.domain.entities import WatchlistItem
+from src.modules.collections.domain.value_objects import CollectionMediaId
+from src.shared_kernel.value_objects import CollectionMediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -14,14 +16,14 @@ class WatchlistRepository(ABC):
 
     Example:
         >>> item = await repo.find_by_media_id(
-        ...     "mov_abc123def456", caller_profile_id
+        ...     CollectionMediaId("mov_abc123def456"), caller_profile_id
         ... )
     """
 
     @abstractmethod
     async def find_by_media_id(
         self,
-        media_id: str,
+        media_id: CollectionMediaId,
         profile_id: ProfileId,
     ) -> WatchlistItem | None:
         """Find an entry for ``media_id`` in ``profile_id``'s watchlist."""
@@ -31,7 +33,7 @@ class WatchlistRepository(ABC):
         """Add an item (profile is read from the entity)."""
 
     @abstractmethod
-    async def remove(self, media_id: str, profile_id: ProfileId) -> bool:
+    async def remove(self, media_id: CollectionMediaId, profile_id: ProfileId) -> bool:
         """Soft-delete an item from ``profile_id``'s watchlist."""
 
     @abstractmethod
@@ -43,7 +45,7 @@ class WatchlistRepository(ABC):
         """List the profile's watchlist items, most recently added first."""
 
     @abstractmethod
-    async def exists(self, media_id: str, profile_id: ProfileId) -> bool:
+    async def exists(self, media_id: CollectionMediaId, profile_id: ProfileId) -> bool:
         """Check whether ``media_id`` is on ``profile_id``'s watchlist."""
 
     @abstractmethod
@@ -66,9 +68,9 @@ class WatchlistRepository(ABC):
     @abstractmethod
     async def rewrite_media_id(
         self,
-        from_media_id: str,
-        to_media_id: str,
-        to_media_type: str,
+        from_media_id: CollectionMediaId,
+        to_media_id: CollectionMediaId,
+        to_media_type: CollectionMediaType,
     ) -> int:
         """Repoint every row from one media id to another (cross-profile).
 

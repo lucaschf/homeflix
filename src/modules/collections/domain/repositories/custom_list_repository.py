@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 
 from src.modules.collections.domain.entities import CustomList, CustomListItem
+from src.modules.collections.domain.value_objects import CollectionMediaId
+from src.shared_kernel.value_objects import CollectionMediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -62,7 +64,7 @@ class CustomListRepository(ABC):
     async def find_item(
         self,
         list_id: str,
-        media_id: str,
+        media_id: CollectionMediaId,
         profile_id: ProfileId,
     ) -> CustomListItem | None:
         """Find an item in a list, scoped to the profile owning that list."""
@@ -80,7 +82,7 @@ class CustomListRepository(ABC):
     async def remove_item(
         self,
         list_id: str,
-        media_id: str,
+        media_id: CollectionMediaId,
         profile_id: ProfileId,
     ) -> bool:
         """Remove an item from a list owned by ``profile_id``."""
@@ -125,9 +127,9 @@ class CustomListRepository(ABC):
     @abstractmethod
     async def rewrite_item_media_id(
         self,
-        from_media_id: str,
-        to_media_id: str,
-        to_media_type: str,
+        from_media_id: CollectionMediaId,
+        to_media_id: CollectionMediaId,
+        to_media_type: CollectionMediaType,
     ) -> int:
         """Repoint every custom-list item from one media id to another.
 

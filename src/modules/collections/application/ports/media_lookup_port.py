@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 
 
 @dataclass(frozen=True)
@@ -46,15 +47,15 @@ class MediaLookupPort(ABC):
     @abstractmethod
     async def get_many(
         self,
-        movie_ids: Sequence[str],
-        series_ids: Sequence[str],
+        movie_ids: Sequence[MovieId],
+        series_ids: Sequence[SeriesId],
         lang: str,
     ) -> dict[tuple[CollectionMediaType, str], MediaSummary]:
         """Resolve metadata for the given movies and series.
 
         Args:
-            movie_ids: External movie ids (``mov_xxx``).
-            series_ids: External series ids (``ser_xxx``).
+            movie_ids: Typed external movie ids.
+            series_ids: Typed external series ids.
             lang: Language code used to localize titles.
 
         Returns:

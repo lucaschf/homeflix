@@ -20,6 +20,7 @@ from src.modules.collections.application.ports import MediaLookupPort
 from src.modules.collections.application.use_cases import GetCustomListItemsUseCase
 from src.modules.collections.domain.entities import CustomList, CustomListItem
 from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects.media_id import MovieId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 if TYPE_CHECKING:
@@ -214,7 +215,7 @@ class TestGetCustomListItemsUseCase:
         )
 
         media_lookup.get_many.assert_awaited_once_with(
-            ["mov_abc123def456"],
+            [MovieId("mov_abc123def456")],
             [],
             "pt-BR",
         )
