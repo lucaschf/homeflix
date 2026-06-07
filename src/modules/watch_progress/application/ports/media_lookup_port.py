@@ -12,6 +12,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
+
 
 @dataclass(frozen=True)
 class MovieDisplayInfo:
@@ -73,14 +75,14 @@ class MediaLookupPort(ABC):
     """
 
     @abstractmethod
-    async def get_movie(self, media_id: str, lang: str) -> MovieDisplayInfo | None:
+    async def get_movie(self, movie_id: MovieId, lang: str) -> MovieDisplayInfo | None:
         """Resolve a single movie. Returns ``None`` when id is unknown."""
         ...
 
     @abstractmethod
     async def get_series_with_episodes(
         self,
-        series_id: str,
+        series_id: SeriesId,
         lang: str,
     ) -> SeriesWithEpisodesInfo | None:
         """Resolve a series including the sorted episode list."""

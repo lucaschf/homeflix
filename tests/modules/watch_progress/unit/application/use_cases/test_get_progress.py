@@ -5,7 +5,7 @@ import pytest
 from src.modules.watch_progress.application.dtos import GetProgressInput, ProgressOutput
 from src.modules.watch_progress.application.use_cases import GetProgressUseCase
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.value_objects import WatchableMediaType
+from src.modules.watch_progress.domain.value_objects import WatchableMediaId, WatchableMediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from tests.modules.watch_progress.unit.conftest import make_watch_progress_uow_mock
 
@@ -38,7 +38,9 @@ class TestGetProgressUseCase:
         assert isinstance(result, ProgressOutput)
         assert result.position_seconds == 1800
         assert result.percentage == 25.0
-        mocks.progress.find_by_media_id.assert_called_once_with("mov_abc123def456", _PROFILE_ID)
+        mocks.progress.find_by_media_id.assert_called_once_with(
+            WatchableMediaId("mov_abc123def456"), _PROFILE_ID
+        )
 
     @pytest.mark.asyncio
     async def test_returns_none_when_not_found(self):

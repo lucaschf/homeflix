@@ -60,7 +60,7 @@ class ProgressOutput:
     def from_entity(cls, progress: WatchProgress) -> ProgressOutput:
         """Create output DTO from a WatchProgress entity."""
         return cls(
-            media_id=progress.media_id,
+            media_id=progress.media_id.value,
             media_type=progress.media_type,
             position_seconds=progress.position_seconds,
             duration_seconds=progress.duration_seconds,

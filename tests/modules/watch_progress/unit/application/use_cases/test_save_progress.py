@@ -5,7 +5,7 @@ import pytest
 from src.modules.watch_progress.application.dtos import ProgressOutput, SaveProgressInput
 from src.modules.watch_progress.application.use_cases import SaveProgressUseCase
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.value_objects import WatchableMediaType
+from src.modules.watch_progress.domain.value_objects import WatchableMediaId, WatchableMediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from tests.modules.watch_progress.unit.conftest import make_watch_progress_uow_mock
 
@@ -39,7 +39,9 @@ class TestSaveProgressUseCase:
         assert result.status == "in_progress"
         mock_repo.save.assert_called_once()
         # The repo find lookup was scoped by profile.
-        mock_repo.find_by_media_id.assert_called_once_with("mov_abc123def456", _PROFILE_ID)
+        mock_repo.find_by_media_id.assert_called_once_with(
+            WatchableMediaId("mov_abc123def456"), _PROFILE_ID
+        )
 
     @pytest.mark.asyncio
     async def test_updates_existing_progress(self):

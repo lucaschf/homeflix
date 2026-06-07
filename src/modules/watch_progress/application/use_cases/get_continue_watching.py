@@ -16,7 +16,11 @@ from src.modules.watch_progress.domain.value_objects import (
     WatchableMediaType,
     WatchStatus,
 )
+from src.modules.watch_progress.domain.value_objects.watchable_media_id import (
+    WatchableMediaId,
+)
 from src.shared_kernel.value_objects.episode_composite_id import EpisodeCompositeId
+from src.shared_kernel.value_objects.media_id import SeriesId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 if TYPE_CHECKING:
@@ -89,13 +93,13 @@ class GetContinueWatchingUseCase:
                     if item:
                         items.append(item)
                 elif progress.media_type == WatchableMediaType.EPISODE:
-                    parsed = EpisodeCompositeId.parse(progress.media_id)
-                    if not parsed or parsed.series_id in seen_series:
+                    parsed = progress.media_id.as_episode()
+                    if parsed.series_id in seen_series:
                         continue
                     seen_series.add(parsed.series_id)
                     item = await self._resolve_series_episode(
                         uow,
-                        parsed.series_id,
+                        SeriesId(parsed.series_id),
                         input_dto.lang,
                         profile_id,
                     )
@@ -107,7 +111,7 @@ class GetContinueWatchingUseCase:
     async def _resolve_series_episode(
         self,
         uow: WatchProgressUnitOfWork,
-        series_id: str,
+        series_id: SeriesId,
         lang: str,
         profile_id: ProfileId,
     ) -> ContinueWatchingItem | None:
@@ -129,7 +133,7 @@ class GetContinueWatchingUseCase:
     @staticmethod
     async def _build_candidates(
         uow: WatchProgressUnitOfWork,
-        series_id: str,
+        series_id: SeriesId,
         series: SeriesWithEpisodesInfo,
         profile_id: ProfileId,
     ) -> list[EpisodeCandidate]:
@@ -143,11 +147,13 @@ class GetContinueWatchingUseCase:
             return []
 
         media_ids = [
-            EpisodeCompositeId.build(
-                series_id,
-                ep.season_number,
-                ep.episode_number,
-            ).media_id
+            WatchableMediaId(
+                EpisodeCompositeId.build(
+                    series_id.value,
+                    ep.season_number,
+                    ep.episode_number,
+                ).media_id
+            )
             for ep in series.episodes
         ]
 
@@ -155,13 +161,13 @@ class GetContinueWatchingUseCase:
 
         return [
             EpisodeCandidate(
-                series_id=series_id,
+                series_id=series_id.value,
                 media_id=mid,
                 season_number=ep.season_number,
                 episode_number=ep.episode_number,
                 episode_title=ep.title,
                 duration_seconds=ep.duration_seconds,
-                progress=progress_map.get(mid),
+                progress=progress_map.get(mid.value),
             )
             for ep, mid in zip(series.episodes, media_ids, strict=True)
         ]
@@ -181,7 +187,7 @@ class GetContinueWatchingUseCase:
         )
 
         return ContinueWatchingItem(
-            media_id=candidate.media_id,
+            media_id=candidate.media_id.value,
             media_type=WatchableMediaType.EPISODE,
             title=candidate.episode_title,
             poster_path=series.poster_path,
@@ -204,11 +210,11 @@ class GetContinueWatchingUseCase:
         lang: str,
     ) -> ContinueWatchingItem | None:
         """Enrich a movie progress record with metadata."""
-        movie = await self._media_lookup.get_movie(progress.media_id, lang)
+        movie = await self._media_lookup.get_movie(progress.media_id.as_movie_id(), lang)
         if not movie:
             return None
         return ContinueWatchingItem(
-            media_id=progress.media_id,
+            media_id=progress.media_id.value,
             media_type=progress.media_type,
             title=movie.title,
             poster_path=movie.poster_path,

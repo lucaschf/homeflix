@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from src.building_blocks.domain import AggregateRoot
 from src.modules.watch_progress.domain.value_objects import (
     ProgressId,
+    WatchableMediaId,
     WatchableMediaType,
     WatchStatus,
 )
@@ -41,8 +42,18 @@ class WatchProgress(AggregateRoot[ProgressId]):
     profile_id: ProfileId
 
     # What is being watched
-    media_id: str
+    media_id: WatchableMediaId
     media_type: WatchableMediaType
+
+    @model_validator(mode="after")
+    def _validate_media_id_matches_type(self) -> Self:
+        """Reject a movie id paired with episode type and vice versa."""
+        if self.media_id.is_movie != (self.media_type is WatchableMediaType.MOVIE):
+            raise ValueError(
+                f"media_id '{self.media_id.value}' does not match "
+                f"media_type '{self.media_type.value}'",
+            )
+        return self
 
     # Position tracking
     position_seconds: int = Field(ge=0)
@@ -129,7 +140,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
     def create(
         cls,
         profile_id: ProfileId,
-        media_id: str,
+        media_id: WatchableMediaId,
         media_type: WatchableMediaType,
         position_seconds: int,
         duration_seconds: int,
@@ -142,7 +153,8 @@ class WatchProgress(AggregateRoot[ProgressId]):
             profile_id: Owning profile (``prf_xxx``). Every progress
                 row is scoped to a single profile so multi-profile
                 households watch independently.
-            media_id: External ID of the media (mov_xxx or epi_xxx).
+            media_id: Typed watchable id (``mov_xxx`` or the composite
+                ``epi_ser_xxx_S_E``); must match ``media_type``.
             media_type: Type of media ("movie" or "episode").
             position_seconds: Current playback position in seconds.
             duration_seconds: Total duration of the media in seconds.

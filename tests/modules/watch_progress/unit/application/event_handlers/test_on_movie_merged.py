@@ -40,7 +40,7 @@ class TestOnMovieMergedHandlerWatchProgress:
             ),
         )
 
-        progress.delete_all_for_movie.assert_awaited_once_with("mov_loserbbbbbbb")
+        progress.delete_all_for_movie.assert_awaited_once_with(MovieId("mov_loserbbbbbbb"))
 
     @pytest.mark.asyncio
     async def test_ignores_unrelated_events(self) -> None:

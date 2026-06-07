@@ -38,7 +38,7 @@ class OnMoviePromotedToSeriesHandler(EventHandler):
             return
 
         async with self._uow_factory() as uow:
-            deleted = await uow.progress.delete_all_for_movie(event.movie_id.value)
+            deleted = await uow.progress.delete_all_for_movie(event.movie_id)
 
         if deleted:
             _logger.info(

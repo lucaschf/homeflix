@@ -53,21 +53,21 @@ class TestProgressLookupAdapter:
         session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         progress_repo = SQLAlchemyWatchProgressRepository(db_session)
-        await progress_repo.save(_progress("epi_ser_ABC_1_1", position=900))
-        await progress_repo.save(_progress("epi_ser_ABC_1_2", position=3300))
+        await progress_repo.save(_progress("epi_ser_abc123def456_1_1", position=900))
+        await progress_repo.save(_progress("epi_ser_abc123def456_1_2", position=3300))
         await db_session.commit()
 
         adapter = _make_adapter(session_factory)
 
         result = await adapter.find_for_media_ids(
-            ["epi_ser_ABC_1_1", "epi_ser_ABC_1_2", "epi_ser_ABC_1_3"],
+            ["epi_ser_abc123def456_1_1", "epi_ser_abc123def456_1_2", "epi_ser_abc123def456_1_3"],
             profile_id=_PROFILE_ID.value,
         )
 
-        assert set(result.keys()) == {"epi_ser_ABC_1_1", "epi_ser_ABC_1_2"}
-        assert result["epi_ser_ABC_1_1"].position_seconds == 900
-        assert result["epi_ser_ABC_1_1"].percentage == pytest.approx(25.0)
-        assert result["epi_ser_ABC_1_2"].status == "completed"
+        assert set(result.keys()) == {"epi_ser_abc123def456_1_1", "epi_ser_abc123def456_1_2"}
+        assert result["epi_ser_abc123def456_1_1"].position_seconds == 900
+        assert result["epi_ser_abc123def456_1_1"].percentage == pytest.approx(25.0)
+        assert result["epi_ser_abc123def456_1_2"].status == "completed"
 
     async def test_find_for_media_ids_with_empty_input(
         self,
@@ -86,25 +86,25 @@ class TestProgressLookupAdapter:
         # never visible to another. Same media_id, two profiles, only
         # the caller's row comes back.
         progress_repo = SQLAlchemyWatchProgressRepository(db_session)
-        await progress_repo.save(_progress("epi_ser_ABC_1_1", position=900))
+        await progress_repo.save(_progress("epi_ser_abc123def456_1_1", position=900))
         await progress_repo.save(
-            _progress("epi_ser_ABC_1_1", position=3300, profile_id=_OTHER_PROFILE_ID),
+            _progress("epi_ser_abc123def456_1_1", position=3300, profile_id=_OTHER_PROFILE_ID),
         )
         await db_session.commit()
 
         adapter = _make_adapter(session_factory)
 
         mine = await adapter.find_for_media_ids(
-            ["epi_ser_ABC_1_1"],
+            ["epi_ser_abc123def456_1_1"],
             profile_id=_PROFILE_ID.value,
         )
         theirs = await adapter.find_for_media_ids(
-            ["epi_ser_ABC_1_1"],
+            ["epi_ser_abc123def456_1_1"],
             profile_id=_OTHER_PROFILE_ID.value,
         )
 
-        assert mine["epi_ser_ABC_1_1"].position_seconds == 900
-        assert theirs["epi_ser_ABC_1_1"].position_seconds == 3300
+        assert mine["epi_ser_abc123def456_1_1"].position_seconds == 900
+        assert theirs["epi_ser_abc123def456_1_1"].position_seconds == 3300
 
     async def test_progress_summary_includes_last_watched_at(
         self,
@@ -112,15 +112,15 @@ class TestProgressLookupAdapter:
         session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         progress_repo = SQLAlchemyWatchProgressRepository(db_session)
-        await progress_repo.save(_progress("epi_ser_ABC_1_1"))
+        await progress_repo.save(_progress("epi_ser_abc123def456_1_1"))
         await db_session.commit()
 
         adapter = _make_adapter(session_factory)
         result = await adapter.find_for_media_ids(
-            ["epi_ser_ABC_1_1"],
+            ["epi_ser_abc123def456_1_1"],
             profile_id=_PROFILE_ID.value,
         )
 
-        summary = result["epi_ser_ABC_1_1"]
+        summary = result["epi_ser_abc123def456_1_1"]
         assert summary.last_watched_at is not None
-        assert summary.media_id == "epi_ser_ABC_1_1"
+        assert summary.media_id == "epi_ser_abc123def456_1_1"
