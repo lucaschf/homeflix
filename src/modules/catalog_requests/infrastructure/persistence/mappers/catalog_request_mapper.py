@@ -3,11 +3,11 @@
 from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestId,
-    RequestedMediaType,
 )
 from src.modules.catalog_requests.infrastructure.persistence.models import (
     CatalogRequestModel,
 )
+from src.shared_kernel.value_objects import MediaType
 
 
 class CatalogRequestMapper:
@@ -53,7 +53,7 @@ class CatalogRequestMapper:
         return CatalogRequest(
             id=CatalogRequestId(model.external_id),
             tmdb_id=model.tmdb_id,
-            media_type=RequestedMediaType(model.media_type),
+            media_type=MediaType(model.media_type),
             title=model.title,
             requester_user_id=model.requester_user_id,
             collection_tmdb_id=model.collection_tmdb_id,

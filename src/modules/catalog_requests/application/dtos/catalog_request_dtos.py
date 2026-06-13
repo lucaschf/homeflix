@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.modules.catalog_requests.domain.entities import CatalogRequest
-    from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
+    from src.shared_kernel.value_objects import MediaType
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,7 @@ class CreateCatalogRequestInput:
     """
 
     tmdb_id: int
-    media_type: RequestedMediaType
+    media_type: MediaType
     title: str | None = None
     requester_user_id: str | None = None
     collection_tmdb_id: int | None = None
@@ -42,7 +42,7 @@ class SubscribeCatalogNotificationInput:
     """Input for ``SubscribeCatalogNotificationUseCase``."""
 
     tmdb_id: int
-    media_type: RequestedMediaType
+    media_type: MediaType
     title: str | None = None
     requester_user_id: str | None = None
     collection_tmdb_id: int | None = None

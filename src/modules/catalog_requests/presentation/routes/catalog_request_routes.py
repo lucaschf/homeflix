@@ -21,9 +21,9 @@ from src.modules.catalog_requests.application.use_cases import (
 from src.modules.catalog_requests.application.use_cases.list_catalog_requests import (
     ListCatalogRequestsInput,
 )
-from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
 from src.modules.identity.infrastructure.auth import current_active_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.shared_kernel.value_objects import MediaType
 
 router = APIRouter(prefix="/api/v1/catalog-requests", tags=["Catalog Requests"])
 
@@ -50,7 +50,7 @@ class CreateCatalogRequestRequest(BaseModel):
     """
 
     tmdb_id: int = Field(..., ge=1)
-    media_type: RequestedMediaType
+    media_type: MediaType
     title: str | None = Field(default=None, max_length=500)
     collection_tmdb_id: int | None = Field(default=None, ge=1)
     notify_on_arrival: bool = False
@@ -59,7 +59,7 @@ class CreateCatalogRequestRequest(BaseModel):
 class SubscribeNotifyRequest(BaseModel):
     """Request body for the notification-subscribe endpoint."""
 
-    media_type: RequestedMediaType
+    media_type: MediaType
     title: str | None = Field(default=None, max_length=500)
     collection_tmdb_id: int | None = Field(default=None, ge=1)
 

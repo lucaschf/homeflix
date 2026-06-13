@@ -8,15 +8,11 @@ import pytest
 from src.modules.catalog_requests.application.event_handlers import (
     OnMediaEnrichedHandler,
 )
-from src.modules.catalog_requests.application.event_handlers.on_media_enriched import (
-    _MEDIA_TYPE_TO_REQUESTED,
-)
 from src.modules.catalog_requests.application.ports import (
     CatalogArrivalNotification,
     NotificationPublisherPort,
 )
 from src.modules.catalog_requests.domain.entities import CatalogRequest
-from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
 from src.modules.media.domain.events import MediaCreatedEvent, MediaEnrichedEvent
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 from src.shared_kernel.value_objects.media_type import MediaType
@@ -33,7 +29,7 @@ class TestOnMediaEnrichedHandler:
     async def test_marks_matching_request_as_fulfilled(self) -> None:
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             title="Alien",
         )
         mocks = make_catalog_requests_uow_mock()
@@ -59,7 +55,7 @@ class TestOnMediaEnrichedHandler:
         assert captured["req"].fulfilled_at is not None
         mocks.catalog_requests.find_by_tmdb_id.assert_awaited_once_with(
             348,
-            RequestedMediaType.MOVIE,
+            MediaType.MOVIE,
         )
 
     @pytest.mark.asyncio
@@ -84,7 +80,7 @@ class TestOnMediaEnrichedHandler:
         re-write the fulfilled row, otherwise watchers triple-fire."""
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         ).mark_fulfilled()
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
@@ -139,7 +135,7 @@ class TestOnMediaEnrichedHandler:
     async def test_matches_series_event(self) -> None:
         existing = CatalogRequest.create(
             tmdb_id=1399,
-            media_type=RequestedMediaType.SERIES,
+            media_type=MediaType.SERIES,
         )
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
@@ -156,7 +152,7 @@ class TestOnMediaEnrichedHandler:
 
         mocks.catalog_requests.find_by_tmdb_id.assert_awaited_once_with(
             1399,
-            RequestedMediaType.SERIES,
+            MediaType.SERIES,
         )
         mocks.catalog_requests.update.assert_called_once()
 
@@ -167,7 +163,7 @@ class TestOnMediaEnrichedHandler:
         publisher port after committing the fulfillment."""
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             title="Alien",
             requester_user_id="usr_alice",
             notify_on_arrival=True,
@@ -202,7 +198,7 @@ class TestOnMediaEnrichedHandler:
     async def test_no_notification_when_user_did_not_opt_in(self) -> None:
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             title="Alien",
             requester_user_id="usr_alice",
             notify_on_arrival=False,
@@ -233,7 +229,7 @@ class TestOnMediaEnrichedHandler:
         target)."""
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             title="Alien",
             notify_on_arrival=True,
         )
@@ -263,7 +259,7 @@ class TestOnMediaEnrichedHandler:
         a no-op."""
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             title="Alien",
             requester_user_id="usr_alice",
             notify_on_arrival=True,
@@ -291,7 +287,7 @@ class TestOnMediaEnrichedHandler:
         other subscribers of the same event."""
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             title="Alien",
             requester_user_id="usr_alice",
             notify_on_arrival=True,
@@ -323,7 +319,7 @@ class TestOnMediaEnrichedHandler:
         readable notification by falling back to ``tmdb/<type>/<id>``."""
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             requester_user_id="usr_alice",
             notify_on_arrival=True,
         )
@@ -346,18 +342,3 @@ class TestOnMediaEnrichedHandler:
 
         payload = publisher.publish_catalog_arrival.await_args.args[0]
         assert payload.title == "tmdb/movie/348"
-
-
-@pytest.mark.unit
-class TestMediaTypeAclMapping:
-    """The cross-BC ACL map must stay total over the canonical MediaType."""
-
-    def test_map_covers_every_media_type_member(self) -> None:
-        # If a MediaType member is added without a RequestedMediaType
-        # mapping, arrival events for it would be dropped (logged at
-        # ERROR) and the request never fulfilled. Fail here instead.
-        assert set(_MEDIA_TYPE_TO_REQUESTED) == set(MediaType)
-
-    def test_each_mapping_value_is_a_requested_media_type(self) -> None:
-        for mapped in _MEDIA_TYPE_TO_REQUESTED.values():
-            assert isinstance(mapped, RequestedMediaType)
