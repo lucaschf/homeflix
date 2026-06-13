@@ -1,7 +1,7 @@
 """Mapper between WatchlistItem entity and WatchlistItemModel."""
 
 from src.modules.collections.domain.entities import WatchlistItem
-from src.modules.collections.domain.value_objects import ListId
+from src.modules.collections.domain.value_objects import CollectionMediaId, ListId
 from src.modules.collections.infrastructure.persistence.models import (
     WatchlistItemModel,
 )
@@ -22,7 +22,7 @@ class WatchlistItemMapper:
         return WatchlistItemModel(
             external_id=str(entity.id),
             profile_id=str(entity.profile_id),
-            media_id=entity.media_id,
+            media_id=entity.media_id.value,
             media_type=entity.media_type,
             added_at=entity.added_at,
         )
@@ -33,7 +33,7 @@ class WatchlistItemMapper:
         return WatchlistItem(
             id=ListId(model.external_id),
             profile_id=ProfileId(model.profile_id),
-            media_id=model.media_id,
+            media_id=CollectionMediaId(model.media_id),
             media_type=CollectionMediaType(model.media_type),
             added_at=model.added_at,
             created_at=model.created_at,

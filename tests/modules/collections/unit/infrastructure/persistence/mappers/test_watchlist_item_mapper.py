@@ -69,7 +69,7 @@ class TestWatchlistItemMapper:
 
         assert entity.id == list_id
         assert entity.profile_id == _PROFILE_ID
-        assert entity.media_id == "ser_xyz789abc123"
+        assert entity.media_id.value == "ser_xyz789abc123"
         assert entity.media_type == CollectionMediaType.SERIES
         assert entity.added_at == added_at
 
@@ -108,14 +108,14 @@ class TestWatchlistItemMapper:
         model = WatchlistItemModel(
             external_id=str(list_id),
             profile_id=_PROFILE_ID.value,
-            media_id="mov_old00000000",
+            media_id="mov_old000000000",
             media_type="movie",
             added_at=old_added_at,
         )
         same_key_entity = WatchlistItem(
             id=list_id,
             profile_id=_PROFILE_ID,
-            media_id="mov_old00000000",
+            media_id="mov_old000000000",
             media_type=CollectionMediaType.MOVIE,
             added_at=new_added_at,
         )
@@ -123,7 +123,7 @@ class TestWatchlistItemMapper:
         result = WatchlistItemMapper.update_model(model, same_key_entity)
 
         assert result.added_at == new_added_at
-        assert result.media_id == "mov_old00000000"
+        assert result.media_id == "mov_old000000000"
         assert result.media_type == "movie"
 
     def test_update_model_does_not_overwrite_identity_fields(self) -> None:
@@ -135,19 +135,19 @@ class TestWatchlistItemMapper:
         model = WatchlistItemModel(
             external_id=str(list_id),
             profile_id=_PROFILE_ID.value,
-            media_id="mov_old00000000",
+            media_id="mov_old000000000",
             media_type="movie",
             added_at=datetime(2024, 1, 1, tzinfo=UTC),
         )
         mismatched_entity = WatchlistItem(
             id=list_id,
             profile_id=_PROFILE_ID,
-            media_id="ser_new00000000",
+            media_id="ser_new000000000",
             media_type=CollectionMediaType.SERIES,
             added_at=datetime(2025, 6, 1, tzinfo=UTC),
         )
 
         result = WatchlistItemMapper.update_model(model, mismatched_entity)
 
-        assert result.media_id == "mov_old00000000"
+        assert result.media_id == "mov_old000000000"
         assert result.media_type == "movie"

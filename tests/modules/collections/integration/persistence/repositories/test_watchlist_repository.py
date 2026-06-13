@@ -4,19 +4,20 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.collections.domain.entities import WatchlistItem
+from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.modules.collections.infrastructure.persistence.repositories import (
     SQLAlchemyWatchlistRepository,
 )
 from src.shared_kernel.value_objects import CollectionMediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
-SAMPLE_MOVIE_ID = "mov_abc123def456"
+SAMPLE_MOVIE_ID = CollectionMediaId("mov_abc123def456")
 _PROFILE_ID = ProfileId("prf_test12345678")
 _OTHER_PROFILE_ID = ProfileId("prf_otherprofile")
 
 
 def _create_item(
-    media_id: str = SAMPLE_MOVIE_ID,
+    media_id: CollectionMediaId | str = SAMPLE_MOVIE_ID,
     media_type: CollectionMediaType = CollectionMediaType.MOVIE,
     profile_id: ProfileId = _PROFILE_ID,
 ) -> WatchlistItem:
@@ -148,14 +149,14 @@ class TestSQLAlchemyWatchlistRepository:
 
     async def test_list_all_should_exclude_deleted(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyWatchlistRepository(db_session)
-        await repo.add(_create_item(media_id="mov_kept000000000"))
+        await repo.add(_create_item(media_id="mov_kept00000000"))
         await repo.add(_create_item(media_id="mov_removed00000"))
-        await repo.remove("mov_removed00000", _PROFILE_ID)
+        await repo.remove(CollectionMediaId("mov_removed00000"), _PROFILE_ID)
 
         result = await repo.list_all(_PROFILE_ID)
 
         assert len(result) == 1
-        assert result[0].media_id == "mov_kept000000000"
+        assert result[0].media_id.value == "mov_kept00000000"
 
     async def test_list_all_should_respect_limit(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyWatchlistRepository(db_session)
@@ -175,8 +176,8 @@ class TestSQLAlchemyWatchlistRepository:
         owner_view = await repo.list_all(_PROFILE_ID)
         other_view = await repo.list_all(_OTHER_PROFILE_ID)
 
-        assert {i.media_id for i in owner_view} == {"mov_aaaaaaaaaaaa"}
-        assert {i.media_id for i in other_view} == {"mov_bbbbbbbbbbbb"}
+        assert {i.media_id.value for i in owner_view} == {"mov_aaaaaaaaaaaa"}
+        assert {i.media_id.value for i in other_view} == {"mov_bbbbbbbbbbbb"}
 
     async def test_add_should_restore_soft_deleted(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyWatchlistRepository(db_session)
@@ -214,15 +215,15 @@ class TestSQLAlchemyWatchlistRepository:
 
         updated = await repo.rewrite_media_id(
             from_media_id=SAMPLE_MOVIE_ID,
-            to_media_id="ser_promotedxxxx",
-            to_media_type="series",
+            to_media_id=CollectionMediaId("ser_promotedxxxx"),
+            to_media_type=CollectionMediaType.SERIES,
         )
 
         assert updated == 2
         for profile in (_PROFILE_ID, _OTHER_PROFILE_ID):
             stale = await repo.find_by_media_id(SAMPLE_MOVIE_ID, profile)
             assert stale is None
-            fresh = await repo.find_by_media_id("ser_promotedxxxx", profile)
+            fresh = await repo.find_by_media_id(CollectionMediaId("ser_promotedxxxx"), profile)
             assert fresh is not None
             assert fresh.media_type == CollectionMediaType.SERIES
 
@@ -232,9 +233,9 @@ class TestSQLAlchemyWatchlistRepository:
         repo = SQLAlchemyWatchlistRepository(db_session)
 
         updated = await repo.rewrite_media_id(
-            from_media_id="mov_unknown00000",
-            to_media_id="ser_promotedxxxx",
-            to_media_type="series",
+            from_media_id=CollectionMediaId("mov_unknown00000"),
+            to_media_id=CollectionMediaId("ser_promotedxxxx"),
+            to_media_type=CollectionMediaType.SERIES,
         )
 
         assert updated == 0

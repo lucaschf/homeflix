@@ -23,7 +23,7 @@ class TestWatchlistItemCreation:
         )
 
         assert item.id is None
-        assert item.media_id == "mov_abc123def456"
+        assert item.media_id.value == "mov_abc123def456"
         assert item.media_type == CollectionMediaType.MOVIE
         assert item.profile_id == _PROFILE_ID
 

@@ -10,6 +10,7 @@ from src.modules.collections.application.use_cases import (
     RemoveItemFromCustomListUseCase,
 )
 from src.modules.collections.domain.entities import CustomList
+from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _PROFILE_ID = ProfileId("prf_test12345678")
@@ -40,7 +41,7 @@ class TestRemoveItemFromCustomListUseCase:
         )
 
         mock_repo.remove_item.assert_called_once_with(
-            str(custom_list.id), "mov_abc123def456", _PROFILE_ID
+            str(custom_list.id), CollectionMediaId("mov_abc123def456"), _PROFILE_ID
         )
         mock_repo.update.assert_called_once()
 
@@ -76,7 +77,7 @@ class TestRemoveItemFromCustomListUseCase:
                 RemoveItemFromCustomListInput(
                     profile_id=_PROFILE_ID.value,
                     list_id=str(custom_list.id),
-                    media_id="mov_notinlist0000",
+                    media_id="mov_notinlist000",
                 )
             )
 

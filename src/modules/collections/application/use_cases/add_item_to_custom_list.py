@@ -5,6 +5,7 @@ from src.building_blocks.domain import BusinessRuleViolationException
 from src.modules.collections.application.dtos import AddItemToCustomListInput
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
 from src.modules.collections.domain.entities import CustomListItem
+from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -21,13 +22,14 @@ class AddItemToCustomListUseCase:
     async def execute(self, input_dto: AddItemToCustomListInput) -> None:
         """Add the item, enforcing list ownership + limits."""
         profile_id = ProfileId(input_dto.profile_id)
+        media_id = CollectionMediaId(input_dto.media_id)
         async with self._uow_factory() as uow:
             custom_list = await uow.custom_lists.find_by_id(input_dto.list_id, profile_id)
             if not custom_list:
                 raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
 
             existing_item = await uow.custom_lists.find_item(
-                input_dto.list_id, input_dto.media_id, profile_id
+                input_dto.list_id, media_id, profile_id
             )
             if existing_item:
                 raise BusinessRuleViolationException(
@@ -42,7 +44,7 @@ class AddItemToCustomListUseCase:
             next_position = await uow.custom_lists.get_next_position(input_dto.list_id, profile_id)
 
             item = CustomListItem.create(
-                media_id=input_dto.media_id,
+                media_id=media_id,
                 media_type=input_dto.media_type,
                 position=next_position,
             )

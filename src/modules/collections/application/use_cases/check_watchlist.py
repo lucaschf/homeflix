@@ -2,6 +2,7 @@
 
 from src.modules.collections.application.dtos import CheckWatchlistInput
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
+from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -14,7 +15,9 @@ class CheckWatchlistUseCase:
     async def execute(self, input_dto: CheckWatchlistInput) -> bool:
         """Return True if the profile has the item on its watchlist."""
         async with self._uow_factory() as uow:
-            return await uow.watchlist.exists(input_dto.media_id, ProfileId(input_dto.profile_id))
+            return await uow.watchlist.exists(
+                CollectionMediaId(input_dto.media_id), ProfileId(input_dto.profile_id)
+            )
 
 
 __all__ = ["CheckWatchlistUseCase"]

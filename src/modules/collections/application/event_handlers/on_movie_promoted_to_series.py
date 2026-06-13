@@ -7,7 +7,9 @@ from src.building_blocks.domain.events import DomainEvent
 from src.modules.collections.application.unit_of_work import (
     CollectionsUnitOfWorkFactory,
 )
+from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.modules.media.domain.events import MoviePromotedToSeriesEvent
+from src.shared_kernel.value_objects import CollectionMediaType
 
 _logger = logging.getLogger(__name__)
 
@@ -36,15 +38,17 @@ class OnMoviePromotedToSeriesHandler(EventHandler):
             return
 
         async with self._uow_factory() as uow:
+            from_media_id = CollectionMediaId(event.movie_id.value)
+            to_media_id = CollectionMediaId(event.series_id.value)
             watchlist_updated = await uow.watchlist.rewrite_media_id(
-                from_media_id=event.movie_id.value,
-                to_media_id=event.series_id.value,
-                to_media_type="series",
+                from_media_id=from_media_id,
+                to_media_id=to_media_id,
+                to_media_type=CollectionMediaType.SERIES,
             )
             lists_updated = await uow.custom_lists.rewrite_item_media_id(
-                from_media_id=event.movie_id.value,
-                to_media_id=event.series_id.value,
-                to_media_type="series",
+                from_media_id=from_media_id,
+                to_media_id=to_media_id,
+                to_media_type=CollectionMediaType.SERIES,
             )
 
         if watchlist_updated or lists_updated:

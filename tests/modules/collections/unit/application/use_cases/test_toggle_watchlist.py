@@ -10,6 +10,7 @@ from src.modules.collections.application.dtos import (
 )
 from src.modules.collections.application.use_cases import ToggleWatchlistUseCase
 from src.modules.collections.domain.entities import WatchlistItem
+from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.shared_kernel.value_objects import CollectionMediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
@@ -63,7 +64,7 @@ class TestToggleWatchlistUseCase:
 
         assert result.added is False
         assert result.media_id == "mov_abc123def456"
-        mock_repo.remove.assert_called_once_with("mov_abc123def456", _PROFILE_ID)
+        mock_repo.remove.assert_called_once_with(CollectionMediaId("mov_abc123def456"), _PROFILE_ID)
 
     @pytest.mark.asyncio
     async def test_should_toggle_series(self) -> None:

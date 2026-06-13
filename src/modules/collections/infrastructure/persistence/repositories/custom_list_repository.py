@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.collections.domain.entities import CustomList, CustomListItem
 from src.modules.collections.domain.repositories import CustomListRepository
+from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.modules.collections.infrastructure.persistence.mappers import (
     CustomListItemMapper,
     CustomListMapper,
@@ -13,6 +14,7 @@ from src.modules.collections.infrastructure.persistence.models import (
     CustomListItemModel,
     CustomListModel,
 )
+from src.shared_kernel.value_objects import CollectionMediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -158,7 +160,7 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
     async def find_item(
         self,
         list_id: str,
-        media_id: str,
+        media_id: CollectionMediaId,
         profile_id: ProfileId,
     ) -> CustomListItem | None:
         """Find an item, only if the parent list belongs to the profile."""
@@ -168,7 +170,7 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
 
         stmt = select(CustomListItemModel).where(
             CustomListItemModel.custom_list_id == internal_id,
-            CustomListItemModel.media_id == media_id,
+            CustomListItemModel.media_id == media_id.value,
             CustomListItemModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
@@ -190,7 +192,7 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         # Check for soft-deleted record to restore
         stmt = select(CustomListItemModel).where(
             CustomListItemModel.custom_list_id == internal_id,
-            CustomListItemModel.media_id == item.media_id,
+            CustomListItemModel.media_id == item.media_id.value,
             CustomListItemModel.deleted_at.is_not(None),
         )
         result = await self._session.execute(stmt)
@@ -213,7 +215,7 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
     async def remove_item(
         self,
         list_id: str,
-        media_id: str,
+        media_id: CollectionMediaId,
         profile_id: ProfileId,
     ) -> bool:
         """Soft-delete an item from a list owned by ``profile_id``."""
@@ -223,7 +225,7 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
 
         stmt = select(CustomListItemModel).where(
             CustomListItemModel.custom_list_id == internal_id,
-            CustomListItemModel.media_id == media_id,
+            CustomListItemModel.media_id == media_id.value,
             CustomListItemModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
@@ -302,20 +304,20 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
 
     async def rewrite_item_media_id(
         self,
-        from_media_id: str,
-        to_media_id: str,
-        to_media_type: str,
+        from_media_id: CollectionMediaId,
+        to_media_id: CollectionMediaId,
+        to_media_type: CollectionMediaType,
     ) -> int:
         """Repoint every list item (cross-list, cross-profile) to a new media id."""
         stmt = select(CustomListItemModel).where(
-            CustomListItemModel.media_id == from_media_id,
+            CustomListItemModel.media_id == from_media_id.value,
             CustomListItemModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
         models = result.scalars().all()
         for model in models:
-            model.media_id = to_media_id
-            model.media_type = to_media_type
+            model.media_id = to_media_id.value
+            model.media_type = to_media_type.value
         if models:
             await self._session.flush()
         return len(models)
