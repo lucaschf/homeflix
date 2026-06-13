@@ -15,14 +15,13 @@ from src.shared_kernel.value_objects.media_id import (
     SeriesId,
     parse_media_id,
 )
-from src.shared_kernel.value_objects.media_type import CollectionMediaType, MediaType
+from src.shared_kernel.value_objects.media_type import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 from src.shared_kernel.value_objects.user_id import UserId
 
 __all__ = [
     "AudioTrack",
-    "CollectionMediaType",
     "EpisodeCompositeId",
     "EpisodeId",
     "FilePath",

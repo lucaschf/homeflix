@@ -29,9 +29,4 @@ class MediaType(StrEnum):
     SERIES = "series"
 
 
-# Back-compat alias — collections still imports ``CollectionMediaType``.
-# Removed once collections migrates to ``MediaType`` (ADR-016, deferred).
-CollectionMediaType = MediaType
-
-
-__all__ = ["CollectionMediaType", "MediaType"]
+__all__ = ["MediaType"]

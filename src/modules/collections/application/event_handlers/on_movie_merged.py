@@ -9,7 +9,7 @@ from src.modules.collections.application.unit_of_work import (
 )
 from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.modules.media.domain.events import MovieMergedEvent
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 
 _logger = logging.getLogger(__name__)
 
@@ -43,12 +43,12 @@ class OnMovieMergedHandler(EventHandler):
             watchlist_updated = await uow.watchlist.rewrite_media_id(
                 from_media_id=from_media_id,
                 to_media_id=to_media_id,
-                to_media_type=CollectionMediaType.MOVIE,
+                to_media_type=MediaType.MOVIE,
             )
             lists_updated = await uow.custom_lists.rewrite_item_media_id(
                 from_media_id=from_media_id,
                 to_media_id=to_media_id,
-                to_media_type=CollectionMediaType.MOVIE,
+                to_media_type=MediaType.MOVIE,
             )
 
         if watchlist_updated or lists_updated:

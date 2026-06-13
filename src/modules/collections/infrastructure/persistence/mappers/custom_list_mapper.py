@@ -10,7 +10,7 @@ from src.modules.collections.infrastructure.persistence.models import (
     CustomListItemModel,
     CustomListModel,
 )
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -76,7 +76,7 @@ class CustomListItemMapper:
         return CustomListItem(
             id=CustomListItemId(model.external_id),
             media_id=CollectionMediaId(model.media_id),
-            media_type=CollectionMediaType(model.media_type),
+            media_type=MediaType(model.media_type),
             position=model.position,
             added_at=model.added_at,
             created_at=model.created_at,

@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field
 
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 
 
 class CreateCustomListRequest(BaseModel):
@@ -21,7 +21,7 @@ class AddItemToCustomListRequest(BaseModel):
     """Request body for adding an item to a custom list."""
 
     media_id: str
-    media_type: CollectionMediaType
+    media_type: MediaType
 
 
 __all__ = [

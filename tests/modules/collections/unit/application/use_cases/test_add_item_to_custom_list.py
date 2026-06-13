@@ -13,7 +13,7 @@ from src.modules.collections.domain.entities import (
     CustomList,
     CustomListItem,
 )
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _PROFILE_ID = ProfileId("prf_test12345678")
@@ -39,7 +39,7 @@ class TestAddItemToCustomListUseCase:
         mock_repo.get_next_position.return_value = 0
         mock_repo.add_item.return_value = CustomListItem.create(
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             position=0,
         )
         mock_repo.update.return_value = custom_list.increment_item_count()
@@ -50,7 +50,7 @@ class TestAddItemToCustomListUseCase:
                 profile_id=_PROFILE_ID.value,
                 list_id=str(custom_list.id),
                 media_id="mov_abc123def456",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
             )
         )
 
@@ -70,7 +70,7 @@ class TestAddItemToCustomListUseCase:
                     profile_id=_PROFILE_ID.value,
                     list_id="lst_nonexistent00",
                     media_id="mov_abc123def456",
-                    media_type=CollectionMediaType.MOVIE,
+                    media_type=MediaType.MOVIE,
                 )
             )
 
@@ -81,7 +81,7 @@ class TestAddItemToCustomListUseCase:
         custom_list = _create_list(item_count=1)
         existing_item = CustomListItem.create(
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
@@ -95,7 +95,7 @@ class TestAddItemToCustomListUseCase:
                     profile_id=_PROFILE_ID.value,
                     list_id=str(custom_list.id),
                     media_id="mov_abc123def456",
-                    media_type=CollectionMediaType.MOVIE,
+                    media_type=MediaType.MOVIE,
                 )
             )
 
@@ -116,7 +116,7 @@ class TestAddItemToCustomListUseCase:
                     profile_id=_PROFILE_ID.value,
                     list_id=str(custom_list.id),
                     media_id="mov_abc123def456",
-                    media_type=CollectionMediaType.MOVIE,
+                    media_type=MediaType.MOVIE,
                 )
             )
 
@@ -132,7 +132,7 @@ class TestAddItemToCustomListUseCase:
         mock_repo.get_next_position.return_value = 3
         mock_repo.add_item.return_value = CustomListItem.create(
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             position=3,
         )
         mock_repo.update.return_value = custom_list.increment_item_count()
@@ -143,7 +143,7 @@ class TestAddItemToCustomListUseCase:
                 profile_id=_PROFILE_ID.value,
                 list_id=str(custom_list.id),
                 media_id="mov_abc123def456",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
             )
         )
 

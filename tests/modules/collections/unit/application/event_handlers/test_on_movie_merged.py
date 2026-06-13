@@ -12,7 +12,7 @@ from src.modules.media.domain.events import (
     MediaCreatedEvent,
     MovieMergedEvent,
 )
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.media_id import MovieId
 
 
@@ -48,12 +48,12 @@ class TestOnMovieMergedHandlerCollections:
         watchlist.rewrite_media_id.assert_awaited_once_with(
             from_media_id=CollectionMediaId("mov_loserbbbbbbb"),
             to_media_id=CollectionMediaId("mov_winneraaaaaa"),
-            to_media_type=CollectionMediaType.MOVIE,
+            to_media_type=MediaType.MOVIE,
         )
         custom_lists.rewrite_item_media_id.assert_awaited_once_with(
             from_media_id=CollectionMediaId("mov_loserbbbbbbb"),
             to_media_id=CollectionMediaId("mov_winneraaaaaa"),
-            to_media_type=CollectionMediaType.MOVIE,
+            to_media_type=MediaType.MOVIE,
         )
 
     @pytest.mark.asyncio

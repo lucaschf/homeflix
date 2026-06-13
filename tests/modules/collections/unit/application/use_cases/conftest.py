@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.modules.collections.application.ports import MediaLookupPort, MediaSummary
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 
 MediaSummaryFactory = Callable[..., MediaSummary]
 
@@ -22,7 +22,7 @@ def movie_summary() -> MediaSummaryFactory:
     ) -> MediaSummary:
         return MediaSummary(
             media_id=media_id,
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             title=title,
             poster_path=poster_path,
         )
@@ -41,7 +41,7 @@ def series_summary() -> MediaSummaryFactory:
     ) -> MediaSummary:
         return MediaSummary(
             media_id=media_id,
-            media_type=CollectionMediaType.SERIES,
+            media_type=MediaType.SERIES,
             title=title,
             poster_path=poster_path,
         )

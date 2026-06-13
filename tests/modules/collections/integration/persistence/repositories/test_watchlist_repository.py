@@ -8,7 +8,7 @@ from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.modules.collections.infrastructure.persistence.repositories import (
     SQLAlchemyWatchlistRepository,
 )
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 SAMPLE_MOVIE_ID = CollectionMediaId("mov_abc123def456")
@@ -18,7 +18,7 @@ _OTHER_PROFILE_ID = ProfileId("prf_otherprofile")
 
 def _create_item(
     media_id: CollectionMediaId | str = SAMPLE_MOVIE_ID,
-    media_type: CollectionMediaType = CollectionMediaType.MOVIE,
+    media_type: MediaType = MediaType.MOVIE,
     profile_id: ProfileId = _PROFILE_ID,
 ) -> WatchlistItem:
     return WatchlistItem.create(profile_id=profile_id, media_id=media_id, media_type=media_type)
@@ -196,12 +196,12 @@ class TestSQLAlchemyWatchlistRepository:
         repo = SQLAlchemyWatchlistRepository(db_session)
         item = _create_item(
             media_id="ser_abc123def456",
-            media_type=CollectionMediaType.SERIES,
+            media_type=MediaType.SERIES,
         )
 
         saved = await repo.add(item)
 
-        assert saved.media_type == CollectionMediaType.SERIES
+        assert saved.media_type == MediaType.SERIES
 
     async def test_rewrite_media_id_should_repoint_rows_across_profiles(
         self, db_session: AsyncSession
@@ -216,7 +216,7 @@ class TestSQLAlchemyWatchlistRepository:
         updated = await repo.rewrite_media_id(
             from_media_id=SAMPLE_MOVIE_ID,
             to_media_id=CollectionMediaId("ser_promotedxxxx"),
-            to_media_type=CollectionMediaType.SERIES,
+            to_media_type=MediaType.SERIES,
         )
 
         assert updated == 2
@@ -225,7 +225,7 @@ class TestSQLAlchemyWatchlistRepository:
             assert stale is None
             fresh = await repo.find_by_media_id(CollectionMediaId("ser_promotedxxxx"), profile)
             assert fresh is not None
-            assert fresh.media_type == CollectionMediaType.SERIES
+            assert fresh.media_type == MediaType.SERIES
 
     async def test_rewrite_media_id_should_return_zero_when_nothing_matches(
         self, db_session: AsyncSession
@@ -235,7 +235,7 @@ class TestSQLAlchemyWatchlistRepository:
         updated = await repo.rewrite_media_id(
             from_media_id=CollectionMediaId("mov_unknown00000"),
             to_media_id=CollectionMediaId("ser_promotedxxxx"),
-            to_media_type=CollectionMediaType.SERIES,
+            to_media_type=MediaType.SERIES,
         )
 
         assert updated == 0

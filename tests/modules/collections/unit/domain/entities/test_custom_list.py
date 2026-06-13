@@ -15,7 +15,7 @@ from src.modules.collections.domain.value_objects import (
     ListId,
     ListName,
 )
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _PROFILE_ID = ProfileId("prf_test12345678")
@@ -241,18 +241,18 @@ class TestCustomListItemCreation:
     def test_should_create_with_required_fields(self) -> None:
         item = CustomListItem(
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         assert item.id is None
         assert item.media_id.value == "mov_abc123def456"
-        assert item.media_type == CollectionMediaType.MOVIE
+        assert item.media_type == MediaType.MOVIE
         assert item.position == 0
 
     def test_should_create_via_factory_with_auto_id(self) -> None:
         item = CustomListItem.create(
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         assert item.id is not None
@@ -262,7 +262,7 @@ class TestCustomListItemCreation:
     def test_should_create_with_custom_position(self) -> None:
         item = CustomListItem.create(
             media_id="ser_abc123def456",
-            media_type=CollectionMediaType.SERIES,
+            media_type=MediaType.SERIES,
             position=5,
         )
 
@@ -271,7 +271,7 @@ class TestCustomListItemCreation:
     def test_should_have_added_at_timestamp(self) -> None:
         item = CustomListItem.create(
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         assert item.added_at is not None
@@ -279,15 +279,15 @@ class TestCustomListItemCreation:
     def test_should_accept_series_media_type(self) -> None:
         item = CustomListItem.create(
             media_id="ser_abc123def456",
-            media_type=CollectionMediaType.SERIES,
+            media_type=MediaType.SERIES,
         )
 
-        assert item.media_type == CollectionMediaType.SERIES
+        assert item.media_type == MediaType.SERIES
 
     def test_should_be_frozen(self) -> None:
         item = CustomListItem.create(
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         with pytest.raises(DomainValidationException):

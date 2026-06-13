@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 from src.modules.collections.domain.entities import CustomList, CustomListItem
 from src.modules.collections.domain.value_objects import CollectionMediaId
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -129,7 +129,7 @@ class CustomListRepository(ABC):
         self,
         from_media_id: CollectionMediaId,
         to_media_id: CollectionMediaId,
-        to_media_type: CollectionMediaType,
+        to_media_type: MediaType,
     ) -> int:
         """Repoint every custom-list item from one media id to another.
 

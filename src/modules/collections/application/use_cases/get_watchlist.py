@@ -8,7 +8,7 @@ from src.modules.collections.application.dtos import (
 )
 from src.modules.collections.application.ports import MediaLookupPort
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _logger = logging.getLogger(__name__)
@@ -58,12 +58,8 @@ class GetWatchlistUseCase:
         if not items:
             return []
 
-        movie_ids = [
-            i.media_id.as_movie_id() for i in items if i.media_type == CollectionMediaType.MOVIE
-        ]
-        series_ids = [
-            i.media_id.as_series_id() for i in items if i.media_type == CollectionMediaType.SERIES
-        ]
+        movie_ids = [i.media_id.as_movie_id() for i in items if i.media_type == MediaType.MOVIE]
+        series_ids = [i.media_id.as_series_id() for i in items if i.media_type == MediaType.SERIES]
 
         summaries = await self._media_lookup.get_many(movie_ids, series_ids, input_dto.lang)
 
