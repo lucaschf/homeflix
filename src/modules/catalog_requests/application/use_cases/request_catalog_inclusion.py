@@ -29,7 +29,7 @@ class RequestCatalogInclusionUseCase:
         >>> uc = RequestCatalogInclusionUseCase(uow_factory)
         >>> out = await uc.execute(CreateCatalogRequestInput(
         ...     tmdb_id=348,
-        ...     media_type=RequestedMediaType.MOVIE,
+        ...     media_type=MediaType.MOVIE,
         ...     collection_tmdb_id=8091,
         ... ))
         >>> out.tmdb_id

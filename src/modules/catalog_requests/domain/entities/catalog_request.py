@@ -9,7 +9,9 @@ from pydantic import Field
 from src.building_blocks.domain import AggregateRoot
 from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestId,
-    RequestedMediaType,
+)
+from src.shared_kernel.value_objects import (
+    MediaType,  # noqa: TCH001 — runtime for Pydantic
 )
 
 
@@ -56,7 +58,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     Example:
         >>> req = CatalogRequest.create(
         ...     tmdb_id=348,
-        ...     media_type=RequestedMediaType.MOVIE,
+        ...     media_type=MediaType.MOVIE,
         ...     title="Alien",
         ...     collection_tmdb_id=8091,
         ... )
@@ -65,7 +67,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     id: CatalogRequestId | None = Field(default=None)
 
     tmdb_id: int
-    media_type: RequestedMediaType
+    media_type: MediaType
     title: str | None = None
     requester_user_id: str | None = None
     collection_tmdb_id: int | None = None
@@ -77,7 +79,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     def create(
         cls,
         tmdb_id: int,
-        media_type: RequestedMediaType,
+        media_type: MediaType,
         title: str | None = None,
         requester_user_id: str | None = None,
         collection_tmdb_id: int | None = None,

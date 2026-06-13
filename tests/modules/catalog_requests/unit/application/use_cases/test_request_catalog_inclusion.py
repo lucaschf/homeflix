@@ -9,7 +9,7 @@ from src.modules.catalog_requests.application.use_cases import (
     RequestCatalogInclusionUseCase,
 )
 from src.modules.catalog_requests.domain.entities import CatalogRequest
-from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
+from src.shared_kernel.value_objects import MediaType
 from tests.modules.catalog_requests.unit.conftest import (
     make_catalog_requests_uow_mock,
 )
@@ -30,7 +30,7 @@ class TestRequestCatalogInclusionUseCase:
         result = await use_case.execute(
             CreateCatalogRequestInput(
                 tmdb_id=348,
-                media_type=RequestedMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
                 collection_tmdb_id=8091,
             ),
         )
@@ -46,7 +46,7 @@ class TestRequestCatalogInclusionUseCase:
     async def test_idempotent_repeat_returns_existing(self) -> None:
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
@@ -55,7 +55,7 @@ class TestRequestCatalogInclusionUseCase:
         result = await use_case.execute(
             CreateCatalogRequestInput(
                 tmdb_id=348,
-                media_type=RequestedMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
             ),
         )
 
@@ -67,7 +67,7 @@ class TestRequestCatalogInclusionUseCase:
     async def test_flips_notify_when_repeat_opts_in(self) -> None:
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
@@ -77,7 +77,7 @@ class TestRequestCatalogInclusionUseCase:
         result = await use_case.execute(
             CreateCatalogRequestInput(
                 tmdb_id=348,
-                media_type=RequestedMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
                 notify_on_arrival=True,
             ),
         )
@@ -95,7 +95,7 @@ class TestRequestCatalogInclusionUseCase:
         result = await use_case.execute(
             CreateCatalogRequestInput(
                 tmdb_id=348,
-                media_type=RequestedMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
                 title="Alien",
             ),
         )
@@ -109,7 +109,7 @@ class TestRequestCatalogInclusionUseCase:
         out-of-band migration step."""
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
@@ -119,7 +119,7 @@ class TestRequestCatalogInclusionUseCase:
         result = await use_case.execute(
             CreateCatalogRequestInput(
                 tmdb_id=348,
-                media_type=RequestedMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
                 title="Alien",
             ),
         )
@@ -133,7 +133,7 @@ class TestRequestCatalogInclusionUseCase:
         out an already-stored snapshot."""
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             title="Alien",
         )
         mocks = make_catalog_requests_uow_mock()
@@ -143,7 +143,7 @@ class TestRequestCatalogInclusionUseCase:
         result = await use_case.execute(
             CreateCatalogRequestInput(
                 tmdb_id=348,
-                media_type=RequestedMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
             ),
         )
 
@@ -160,7 +160,7 @@ class TestRequestCatalogInclusionUseCase:
         result = await use_case.execute(
             CreateCatalogRequestInput(
                 tmdb_id=348,
-                media_type=RequestedMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
                 requester_user_id="usr_abc123",
             ),
         )
@@ -174,7 +174,7 @@ class TestRequestCatalogInclusionUseCase:
         the user's inbox without an out-of-band migration."""
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
@@ -184,7 +184,7 @@ class TestRequestCatalogInclusionUseCase:
         result = await use_case.execute(
             CreateCatalogRequestInput(
                 tmdb_id=348,
-                media_type=RequestedMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
                 requester_user_id="usr_abc123",
             ),
         )
@@ -199,7 +199,7 @@ class TestRequestCatalogInclusionUseCase:
         notification never gets re-routed to B."""
         existing = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             requester_user_id="usr_alice",
         )
         mocks = make_catalog_requests_uow_mock()
@@ -209,7 +209,7 @@ class TestRequestCatalogInclusionUseCase:
         result = await use_case.execute(
             CreateCatalogRequestInput(
                 tmdb_id=348,
-                media_type=RequestedMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
                 requester_user_id="usr_bob",
             ),
         )

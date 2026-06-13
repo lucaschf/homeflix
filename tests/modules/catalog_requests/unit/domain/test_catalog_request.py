@@ -7,8 +7,8 @@ import pytest
 from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestId,
-    RequestedMediaType,
 )
+from src.shared_kernel.value_objects import MediaType
 
 
 @pytest.mark.unit
@@ -18,7 +18,7 @@ class TestCatalogRequest:
     def test_create_assigns_prefixed_id_and_defaults(self) -> None:
         request = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             collection_tmdb_id=8091,
         )
 
@@ -33,7 +33,7 @@ class TestCatalogRequest:
     def test_enable_notification_sets_flag(self) -> None:
         request = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         updated = request.enable_notification()
@@ -47,7 +47,7 @@ class TestCatalogRequest:
         fixed = datetime(2026, 5, 2, 12, 0, tzinfo=UTC)
         request = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         updated = request.mark_fulfilled(fulfilled_at=fixed)
@@ -59,7 +59,7 @@ class TestCatalogRequest:
     def test_reconcile_backfills_only_unset_fields(self) -> None:
         request = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         reconciled = request.reconcile(
@@ -76,7 +76,7 @@ class TestCatalogRequest:
     def test_reconcile_does_not_overwrite_first_owner(self) -> None:
         request = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             title="Alien",
             requester_user_id="usr_aaaaaaaaaaaa",
         )
@@ -93,7 +93,7 @@ class TestCatalogRequest:
     def test_reconcile_notify_is_one_way(self) -> None:
         request = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             notify_on_arrival=True,
         )
 
@@ -103,7 +103,7 @@ class TestCatalogRequest:
     def test_reconcile_returns_none_when_nothing_changes(self) -> None:
         request = CatalogRequest.create(
             tmdb_id=348,
-            media_type=RequestedMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             title="Alien",
             requester_user_id="usr_aaaaaaaaaaaa",
             notify_on_arrival=True,

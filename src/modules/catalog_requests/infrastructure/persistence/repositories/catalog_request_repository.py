@@ -9,7 +9,6 @@ from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.repositories import CatalogRequestRepository
 from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestId,
-    RequestedMediaType,
 )
 from src.modules.catalog_requests.infrastructure.persistence.mappers import (
     CatalogRequestMapper,
@@ -17,6 +16,7 @@ from src.modules.catalog_requests.infrastructure.persistence.mappers import (
 from src.modules.catalog_requests.infrastructure.persistence.models import (
     CatalogRequestModel,
 )
+from src.shared_kernel.value_objects import MediaType
 
 
 class SQLAlchemyCatalogRequestRepository(CatalogRequestRepository):
@@ -24,7 +24,7 @@ class SQLAlchemyCatalogRequestRepository(CatalogRequestRepository):
 
     Example:
         >>> repo = SQLAlchemyCatalogRequestRepository(session)
-        >>> req = await repo.find_by_tmdb_id(348, RequestedMediaType.MOVIE)
+        >>> req = await repo.find_by_tmdb_id(348, MediaType.MOVIE)
     """
 
     def __init__(self, session: AsyncSession) -> None:
@@ -38,7 +38,7 @@ class SQLAlchemyCatalogRequestRepository(CatalogRequestRepository):
     async def find_by_tmdb_id(
         self,
         tmdb_id: int,
-        media_type: RequestedMediaType,
+        media_type: MediaType,
     ) -> CatalogRequest | None:
         """Look up a single request by its TMDB target."""
         stmt = select(CatalogRequestModel).where(
@@ -53,7 +53,7 @@ class SQLAlchemyCatalogRequestRepository(CatalogRequestRepository):
     async def find_by_tmdb_ids(
         self,
         tmdb_ids: Sequence[int],
-        media_type: RequestedMediaType,
+        media_type: MediaType,
     ) -> dict[int, CatalogRequest]:
         """Batch lookup keyed by TMDB id."""
         if not tmdb_ids:

@@ -24,7 +24,7 @@ class SubscribeCatalogNotificationUseCase:
         >>> uc = SubscribeCatalogNotificationUseCase(uow_factory)
         >>> out = await uc.execute(SubscribeCatalogNotificationInput(
         ...     tmdb_id=348,
-        ...     media_type=RequestedMediaType.MOVIE,
+        ...     media_type=MediaType.MOVIE,
         ... ))
         >>> out.notify_on_arrival
         True

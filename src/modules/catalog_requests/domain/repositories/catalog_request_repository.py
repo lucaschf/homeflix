@@ -6,8 +6,8 @@ from collections.abc import Sequence
 from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestId,
-    RequestedMediaType,
 )
+from src.shared_kernel.value_objects import MediaType
 
 
 class CatalogRequestRepository(ABC):
@@ -24,7 +24,7 @@ class CatalogRequestRepository(ABC):
     async def find_by_tmdb_id(
         self,
         tmdb_id: int,
-        media_type: RequestedMediaType,
+        media_type: MediaType,
     ) -> CatalogRequest | None:
         """Look up a single request by its TMDB target.
 
@@ -41,7 +41,7 @@ class CatalogRequestRepository(ABC):
     async def find_by_tmdb_ids(
         self,
         tmdb_ids: Sequence[int],
-        media_type: RequestedMediaType,
+        media_type: MediaType,
     ) -> dict[int, CatalogRequest]:
         """Batch lookup keyed by TMDB id.
 

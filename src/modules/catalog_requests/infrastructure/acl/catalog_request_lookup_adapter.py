@@ -12,11 +12,11 @@ from collections.abc import Sequence
 from src.modules.catalog_requests.application.unit_of_work import (
     CatalogRequestsUnitOfWorkFactory,
 )
-from src.modules.catalog_requests.domain.value_objects import RequestedMediaType
 from src.modules.media.application.ports.catalog_request_lookup_port import (
     CatalogRequestLookupPort,
     CatalogRequestStatus,
 )
+from src.shared_kernel.value_objects import MediaType
 
 
 class CatalogRequestLookupAdapter(CatalogRequestLookupPort):
@@ -41,7 +41,7 @@ class CatalogRequestLookupAdapter(CatalogRequestLookupPort):
         async with self._uow_factory() as uow:
             requests_by_id = await uow.catalog_requests.find_by_tmdb_ids(
                 tmdb_ids,
-                RequestedMediaType.MOVIE,
+                MediaType.MOVIE,
             )
 
         return {
