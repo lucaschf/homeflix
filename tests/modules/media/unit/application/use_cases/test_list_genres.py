@@ -10,6 +10,7 @@ from src.modules.media.application.dtos.catalog_dtos import (
 )
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
 from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.shared_kernel.value_objects import MediaType
 from tests.modules.media.unit.conftest import (
     FakeProfileLibraryAccessPort,
     make_media_uow_mock,
@@ -161,7 +162,7 @@ class TestListGenresUseCase:
 
     @pytest.mark.asyncio
     async def test_should_skip_series_repo_when_filtered_to_movies(self) -> None:
-        # media_type="movie" restricts the aggregation to the movie
+        # media_type=MediaType.MOVIE restricts the aggregation to the movie
         # repo — the series repo must not be called at all so the
         # counts reflect movies only (and the Movies tab on the
         # frontend doesn't surface series-only genres).
@@ -173,7 +174,9 @@ class TestListGenresUseCase:
             profile_library_access=make_profile_library_access(),
         )
 
-        result = await use_case.execute(ListGenresInput(profile_id=_PROFILE_ID, media_type="movie"))
+        result = await use_case.execute(
+            ListGenresInput(profile_id=_PROFILE_ID, media_type=MediaType.MOVIE)
+        )
 
         mocks.movies.list_genre_rows.assert_awaited_once()
         mocks.series.list_genre_rows.assert_not_awaited()
@@ -192,7 +195,7 @@ class TestListGenresUseCase:
         )
 
         result = await use_case.execute(
-            ListGenresInput(profile_id=_PROFILE_ID, media_type="series")
+            ListGenresInput(profile_id=_PROFILE_ID, media_type=MediaType.SERIES)
         )
 
         mocks.series.list_genre_rows.assert_awaited_once()

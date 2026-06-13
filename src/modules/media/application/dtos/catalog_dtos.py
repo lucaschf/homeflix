@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING
 
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE
 
-# Canonical media-type filter shared by the catalog inputs. ``None``
-# means "no filter — aggregate both movies and series". Kept as a
-# module-level alias so the use cases, the routes, and the tests all
-# agree on the exact literal values without copy-pasting the shape.
-MediaTypeFilter = Literal["movie", "series"]
+if TYPE_CHECKING:
+    from src.shared_kernel.value_objects import MediaType
 
 
 @dataclass(frozen=True)
@@ -54,7 +51,7 @@ class ListGenresInput:
 
     profile_id: str
     lang: str = "en"
-    media_type: MediaTypeFilter | None = None
+    media_type: MediaType | None = None
 
 
 @dataclass(frozen=True)
@@ -125,7 +122,7 @@ class ListByGenreInput:
     cursor: str | None = None
     limit: int = DEFAULT_PAGE_SIZE
     lang: str = "en"
-    media_type: MediaTypeFilter | None = None
+    media_type: MediaType | None = None
 
 
 @dataclass(frozen=True)
@@ -187,5 +184,4 @@ __all__ = [
     "ListGenresOutput",
     "ListRecentlyAddedCatalogInput",
     "ListRecentlyAddedCatalogOutput",
-    "MediaTypeFilter",
 ]

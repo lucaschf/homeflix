@@ -1,7 +1,7 @@
 """Catalog search REST API route."""
 
 from dataclasses import asdict
-from typing import Any, Literal
+from typing import Any
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
@@ -12,6 +12,7 @@ from src.config.containers import ApplicationContainer
 from src.modules.media.application.dtos.search_dtos import SearchInput
 from src.modules.media.application.use_cases.search_catalog import SearchCatalogUseCase
 from src.modules.media.presentation.dependencies import resolve_profile_id
+from src.shared_kernel.value_objects import MediaType
 
 router = APIRouter(prefix="/api/v1", tags=["Search"])
 
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/api/v1", tags=["Search"])
 @inject  # type: ignore[misc]
 async def search(
     q: str = Query(..., min_length=1, description="Full-text search query"),
-    type: Literal["movie", "series"] | None = Query(
+    type: MediaType | None = Query(
         default=None,
         description="Restrict to a single media type",
     ),

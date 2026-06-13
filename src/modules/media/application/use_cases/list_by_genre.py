@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, TypeVar
+from typing import TypeVar
 
 from src.building_blocks.application.pagination import (
     DualCursorValue,
@@ -23,6 +23,7 @@ from src.modules.media.application.ports.profile_library_access_port import (
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.value_objects import Genre
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.library_id import LibraryId
 
 _T = TypeVar("_T")
@@ -55,7 +56,7 @@ class _MergedItem:
     this module — the public API still returns ``CatalogItemOutput``.
     """
 
-    kind: Literal["movie", "series"]
+    kind: MediaType
     source_index: int
     entity: Movie | Series
 
@@ -133,10 +134,10 @@ class ListByGenreUseCase:
         # Tag each entity with its source stream and its source-page
         # index so we can recover the per-item cursor after the merge.
         tagged: list[_MergedItem] = [
-            _MergedItem(kind="movie", source_index=index, entity=item)
+            _MergedItem(kind=MediaType.MOVIE, source_index=index, entity=item)
             for index, item in enumerate(movies_page.items)
         ] + [
-            _MergedItem(kind="series", source_index=index, entity=item)
+            _MergedItem(kind=MediaType.SERIES, source_index=index, entity=item)
             for index, item in enumerate(series_page.items)
         ]
         # Sort by (lowercase title, source index) — the source index
@@ -153,7 +154,7 @@ class ListByGenreUseCase:
         last_movie_index: int | None = None
         last_series_index: int | None = None
         for item in page_items:
-            if item.kind == "movie":
+            if item.kind is MediaType.MOVIE:
                 last_movie_index = item.source_index
             else:
                 last_series_index = item.source_index
@@ -188,7 +189,7 @@ class ListByGenreUseCase:
         genre: Genre,
         decoded: DualCursorValue,
         limit: int,
-        media_type: Literal["movie", "series"] | None,
+        media_type: MediaType | None,
         allowed_library_ids: Sequence[LibraryId],
     ) -> tuple[PaginatedResult[Movie], PaginatedResult[Series]]:
         """Fetch the movie and series pages, honoring the media-type filter.
@@ -203,7 +204,7 @@ class ListByGenreUseCase:
         shape and the "previous cursor stays put if nothing is consumed"
         semantics of the merge sort.
         """
-        if media_type == "movie":
+        if media_type is MediaType.MOVIE:
             async with self._uow_factory() as uow:
                 movies_page = await uow.movies.list_paginated_by_genre(
                     genre=genre,
@@ -212,7 +213,7 @@ class ListByGenreUseCase:
                     allowed_library_ids=allowed_library_ids,
                 )
             return movies_page, _empty_page(Series)
-        if media_type == "series":
+        if media_type is MediaType.SERIES:
             async with self._uow_factory() as uow:
                 series_page = await uow.series.list_paginated_by_genre(
                     genre=genre,
@@ -306,12 +307,12 @@ class ListByGenreUseCase:
         return encode_dual_cursor(next_movies_cursor, next_series_cursor)
 
     @staticmethod
-    def _to_output(kind: str, item: Movie | Series, lang: str) -> CatalogItemOutput:
+    def _to_output(kind: MediaType, item: Movie | Series, lang: str) -> CatalogItemOutput:
         """Convert a movie/series entity into the catalog row DTO."""
         if isinstance(item, Movie):
             return CatalogItemOutput(
                 id=str(item.id),
-                type=kind,
+                type=kind.value,
                 title=item.get_title(lang),
                 year=item.year.value,
                 synopsis=item.get_synopsis(lang),

@@ -13,6 +13,7 @@ from src.modules.media.application.ports.profile_library_access_port import (
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie, Series
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.library_id import LibraryId
 
 
@@ -63,9 +64,9 @@ class SearchCatalogUseCase:
         movie_hits: list[tuple[Movie, float]] = []
         series_hits: list[tuple[Series, float]] = []
 
-        if input_dto.media_type == "movie":
+        if input_dto.media_type is MediaType.MOVIE:
             movie_hits = await self._search_movies(input_dto, allowed)
-        elif input_dto.media_type == "series":
+        elif input_dto.media_type is MediaType.SERIES:
             series_hits = await self._search_series(input_dto, allowed)
         else:
             movie_hits, series_hits = await asyncio.gather(

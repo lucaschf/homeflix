@@ -15,6 +15,7 @@ from src.modules.media.application.dtos.catalog_dtos import (
 )
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.domain.entities import Movie, Series
+from src.shared_kernel.value_objects import MediaType
 from tests.modules.media.unit.conftest import (
     FakeProfileLibraryAccessPort,
     make_media_uow_mock,
@@ -234,7 +235,7 @@ class TestListByGenreUseCase:
 
     @pytest.mark.asyncio
     async def test_should_skip_series_repo_when_filtered_to_movies(self) -> None:
-        # media_type="movie" restricts the merge to the movie stream
+        # media_type=MediaType.MOVIE restricts the merge to the movie stream
         # — series repo stays silent so the output is a pure movies
         # listing for the Movies tab.
         mocks = make_media_uow_mock()
@@ -244,7 +245,7 @@ class TestListByGenreUseCase:
         use_case = _make_use_case(mocks)
 
         result = await use_case.execute(
-            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", media_type="movie")
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", media_type=MediaType.MOVIE)
         )
 
         mocks.movies.list_paginated_by_genre.assert_awaited_once()
@@ -261,7 +262,7 @@ class TestListByGenreUseCase:
         use_case = _make_use_case(mocks)
 
         result = await use_case.execute(
-            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", media_type="series")
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", media_type=MediaType.SERIES)
         )
 
         mocks.series.list_paginated_by_genre.assert_awaited_once()
@@ -293,7 +294,7 @@ class TestListByGenreUseCase:
                 genre="Action",
                 cursor=previous_cursor,
                 limit=2,
-                media_type="movie",
+                media_type=MediaType.MOVIE,
             )
         )
 
