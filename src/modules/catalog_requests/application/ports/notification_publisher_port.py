@@ -12,6 +12,8 @@ Notifications' domain types.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
+
 
 @dataclass(frozen=True)
 class CatalogArrivalNotification:
@@ -36,9 +38,9 @@ class CatalogArrivalNotification:
         tmdb_id: TMDB id of the fulfilled title — kept on the
             payload so the frontend can fall back to a TMDB
             link if the local media id is unavailable.
-        media_id: External id of the local media row (``mov_xxx``
-            / ``ser_xxx``) the request was fulfilled by. Used as
-            the primary click-through target.
+        media_id: Typed external id of the local media row
+            (``MovieId`` / ``SeriesId``) the request was fulfilled
+            by. Used as the primary click-through target.
         media_type: ``"movie"`` or ``"series"`` so the renderer
             picks the right deep-link path.
     """
@@ -46,7 +48,7 @@ class CatalogArrivalNotification:
     recipient_user_id: str
     title: str
     tmdb_id: int
-    media_id: str
+    media_id: MovieId | SeriesId
     media_type: str
 
 

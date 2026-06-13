@@ -195,7 +195,7 @@ class TestOnMediaEnrichedHandler:
         assert payload.recipient_user_id == "usr_alice"
         assert payload.title == "Alien"
         assert payload.tmdb_id == 348
-        assert payload.media_id == "mov_abcabcabcabc"
+        assert payload.media_id == MovieId("mov_abcabcabcabc")
         assert payload.media_type == "movie"
 
     @pytest.mark.asyncio
