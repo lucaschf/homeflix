@@ -9,6 +9,7 @@ from src.modules.notifications.application.dtos import CreateNotificationInput
 from src.modules.notifications.application.use_cases import CreateNotificationUseCase
 from src.modules.notifications.domain.value_objects import NotificationKind
 from src.modules.notifications.infrastructure.acl import NotificationPublisherAdapter
+from src.shared_kernel.value_objects.media_id import MovieId
 
 
 @pytest.mark.unit
@@ -25,7 +26,7 @@ class TestNotificationPublisherAdapter:
                 recipient_user_id="usr_alice",
                 title="Alien",
                 tmdb_id=348,
-                media_id="mov_abc",
+                media_id=MovieId("mov_abcabcabcabc"),
                 media_type="movie",
             ),
         )
@@ -38,6 +39,6 @@ class TestNotificationPublisherAdapter:
         assert called_input.title == "Alien"
         assert called_input.payload == {
             "tmdb_id": 348,
-            "media_id": "mov_abc",
+            "media_id": "mov_abcabcabcabc",
             "media_type": "movie",
         }
