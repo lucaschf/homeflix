@@ -12,7 +12,7 @@ from src.modules.collections.infrastructure.persistence.mappers import (
 from src.modules.collections.infrastructure.persistence.models import (
     WatchlistItemModel,
 )
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _PROFILE_ID = ProfileId("prf_test12345678")
@@ -26,7 +26,7 @@ class TestWatchlistItemMapper:
         item = WatchlistItem(
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         with pytest.raises(ValueError, match="Cannot map entity without ID"):
@@ -39,7 +39,7 @@ class TestWatchlistItemMapper:
             id=list_id,
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             added_at=added_at,
         )
 
@@ -48,7 +48,7 @@ class TestWatchlistItemMapper:
         assert model.external_id == str(list_id)
         assert model.profile_id == _PROFILE_ID.value
         assert model.media_id == "mov_abc123def456"
-        assert model.media_type == CollectionMediaType.MOVIE
+        assert model.media_type == MediaType.MOVIE
         assert model.added_at == added_at
 
     def test_to_entity_should_convert_model_correctly(self) -> None:
@@ -70,7 +70,7 @@ class TestWatchlistItemMapper:
         assert entity.id == list_id
         assert entity.profile_id == _PROFILE_ID
         assert entity.media_id.value == "ser_xyz789abc123"
-        assert entity.media_type == CollectionMediaType.SERIES
+        assert entity.media_type == MediaType.SERIES
         assert entity.added_at == added_at
 
     def test_round_trip_should_preserve_fields(self) -> None:
@@ -80,7 +80,7 @@ class TestWatchlistItemMapper:
             id=list_id,
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             added_at=added_at,
         )
         model = WatchlistItemMapper.to_model(original)
@@ -116,7 +116,7 @@ class TestWatchlistItemMapper:
             id=list_id,
             profile_id=_PROFILE_ID,
             media_id="mov_old000000000",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             added_at=new_added_at,
         )
 
@@ -143,7 +143,7 @@ class TestWatchlistItemMapper:
             id=list_id,
             profile_id=_PROFILE_ID,
             media_id="ser_new000000000",
-            media_type=CollectionMediaType.SERIES,
+            media_type=MediaType.SERIES,
             added_at=datetime(2025, 6, 1, tzinfo=UTC),
         )
 

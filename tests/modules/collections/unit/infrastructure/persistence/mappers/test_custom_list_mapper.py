@@ -14,7 +14,7 @@ from src.modules.collections.infrastructure.persistence.models import (
     CustomListItemModel,
     CustomListModel,
 )
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _PROFILE_ID = ProfileId("prf_test12345678")
@@ -114,7 +114,7 @@ class TestCustomListItemMapper:
     def test_to_model_should_raise_when_id_is_none(self) -> None:
         item = CustomListItem(
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         with pytest.raises(ValueError, match="Cannot map entity without ID"):
@@ -126,7 +126,7 @@ class TestCustomListItemMapper:
         item = CustomListItem(
             id=item_id,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
             position=2,
             added_at=added_at,
         )
@@ -136,7 +136,7 @@ class TestCustomListItemMapper:
         assert model.external_id == str(item_id)
         assert model.custom_list_id == 42
         assert model.media_id == "mov_abc123def456"
-        assert model.media_type == CollectionMediaType.MOVIE
+        assert model.media_type == MediaType.MOVIE
         assert model.position == 2
         assert model.added_at == added_at
 
@@ -159,6 +159,6 @@ class TestCustomListItemMapper:
 
         assert entity.id == item_id
         assert entity.media_id.value == "ser_xyz789abc123"
-        assert entity.media_type == CollectionMediaType.SERIES
+        assert entity.media_type == MediaType.SERIES
         assert entity.position == 0
         assert entity.added_at == added_at

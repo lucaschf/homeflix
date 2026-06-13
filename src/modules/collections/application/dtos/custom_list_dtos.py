@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.modules.collections.domain.entities import CustomList, CustomListItem
-    from src.shared_kernel.value_objects import CollectionMediaType
+    from src.shared_kernel.value_objects import MediaType
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ class AddItemToCustomListInput:
     profile_id: str
     list_id: str
     media_id: str
-    media_type: CollectionMediaType
+    media_type: MediaType
 
 
 @dataclass(frozen=True)
@@ -90,7 +90,7 @@ class CustomListItemOutput:
     """Output representing an item in a custom list with media metadata."""
 
     media_id: str
-    media_type: CollectionMediaType
+    media_type: MediaType
     title: str
     poster_path: str | None
     position: int

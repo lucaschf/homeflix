@@ -11,7 +11,7 @@ from src.modules.collections.application.dtos import (
 from src.modules.collections.application.use_cases import ToggleWatchlistUseCase
 from src.modules.collections.domain.entities import WatchlistItem
 from src.modules.collections.domain.value_objects import CollectionMediaId
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _PROFILE_ID = ProfileId("prf_test12345678")
@@ -29,7 +29,7 @@ class TestToggleWatchlistUseCase:
         mock_repo.add.return_value = WatchlistItem.create(
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
         use_case = ToggleWatchlistUseCase(uow_factory=mocks.factory)
 
@@ -37,7 +37,7 @@ class TestToggleWatchlistUseCase:
             ToggleWatchlistInput(
                 profile_id=_PROFILE_ID.value,
                 media_id="mov_abc123def456",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
             )
         )
 
@@ -58,7 +58,7 @@ class TestToggleWatchlistUseCase:
             ToggleWatchlistInput(
                 profile_id=_PROFILE_ID.value,
                 media_id="mov_abc123def456",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
             )
         )
 
@@ -74,7 +74,7 @@ class TestToggleWatchlistUseCase:
         mock_repo.add.return_value = WatchlistItem.create(
             profile_id=_PROFILE_ID,
             media_id="ser_abc123def456",
-            media_type=CollectionMediaType.SERIES,
+            media_type=MediaType.SERIES,
         )
         use_case = ToggleWatchlistUseCase(uow_factory=mocks.factory)
 
@@ -82,7 +82,7 @@ class TestToggleWatchlistUseCase:
             ToggleWatchlistInput(
                 profile_id=_PROFILE_ID.value,
                 media_id="ser_abc123def456",
-                media_type=CollectionMediaType.SERIES,
+                media_type=MediaType.SERIES,
             )
         )
 

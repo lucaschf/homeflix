@@ -23,7 +23,7 @@ from src.modules.media.infrastructure.persistence.repositories import (
 from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyMediaUnitOfWorkFactory,
 )
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 
 _LIBRARY_ID = "lib_test12345678"
 
@@ -80,11 +80,11 @@ class TestCollectionsMediaLookupAdapter:
 
         summaries = await adapter.get_many([str(movie_id)], [str(series_id)], "en")
 
-        movie_summary = summaries[(CollectionMediaType.MOVIE, str(movie_id))]
+        movie_summary = summaries[(MediaType.MOVIE, str(movie_id))]
         assert movie_summary.title == "Inception"
         assert movie_summary.poster_path == "/p/inception.jpg"
 
-        series_summary = summaries[(CollectionMediaType.SERIES, str(series_id))]
+        series_summary = summaries[(MediaType.SERIES, str(series_id))]
         assert series_summary.title == "Breaking Bad"
         assert series_summary.poster_path == "/p/bb.jpg"
 
@@ -117,5 +117,5 @@ class TestCollectionsMediaLookupAdapter:
         adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
         summaries = await adapter.get_many([str(movie_id)], [], "en")
 
-        summary = summaries[(CollectionMediaType.MOVIE, str(movie_id))]
+        summary = summaries[(MediaType.MOVIE, str(movie_id))]
         assert summary.poster_path is None

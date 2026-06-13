@@ -14,7 +14,7 @@ from src.modules.collections.infrastructure.persistence.models import (
     CustomListItemModel,
     CustomListModel,
 )
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -306,7 +306,7 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         self,
         from_media_id: CollectionMediaId,
         to_media_id: CollectionMediaId,
-        to_media_type: CollectionMediaType,
+        to_media_type: MediaType,
     ) -> int:
         """Repoint every list item (cross-list, cross-profile) to a new media id."""
         stmt = select(CustomListItemModel).where(

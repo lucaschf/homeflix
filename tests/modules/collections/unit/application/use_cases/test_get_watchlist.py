@@ -18,7 +18,7 @@ from src.modules.collections.application.dtos import (
 from src.modules.collections.application.ports import MediaLookupPort
 from src.modules.collections.application.use_cases import GetWatchlistUseCase
 from src.modules.collections.domain.entities import WatchlistItem
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.media_id import MovieId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
@@ -42,7 +42,7 @@ class TestGetWatchlistUseCase:
             WatchlistItem.create(
                 profile_id=_PROFILE_ID,
                 media_id="mov_abc123def456",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
             ),
         ]
         mocks = make_collections_uow_mock()
@@ -82,7 +82,7 @@ class TestGetWatchlistUseCase:
             WatchlistItem.create(
                 profile_id=_PROFILE_ID,
                 media_id="mov_missing00000",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
             ),
         ]
         mocks = make_collections_uow_mock()
@@ -107,12 +107,12 @@ class TestGetWatchlistUseCase:
             WatchlistItem.create(
                 profile_id=_PROFILE_ID,
                 media_id="mov_abc123def456",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
             ),
             WatchlistItem.create(
                 profile_id=_PROFILE_ID,
                 media_id="ser_xyz789abc123",
-                media_type=CollectionMediaType.SERIES,
+                media_type=MediaType.SERIES,
             ),
         ]
         mocks = make_collections_uow_mock()
@@ -155,7 +155,7 @@ class TestGetWatchlistUseCase:
             WatchlistItem.create(
                 profile_id=_PROFILE_ID,
                 media_id="mov_abc123def456",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
             ),
         ]
         mocks = make_collections_uow_mock()

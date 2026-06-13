@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 
 
@@ -30,7 +30,7 @@ class MediaSummary:
     """
 
     media_id: str
-    media_type: CollectionMediaType
+    media_type: MediaType
     title: str
     poster_path: str | None
 
@@ -50,7 +50,7 @@ class MediaLookupPort(ABC):
         movie_ids: Sequence[MovieId],
         series_ids: Sequence[SeriesId],
         lang: str,
-    ) -> dict[tuple[CollectionMediaType, str], MediaSummary]:
+    ) -> dict[tuple[MediaType, str], MediaSummary]:
         """Resolve metadata for the given movies and series.
 
         Args:

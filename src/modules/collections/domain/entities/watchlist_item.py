@@ -13,7 +13,7 @@ from src.modules.collections.domain.value_objects import (
     ListId,
 )
 from src.shared_kernel.value_objects import (
-    CollectionMediaType,  # — runtime for Pydantic
+    MediaType,  # — runtime for Pydantic
 )
 from src.shared_kernel.value_objects.profile_id import ProfileId  # noqa: TCH001
 
@@ -35,7 +35,7 @@ class WatchlistItem(AggregateRoot[ListId]):
         >>> item = WatchlistItem.create(
         ...     profile_id=caller_profile_id,
         ...     media_id=CollectionMediaId("mov_abc123def456"),
-        ...     media_type=CollectionMediaType.MOVIE,
+        ...     media_type=MediaType.MOVIE,
         ... )
     """
 
@@ -43,13 +43,13 @@ class WatchlistItem(AggregateRoot[ListId]):
 
     profile_id: ProfileId
     media_id: CollectionMediaId
-    media_type: CollectionMediaType
+    media_type: MediaType
     added_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @model_validator(mode="after")
     def _validate_media_id_matches_type(self) -> Self:
         """Reject a movie id paired with series type and vice versa."""
-        if self.media_id.is_movie != (self.media_type is CollectionMediaType.MOVIE):
+        if self.media_id.is_movie != (self.media_type is MediaType.MOVIE):
             raise ValueError(
                 f"media_id '{self.media_id.value}' does not match "
                 f"media_type '{self.media_type.value}'",
@@ -61,7 +61,7 @@ class WatchlistItem(AggregateRoot[ListId]):
         cls,
         profile_id: ProfileId,
         media_id: CollectionMediaId,
-        media_type: CollectionMediaType,
+        media_type: MediaType,
     ) -> WatchlistItem:
         """Factory method with automatic ID generation."""
         return cls(

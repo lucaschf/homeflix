@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.modules.collections.domain.entities import WatchlistItem
-    from src.shared_kernel.value_objects import CollectionMediaType
+    from src.shared_kernel.value_objects import MediaType
 
 
 @dataclass(frozen=True)
@@ -16,7 +16,7 @@ class ToggleWatchlistInput:
 
     profile_id: str
     media_id: str
-    media_type: CollectionMediaType
+    media_type: MediaType
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,7 @@ class WatchlistItemOutput:
     """Output representing a single watchlist item with media metadata."""
 
     media_id: str
-    media_type: CollectionMediaType
+    media_type: MediaType
     title: str
     poster_path: str | None
     added_at: str

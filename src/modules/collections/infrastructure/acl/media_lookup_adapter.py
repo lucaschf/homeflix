@@ -11,7 +11,7 @@ from src.modules.collections.application.ports.media_lookup_port import (
     MediaSummary,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 
 
@@ -26,9 +26,9 @@ class MediaLookupAdapter(MediaLookupPort):
         movie_ids: Sequence[MovieId],
         series_ids: Sequence[SeriesId],
         lang: str,
-    ) -> dict[tuple[CollectionMediaType, str], MediaSummary]:
+    ) -> dict[tuple[MediaType, str], MediaSummary]:
         """Batch-resolve display metadata via a single Media UoW."""
-        result: dict[tuple[CollectionMediaType, str], MediaSummary] = {}
+        result: dict[tuple[MediaType, str], MediaSummary] = {}
 
         if not movie_ids and not series_ids:
             return result
@@ -37,9 +37,9 @@ class MediaLookupAdapter(MediaLookupPort):
             if movie_ids:
                 movies_map = await uow.movies.find_by_ids(list(movie_ids))
                 for media_id, movie in movies_map.items():
-                    result[(CollectionMediaType.MOVIE, media_id)] = MediaSummary(
+                    result[(MediaType.MOVIE, media_id)] = MediaSummary(
                         media_id=media_id,
-                        media_type=CollectionMediaType.MOVIE,
+                        media_type=MediaType.MOVIE,
                         title=movie.get_title(lang),
                         poster_path=movie.poster_path.value if movie.poster_path else None,
                     )
@@ -47,9 +47,9 @@ class MediaLookupAdapter(MediaLookupPort):
             if series_ids:
                 series_map = await uow.series.find_by_ids(list(series_ids))
                 for media_id, series in series_map.items():
-                    result[(CollectionMediaType.SERIES, media_id)] = MediaSummary(
+                    result[(MediaType.SERIES, media_id)] = MediaSummary(
                         media_id=media_id,
-                        media_type=CollectionMediaType.SERIES,
+                        media_type=MediaType.SERIES,
                         title=series.get_title(lang),
                         poster_path=series.poster_path.value if series.poster_path else None,
                     )

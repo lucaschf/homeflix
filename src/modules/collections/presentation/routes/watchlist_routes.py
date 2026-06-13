@@ -20,7 +20,7 @@ from src.modules.collections.application.use_cases import (
     ToggleWatchlistUseCase,
 )
 from src.modules.collections.presentation.dependencies import resolve_profile_id
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 
 router = APIRouter(prefix="/api/v1/watchlist", tags=["Watchlist"])
 
@@ -32,7 +32,7 @@ class ToggleWatchlistRequest(BaseModel):
     """Request body for toggling a watchlist item."""
 
     media_id: str
-    media_type: CollectionMediaType
+    media_type: MediaType
 
 
 # -- Endpoints -----------------------------------------------------------------

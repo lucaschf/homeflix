@@ -19,7 +19,7 @@ from src.modules.collections.application.dtos import (
 from src.modules.collections.application.ports import MediaLookupPort
 from src.modules.collections.application.use_cases import GetCustomListItemsUseCase
 from src.modules.collections.domain.entities import CustomList, CustomListItem
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.media_id import MovieId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
@@ -43,7 +43,7 @@ class TestGetCustomListItemsUseCase:
         items = [
             CustomListItem.create(
                 media_id="mov_abc123def456",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
                 position=0,
             ),
         ]
@@ -117,7 +117,7 @@ class TestGetCustomListItemsUseCase:
         items = [
             CustomListItem.create(
                 media_id="mov_missing00000",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
                 position=0,
             ),
         ]
@@ -149,12 +149,12 @@ class TestGetCustomListItemsUseCase:
         items = [
             CustomListItem.create(
                 media_id="mov_abc123def456",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
                 position=0,
             ),
             CustomListItem.create(
                 media_id="ser_xyz789abc123",
-                media_type=CollectionMediaType.SERIES,
+                media_type=MediaType.SERIES,
                 position=1,
             ),
         ]
@@ -191,7 +191,7 @@ class TestGetCustomListItemsUseCase:
         items = [
             CustomListItem.create(
                 media_id="mov_abc123def456",
-                media_type=CollectionMediaType.MOVIE,
+                media_type=MediaType.MOVIE,
                 position=0,
             ),
         ]

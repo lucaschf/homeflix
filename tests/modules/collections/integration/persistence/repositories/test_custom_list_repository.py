@@ -8,7 +8,7 @@ from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.modules.collections.infrastructure.persistence.repositories import (
     SQLAlchemyCustomListRepository,
 )
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 SAMPLE_MOVIE_ID = CollectionMediaId("mov_abc123def456")
@@ -27,7 +27,7 @@ def _create_list(
 
 def _create_item(
     media_id: CollectionMediaId | str = SAMPLE_MOVIE_ID,
-    media_type: CollectionMediaType = CollectionMediaType.MOVIE,
+    media_type: MediaType = MediaType.MOVIE,
     position: int = 0,
 ) -> CustomListItem:
     return CustomListItem.create(

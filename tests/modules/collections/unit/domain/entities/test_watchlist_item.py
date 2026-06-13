@@ -5,7 +5,7 @@ import pytest
 from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.collections.domain.entities import WatchlistItem
 from src.modules.collections.domain.value_objects import ListId
-from src.shared_kernel.value_objects import CollectionMediaType
+from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _PROFILE_ID = ProfileId("prf_test12345678")
@@ -19,19 +19,19 @@ class TestWatchlistItemCreation:
         item = WatchlistItem(
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         assert item.id is None
         assert item.media_id.value == "mov_abc123def456"
-        assert item.media_type == CollectionMediaType.MOVIE
+        assert item.media_type == MediaType.MOVIE
         assert item.profile_id == _PROFILE_ID
 
     def test_should_create_via_factory_with_auto_id(self) -> None:
         item = WatchlistItem.create(
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         assert item.id is not None
@@ -42,16 +42,16 @@ class TestWatchlistItemCreation:
         item = WatchlistItem.create(
             profile_id=_PROFILE_ID,
             media_id="ser_abc123def456",
-            media_type=CollectionMediaType.SERIES,
+            media_type=MediaType.SERIES,
         )
 
-        assert item.media_type == CollectionMediaType.SERIES
+        assert item.media_type == MediaType.SERIES
 
     def test_should_have_added_at_timestamp(self) -> None:
         item = WatchlistItem.create(
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         assert item.added_at is not None
@@ -65,7 +65,7 @@ class TestWatchlistItemImmutability:
         item = WatchlistItem.create(
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         with pytest.raises(DomainValidationException):
@@ -75,11 +75,11 @@ class TestWatchlistItemImmutability:
         item = WatchlistItem.create(
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         with pytest.raises(DomainValidationException):
-            item.media_type = CollectionMediaType.SERIES  # type: ignore[misc]
+            item.media_type = MediaType.SERIES  # type: ignore[misc]
 
 
 @pytest.mark.unit
@@ -92,13 +92,13 @@ class TestWatchlistItemEquality:
             id=list_id,
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
         item_b = WatchlistItem(
             id=list_id,
             profile_id=_PROFILE_ID,
             media_id="ser_xyz789abc123",
-            media_type=CollectionMediaType.SERIES,
+            media_type=MediaType.SERIES,
         )
 
         assert item_a == item_b
@@ -107,12 +107,12 @@ class TestWatchlistItemEquality:
         item_a = WatchlistItem.create(
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
         item_b = WatchlistItem.create(
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         assert item_a != item_b
@@ -121,7 +121,7 @@ class TestWatchlistItemEquality:
         item = WatchlistItem.create(
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
-            media_type=CollectionMediaType.MOVIE,
+            media_type=MediaType.MOVIE,
         )
 
         assert hash(item) is not None
