@@ -13,14 +13,6 @@ from src.modules.media.domain.value_objects.intro_detection_state import IntroDe
 from src.modules.media.domain.value_objects.intro_marker import IntroMarker, IntroMarkerSource
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
 from src.modules.media.domain.value_objects.media_file import MediaFile
-from src.modules.media.domain.value_objects.media_id import (
-    EpisodeId,
-    MediaId,
-    MovieId,
-    SeasonId,
-    SeriesId,
-    parse_media_id,
-)
 from src.modules.media.domain.value_objects.resolution import Resolution
 from src.modules.media.domain.value_objects.scan_run_id import ScanRunId
 from src.modules.media.domain.value_objects.season_number import SeasonNumber
@@ -30,6 +22,14 @@ from src.modules.media.domain.value_objects.video_codec import VideoCodec
 from src.modules.media.domain.value_objects.year import Year
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.image_url import ImageUrl
+from src.shared_kernel.value_objects.media_id import (
+    EpisodeId,
+    MediaId,
+    MovieId,
+    SeasonId,
+    SeriesId,
+    parse_media_id,
+)
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 __all__ = [
