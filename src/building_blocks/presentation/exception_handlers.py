@@ -13,6 +13,7 @@ serialize a category of errors. The envelope format comes from
 from typing import Any, cast
 
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -62,7 +63,12 @@ async def core_exception_handler(request: Request, exc: Exception) -> JSONRespon
     )
     _log_with_severity(logger, exc)
 
-    content = {**exc.to_dict(), "type": error_type}
+    # ``jsonable_encoder`` so non-primitive values that can legitimately
+    # appear in ``details`` (e.g. a ``datetime`` carried in a Pydantic
+    # error's ``input`` from a model-level validator) serialize cleanly
+    # instead of crashing ``JSONResponse`` and degrading a clean 4xx into
+    # an opaque 500.
+    content = jsonable_encoder({**exc.to_dict(), "type": error_type})
     return JSONResponse(status_code=http_status, content=content)
 
 
