@@ -103,6 +103,24 @@ class TestGetSeriesByIdUseCase:
         assert result.title == "Breaking Bad"
         assert result.start_year == 2008
         assert result.is_ongoing is True
+        assert result.needs_enrichment_review is False
+
+    @pytest.mark.asyncio
+    async def test_should_expose_needs_enrichment_review_flag(self, mock_progress_lookup):
+        mocks = make_media_uow_mock()
+        series = Series.create(
+            library_id=_LIBRARY_ID,
+            title="Breaking Bad",
+            start_year=2008,
+        ).with_enrichment_review_flagged()
+        mocks.series.find_by_id.return_value = series
+        use_case = _make_use_case(mocks, mock_progress_lookup)
+
+        result = await use_case.execute(
+            GetSeriesByIdInput(profile_id=_PROFILE_ID, series_id=str(series.id))
+        )
+
+        assert result.needs_enrichment_review is True
 
     @pytest.mark.asyncio
     async def test_should_return_series_with_seasons(self, mock_progress_lookup):
