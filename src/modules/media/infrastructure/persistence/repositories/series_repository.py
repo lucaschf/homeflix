@@ -165,6 +165,31 @@ class SQLAlchemySeriesRepository(SeriesRepository):
 
         return None if model is None else SeriesMapper.to_entity(model)
 
+    async def find_needs_enrichment_review(
+        self,
+        *,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
+    ) -> Sequence[Series]:
+        """Return series with the review flag set, newest-first."""
+        conditions = [
+            SeriesModel.deleted_at.is_(None),
+            SeriesModel.needs_enrichment_review.is_(True),
+        ]
+        if allowed_library_ids is not None:
+            allowed = [library_id.value for library_id in allowed_library_ids]
+            if not allowed:
+                return []
+            conditions.append(SeriesModel.library_id.in_(allowed))
+
+        stmt = (
+            select(SeriesModel)
+            .where(*conditions)
+            .options(*self._series_load_options())
+            .order_by(SeriesModel.updated_at.desc())
+        )
+        result = await self._session.execute(stmt)
+        return [SeriesMapper.to_entity(model) for model in result.scalars().all()]
+
     async def save(self, series: Series) -> Series:
         """Persist a series with all its seasons and episodes.
 

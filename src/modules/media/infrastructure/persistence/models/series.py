@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Integer, String, Text
+from sqlalchemy import Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.infrastructure.persistence.base import Base
@@ -62,6 +62,17 @@ class SeriesModel(Base):
     # External IDs
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+
+    # Flag set when enrichment couldn't resolve a TMDB match or an
+    # operator marked the result as wrong. Indexed so the admin "needs
+    # review" listing scans cheaply as the catalog grows.
+    needs_enrichment_review: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+        index=True,
+    )
 
     # Relationships
     seasons: Mapped[list["SeasonModel"]] = relationship(

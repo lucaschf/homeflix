@@ -333,6 +333,38 @@ class TestSeriesMapper:
         assert rebuilt.cast[1].profile_path is None
         assert rebuilt.cast[1].tmdb_id is None
 
+    def test_needs_enrichment_review_roundtrips(self) -> None:
+        """The review flag survives a ``to_model`` → ``to_entity`` cycle."""
+        series = _create_series(series_id=SeriesId.generate()).with_enrichment_review_flagged()
+
+        model = SeriesMapper.to_model(series)
+        now = datetime.now(UTC)
+        model.created_at = now
+        model.updated_at = now
+
+        assert model.needs_enrichment_review is True
+        rebuilt = SeriesMapper.to_entity(model, include_seasons=False)
+        assert rebuilt.needs_enrichment_review is True
+
+    def test_to_entity_coerces_null_review_flag_to_false(self) -> None:
+        """An un-flushed model (DB default not yet applied) has a
+        ``None`` flag column — to_entity must coerce it to ``False`` so
+        the ``bool`` domain field doesn't reject it."""
+        series_id = SeriesId.generate()
+        now = datetime.now(UTC)
+        model = SeriesModel(
+            library_id=_LIBRARY_ID,
+            external_id=str(series_id),
+            title="Flagless Series",
+            start_year=2020,
+            created_at=now,
+            updated_at=now,
+        )
+
+        entity = SeriesMapper.to_entity(model, include_seasons=False)
+
+        assert entity.needs_enrichment_review is False
+
     def test_update_model_overwrites_existing_cast(self) -> None:
         """``update_model`` replaces the persisted cast wholesale
         rather than merging — the new entity's list is the source of

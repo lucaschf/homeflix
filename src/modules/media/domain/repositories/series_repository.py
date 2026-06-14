@@ -54,6 +54,30 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_needs_enrichment_review(
+        self,
+        *,
+        allowed_library_ids: Sequence[LibraryId] | None = None,
+    ) -> Sequence[Series]:
+        """Return series flagged for admin enrichment review.
+
+        Backs the ``GET /admin/series/needs-review`` listing.
+        Soft-deleted rows are excluded. The set is expected to be
+        small so no pagination — caller orders by ``updated_at`` so
+        newest-flagged float up.
+
+        Args:
+            allowed_library_ids: Optional per-profile ACL filter. When
+                non-``None``, restricts to rows owned by libraries in
+                the set; ``None`` means no library filter (current
+                admin endpoint passes ``None``).
+
+        Returns:
+            Sequence of flagged series.
+        """
+        ...
+
+    @abstractmethod
     async def save(self, series: Series) -> Series:
         """Persist a series with all its seasons and episodes.
 

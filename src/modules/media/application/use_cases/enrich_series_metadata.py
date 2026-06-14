@@ -82,6 +82,12 @@ class EnrichSeriesMetadataUseCase:
 
             metadata, provider_name = await self._fetch_metadata(series)
             if not metadata:
+                # Flag for admin review (cleared on the next successful
+                # enrichment) so the unresolved series surfaces on the
+                # needs-review queue instead of silently staying bare.
+                if not series.needs_enrichment_review:
+                    series = series.with_enrichment_review_flagged()
+                    await uow.series.save(series)
                 return EnrichMediaOutput(
                     media_id=input_dto.media_id,
                     enriched=False,
@@ -96,6 +102,8 @@ class EnrichSeriesMetadataUseCase:
                     metadata = localized_meta
 
             series = _apply_series_metadata(series, metadata)
+            if series.needs_enrichment_review:
+                series = series.with_updates(needs_enrichment_review=False)
             await uow.series.save(series)
             enriched_tmdb_id = series.tmdb_id.value if series.tmdb_id else None
 
