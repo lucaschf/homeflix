@@ -1,6 +1,6 @@
 # ADR-016: MediaType como Value Object compartilhado
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-05-31
 **Deciders:** Lucas Cristovam
 **Technical Story:** Revisão de code smells (Fase 1) — o discriminador "movie | series" é stringly-typed em estado persistido e em eventos de domínio.
