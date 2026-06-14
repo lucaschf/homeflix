@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from src.shared_kernel.value_objects import MediaType
+
 
 @dataclass(frozen=True)
 class DetectMovieConflictsInput:
@@ -106,7 +108,7 @@ class ConflictCandidateSummary:
     """
 
     media_id: str
-    media_type: str
+    media_type: MediaType
     title: str | None
     year: int | None
     files: list[ConflictCandidateFile]

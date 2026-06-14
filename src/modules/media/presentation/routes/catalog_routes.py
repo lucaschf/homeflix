@@ -1,7 +1,7 @@
 """Catalog (cross-cutting movies + series) REST API routes."""
 
 from dataclasses import asdict
-from typing import Any, Literal
+from typing import Any
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
@@ -13,7 +13,6 @@ from src.modules.media.application.dtos.catalog_dtos import (
     ListByGenreInput,
     ListGenresInput,
     ListRecentlyAddedCatalogInput,
-    MediaTypeFilter,
 )
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
@@ -25,13 +24,14 @@ from src.modules.media.application.use_cases.list_recently_added_catalog import 
     ListRecentlyAddedCatalogUseCase,
 )
 from src.modules.media.presentation.dependencies import resolve_profile_id
+from src.shared_kernel.value_objects import MediaType
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["Catalog"])
 
 # Shared OpenAPI/validation config for the `?type=` query param. Kept
 # as a module-level constant so both routes stay identical and changes
 # to the description show up in a single place.
-_MEDIA_TYPE_QUERY: MediaTypeFilter | None = Query(
+_MEDIA_TYPE_QUERY: MediaType | None = Query(
     default=None,
     description=(
         "Optional filter — restrict the result to a single media type. "
@@ -44,7 +44,7 @@ _MEDIA_TYPE_QUERY: MediaTypeFilter | None = Query(
 @inject  # type: ignore[misc]
 async def list_genres(
     lang: str = "en",
-    type: Literal["movie", "series"] | None = _MEDIA_TYPE_QUERY,
+    type: MediaType | None = _MEDIA_TYPE_QUERY,
     profile_id: str = Depends(resolve_profile_id),
     use_case: ListGenresUseCase = Depends(
         Provide[ApplicationContainer.media.list_genres],
@@ -81,7 +81,7 @@ async def list_by_genre(
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
     lang: str = "en",
-    type: Literal["movie", "series"] | None = _MEDIA_TYPE_QUERY,
+    type: MediaType | None = _MEDIA_TYPE_QUERY,
     profile_id: str = Depends(resolve_profile_id),
     use_case: ListByGenreUseCase = Depends(
         Provide[ApplicationContainer.media.list_by_genre],

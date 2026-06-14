@@ -10,6 +10,7 @@ from src.modules.media.application.dtos.search_dtos import (
 )
 from src.modules.media.application.use_cases.search_catalog import SearchCatalogUseCase
 from src.modules.media.domain.entities import Movie, Series
+from src.shared_kernel.value_objects import MediaType
 from tests.modules.media.unit.conftest import (
     FakeProfileLibraryAccessPort,
     make_media_uow_mock,
@@ -69,7 +70,7 @@ class TestSearchCatalogUseCase:
         )
 
         result = await use_case.execute(
-            SearchInput(profile_id=_PROFILE_ID, query="avatar", media_type="movie")
+            SearchInput(profile_id=_PROFILE_ID, query="avatar", media_type=MediaType.MOVIE)
         )
 
         mocks.movies.search.assert_awaited_once()
@@ -87,7 +88,7 @@ class TestSearchCatalogUseCase:
         )
 
         result = await use_case.execute(
-            SearchInput(profile_id=_PROFILE_ID, query="dark", media_type="series")
+            SearchInput(profile_id=_PROFILE_ID, query="dark", media_type=MediaType.SERIES)
         )
 
         mocks.series.search.assert_awaited_once()

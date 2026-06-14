@@ -158,11 +158,11 @@ def _build_summary(
 
 def _build_candidate(
     media_id: str,
-    media_type: str,
+    media_type: MediaType,
     movies_by_id: dict[str, Movie],
 ) -> ConflictCandidateSummary:
     """Hydrate one side of the pair with the looked-up movie (when present)."""
-    if media_type == "movie":
+    if media_type is MediaType.MOVIE:
         movie = movies_by_id.get(media_id)
         if movie is not None:
             return ConflictCandidateSummary(

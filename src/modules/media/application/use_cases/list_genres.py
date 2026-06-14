@@ -10,6 +10,7 @@ from src.modules.media.application.ports.profile_library_access_port import (
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.shared_kernel.value_objects import MediaType
 
 
 class ListGenresUseCase:
@@ -84,7 +85,7 @@ class ListGenresUseCase:
                     input_dto.lang,
                     allowed_library_ids=allowed,
                 )
-                if input_dto.media_type != "series"
+                if input_dto.media_type is not MediaType.SERIES
                 else []
             )
             series_rows = (
@@ -92,7 +93,7 @@ class ListGenresUseCase:
                     input_dto.lang,
                     allowed_library_ids=allowed,
                 )
-                if input_dto.media_type != "movie"
+                if input_dto.media_type is not MediaType.MOVIE
                 else []
             )
 

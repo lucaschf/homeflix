@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING
 
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE
+
+if TYPE_CHECKING:
+    from src.shared_kernel.value_objects import MediaType
 
 
 @dataclass(frozen=True)
@@ -31,7 +34,7 @@ class SearchInput:
 
     profile_id: str
     query: str
-    media_type: Literal["movie", "series"] | None = None
+    media_type: MediaType | None = None
     genre: str | None = None
     year_min: int | None = None
     year_max: int | None = None
