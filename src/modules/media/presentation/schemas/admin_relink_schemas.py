@@ -26,6 +26,22 @@ class RelinkMovieRequest(BaseModel):
     )
 
 
+class RelinkSeriesRequest(BaseModel):
+    """Request body for ``POST /admin/series/{id}/relink``.
+
+    Only TV picks ride this endpoint. ``media_type`` is pinned to
+    ``"tv"`` by ``Literal`` so a ``"movie"`` payload is rejected at the
+    schema layer with a 422 — re-pointing a series at a movie (the
+    inverse promotion) is not supported.
+    """
+
+    tmdb_id: int = Field(..., ge=1, description="TMDB *series* id of the picked entry.")
+    media_type: Literal["tv"] = Field(
+        ...,
+        description="Must be 'tv'. Series can only relink to other TV entries.",
+    )
+
+
 class PromoteMovieToSeriesRequest(BaseModel):
     """Request body for ``POST /admin/movies/{id}/promote-to-series``.
 
@@ -43,4 +59,4 @@ class PromoteMovieToSeriesRequest(BaseModel):
     )
 
 
-__all__ = ["PromoteMovieToSeriesRequest", "RelinkMovieRequest"]
+__all__ = ["PromoteMovieToSeriesRequest", "RelinkMovieRequest", "RelinkSeriesRequest"]

@@ -193,6 +193,65 @@ class FlagSeriesEnrichmentReviewOutput:
 
 
 @dataclass(frozen=True)
+class GetSeriesTmdbSuggestionsInput:
+    """Input for the series suggestion picker.
+
+    Attributes:
+        series_id: External series id whose title + start year are the
+            search seed.
+    """
+
+    series_id: str
+
+
+@dataclass(frozen=True)
+class GetSeriesTmdbSuggestionsOutput:
+    """Picker payload for a series — TV candidates only.
+
+    Unlike the movie picker (which also offers TV candidates for the
+    promote-to-series path), the series picker only lists ``/search/tv``
+    results: re-pointing a series at a *movie* would be the inverse
+    promotion, which isn't supported.
+    """
+
+    series_id: str
+    series: list[TmdbSuggestionOutput] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RelinkSeriesInput:
+    """Admin's TV pick from the series suggestion picker.
+
+    Attributes:
+        series_id: External series id to relink.
+        tmdb_id: TMDB *series* id the admin selected.
+        media_type: Must be ``"tv"``. ``"movie"`` is rejected by the
+            use case (series → movie conversion is not supported).
+    """
+
+    series_id: str
+    tmdb_id: int
+    media_type: MediaType
+
+
+@dataclass(frozen=True)
+class RelinkSeriesOutput:
+    """Result of a series relink command.
+
+    Attributes:
+        series_id: External series id (echoed).
+        enriched: ``True`` when the new TMDB metadata was written.
+        provider: Provider that resolved the new metadata.
+        error: Failure reason when ``enriched`` is ``False``.
+    """
+
+    series_id: str
+    enriched: bool
+    provider: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class FlagMovieEnrichmentReviewInput:
     """Admin command: flag a movie's enrichment as wrong.
 
@@ -264,6 +323,8 @@ __all__ = [
     "FlagSeriesEnrichmentReviewOutput",
     "GetMovieTmdbSuggestionsInput",
     "GetMovieTmdbSuggestionsOutput",
+    "GetSeriesTmdbSuggestionsInput",
+    "GetSeriesTmdbSuggestionsOutput",
     "ListMoviesNeedingReviewOutput",
     "ListSeriesNeedingReviewOutput",
     "MediaType",
@@ -273,5 +334,7 @@ __all__ = [
     "PromoteMovieToSeriesOutput",
     "RelinkMovieInput",
     "RelinkMovieOutput",
+    "RelinkSeriesInput",
+    "RelinkSeriesOutput",
     "TmdbSuggestionOutput",
 ]
