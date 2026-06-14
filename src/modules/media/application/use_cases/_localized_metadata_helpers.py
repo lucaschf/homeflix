@@ -14,6 +14,8 @@ def merge_localized_metadata(
     updates: dict[str, object],
     existing: dict[str, dict[str, object]],
     metadata: MediaMetadata,
+    *,
+    force: bool = False,
 ) -> None:
     """Merge per-language overrides from ``metadata`` into ``updates``.
 
@@ -29,6 +31,11 @@ def merge_localized_metadata(
             to merge.
         existing: The entity's current ``localized`` mapping.
         metadata: Provider metadata carrying the ``localized`` overrides.
+        force: When ``True`` (a relink / forced refresh) the entity's
+            current ``localized`` is **replaced** by the provider's,
+            dropping stale language entries left over from a wrong
+            match. When ``False`` the new entries are merged over the
+            existing ones (the default fill-and-update behavior).
     """
     if not metadata.localized:
         return
@@ -47,7 +54,7 @@ def merge_localized_metadata(
             localized[lang] = loc_entry
 
     if localized:
-        updates["localized"] = {**existing, **localized}
+        updates["localized"] = localized if force else {**existing, **localized}
 
 
 __all__ = ["merge_localized_metadata"]

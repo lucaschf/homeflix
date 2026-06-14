@@ -25,6 +25,7 @@ from src.modules.media.domain.value_objects import (
     ContentRating,
     Duration,
     FilePath,
+    ImageUrl,
     MediaFile,
     Resolution,
     Title,
@@ -195,6 +196,88 @@ class TestEnrichSeriesMetadata:
         assert result.enriched is True
         saved = mocks.series.save.call_args[0][0]
         assert saved.needs_enrichment_review is False
+
+    @pytest.mark.asyncio
+    async def test_force_overwrites_stale_fields_and_replaces_localized(self) -> None:
+        """A relink (force=True) must overwrite series-level fields left
+        by a wrong match — the bug where backdrop/localized title stuck."""
+        series = _make_series().with_updates(
+            tmdb_id=TmdbId(999),  # wrong match already stamped
+            synopsis="Wrong synopsis",
+            poster_path=ImageUrl("https://img.example/wrong-poster.jpg"),
+            backdrop_path=ImageUrl("https://img.example/wrong-backdrop.jpg"),
+            localized={
+                "pt-BR": {"title": "Título Errado"},
+                "es": {"title": "Título Viejo"},  # stale lang absent from new match
+            },
+        )
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
+
+        metadata = MediaMetadata(
+            title="From",
+            year=2022,
+            synopsis="Correct synopsis",
+            tmdb_id=1234,
+            poster_url="https://img.example/right-poster.jpg",
+            backdrop_url="https://img.example/right-backdrop.jpg",
+            localized={"pt-BR": LocalizedFields(title="From (Correto)")},
+        )
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.get_series_by_id.return_value = metadata
+
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+        result = await use_case.execute(
+            EnrichMediaInput(media_id=str(series.id), force=True),
+        )
+
+        assert result.enriched is True
+        saved = mocks.series.save.call_args[0][0]
+        assert saved.synopsis == "Correct synopsis"
+        assert saved.poster_path.value == "https://img.example/right-poster.jpg"
+        assert saved.backdrop_path.value == "https://img.example/right-backdrop.jpg"
+        assert saved.title.value == "From"
+        # localized is replaced, not merged: new pt-BR wins and the
+        # stale "es" entry from the wrong match is dropped.
+        assert saved.get_title("pt-BR") == "From (Correto)"
+        assert "es" not in saved.localized
+
+    @pytest.mark.asyncio
+    async def test_non_force_keeps_existing_fields_and_merges_localized(self) -> None:
+        """A routine (non-force) re-enrichment preserves user/existing
+        data: filled fields stay, and localized merges rather than
+        replaces (stale-but-untouched langs survive)."""
+        series = _make_series().with_updates(
+            synopsis="Existing synopsis",
+            backdrop_path=ImageUrl("https://img.example/existing-backdrop.jpg"),
+            localized={"es": {"title": "Título Existente"}},
+        )
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
+
+        metadata = MediaMetadata(
+            title="From",
+            year=2022,
+            synopsis="New synopsis",
+            tmdb_id=1234,
+            backdrop_url="https://img.example/new-backdrop.jpg",
+            localized={"pt-BR": LocalizedFields(title="From pt")},
+        )
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = metadata
+
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        saved = mocks.series.save.call_args[0][0]
+        # Fill-if-empty: existing values are preserved.
+        assert saved.synopsis == "Existing synopsis"
+        assert saved.backdrop_path.value == "https://img.example/existing-backdrop.jpg"
+        # Merge: new lang added, existing lang kept.
+        assert saved.get_title("pt-BR") == "From pt"
+        assert saved.localized["es"]["title"] == "Título Existente"
 
     @pytest.mark.asyncio
     async def test_should_enrich_double_episode(self) -> None:
