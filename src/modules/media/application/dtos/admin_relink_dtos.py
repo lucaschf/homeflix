@@ -138,6 +138,35 @@ class RelinkMovieOutput:
 
 
 @dataclass(frozen=True)
+class FlagMovieEnrichmentReviewInput:
+    """Admin command: flag a movie's enrichment as wrong.
+
+    Used when the metadata looks enriched but matched the wrong title.
+    Setting the flag puts the movie back on the admin "needs review"
+    listing so the operator can relink it to the correct TMDB id.
+
+    Attributes:
+        movie_id: External movie id (``mov_xxx``) to flag.
+    """
+
+    movie_id: str
+
+
+@dataclass(frozen=True)
+class FlagMovieEnrichmentReviewOutput:
+    """Result of a flag command.
+
+    Attributes:
+        movie_id: External movie id (echoed).
+        needs_enrichment_review: The flag state after the command —
+            always ``True`` on success.
+    """
+
+    movie_id: str
+    needs_enrichment_review: bool
+
+
+@dataclass(frozen=True)
 class PromoteMovieToSeriesInput:
     """Input for the cross-type promotion endpoint.
 
@@ -174,6 +203,8 @@ class PromoteMovieToSeriesOutput:
 
 
 __all__ = [
+    "FlagMovieEnrichmentReviewInput",
+    "FlagMovieEnrichmentReviewOutput",
     "GetMovieTmdbSuggestionsInput",
     "GetMovieTmdbSuggestionsOutput",
     "ListMoviesNeedingReviewOutput",

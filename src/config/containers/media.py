@@ -30,6 +30,9 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
 from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
 )
+from src.modules.media.application.use_cases.flag_movie_enrichment_review import (
+    FlagMovieEnrichmentReviewUseCase,
+)
 from src.modules.media.application.use_cases.generate_hls_playlist import (
     GenerateHlsPlaylistUseCase,
 )
@@ -555,6 +558,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         RelinkMovieUseCase,
         uow_factory=media_unit_of_work_factory,
         enrich_use_case=enrich_movie_metadata,
+    )
+
+    flag_movie_enrichment_review = providers.Factory(
+        FlagMovieEnrichmentReviewUseCase,
+        uow_factory=media_unit_of_work_factory,
     )
 
     promote_movie_to_series = providers.Factory(

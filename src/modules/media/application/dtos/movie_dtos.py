@@ -111,6 +111,10 @@ class MovieOutput:
         resolution: Video resolution (None if no primary file).
         tmdb_id: TMDB external ID (optional).
         imdb_id: IMDB external ID (optional).
+        needs_enrichment_review: ``True`` when the movie is flagged for
+            enrichment review (enrichment failed or an operator marked
+            the result as wrong). Lets the admin detail UI show a
+            persistent "flagged" badge.
         created_at: ISO timestamp of creation.
         updated_at: ISO timestamp of last update.
     """
@@ -140,6 +144,7 @@ class MovieOutput:
     files: list[MediaFileOutput]
     tmdb_id: int | None
     imdb_id: str | None
+    needs_enrichment_review: bool
     created_at: str
     updated_at: str
 

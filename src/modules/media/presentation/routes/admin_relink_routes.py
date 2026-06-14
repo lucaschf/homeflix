@@ -22,9 +22,13 @@ from src.config.containers import ApplicationContainer
 from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.media.application.dtos.admin_relink_dtos import (
+    FlagMovieEnrichmentReviewInput,
     GetMovieTmdbSuggestionsInput,
     PromoteMovieToSeriesInput,
     RelinkMovieInput,
+)
+from src.modules.media.application.use_cases.flag_movie_enrichment_review import (
+    FlagMovieEnrichmentReviewUseCase,
 )
 from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
     GetMovieTmdbSuggestionsUseCase,
@@ -52,6 +56,20 @@ async def list_movies_needing_review(
     """List movies whose enrichment couldn't resolve a TMDB match."""
     output = await use_case.execute()
     return api_list([asdict(m) for m in output.movies])
+
+
+@router.post("/movies/{movie_id}/flag-enrichment")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def flag_movie_enrichment(
+    movie_id: str,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: FlagMovieEnrichmentReviewUseCase = Depends(
+        Provide[ApplicationContainer.media.flag_movie_enrichment_review],
+    ),
+) -> dict[str, Any]:
+    """Flag a wrongly-enriched movie so it re-enters the review queue."""
+    output = await use_case.execute(FlagMovieEnrichmentReviewInput(movie_id=movie_id))
+    return api_single("flag_enrichment", asdict(output))
 
 
 @router.get("/movies/{movie_id}/tmdb-suggestions")  # type: ignore[misc]

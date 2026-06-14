@@ -133,6 +133,7 @@ class GetMovieByIdUseCase:
             files=[to_media_file_output(f) for f in movie.files],
             tmdb_id=movie.tmdb_id.value if movie.tmdb_id else None,
             imdb_id=movie.imdb_id.value if movie.imdb_id else None,
+            needs_enrichment_review=movie.needs_enrichment_review,
             created_at=movie.created_at.isoformat(),
             updated_at=movie.updated_at.isoformat(),
         )

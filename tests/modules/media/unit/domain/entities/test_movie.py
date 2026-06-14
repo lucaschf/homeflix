@@ -650,3 +650,39 @@ class TestMovieLogoLocalization:
     def test_returns_none_when_no_logo_anywhere(self):
         movie = self._movie(logo_path=None, localized={})
         assert movie.get_logo_path("en") is None
+
+
+class TestMovieEnrichmentReview:
+    """Tests for the enrichment-review flag transition."""
+
+    @staticmethod
+    def _movie():
+        from src.modules.media.domain.entities import Movie
+
+        return Movie.create(
+            library_id=_LIBRARY_ID,
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+    def test_should_flag_for_review(self):
+        movie = self._movie()
+        assert movie.needs_enrichment_review is False
+
+        flagged = movie.with_enrichment_review_flagged()
+
+        assert flagged.needs_enrichment_review is True
+        # Immutability: the original is untouched.
+        assert movie.needs_enrichment_review is False
+
+    def test_should_be_idempotent_when_already_flagged(self):
+        movie = self._movie().with_enrichment_review_flagged()
+
+        again = movie.with_enrichment_review_flagged()
+
+        # Same instance — no spurious updated_at bump on re-flag.
+        assert again is movie
