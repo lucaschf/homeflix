@@ -12,12 +12,15 @@ All endpoints are gated by ``current_admin_user``. Movies:
   picks refresh the enrichment in place; TV picks 422 with a
   pointer to the deferred promote-to-series flow.
 
-Series (listing + manual flag; the TMDB picker + relink land in a
-follow-up):
+Series (full review + relink workflow):
 
 * ``GET  /admin/series/needs-review`` — listing of series needing review.
 * ``POST /admin/series/{id}/flag-enrichment`` — flag a wrongly-enriched
   series.
+* ``GET  /admin/series/{id}/tmdb-suggestions`` — live TMDB picker
+  (TV candidates) seeded by the series' title/start year.
+* ``POST /admin/series/{id}/relink`` — admin commits a TV pick; the
+  series is re-pointed at the chosen TMDB id and force-enriched.
 """
 
 from dataclasses import asdict
@@ -34,8 +37,10 @@ from src.modules.media.application.dtos.admin_relink_dtos import (
     FlagMovieEnrichmentReviewInput,
     FlagSeriesEnrichmentReviewInput,
     GetMovieTmdbSuggestionsInput,
+    GetSeriesTmdbSuggestionsInput,
     PromoteMovieToSeriesInput,
     RelinkMovieInput,
+    RelinkSeriesInput,
 )
 from src.modules.media.application.use_cases.flag_movie_enrichment_review import (
     FlagMovieEnrichmentReviewUseCase,
@@ -45,6 +50,9 @@ from src.modules.media.application.use_cases.flag_series_enrichment_review impor
 )
 from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
     GetMovieTmdbSuggestionsUseCase,
+)
+from src.modules.media.application.use_cases.get_series_tmdb_suggestions import (
+    GetSeriesTmdbSuggestionsUseCase,
 )
 from src.modules.media.application.use_cases.list_movies_needing_review import (
     ListMoviesNeedingReviewUseCase,
@@ -56,7 +64,12 @@ from src.modules.media.application.use_cases.promote_movie_to_series import (
     PromoteMovieToSeriesUseCase,
 )
 from src.modules.media.application.use_cases.relink_movie import RelinkMovieUseCase
-from src.modules.media.presentation.schemas import PromoteMovieToSeriesRequest, RelinkMovieRequest
+from src.modules.media.application.use_cases.relink_series import RelinkSeriesUseCase
+from src.modules.media.presentation.schemas import (
+    PromoteMovieToSeriesRequest,
+    RelinkMovieRequest,
+    RelinkSeriesRequest,
+)
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Movie Relink"])
 
@@ -165,6 +178,41 @@ async def flag_series_enrichment(
     """Flag a wrongly-enriched series so it re-enters the review queue."""
     output = await use_case.execute(FlagSeriesEnrichmentReviewInput(series_id=series_id))
     return api_single("flag_enrichment", asdict(output))
+
+
+@router.get("/series/{series_id}/tmdb-suggestions")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def get_series_tmdb_suggestions(
+    series_id: str,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: GetSeriesTmdbSuggestionsUseCase = Depends(
+        Provide[ApplicationContainer.media.get_series_tmdb_suggestions],
+    ),
+) -> dict[str, Any]:
+    """Return TMDB TV candidates seeded by the series' title/start year."""
+    output = await use_case.execute(GetSeriesTmdbSuggestionsInput(series_id=series_id))
+    return api_single("tmdb_suggestions", asdict(output))
+
+
+@router.post("/series/{series_id}/relink")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def relink_series(
+    series_id: str,
+    body: RelinkSeriesRequest,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: RelinkSeriesUseCase = Depends(
+        Provide[ApplicationContainer.media.relink_series],
+    ),
+) -> dict[str, Any]:
+    """Stamp the picked TMDB id on the series and force-enrich."""
+    output = await use_case.execute(
+        RelinkSeriesInput(
+            series_id=series_id,
+            tmdb_id=body.tmdb_id,
+            media_type=body.media_type,
+        ),
+    )
+    return api_single("relink", asdict(output))
 
 
 __all__ = ["router"]

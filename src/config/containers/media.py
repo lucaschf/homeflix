@@ -60,6 +60,9 @@ from src.modules.media.application.use_cases.get_related_movies import GetRelate
 from src.modules.media.application.use_cases.get_related_series import GetRelatedSeriesUseCase
 from src.modules.media.application.use_cases.get_scan_run import GetScanRunUseCase
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
+from src.modules.media.application.use_cases.get_series_tmdb_suggestions import (
+    GetSeriesTmdbSuggestionsUseCase,
+)
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_conflicts import ListConflictsUseCase
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
@@ -86,6 +89,7 @@ from src.modules.media.application.use_cases.promote_movie_to_series import (
     PromoteMovieToSeriesUseCase,
 )
 from src.modules.media.application.use_cases.relink_movie import RelinkMovieUseCase
+from src.modules.media.application.use_cases.relink_series import RelinkSeriesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
 from src.modules.media.application.use_cases.resolve_media_conflict import (
     ResolveMediaConflictUseCase,
@@ -579,6 +583,18 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     flag_series_enrichment_review = providers.Factory(
         FlagSeriesEnrichmentReviewUseCase,
         uow_factory=media_unit_of_work_factory,
+    )
+
+    get_series_tmdb_suggestions = providers.Factory(
+        GetSeriesTmdbSuggestionsUseCase,
+        uow_factory=media_unit_of_work_factory,
+        metadata_provider=tmdb_client,
+    )
+
+    relink_series = providers.Factory(
+        RelinkSeriesUseCase,
+        uow_factory=media_unit_of_work_factory,
+        enrich_use_case=enrich_series_metadata,
     )
 
     promote_movie_to_series = providers.Factory(

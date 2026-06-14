@@ -3,6 +3,7 @@
 from src.modules.media.presentation.schemas.admin_relink_schemas import (
     PromoteMovieToSeriesRequest,
     RelinkMovieRequest,
+    RelinkSeriesRequest,
 )
 from src.modules.media.presentation.schemas.enrichment_schemas import EnrichRequest
 from src.modules.media.presentation.schemas.file_variant_schemas import (
@@ -18,6 +19,7 @@ __all__ = [
     "EnrichRequest",
     "PromoteMovieToSeriesRequest",
     "RelinkMovieRequest",
+    "RelinkSeriesRequest",
     "RemoveFileVariantRequest",
     "ScanMediaRequest",
     "SetIntroRequest",
