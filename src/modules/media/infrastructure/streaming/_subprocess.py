@@ -7,6 +7,15 @@ subprocess.run() call in the streaming package stays consistent.
 from types import MappingProxyType
 from typing import Any
 
+# HardwareAccel.* string values, compared by value (HardwareAccel is a
+# StrEnum) so the streaming infrastructure stays decoupled from the
+# settings domain — media imports settings only under TYPE_CHECKING
+# (ADR-008). Kept here, beside the other shared ffmpeg helpers, so the
+# HLS and thumbnail services read one source of truth instead of each
+# carrying its own copy.
+HW_ACCEL_OFF = "off"
+HW_ACCEL_NVENC = "nvenc"
+
 # Match against the binary's basename so absolute paths
 # (``/usr/bin/ffmpeg``) and the Windows executable suffix
 # (``ffmpeg.exe``) both flow through the cap. A bare ``cmd[0] ==

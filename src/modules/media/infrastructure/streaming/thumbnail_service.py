@@ -25,6 +25,7 @@ from src.modules.media.application.streaming.thumbnail_vtt import (
     compute_layout,
 )
 from src.modules.media.infrastructure.streaming._subprocess import (
+    HW_ACCEL_OFF,
     SUBPROCESS_TEXT_KWARGS,
     with_ffmpeg_threads,
 )
@@ -47,11 +48,6 @@ _THUMBNAIL_JPEG_QUALITY = 5
 # if ffmpeg is still running at this point we kill it and move on.
 _THUMBNAIL_TIMEOUT = 300.0
 _PROBE_TIMEOUT = 10
-
-# HardwareAccel.OFF value. Compared by value (HardwareAccel is a StrEnum)
-# so this infrastructure stays decoupled from the settings domain — media
-# imports settings only under TYPE_CHECKING (ADR-008).
-_HW_ACCEL_OFF = "off"
 
 
 @dataclass(frozen=True)
@@ -137,7 +133,7 @@ class ThumbnailGenerationService:
 
         snapshot = self._runtime_settings.streaming_snapshot_sync()
         ffmpeg_threads = snapshot.ffmpeg_threads
-        use_hwaccel = snapshot.hw_accel != _HW_ACCEL_OFF
+        use_hwaccel = snapshot.hw_accel != HW_ACCEL_OFF
         if not self._render_sprite(
             file_path, sprite_path, layout, interval_seconds, ffmpeg_threads, use_hwaccel
         ):

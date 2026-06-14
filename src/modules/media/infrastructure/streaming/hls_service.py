@@ -50,6 +50,8 @@ from src.modules.media.application.ports.hls_playlist_port import (
 )
 from src.modules.media.application.ports.media_probe_port import ProbeResult
 from src.modules.media.infrastructure.streaming._subprocess import (
+    HW_ACCEL_NVENC,
+    HW_ACCEL_OFF,
     SUBPROCESS_TEXT_KWARGS,
     with_ffmpeg_threads,
 )
@@ -88,11 +90,15 @@ _EVICTION_INTERVAL = 10.0
 
 _VIDEO_DIR = "video"
 
-# HardwareAccel.* string values. Compared by value (HardwareAccel is a
-# StrEnum) so this infrastructure stays decoupled from the settings
-# domain — media imports settings only under TYPE_CHECKING (ADR-008).
-_HW_ACCEL_OFF = "off"
-_HW_ACCEL_NVENC = "nvenc"
+# Wall-clock cap for the one-time NVENC functional probe. Deliberately
+# generous: the probe is the process's first CUDA call, so it absorbs the
+# cold driver / context init, which was measured at ~20s on a cold but
+# perfectly working GPU. Cutting this to a few seconds would time out
+# that cold init and make AUTO mode fall back to software on a host that
+# actually has a usable encoder — the exact false negative this feature
+# exists to avoid. The cost (a longer first play once per process on a
+# hung driver) fits inside the 120s first-segment budget.
+_NVENC_PROBE_TIMEOUT = 30
 
 # -- Module helpers -----------------------------------------------------------
 
@@ -835,7 +841,7 @@ class HlsService(HlsPlaylistPort):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
-                timeout=30,
+                timeout=_NVENC_PROBE_TIMEOUT,
             )
         except (OSError, subprocess.SubprocessError):
             return False
@@ -862,9 +868,9 @@ class HlsService(HlsPlaylistPort):
         back), and ``auto`` defers to the cached functional probe.
         """
         mode = self._runtime_settings.streaming_snapshot_sync().hw_accel
-        if mode == _HW_ACCEL_OFF:
+        if mode == HW_ACCEL_OFF:
             return False
-        if mode == _HW_ACCEL_NVENC:
+        if mode == HW_ACCEL_NVENC:
             return True
         return self._nvenc_available()
 
