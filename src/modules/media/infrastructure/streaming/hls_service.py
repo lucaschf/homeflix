@@ -88,6 +88,12 @@ _EVICTION_INTERVAL = 10.0
 
 _VIDEO_DIR = "video"
 
+# HardwareAccel.* string values. Compared by value (HardwareAccel is a
+# StrEnum) so this infrastructure stays decoupled from the settings
+# domain — media imports settings only under TYPE_CHECKING (ADR-008).
+_HW_ACCEL_OFF = "off"
+_HW_ACCEL_NVENC = "nvenc"
+
 # -- Module helpers -----------------------------------------------------------
 
 
@@ -138,6 +144,9 @@ class HlsService(HlsPlaylistPort):
         self._subtitle_events: dict[str, dict[int, threading.Event]] = {}
         self._lock = threading.Lock()
         self._idle_timeout = idle_timeout
+        # Memoised result of the one-time NVENC functional probe (None
+        # until first transcode in AUTO mode forces the check).
+        self._nvenc_probe: bool | None = None
         if enable_eviction:
             self._start_eviction_thread()
 
@@ -761,6 +770,71 @@ class HlsService(HlsPlaylistPort):
         except Exception:
             return None
 
+    @staticmethod
+    def _detect_nvenc() -> bool:
+        """Functionally probe whether ``h264_nvenc`` can actually encode.
+
+        The encoder being *listed* by ffmpeg is not enough — a host can
+        ship an ffmpeg with NVENC compiled in while lacking the GPU,
+        driver, or a free encode session. We run a sub-second throwaway
+        encode of a synthetic source through CUDA so AUTO mode only
+        commits to NVENC when the full decode→encode path works.
+
+        Returns ``True`` only on a clean (exit 0) probe encode.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=black:s=256x256:r=10",
+                    "-t",
+                    "0.2",
+                    "-c:v",
+                    "h264_nvenc",
+                    "-f",
+                    "null",
+                    "-",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return result.returncode == 0
+
+    def _nvenc_available(self) -> bool:
+        """Return the memoised NVENC functional-probe result.
+
+        Probed at most once per service instance — the first transcode
+        in AUTO mode pays the ~1s cold-start CUDA init, every later call
+        reads the cached boolean.
+        """
+        if self._nvenc_probe is None:
+            self._nvenc_probe = self._detect_nvenc()
+            _logger.info("NVENC functional probe result: %s", self._nvenc_probe)
+        return self._nvenc_probe
+
+    def _use_nvenc(self) -> bool:
+        """Decide whether this transcode should use NVENC.
+
+        Honours the persisted ``hw_accel`` knob: ``off`` forces
+        software, ``nvenc`` forces hardware (a broken encoder then
+        surfaces as a transcode failure rather than silently falling
+        back), and ``auto`` defers to the cached functional probe.
+        """
+        mode = self._runtime_settings.streaming_snapshot_sync().hw_accel
+        if mode == _HW_ACCEL_OFF:
+            return False
+        if mode == _HW_ACCEL_NVENC:
+            return True
+        return self._nvenc_available()
+
     def _build_video_cmd(
         self,
         file_path: str,
@@ -795,13 +869,64 @@ class HlsService(HlsPlaylistPort):
         copied video would land at the preceding keyframe while the
         re-encoded audio lands at the exact ``start``, recreating the
         same 1-3s gap the seek flag was meant to close.
+
+        When a transcode is required and ``hw_accel`` resolves to NVENC,
+        the whole pipeline runs on the GPU: ``-hwaccel cuda`` decodes
+        with NVDEC, ``scale_cuda=format=nv12`` does the 10-bit→8-bit
+        conversion in VRAM, and ``h264_nvenc`` encodes — keeping the CPU
+        almost idle and staying well above real-time on 4K HEVC. The
+        software ``libx264`` path is the fallback.
         """
         codec = self._probe_video_codec(file_path)
         needs_transcode = codec not in _BROWSER_SAFE_CODECS or start > 0
 
-        if needs_transcode:
-            _logger.info("Source codec %s — transcoding to H.264 (start=%d)", codec, start)
-            video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
+        hwaccel_input_args: list[str] = []
+        vf_args: list[str] = []
+
+        if needs_transcode and self._use_nvenc():
+            _logger.info("Source codec %s — transcoding via NVENC (start=%d)", codec, start)
+            # Full-GPU pipeline: NVDEC decode → scale_cuda (10→8 bit in
+            # VRAM) → NVENC encode. ``spatial_aq`` redistributes bits to
+            # flat regions, which is what keeps sky/fog gradients from
+            # banding. ``-cq 19`` is constant-quality VBR (``-b:v 0``).
+            hwaccel_input_args = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+            vf_args = ["-vf", "scale_cuda=format=nv12"]
+            video_args = [
+                "-c:v",
+                "h264_nvenc",
+                "-preset",
+                "p5",
+                "-tune",
+                "hq",
+                "-rc",
+                "vbr",
+                "-cq",
+                "19",
+                "-b:v",
+                "0",
+                "-spatial_aq",
+                "1",
+            ]
+        elif needs_transcode:
+            _logger.info("Source codec %s — transcoding via libx264 (start=%d)", codec, start)
+            # ``superfast`` (not ``ultrafast``) is the floor here: ultrafast
+            # disables CABAC and adaptive quantization, which is exactly what
+            # collapses smooth gradients (sky, fog) into visible macroblocks
+            # on HEVC/10-bit sources re-encoded to H.264. superfast turns both
+            # back on for a moderate CPU cost while staying real-time on 4K.
+            # ``-pix_fmt yuv420p`` forces a clean 8-bit output so 10-bit
+            # sources (yuv420p10le) downconvert through swscale's dithering
+            # instead of producing an unplayable High 10 stream.
+            video_args = [
+                "-c:v",
+                "libx264",
+                "-preset",
+                "superfast",
+                "-crf",
+                "20",
+                "-pix_fmt",
+                "yuv420p",
+            ]
         else:
             _logger.info("Source codec %s — copying", codec)
             # H.264 inside MP4/MKV is AVCC (length-prefixed NALs) with
@@ -822,6 +947,7 @@ class HlsService(HlsPlaylistPort):
 
         return [
             "ffmpeg",
+            *hwaccel_input_args,
             *seek_args,
             "-i",
             file_path,
@@ -830,6 +956,7 @@ class HlsService(HlsPlaylistPort):
             "-map",
             audio_map,
             "-sn",
+            *vf_args,
             *video_args,
             "-c:a",
             "aac",
