@@ -33,6 +33,9 @@ from src.modules.media.application.use_cases.enrich_series_metadata import (
 from src.modules.media.application.use_cases.flag_movie_enrichment_review import (
     FlagMovieEnrichmentReviewUseCase,
 )
+from src.modules.media.application.use_cases.flag_series_enrichment_review import (
+    FlagSeriesEnrichmentReviewUseCase,
+)
 from src.modules.media.application.use_cases.generate_hls_playlist import (
     GenerateHlsPlaylistUseCase,
 )
@@ -76,6 +79,9 @@ from src.modules.media.application.use_cases.list_recently_added_series import (
 )
 from src.modules.media.application.use_cases.list_scan_runs import ListScanRunsUseCase
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
+from src.modules.media.application.use_cases.list_series_needing_review import (
+    ListSeriesNeedingReviewUseCase,
+)
 from src.modules.media.application.use_cases.promote_movie_to_series import (
     PromoteMovieToSeriesUseCase,
 )
@@ -562,6 +568,16 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     flag_movie_enrichment_review = providers.Factory(
         FlagMovieEnrichmentReviewUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
+    list_series_needing_review = providers.Factory(
+        ListSeriesNeedingReviewUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
+    flag_series_enrichment_review = providers.Factory(
+        FlagSeriesEnrichmentReviewUseCase,
         uow_factory=media_unit_of_work_factory,
     )
 

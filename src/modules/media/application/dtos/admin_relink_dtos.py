@@ -138,6 +138,61 @@ class RelinkMovieOutput:
 
 
 @dataclass(frozen=True)
+class NeedsReviewSeriesOutput:
+    """One row on the admin series "needs review" list.
+
+    Slim by design — enough to identify the series and seed the TMDB
+    picker. ``tmdb_id`` is surfaced because a wrongly-enriched series
+    already has one (pointing at the wrong title), and showing it helps
+    the operator confirm the mismatch before relinking.
+
+    Attributes:
+        id: External series id (``ser_xxx``).
+        title: Title as currently stored.
+        year: Start year as currently stored.
+        tmdb_id: Current TMDB id, or ``None`` when enrichment never
+            resolved a match.
+    """
+
+    id: str
+    title: str
+    year: int
+    tmdb_id: int | None
+
+
+@dataclass(frozen=True)
+class ListSeriesNeedingReviewOutput:
+    """Top-level response for the series needs-review listing."""
+
+    series: list[NeedsReviewSeriesOutput] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class FlagSeriesEnrichmentReviewInput:
+    """Admin command: flag a series' enrichment as wrong.
+
+    Attributes:
+        series_id: External series id (``ser_xxx``) to flag.
+    """
+
+    series_id: str
+
+
+@dataclass(frozen=True)
+class FlagSeriesEnrichmentReviewOutput:
+    """Result of a series flag command.
+
+    Attributes:
+        series_id: External series id (echoed).
+        needs_enrichment_review: The flag state after the command —
+            always ``True`` on success.
+    """
+
+    series_id: str
+    needs_enrichment_review: bool
+
+
+@dataclass(frozen=True)
 class FlagMovieEnrichmentReviewInput:
     """Admin command: flag a movie's enrichment as wrong.
 
@@ -205,11 +260,15 @@ class PromoteMovieToSeriesOutput:
 __all__ = [
     "FlagMovieEnrichmentReviewInput",
     "FlagMovieEnrichmentReviewOutput",
+    "FlagSeriesEnrichmentReviewInput",
+    "FlagSeriesEnrichmentReviewOutput",
     "GetMovieTmdbSuggestionsInput",
     "GetMovieTmdbSuggestionsOutput",
     "ListMoviesNeedingReviewOutput",
+    "ListSeriesNeedingReviewOutput",
     "MediaType",
     "NeedsReviewMovieOutput",
+    "NeedsReviewSeriesOutput",
     "PromoteMovieToSeriesInput",
     "PromoteMovieToSeriesOutput",
     "RelinkMovieInput",

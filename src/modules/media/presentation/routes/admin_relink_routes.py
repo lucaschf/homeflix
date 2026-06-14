@@ -1,14 +1,23 @@
-"""Admin REST API routes for the TMDB relink workflow.
+"""Admin REST API routes for the TMDB relink / enrichment-review workflow.
 
-Three endpoints, all gated by ``current_admin_user``:
+All endpoints are gated by ``current_admin_user``. Movies:
 
 * ``GET  /admin/movies/needs-review`` — listing of movies whose
-  enrichment couldn't find a TMDB match.
+  enrichment couldn't find a TMDB match (or were flagged as wrong).
+* ``POST /admin/movies/{id}/flag-enrichment`` — flag an enriched movie
+  whose metadata matched the wrong title.
 * ``GET  /admin/movies/{id}/tmdb-suggestions`` — live TMDB picker
   payload (movie + TV candidates) seeded by the movie's title/year.
 * ``POST /admin/movies/{id}/relink`` — admin commits a pick. Movie
   picks refresh the enrichment in place; TV picks 422 with a
   pointer to the deferred promote-to-series flow.
+
+Series (listing + manual flag; the TMDB picker + relink land in a
+follow-up):
+
+* ``GET  /admin/series/needs-review`` — listing of series needing review.
+* ``POST /admin/series/{id}/flag-enrichment`` — flag a wrongly-enriched
+  series.
 """
 
 from dataclasses import asdict
@@ -23,6 +32,7 @@ from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.media.application.dtos.admin_relink_dtos import (
     FlagMovieEnrichmentReviewInput,
+    FlagSeriesEnrichmentReviewInput,
     GetMovieTmdbSuggestionsInput,
     PromoteMovieToSeriesInput,
     RelinkMovieInput,
@@ -30,11 +40,17 @@ from src.modules.media.application.dtos.admin_relink_dtos import (
 from src.modules.media.application.use_cases.flag_movie_enrichment_review import (
     FlagMovieEnrichmentReviewUseCase,
 )
+from src.modules.media.application.use_cases.flag_series_enrichment_review import (
+    FlagSeriesEnrichmentReviewUseCase,
+)
 from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
     GetMovieTmdbSuggestionsUseCase,
 )
 from src.modules.media.application.use_cases.list_movies_needing_review import (
     ListMoviesNeedingReviewUseCase,
+)
+from src.modules.media.application.use_cases.list_series_needing_review import (
+    ListSeriesNeedingReviewUseCase,
 )
 from src.modules.media.application.use_cases.promote_movie_to_series import (
     PromoteMovieToSeriesUseCase,
@@ -122,6 +138,33 @@ async def promote_movie_to_series(
         PromoteMovieToSeriesInput(movie_id=movie_id, tmdb_id=body.tmdb_id),
     )
     return api_single("promote_to_series", asdict(output))
+
+
+@router.get("/series/needs-review")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def list_series_needing_review(
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: ListSeriesNeedingReviewUseCase = Depends(
+        Provide[ApplicationContainer.media.list_series_needing_review],
+    ),
+) -> dict[str, Any]:
+    """List series needing enrichment review (failed match or flagged)."""
+    output = await use_case.execute()
+    return api_list([asdict(s) for s in output.series])
+
+
+@router.post("/series/{series_id}/flag-enrichment")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def flag_series_enrichment(
+    series_id: str,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: FlagSeriesEnrichmentReviewUseCase = Depends(
+        Provide[ApplicationContainer.media.flag_series_enrichment_review],
+    ),
+) -> dict[str, Any]:
+    """Flag a wrongly-enriched series so it re-enters the review queue."""
+    output = await use_case.execute(FlagSeriesEnrichmentReviewInput(series_id=series_id))
+    return api_single("flag_enrichment", asdict(output))
 
 
 __all__ = ["router"]
