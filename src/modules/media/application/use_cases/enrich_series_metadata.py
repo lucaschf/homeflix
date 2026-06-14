@@ -211,6 +211,12 @@ def _apply_series_metadata(
         updates["start_year"] = Year(metadata.year)
     if metadata.end_year:
         updates["end_year"] = Year(metadata.end_year)
+    elif force:
+        # On a relink the new match may be ongoing (no end_year) while a
+        # stale end_year lingers from the wrong match. Left in place it
+        # can fall before the new start_year and trip the
+        # ``end_year >= start_year`` invariant — clear it.
+        updates["end_year"] = None
     # The base title normally stays scanner-derived, but on a forced
     # refresh it may belong to a wrong match — overwrite it so the
     # canonical title tracks the newly-picked TMDB entry.

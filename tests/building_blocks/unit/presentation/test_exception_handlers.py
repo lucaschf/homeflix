@@ -117,6 +117,36 @@ class TestCoreExceptionTranslation:
         assert body["type"] == "gateway_timeout_error"
         assert "internal_message" not in body  # never leaked to client
 
+    def test_should_serialize_non_primitive_detail_values(self) -> None:
+        """A ``datetime`` carried in a Pydantic error's ``input`` (e.g. a
+        model-level validator firing on an entity dict) must not crash
+        ``JSONResponse``. Regression: it degraded a clean 422 into a 500."""
+        from datetime import UTC, datetime
+
+        app = _make_app()
+
+        @app.get("/foo")
+        async def _route() -> None:
+            raise DomainValidationException.from_pydantic_errors(
+                object_type="Series",
+                pydantic_errors=[
+                    {
+                        "type": "value_error",
+                        "msg": "end_year cannot be before start_year",
+                        "loc": (),
+                        "input": {"created_at": datetime(2026, 1, 1, tzinfo=UTC)},
+                    }
+                ],
+            )
+
+        response = TestClient(app).get("/foo")
+
+        assert response.status_code == 422
+        body = response.json()
+        assert body["type"] == "validation_error"
+        # The datetime survived as an ISO string instead of crashing.
+        assert "2026" in body["details"][0]["metadata"]["input"]["created_at"]
+
 
 @pytest.mark.unit
 class TestRequestValidation:

@@ -30,6 +30,7 @@ from src.modules.media.domain.value_objects import (
     Resolution,
     Title,
     TmdbId,
+    Year,
 )
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
@@ -242,6 +243,36 @@ class TestEnrichSeriesMetadata:
         # stale "es" entry from the wrong match is dropped.
         assert saved.get_title("pt-BR") == "From (Correto)"
         assert "es" not in saved.localized
+
+    @pytest.mark.asyncio
+    async def test_force_clears_stale_end_year_when_new_match_has_none(self) -> None:
+        """Relinking a 1995→2016 series must not trip the
+        ``end_year >= start_year`` invariant: the stale end_year from the
+        wrong (older, ended) match is cleared when the new match has none.
+        Regression for the American Gothic relink 500."""
+        series = _make_series().with_updates(
+            tmdb_id=TmdbId(999),
+            start_year=Year(1995),
+            end_year=Year(1998),  # wrong match was an ended 90s series
+        )
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
+
+        # New match: a 2016 series with no end_year (start_year alone).
+        metadata = MediaMetadata(title="American Gothic", year=2016, tmdb_id=1234)
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.get_series_by_id.return_value = metadata
+
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+        result = await use_case.execute(
+            EnrichMediaInput(media_id=str(series.id), force=True),
+        )
+
+        assert result.enriched is True
+        saved = mocks.series.save.call_args[0][0]
+        assert saved.start_year.value == 2016
+        assert saved.end_year is None
 
     @pytest.mark.asyncio
     async def test_non_force_keeps_existing_fields_and_merges_localized(self) -> None:
