@@ -401,6 +401,22 @@ class TestHlsServiceBuildVideoCmd:
         assert "copy" in cmd
         assert "libx264" not in cmd
 
+    def test_should_annexb_bitstream_filter_on_h264_copy(self, tmp_path: Path) -> None:
+        # AVCC-packaged H.264 (SPS/PPS only in container extradata) loses
+        # its parameter sets when copied into MPEG-TS because the HLS muxer
+        # does not auto-insert the Annex-B conversion. Without the filter
+        # the browser decodes zero frames — black video, audio fine.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert "-bsf:v" in cmd
+        assert cmd[cmd.index("-bsf:v") + 1] == "h264_mp4toannexb"
+
     def test_should_transcode_h264_when_start_positive(self, tmp_path: Path) -> None:
         # ``-c:v copy`` is the fast path for cold cache but it skips
         # the decode pass that ``-accurate_seek`` depends on. With a

@@ -804,7 +804,15 @@ class HlsService(HlsPlaylistPort):
             video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
         else:
             _logger.info("Source codec %s — copying", codec)
-            video_args = ["-c:v", "copy"]
+            # H.264 inside MP4/MKV is AVCC (length-prefixed NALs) with
+            # SPS/PPS only in container extradata. The HLS muxer does not
+            # reliably auto-insert the Annex-B conversion the bare mpegts
+            # muxer applies, so sources that don't repeat parameter sets
+            # in-band lose them in the .ts segments — the browser decodes
+            # zero frames (black video, audio fine). h264_mp4toannexb
+            # converts to Annex-B and writes SPS/PPS in-band; it is a
+            # no-op for streams already in Annex-B form.
+            video_args = ["-c:v", "copy", "-bsf:v", "h264_mp4toannexb"]
 
         primary_idx = _primary_audio_index(probe)
         audio_map = f"0:a:{primary_idx}"
