@@ -101,6 +101,10 @@ class SeriesOutput:
         genres: List of genre strings.
         tmdb_id: TMDB external ID (optional).
         imdb_id: IMDB external ID (optional).
+        needs_enrichment_review: ``True`` when the series is flagged for
+            enrichment review (enrichment failed or an operator marked
+            the result as wrong). Lets the admin detail UI show a
+            persistent "flagged" badge.
         season_count: Number of seasons.
         total_episodes: Total episode count.
         seasons: List of seasons with episodes.
@@ -123,6 +127,7 @@ class SeriesOutput:
     trailer_url: str | None
     tmdb_id: int | None
     imdb_id: str | None
+    needs_enrichment_review: bool
     season_count: int
     total_episodes: int
     seasons: list[SeasonOutput]

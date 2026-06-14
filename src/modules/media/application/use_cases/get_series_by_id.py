@@ -131,6 +131,7 @@ class GetSeriesByIdUseCase:
             trailer_url=series.trailer_url,
             tmdb_id=series.tmdb_id.value if series.tmdb_id else None,
             imdb_id=series.imdb_id.value if series.imdb_id else None,
+            needs_enrichment_review=series.needs_enrichment_review,
             season_count=series.season_count,
             total_episodes=series.total_episodes,
             seasons=[self._to_season_output(s, series_id, progress_map) for s in series.seasons],
