@@ -94,10 +94,12 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     tmdb_id: TmdbId | None = None
     imdb_id: ImdbId | None = None
 
-    # Set true when an enrichment attempt could not resolve a TMDB
-    # match (off-year movie, cross-type miss, ambiguous title, …).
-    # Read by the admin "needs review" listing so the operator can
-    # relink manually. Cleared on successful enrichment.
+    # Set true when the movie needs an enrichment review — either an
+    # enrichment attempt couldn't resolve a TMDB match (off-year movie,
+    # cross-type miss, ambiguous title, …) or an operator flagged the
+    # result as wrong (matched the wrong title). Read by the admin
+    # "needs review" listing so the operator can relink manually.
+    # Cleared on the next successful enrichment.
     needs_enrichment_review: bool = False
 
     # noinspection PyNestedDecorators
@@ -171,6 +173,26 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
         if genre in self.genres:
             return self
         return self.with_updates(genres=[*self.genres, genre])
+
+    # ── enrichment review ─────────────────────────────────────────────
+
+    def with_enrichment_review_flagged(self) -> Self:
+        """Return a copy flagged for manual enrichment review.
+
+        Used when an operator decides the current metadata is wrong
+        (the enrichment matched the wrong title) and wants the movie
+        back in the admin review queue. Idempotent — returns ``self``
+        when the flag is already set so no spurious ``updated_at`` bump
+        happens. The flag is cleared on the next successful enrichment
+        (see ``EnrichMovieMetadataUseCase``).
+
+        Returns:
+            A new Movie with ``needs_enrichment_review=True``, or
+            ``self`` if it was already flagged.
+        """
+        if self.needs_enrichment_review:
+            return self
+        return self.with_updates(needs_enrichment_review=True)
 
     # ── factory ───────────────────────────────────────────────────────
 
