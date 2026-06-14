@@ -301,6 +301,7 @@ class SeriesMapper:
             else None,
             tmdb_id=entity.tmdb_id.value if entity.tmdb_id else None,
             imdb_id=entity.imdb_id.value if entity.imdb_id else None,
+            needs_enrichment_review=entity.needs_enrichment_review,
         )
 
     @staticmethod
@@ -340,6 +341,7 @@ class SeriesMapper:
             localized=json.loads(model.localized) if model.localized else {},
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
             imdb_id=ImdbId(model.imdb_id) if model.imdb_id else None,
+            needs_enrichment_review=bool(model.needs_enrichment_review),
             seasons=season_list,
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -376,6 +378,7 @@ class SeriesMapper:
         )
         model.tmdb_id = entity.tmdb_id.value if entity.tmdb_id else None
         model.imdb_id = entity.imdb_id.value if entity.imdb_id else None
+        model.needs_enrichment_review = entity.needs_enrichment_review
 
         return model
 

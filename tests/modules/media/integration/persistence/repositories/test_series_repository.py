@@ -218,6 +218,59 @@ class TestSQLAlchemySeriesRepository:
 
         assert found is None
 
+    async def test_find_needs_enrichment_review_returns_only_flagged(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """Only series with the flag set come back; others are excluded."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        flagged = _create_series(title="Flagged", needs_enrichment_review=True)
+        clean = _create_series(title="Clean")
+        await repo.save(flagged)
+        await repo.save(clean)
+
+        result = await repo.find_needs_enrichment_review()
+
+        assert [s.title.value for s in result] == ["Flagged"]
+        assert result[0].needs_enrichment_review is True
+
+    async def test_find_needs_enrichment_review_excludes_soft_deleted(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """A flagged-then-deleted series must not surface on the queue."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        flagged = _create_series(title="Flagged", needs_enrichment_review=True)
+        await repo.save(flagged)
+        await repo.delete(_id_of(flagged))
+
+        result = await repo.find_needs_enrichment_review()
+
+        assert result == []
+
+    async def test_find_needs_enrichment_review_honors_library_acl(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """The optional ACL filter restricts to allowed libraries."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        mine = _create_series(title="Mine", needs_enrichment_review=True)
+        other = Series(
+            library_id=_LIBRARY_ID_OTHER,
+            id=SeriesId.generate(),
+            title=Title("Other"),
+            start_year=Year(2020),
+            needs_enrichment_review=True,
+        )
+        await repo.save(mine)
+        await repo.save(other)
+
+        result = await repo.find_needs_enrichment_review(
+            allowed_library_ids=[LibraryId(_LIBRARY_ID)],
+        )
+
+        assert [s.title.value for s in result] == ["Mine"]
+
     async def test_delete_removes_series_and_children(
         self,
         db_session: AsyncSession,

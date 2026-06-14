@@ -160,6 +160,43 @@ class TestEnrichSeriesMetadata:
             await use_case.execute(EnrichMediaInput(media_id=fake_id))
 
     @pytest.mark.asyncio
+    async def test_should_flag_for_review_when_no_metadata(self) -> None:
+        series = _make_series()
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
+
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = None
+
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+        result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        assert result.enriched is False
+        # The unresolved series is flagged + persisted for admin review.
+        saved = mocks.series.save.call_args[0][0]
+        assert saved.needs_enrichment_review is True
+
+    @pytest.mark.asyncio
+    async def test_should_clear_review_flag_on_success(self) -> None:
+        series = _make_series().with_enrichment_review_flagged()
+        assert series.needs_enrichment_review is True
+
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
+
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = _make_metadata()
+
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+        result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        assert result.enriched is True
+        saved = mocks.series.save.call_args[0][0]
+        assert saved.needs_enrichment_review is False
+
+    @pytest.mark.asyncio
     async def test_should_enrich_double_episode(self) -> None:
         """Double episode file should merge metadata from two TMDB episodes."""
         series = _make_series()

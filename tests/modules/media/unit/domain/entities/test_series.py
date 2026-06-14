@@ -310,3 +310,35 @@ class TestSeriesLogoLocalization:
     def test_returns_none_when_no_logo_anywhere(self):
         series = self._series(logo_path=None, localized={})
         assert series.get_logo_path("en") is None
+
+
+class TestSeriesEnrichmentReview:
+    """Tests for the enrichment-review flag transition."""
+
+    @staticmethod
+    def _series():
+        from src.modules.media.domain.entities import Series
+
+        return Series.create(
+            library_id=_LIBRARY_ID,
+            title="Breaking Bad",
+            start_year=2008,
+        )
+
+    def test_should_flag_for_review(self):
+        series = self._series()
+        assert series.needs_enrichment_review is False
+
+        flagged = series.with_enrichment_review_flagged()
+
+        assert flagged.needs_enrichment_review is True
+        # Immutability: the original is untouched.
+        assert series.needs_enrichment_review is False
+
+    def test_should_be_idempotent_when_already_flagged(self):
+        series = self._series().with_enrichment_review_flagged()
+
+        again = series.with_enrichment_review_flagged()
+
+        # Same instance — no spurious updated_at bump on re-flag.
+        assert again is series

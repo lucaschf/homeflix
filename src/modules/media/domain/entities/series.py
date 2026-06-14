@@ -81,6 +81,13 @@ class Series(AggregateRoot[SeriesId]):
     tmdb_id: TmdbId | None = None
     imdb_id: ImdbId | None = None
 
+    # Set true when the series needs an enrichment review — either an
+    # enrichment attempt couldn't resolve a TMDB match or an operator
+    # flagged the result as wrong (matched the wrong title). Read by
+    # the admin "needs review" listing so the operator can relink
+    # manually. Cleared on the next successful enrichment.
+    needs_enrichment_review: bool = False
+
     # Composition
     seasons: list[Season] = Field(default_factory=list)
 
@@ -161,6 +168,24 @@ class Series(AggregateRoot[SeriesId]):
             True if series has no end_year.
         """
         return self.end_year is None
+
+    def with_enrichment_review_flagged(self) -> Self:
+        """Return a copy flagged for manual enrichment review.
+
+        Used when an operator decides the current metadata is wrong
+        (the enrichment matched the wrong title) and wants the series
+        back in the admin review queue. Idempotent — returns ``self``
+        when the flag is already set so no spurious ``updated_at`` bump
+        happens. The flag is cleared on the next successful enrichment
+        (see ``EnrichSeriesMetadataUseCase``).
+
+        Returns:
+            A new Series with ``needs_enrichment_review=True``, or
+            ``self`` if it was already flagged.
+        """
+        if self.needs_enrichment_review:
+            return self
+        return self.with_updates(needs_enrichment_review=True)
 
     def with_season(self, season: Season) -> Self:
         """Return a copy with the season added.
