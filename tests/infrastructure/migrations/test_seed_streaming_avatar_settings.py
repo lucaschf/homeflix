@@ -93,7 +93,11 @@ class TestSeedRows:
         assert key == "streaming"
         assert source == "migration_seed"
         payload = json.loads(value_json)
-        assert payload == {"ffmpeg_threads": 4, "hls_cache_max_size_mb": 20480}
+        assert payload == {
+            "ffmpeg_threads": 4,
+            "hls_cache_max_size_mb": 20480,
+            "hw_accel": "auto",
+        }
 
     def test_seeds_avatar_row_with_partial_overrides(self, connection: Connection) -> None:
         # Only ``size_pixels`` is overridden; the other two fields

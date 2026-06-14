@@ -20,18 +20,28 @@ from src.modules.media.infrastructure.streaming.thumbnail_service import (
     VTT_FILENAME,
     ThumbnailGenerationService,
 )
-from src.modules.settings.domain.value_objects import StreamingConfig
+from src.modules.settings.domain.value_objects import HardwareAccel, StreamingConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _fake_runtime_settings(*, ffmpeg_threads: int | None = None) -> MagicMock:
+def _fake_runtime_settings(
+    *,
+    ffmpeg_threads: int | None = None,
+    hw_accel: HardwareAccel = HardwareAccel.AUTO,
+) -> MagicMock:
     runtime = MagicMock()
     runtime.streaming_snapshot_sync.return_value = StreamingConfig(
         ffmpeg_threads=ffmpeg_threads,
+        hw_accel=hw_accel,
     )
     return runtime
+
+
+def _ffmpeg_cmds(mock_run: MagicMock) -> list[list[str]]:
+    """All ffmpeg argv lists captured by the mocked ``subprocess.run``."""
+    return [c.args[0] for c in mock_run.call_args_list if c.args[0][0] == "ffmpeg"]
 
 
 _SUBPROCESS_TARGET = "src.modules.media.infrastructure.streaming.thumbnail_service.subprocess.run"
@@ -188,3 +198,83 @@ class TestThumbnailGenerationService:
 
         ffmpeg_call = next(call for call in mock_run.call_args_list if call.args[0][0] == "ffmpeg")
         assert "-ss" not in ffmpeg_call.args[0]
+
+    def test_uses_cuda_hwaccel_decode_by_default(self, tmp_path: Path) -> None:
+        # hw_accel defaults to AUTO → the sprite decode runs on NVDEC,
+        # with the flag placed before -i so ffmpeg applies it to the input.
+        output_dir = tmp_path / "thumbs"
+        sprite_path = output_dir / SPRITE_FILENAME
+
+        service = ThumbnailGenerationService(_fake_runtime_settings())
+        with (
+            patch(_WHICH_TARGET, return_value="/usr/bin/ffprobe"),
+            patch(_SUBPROCESS_TARGET, side_effect=_ffmpeg_writes_sprite(sprite_path)) as mock_run,
+        ):
+            result = service.generate("/fake/movie.mkv", output_dir)
+
+        assert result is not None
+        (cmd,) = _ffmpeg_cmds(mock_run)
+        assert cmd[cmd.index("-hwaccel") + 1] == "cuda"
+        assert cmd.index("-hwaccel") < cmd.index("-i")
+
+    def test_no_hwaccel_when_hw_accel_off(self, tmp_path: Path) -> None:
+        output_dir = tmp_path / "thumbs"
+        sprite_path = output_dir / SPRITE_FILENAME
+
+        service = ThumbnailGenerationService(_fake_runtime_settings(hw_accel=HardwareAccel.OFF))
+        with (
+            patch(_WHICH_TARGET, return_value="/usr/bin/ffprobe"),
+            patch(_SUBPROCESS_TARGET, side_effect=_ffmpeg_writes_sprite(sprite_path)) as mock_run,
+        ):
+            result = service.generate("/fake/movie.mkv", output_dir)
+
+        assert result is not None
+        (cmd,) = _ffmpeg_cmds(mock_run)
+        assert "-hwaccel" not in cmd
+
+    def test_falls_back_to_software_when_hwaccel_decode_fails(self, tmp_path: Path) -> None:
+        # NVDEC can't decode this source: the hwaccel pass exits non-zero,
+        # but the software retry renders the sprite — it must not be lost.
+        output_dir = tmp_path / "thumbs"
+        sprite_path = output_dir / SPRITE_FILENAME
+
+        def run(cmd, *_, **__):  # type: ignore[no-untyped-def]
+            if cmd[0] == "ffprobe":
+                return subprocess.CompletedProcess(cmd, 0, stdout="120.0\n", stderr="")
+            if "-hwaccel" in cmd:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="no NVDEC")
+            sprite_path.parent.mkdir(parents=True, exist_ok=True)
+            sprite_path.write_bytes(b"\xff\xd8\xff\xe0")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        service = ThumbnailGenerationService(_fake_runtime_settings())
+        with (
+            patch(_WHICH_TARGET, return_value="/usr/bin/ffprobe"),
+            patch(_SUBPROCESS_TARGET, side_effect=run) as mock_run,
+        ):
+            result = service.generate("/fake/movie.mkv", output_dir)
+
+        assert result is not None
+        assert sprite_path.is_file()
+        hwaccel_flags = [("-hwaccel" in cmd) for cmd in _ffmpeg_cmds(mock_run)]
+        assert hwaccel_flags == [True, False]  # hwaccel attempt, then software retry
+
+    def test_does_not_retry_software_on_hwaccel_timeout(self, tmp_path: Path) -> None:
+        # A timeout is not a codec problem; software would be no faster, so
+        # the run gives up after the single hwaccel attempt.
+        output_dir = tmp_path / "thumbs"
+
+        def run(cmd, *_, **__):  # type: ignore[no-untyped-def]
+            if cmd[0] == "ffprobe":
+                return subprocess.CompletedProcess(cmd, 0, stdout="120.0\n", stderr="")
+            raise subprocess.TimeoutExpired(cmd, timeout=1)
+
+        service = ThumbnailGenerationService(_fake_runtime_settings())
+        with (
+            patch(_WHICH_TARGET, return_value="/usr/bin/ffprobe"),
+            patch(_SUBPROCESS_TARGET, side_effect=run) as mock_run,
+        ):
+            result = service.generate("/fake/movie.mkv", output_dir)
+
+        assert result is None
+        assert len(_ffmpeg_cmds(mock_run)) == 1

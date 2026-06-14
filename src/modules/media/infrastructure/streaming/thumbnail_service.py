@@ -25,6 +25,7 @@ from src.modules.media.application.streaming.thumbnail_vtt import (
     compute_layout,
 )
 from src.modules.media.infrastructure.streaming._subprocess import (
+    HW_ACCEL_OFF,
     SUBPROCESS_TEXT_KWARGS,
     with_ffmpeg_threads,
 )
@@ -130,9 +131,11 @@ class ThumbnailGenerationService:
         sprite_path = output_dir / SPRITE_FILENAME
         vtt_path = output_dir / VTT_FILENAME
 
-        ffmpeg_threads = self._runtime_settings.streaming_snapshot_sync().ffmpeg_threads
+        snapshot = self._runtime_settings.streaming_snapshot_sync()
+        ffmpeg_threads = snapshot.ffmpeg_threads
+        use_hwaccel = snapshot.hw_accel != HW_ACCEL_OFF
         if not self._render_sprite(
-            file_path, sprite_path, layout, interval_seconds, ffmpeg_threads
+            file_path, sprite_path, layout, interval_seconds, ffmpeg_threads, use_hwaccel
         ):
             return None
 
@@ -161,19 +164,66 @@ class ThumbnailGenerationService:
         layout: SpriteLayout,
         interval_seconds: int,
         max_threads: int | None,
+        use_hwaccel: bool,
     ) -> bool:
-        """Run ffmpeg to render the sprite JPEG. Returns ``False`` on any failure."""
+        """Run ffmpeg to render the sprite JPEG. Returns ``False`` on any failure.
+
+        A sprite decodes the *entire* film (one frame every
+        ``interval_seconds``), so on a 4K HEVC source the decode pass
+        dominates CPU. When ``use_hwaccel`` is set we offload that decode
+        to NVDEC (``-hwaccel cuda``); the CPU-side ``scale``/``pad``/
+        ``tile`` filters still run on downloaded frames, but the heavy
+        part moves to the GPU. Sprites are a nice-to-have, so a hardware
+        decode that fails fast (e.g. a codec NVDEC can't handle) falls
+        back to a software pass rather than dropping the sprite. A
+        *timeout* is not retried — software would be no faster.
+        """
         filter_expr = (
             f"fps=1/{interval_seconds},"
             f"scale={layout.tile_width}:{layout.tile_height}:force_original_aspect_ratio=decrease,"
             f"pad={layout.tile_width}:{layout.tile_height}:(ow-iw)/2:(oh-ih)/2,"
             f"tile={layout.columns}x{layout.rows}"
         )
+        if use_hwaccel:
+            outcome = ThumbnailGenerationService._run_sprite_ffmpeg(
+                file_path, sprite_path, filter_expr, max_threads, hwaccel=True
+            )
+            if outcome is True:
+                return True
+            if outcome is None:
+                # Timed out — a software pass would be no faster. Give up.
+                return False
+            _logger.info("Thumbnail hwaccel decode failed for %s — retrying on CPU", file_path)
+        return (
+            ThumbnailGenerationService._run_sprite_ffmpeg(
+                file_path, sprite_path, filter_expr, max_threads, hwaccel=False
+            )
+            is True
+        )
+
+    @staticmethod
+    def _run_sprite_ffmpeg(
+        file_path: str,
+        sprite_path: Path,
+        filter_expr: str,
+        max_threads: int | None,
+        *,
+        hwaccel: bool,
+    ) -> bool | None:
+        """Run one sprite ffmpeg pass.
+
+        Returns ``True`` on a clean render, ``False`` on a fast failure
+        (non-zero exit / missing output — safe to retry in software),
+        and ``None`` on a timeout (do *not* retry; software is no
+        faster on a stuck decode).
+        """
+        hwaccel_args = ["-hwaccel", "cuda"] if hwaccel else []
         try:
             result = subprocess.run(
                 with_ffmpeg_threads(
                     [
                         "ffmpeg",
+                        *hwaccel_args,
                         "-i",
                         file_path,
                         "-vf",
@@ -197,16 +247,17 @@ class ThumbnailGenerationService:
             )
         except subprocess.TimeoutExpired:
             _logger.warning("Thumbnail generation timed out for %s", file_path)
-            return False
+            return None
         except FileNotFoundError:
             _logger.warning("ffmpeg not available; skipping thumbnails for %s", file_path)
             return False
 
         if result.returncode != 0 or not sprite_path.is_file():
             _logger.warning(
-                "Thumbnail ffmpeg failed for %s (code %s): %s",
+                "Thumbnail ffmpeg failed for %s (code %s, hwaccel=%s): %s",
                 file_path,
                 result.returncode,
+                hwaccel,
                 result.stderr.strip() if result.stderr else "",
             )
             return False

@@ -341,6 +341,9 @@ class MediaProbeService(MediaProbePort):
             title = tags.get("title", tags.get("TITLE"))
             is_default = bool(disposition.get("default", 0))
             bitrate = None
+            raw_rate = stream.get("sample_rate")
+            sample_rate = int(raw_rate) if raw_rate and str(raw_rate).isdigit() else None
+            profile = stream.get("profile")
 
             # Try to get bitrate from multiple sources
             for key in ("bit_rate", "BPS", "BPS-eng"):
@@ -358,21 +361,15 @@ class MediaProbeService(MediaProbePort):
                     title=title,
                     is_default=is_default,
                     bitrate=bitrate,
+                    sample_rate=sample_rate,
+                    profile=profile,
                 )
             )
             audio_index += 1
 
         # Ensure at least one track is default
         if tracks and not any(t.is_default for t in tracks):
-            tracks[0] = AudioTrack(
-                index=tracks[0].index,
-                language=tracks[0].language,
-                codec=tracks[0].codec,
-                channels=tracks[0].channels,
-                title=tracks[0].title,
-                is_default=True,
-                bitrate=tracks[0].bitrate,
-            )
+            tracks[0] = tracks[0].with_updates(is_default=True)
 
         return tracks
 

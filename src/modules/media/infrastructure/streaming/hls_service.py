@@ -50,6 +50,8 @@ from src.modules.media.application.ports.hls_playlist_port import (
 )
 from src.modules.media.application.ports.media_probe_port import ProbeResult
 from src.modules.media.infrastructure.streaming._subprocess import (
+    HW_ACCEL_NVENC,
+    HW_ACCEL_OFF,
     SUBPROCESS_TEXT_KWARGS,
     with_ffmpeg_threads,
 )
@@ -57,7 +59,7 @@ from src.modules.media.infrastructure.streaming.media_probe_service import Media
 
 if TYPE_CHECKING:
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
-    from src.shared_kernel.value_objects.tracks import SubtitleTrack
+    from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 _logger = logging.getLogger(__name__)
 
@@ -88,12 +90,55 @@ _EVICTION_INTERVAL = 10.0
 
 _VIDEO_DIR = "video"
 
+# Wall-clock cap for the one-time NVENC functional probe. Deliberately
+# generous: the probe is the process's first CUDA call, so it absorbs the
+# cold driver / context init, which was measured at ~20s on a cold but
+# perfectly working GPU. Cutting this to a few seconds would time out
+# that cold init and make AUTO mode fall back to software on a host that
+# actually has a usable encoder — the exact false negative this feature
+# exists to avoid. The cost (a longer first play once per process on a
+# hung driver) fits inside the 120s first-segment budget.
+_NVENC_PROBE_TIMEOUT = 30
+
 # -- Module helpers -----------------------------------------------------------
 
 
 def _primary_audio_index(probe: ProbeResult) -> int:
     """Get the index of the primary audio track (first one, always index 0)."""
     return probe.audio_tracks[0].index if probe.audio_tracks else 0
+
+
+def _audio_args_for(track: AudioTrack | None, start: int) -> list[str]:
+    """Pick the ffmpeg audio args for one HLS track: copy or re-encode.
+
+    Re-encoding every audio track to AAC stereo 48 kHz is wasted work
+    when the source already *is* browser-playable AAC. We remux with
+    ``-c:a copy`` only when the track is unambiguously safe to drop into
+    MPEG-TS untouched:
+
+    - **AAC-LC** — the one AAC profile MSE/hls.js decode everywhere;
+      HE-AAC (SBR/PS) is excluded because browser support is spotty.
+    - **stereo** — multichannel must be downmixed to 2.0 for the player.
+    - **48 kHz** — matches the rate the re-encode path normalises to, so
+      a copied stream is byte-for-byte what a transcode would have
+      targeted.
+    - **start == 0** — a non-zero resume offset re-encodes the video with
+      ``-accurate_seek``; copying the audio there would land it at the
+      nearest packet instead of the exact second and drift out of sync.
+
+    Anything else (unknown profile/rate, non-AAC, surround, mid-stream
+    seek) falls back to the safe AAC re-encode.
+    """
+    if (
+        track is not None
+        and start == 0
+        and track.codec == "aac"
+        and track.is_stereo
+        and track.sample_rate == 48000
+        and (track.profile or "").strip().upper() == "LC"
+    ):
+        return ["-c:a", "copy"]
+    return ["-c:a", "aac", "-ac", "2", "-ar", "48000"]
 
 
 class HlsService(HlsPlaylistPort):
@@ -138,6 +183,9 @@ class HlsService(HlsPlaylistPort):
         self._subtitle_events: dict[str, dict[int, threading.Event]] = {}
         self._lock = threading.Lock()
         self._idle_timeout = idle_timeout
+        # Memoised result of the one-time NVENC functional probe (None
+        # until first transcode in AUTO mode forces the check).
+        self._nvenc_probe: bool | None = None
         if enable_eviction:
             self._start_eviction_thread()
 
@@ -631,7 +679,7 @@ class HlsService(HlsPlaylistPort):
                 audio_dir = output_dir / f"audio_{track.index}"
                 audio_dir.mkdir()
                 cmd = with_ffmpeg_threads(
-                    self._build_audio_cmd(safe_path, audio_dir, track.index, bucket_start),
+                    self._build_audio_cmd(safe_path, audio_dir, track, bucket_start),
                     ffmpeg_threads,
                 )
                 _logger.info(
@@ -761,6 +809,71 @@ class HlsService(HlsPlaylistPort):
         except Exception:
             return None
 
+    @staticmethod
+    def _detect_nvenc() -> bool:
+        """Functionally probe whether ``h264_nvenc`` can actually encode.
+
+        The encoder being *listed* by ffmpeg is not enough — a host can
+        ship an ffmpeg with NVENC compiled in while lacking the GPU,
+        driver, or a free encode session. We run a sub-second throwaway
+        encode of a synthetic source through CUDA so AUTO mode only
+        commits to NVENC when the full decode→encode path works.
+
+        Returns ``True`` only on a clean (exit 0) probe encode.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=black:s=256x256:r=10",
+                    "-t",
+                    "0.2",
+                    "-c:v",
+                    "h264_nvenc",
+                    "-f",
+                    "null",
+                    "-",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=_NVENC_PROBE_TIMEOUT,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return result.returncode == 0
+
+    def _nvenc_available(self) -> bool:
+        """Return the memoised NVENC functional-probe result.
+
+        Probed at most once per service instance — the first transcode
+        in AUTO mode pays the ~1s cold-start CUDA init, every later call
+        reads the cached boolean.
+        """
+        if self._nvenc_probe is None:
+            self._nvenc_probe = self._detect_nvenc()
+            _logger.info("NVENC functional probe result: %s", self._nvenc_probe)
+        return self._nvenc_probe
+
+    def _use_nvenc(self) -> bool:
+        """Decide whether this transcode should use NVENC.
+
+        Honours the persisted ``hw_accel`` knob: ``off`` forces
+        software, ``nvenc`` forces hardware (a broken encoder then
+        surfaces as a transcode failure rather than silently falling
+        back), and ``auto`` defers to the cached functional probe.
+        """
+        mode = self._runtime_settings.streaming_snapshot_sync().hw_accel
+        if mode == HW_ACCEL_OFF:
+            return False
+        if mode == HW_ACCEL_NVENC:
+            return True
+        return self._nvenc_available()
+
     def _build_video_cmd(
         self,
         file_path: str,
@@ -795,13 +908,64 @@ class HlsService(HlsPlaylistPort):
         copied video would land at the preceding keyframe while the
         re-encoded audio lands at the exact ``start``, recreating the
         same 1-3s gap the seek flag was meant to close.
+
+        When a transcode is required and ``hw_accel`` resolves to NVENC,
+        the whole pipeline runs on the GPU: ``-hwaccel cuda`` decodes
+        with NVDEC, ``scale_cuda=format=nv12`` does the 10-bit→8-bit
+        conversion in VRAM, and ``h264_nvenc`` encodes — keeping the CPU
+        almost idle and staying well above real-time on 4K HEVC. The
+        software ``libx264`` path is the fallback.
         """
         codec = self._probe_video_codec(file_path)
         needs_transcode = codec not in _BROWSER_SAFE_CODECS or start > 0
 
-        if needs_transcode:
-            _logger.info("Source codec %s — transcoding to H.264 (start=%d)", codec, start)
-            video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
+        hwaccel_input_args: list[str] = []
+        vf_args: list[str] = []
+
+        if needs_transcode and self._use_nvenc():
+            _logger.info("Source codec %s — transcoding via NVENC (start=%d)", codec, start)
+            # Full-GPU pipeline: NVDEC decode → scale_cuda (10→8 bit in
+            # VRAM) → NVENC encode. ``spatial_aq`` redistributes bits to
+            # flat regions, which is what keeps sky/fog gradients from
+            # banding. ``-cq 19`` is constant-quality VBR (``-b:v 0``).
+            hwaccel_input_args = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+            vf_args = ["-vf", "scale_cuda=format=nv12"]
+            video_args = [
+                "-c:v",
+                "h264_nvenc",
+                "-preset",
+                "p5",
+                "-tune",
+                "hq",
+                "-rc",
+                "vbr",
+                "-cq",
+                "19",
+                "-b:v",
+                "0",
+                "-spatial_aq",
+                "1",
+            ]
+        elif needs_transcode:
+            _logger.info("Source codec %s — transcoding via libx264 (start=%d)", codec, start)
+            # ``superfast`` (not ``ultrafast``) is the floor here: ultrafast
+            # disables CABAC and adaptive quantization, which is exactly what
+            # collapses smooth gradients (sky, fog) into visible macroblocks
+            # on HEVC/10-bit sources re-encoded to H.264. superfast turns both
+            # back on for a moderate CPU cost while staying real-time on 4K.
+            # ``-pix_fmt yuv420p`` forces a clean 8-bit output so 10-bit
+            # sources (yuv420p10le) downconvert through swscale's dithering
+            # instead of producing an unplayable High 10 stream.
+            video_args = [
+                "-c:v",
+                "libx264",
+                "-preset",
+                "superfast",
+                "-crf",
+                "20",
+                "-pix_fmt",
+                "yuv420p",
+            ]
         else:
             _logger.info("Source codec %s — copying", codec)
             # H.264 inside MP4/MKV is AVCC (length-prefixed NALs) with
@@ -816,12 +980,15 @@ class HlsService(HlsPlaylistPort):
 
         primary_idx = _primary_audio_index(probe)
         audio_map = f"0:a:{primary_idx}"
+        primary_track = probe.audio_tracks[0] if probe.audio_tracks else None
+        audio_args = _audio_args_for(primary_track, start)
 
         seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
         ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
 
         return [
             "ffmpeg",
+            *hwaccel_input_args,
             *seek_args,
             "-i",
             file_path,
@@ -830,13 +997,9 @@ class HlsService(HlsPlaylistPort):
             "-map",
             audio_map,
             "-sn",
+            *vf_args,
             *video_args,
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-ar",
-            "48000",
+            *audio_args,
             *ts_normalize_args,
             "-hls_time",
             str(_SEGMENT_DURATION),
@@ -861,7 +1024,7 @@ class HlsService(HlsPlaylistPort):
     def _build_audio_cmd(
         file_path: str,
         output_dir: Path,
-        audio_index: int,
+        track: AudioTrack,
         start: int = 0,
     ) -> list[str]:
         """Build FFmpeg command for audio-only HLS track.
@@ -873,6 +1036,10 @@ class HlsService(HlsPlaylistPort):
         ``-accurate_seek`` / ``-avoid_negative_ts make_zero`` so a
         switch from primary to alternate audio at a non-zero bucket
         lands on the same source-time second.
+
+        Like the primary audio in ``_build_video_cmd``, a browser-ready
+        AAC-LC stereo 48 kHz source is remuxed with ``-c:a copy`` instead
+        of re-encoded; see :func:`_audio_args_for`.
         """
         seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
         ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
@@ -882,15 +1049,10 @@ class HlsService(HlsPlaylistPort):
             "-i",
             file_path,
             "-map",
-            f"0:a:{audio_index}",
+            f"0:a:{track.index}",
             "-vn",
             "-sn",
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-ar",
-            "48000",
+            *_audio_args_for(track, start),
             *ts_normalize_args,
             "-hls_time",
             str(_SEGMENT_DURATION),
@@ -1094,6 +1256,8 @@ class HlsService(HlsPlaylistPort):
                     "title": t.title,
                     "is_default": t.is_default,
                     "bitrate": t.bitrate,
+                    "sample_rate": t.sample_rate,
+                    "profile": t.profile,
                 }
                 for t in probe.audio_tracks
             ],
@@ -1131,6 +1295,8 @@ class HlsService(HlsPlaylistPort):
                 title=t.get("title"),
                 is_default=t["is_default"],
                 bitrate=t.get("bitrate"),
+                sample_rate=t.get("sample_rate"),
+                profile=t.get("profile"),
             )
             for t in data.get("audio_tracks", [])
         ]

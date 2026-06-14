@@ -18,7 +18,10 @@ from src.modules.settings.domain.value_objects.setting_vo_registry import (
     SETTING_VO_TYPES,
     vo_type_for,
 )
-from src.modules.settings.domain.value_objects.streaming_config import StreamingConfig
+from src.modules.settings.domain.value_objects.streaming_config import (
+    HardwareAccel,
+    StreamingConfig,
+)
 from src.modules.settings.domain.value_objects.thumbnail_backfill_config import (
     ThumbnailBackfillConfig,
 )
@@ -37,6 +40,7 @@ __all__ = [
     "AvatarConfig",
     "ConfigVO",
     "SETTING_VO_TYPES",
+    "HardwareAccel",
     "IntroDetectionConfig",
     "ScanDedupConfig",
     "SchedulerConfig",

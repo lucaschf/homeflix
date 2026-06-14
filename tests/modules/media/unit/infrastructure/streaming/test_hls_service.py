@@ -18,7 +18,7 @@ from src.modules.media.infrastructure.streaming.hls_service import (
     _shift_webvtt_to_bucket_local,
 )
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
-from src.modules.settings.domain.value_objects import StreamingConfig
+from src.modules.settings.domain.value_objects import HardwareAccel, StreamingConfig
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
@@ -27,12 +27,18 @@ def _fake_runtime_settings(
     *,
     ffmpeg_threads: int | None = None,
     hls_cache_max_size_mb: int = 5120,
+    hw_accel: HardwareAccel = HardwareAccel.OFF,
 ) -> MagicMock:
-    """Build a fake :class:`RuntimeSettings` exposing the sync streaming snapshot."""
+    """Build a fake :class:`RuntimeSettings` exposing the sync streaming snapshot.
+
+    ``hw_accel`` defaults to ``OFF`` so command-building tests stay on
+    the deterministic software path and never spawn the NVENC probe.
+    """
     runtime = MagicMock()
     runtime.streaming_snapshot_sync.return_value = StreamingConfig(
         ffmpeg_threads=ffmpeg_threads,
         hls_cache_max_size_mb=hls_cache_max_size_mb,
+        hw_accel=hw_accel,
     )
     return runtime
 
@@ -44,6 +50,8 @@ def _make_audio_track(
     channels: int = 2,
     is_default: bool = True,
     title: str | None = None,
+    sample_rate: int | None = None,
+    profile: str | None = None,
 ) -> AudioTrack:
     return AudioTrack(
         index=index,
@@ -52,6 +60,20 @@ def _make_audio_track(
         channels=channels,
         is_default=is_default,
         title=title,
+        sample_rate=sample_rate,
+        profile=profile,
+    )
+
+
+def _aac_lc_stereo_48k(index: int = 0, **kwargs: object) -> AudioTrack:
+    """An AAC-LC stereo 48 kHz track — the one shape eligible for ``-c:a copy``."""
+    return _make_audio_track(
+        index=index,
+        codec="aac",
+        channels=2,
+        sample_rate=48000,
+        profile="LC",
+        **kwargs,  # type: ignore[arg-type]
     )
 
 
@@ -315,30 +337,30 @@ class TestHlsServiceBuildAudioCmd:
     """Tests for _build_audio_cmd."""
 
     def test_should_include_input_file(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=1)
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=1))
 
         assert "-i" in cmd
         assert "/movies/test.mkv" in cmd
 
     def test_should_map_to_correct_audio_stream(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=2)
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=2))
 
         assert "0:a:2" in cmd
 
     def test_should_disable_video_and_subtitle(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0)
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
 
         assert "-vn" in cmd
         assert "-sn" in cmd
 
     def test_should_use_aac_codec(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0)
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
 
         assert "aac" in cmd
 
     def test_should_omit_seek_flag_when_start_is_zero(self, tmp_path: Path) -> None:
         # Default cold-cache transcode starts at t=0 — no ``-ss``.
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0)
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
 
         assert "-ss" not in cmd
 
@@ -346,7 +368,9 @@ class TestHlsServiceBuildAudioCmd:
         # ``-ss N`` must come BEFORE ``-i`` so ffmpeg does an input
         # seek (fast, keyframe-accurate) rather than decoding from 0
         # and dropping output.
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0, start=1800)
+        cmd = HlsService._build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _make_audio_track(index=0), start=1800
+        )
 
         assert "-ss" in cmd
         ss_index = cmd.index("-ss")
@@ -358,7 +382,9 @@ class TestHlsServiceBuildAudioCmd:
         # Without ``-accurate_seek`` ffmpeg drops to the preceding
         # keyframe but audio starts at exactly ``start`` — the two
         # streams open out of sync by ``start - keyframe_pos``.
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0, start=1800)
+        cmd = HlsService._build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _make_audio_track(index=0), start=1800
+        )
 
         assert "-accurate_seek" in cmd
         accurate_index = cmd.index("-accurate_seek")
@@ -369,7 +395,9 @@ class TestHlsServiceBuildAudioCmd:
         # ``-avoid_negative_ts make_zero`` clamps the per-stream PTS
         # minimum to zero so any residual offset surfaces as a tiny
         # leading silence instead of an audio-leads-video drift.
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0, start=1800)
+        cmd = HlsService._build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _make_audio_track(index=0), start=1800
+        )
 
         assert "-avoid_negative_ts" in cmd
         idx = cmd.index("-avoid_negative_ts")
@@ -379,10 +407,44 @@ class TestHlsServiceBuildAudioCmd:
         # Sync hardening only kicks in for non-zero ``start`` since the
         # legacy cold-cache transcode never hits the keyframe-vs-audio
         # gap (it begins at t=0 of the source).
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, audio_index=0)
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
 
         assert "-accurate_seek" not in cmd
         assert "-avoid_negative_ts" not in cmd
+
+    def test_should_copy_aac_lc_stereo_48k_at_start_zero(self, tmp_path: Path) -> None:
+        # Already browser-ready audio is remuxed, not re-encoded.
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _aac_lc_stereo_48k(index=1))
+
+        assert cmd[cmd.index("-c:a") + 1] == "copy"
+        assert "-ar" not in cmd  # no encode params on the copy path
+
+    def test_should_reencode_when_seeking_even_if_aac_lc(self, tmp_path: Path) -> None:
+        # A non-zero start re-encodes audio so it lands at the exact
+        # second instead of the nearest packet (A/V sync).
+        cmd = HlsService._build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _aac_lc_stereo_48k(index=0), start=1800
+        )
+
+        assert "copy" not in cmd
+        assert cmd[cmd.index("-c:a") + 1] == "aac"
+
+    @pytest.mark.parametrize(
+        "track",
+        [
+            _make_audio_track(codec="ac3", channels=2, sample_rate=48000, profile="LC"),
+            _make_audio_track(codec="aac", channels=6, sample_rate=48000, profile="LC"),
+            _make_audio_track(codec="aac", channels=2, sample_rate=44100, profile="LC"),
+            _make_audio_track(codec="aac", channels=2, sample_rate=48000, profile="HE-AAC"),
+            _make_audio_track(codec="aac", channels=2, sample_rate=48000, profile=None),
+        ],
+        ids=["not-aac", "surround", "wrong-rate", "he-aac", "unknown-profile"],
+    )
+    def test_should_reencode_when_not_safe_to_copy(self, tmp_path: Path, track: AudioTrack) -> None:
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, track)
+
+        assert "copy" not in cmd
+        assert cmd[cmd.index("-c:a") + 1] == "aac"
 
 
 @pytest.mark.unit
@@ -444,6 +506,128 @@ class TestHlsServiceBuildVideoCmd:
             cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "libx264" in cmd
+
+    def test_should_copy_primary_audio_when_aac_lc_stereo_48k(self, tmp_path: Path) -> None:
+        # Video transcodes (hevc) but the AAC-LC stereo 48k primary
+        # audio is remuxed rather than re-encoded.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
+        probe = ProbeResult(audio_tracks=[_aac_lc_stereo_48k()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="hevc"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert cmd[cmd.index("-c:a") + 1] == "copy"
+        assert "libx264" in cmd  # video still re-encoded
+
+    def test_should_use_nvenc_when_available(self, tmp_path: Path) -> None:
+        # AUTO + a passing functional probe → full-GPU NVENC pipeline.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hw_accel=HardwareAccel.AUTO),
+            cache_dir=str(tmp_path / "cache"),
+        )
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with (
+            patch.object(HlsService, "_probe_video_codec", return_value="hevc"),
+            patch.object(HlsService, "_detect_nvenc", return_value=True),
+        ):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert "h264_nvenc" in cmd
+        assert "libx264" not in cmd
+        # Full-GPU: CUDA decode + in-VRAM 10→8 bit conversion.
+        assert cmd[cmd.index("-hwaccel") + 1] == "cuda"
+        assert "-hwaccel_output_format" in cmd
+        assert cmd[cmd.index("-vf") + 1] == "scale_cuda=format=nv12"
+        # hwaccel flags must precede the input.
+        assert cmd.index("-hwaccel") < cmd.index("-i")
+
+    def test_should_fallback_to_software_when_nvenc_probe_fails(self, tmp_path: Path) -> None:
+        # AUTO + a failing probe → libx264, no CUDA flags leak in.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hw_accel=HardwareAccel.AUTO),
+            cache_dir=str(tmp_path / "cache"),
+        )
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with (
+            patch.object(HlsService, "_probe_video_codec", return_value="hevc"),
+            patch.object(HlsService, "_detect_nvenc", return_value=False),
+        ):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert "libx264" in cmd
+        assert "h264_nvenc" not in cmd
+        assert "-hwaccel" not in cmd
+
+    def test_should_force_software_when_hw_accel_off(self, tmp_path: Path) -> None:
+        # OFF must win even if NVENC would probe successfully.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hw_accel=HardwareAccel.OFF),
+            cache_dir=str(tmp_path / "cache"),
+        )
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with (
+            patch.object(HlsService, "_probe_video_codec", return_value="hevc"),
+            patch.object(HlsService, "_detect_nvenc", return_value=True) as detect,
+        ):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert "libx264" in cmd
+        assert "h264_nvenc" not in cmd
+        detect.assert_not_called()
+
+    def test_should_force_nvenc_without_probing_when_mode_nvenc(self, tmp_path: Path) -> None:
+        # Explicit NVENC mode skips the probe entirely.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hw_accel=HardwareAccel.NVENC),
+            cache_dir=str(tmp_path / "cache"),
+        )
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with (
+            patch.object(HlsService, "_probe_video_codec", return_value="hevc"),
+            patch.object(HlsService, "_detect_nvenc", return_value=False) as detect,
+        ):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert "h264_nvenc" in cmd
+        detect.assert_not_called()
+
+    def test_should_not_use_nvenc_on_h264_copy_path(self, tmp_path: Path) -> None:
+        # An already-H.264 source remuxes (copy); NVENC never enters even
+        # when available, because there is no encode to accelerate.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hw_accel=HardwareAccel.NVENC),
+            cache_dir=str(tmp_path / "cache"),
+        )
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with (
+            patch.object(HlsService, "_probe_video_codec", return_value="h264"),
+            patch.object(HlsService, "_detect_nvenc", return_value=True),
+        ):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert "copy" in cmd
+        assert "h264_nvenc" not in cmd
+        assert "-hwaccel" not in cmd
+
+    def test_should_memoise_nvenc_probe(self, tmp_path: Path) -> None:
+        # The functional probe runs at most once per service instance.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hw_accel=HardwareAccel.AUTO),
+            cache_dir=str(tmp_path / "cache"),
+        )
+
+        with patch.object(HlsService, "_detect_nvenc", return_value=True) as detect:
+            assert service._nvenc_available() is True
+            assert service._nvenc_available() is True
+
+        detect.assert_called_once()
 
     def test_should_map_primary_audio_track(self, tmp_path: Path) -> None:
         service = HlsService(
