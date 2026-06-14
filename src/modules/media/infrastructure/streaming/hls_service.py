@@ -57,7 +57,7 @@ from src.modules.media.infrastructure.streaming.media_probe_service import Media
 
 if TYPE_CHECKING:
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
-    from src.shared_kernel.value_objects.tracks import SubtitleTrack
+    from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 _logger = logging.getLogger(__name__)
 
@@ -100,6 +100,39 @@ _HW_ACCEL_NVENC = "nvenc"
 def _primary_audio_index(probe: ProbeResult) -> int:
     """Get the index of the primary audio track (first one, always index 0)."""
     return probe.audio_tracks[0].index if probe.audio_tracks else 0
+
+
+def _audio_args_for(track: AudioTrack | None, start: int) -> list[str]:
+    """Pick the ffmpeg audio args for one HLS track: copy or re-encode.
+
+    Re-encoding every audio track to AAC stereo 48 kHz is wasted work
+    when the source already *is* browser-playable AAC. We remux with
+    ``-c:a copy`` only when the track is unambiguously safe to drop into
+    MPEG-TS untouched:
+
+    - **AAC-LC** — the one AAC profile MSE/hls.js decode everywhere;
+      HE-AAC (SBR/PS) is excluded because browser support is spotty.
+    - **stereo** — multichannel must be downmixed to 2.0 for the player.
+    - **48 kHz** — matches the rate the re-encode path normalises to, so
+      a copied stream is byte-for-byte what a transcode would have
+      targeted.
+    - **start == 0** — a non-zero resume offset re-encodes the video with
+      ``-accurate_seek``; copying the audio there would land it at the
+      nearest packet instead of the exact second and drift out of sync.
+
+    Anything else (unknown profile/rate, non-AAC, surround, mid-stream
+    seek) falls back to the safe AAC re-encode.
+    """
+    if (
+        track is not None
+        and start == 0
+        and track.codec == "aac"
+        and track.is_stereo
+        and track.sample_rate == 48000
+        and (track.profile or "").strip().upper() == "LC"
+    ):
+        return ["-c:a", "copy"]
+    return ["-c:a", "aac", "-ac", "2", "-ar", "48000"]
 
 
 class HlsService(HlsPlaylistPort):
@@ -640,7 +673,7 @@ class HlsService(HlsPlaylistPort):
                 audio_dir = output_dir / f"audio_{track.index}"
                 audio_dir.mkdir()
                 cmd = with_ffmpeg_threads(
-                    self._build_audio_cmd(safe_path, audio_dir, track.index, bucket_start),
+                    self._build_audio_cmd(safe_path, audio_dir, track, bucket_start),
                     ffmpeg_threads,
                 )
                 _logger.info(
@@ -941,6 +974,8 @@ class HlsService(HlsPlaylistPort):
 
         primary_idx = _primary_audio_index(probe)
         audio_map = f"0:a:{primary_idx}"
+        primary_track = probe.audio_tracks[0] if probe.audio_tracks else None
+        audio_args = _audio_args_for(primary_track, start)
 
         seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
         ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
@@ -958,12 +993,7 @@ class HlsService(HlsPlaylistPort):
             "-sn",
             *vf_args,
             *video_args,
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-ar",
-            "48000",
+            *audio_args,
             *ts_normalize_args,
             "-hls_time",
             str(_SEGMENT_DURATION),
@@ -988,7 +1018,7 @@ class HlsService(HlsPlaylistPort):
     def _build_audio_cmd(
         file_path: str,
         output_dir: Path,
-        audio_index: int,
+        track: AudioTrack,
         start: int = 0,
     ) -> list[str]:
         """Build FFmpeg command for audio-only HLS track.
@@ -1000,6 +1030,10 @@ class HlsService(HlsPlaylistPort):
         ``-accurate_seek`` / ``-avoid_negative_ts make_zero`` so a
         switch from primary to alternate audio at a non-zero bucket
         lands on the same source-time second.
+
+        Like the primary audio in ``_build_video_cmd``, a browser-ready
+        AAC-LC stereo 48 kHz source is remuxed with ``-c:a copy`` instead
+        of re-encoded; see :func:`_audio_args_for`.
         """
         seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
         ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
@@ -1009,15 +1043,10 @@ class HlsService(HlsPlaylistPort):
             "-i",
             file_path,
             "-map",
-            f"0:a:{audio_index}",
+            f"0:a:{track.index}",
             "-vn",
             "-sn",
-            "-c:a",
-            "aac",
-            "-ac",
-            "2",
-            "-ar",
-            "48000",
+            *_audio_args_for(track, start),
             *ts_normalize_args,
             "-hls_time",
             str(_SEGMENT_DURATION),
@@ -1221,6 +1250,8 @@ class HlsService(HlsPlaylistPort):
                     "title": t.title,
                     "is_default": t.is_default,
                     "bitrate": t.bitrate,
+                    "sample_rate": t.sample_rate,
+                    "profile": t.profile,
                 }
                 for t in probe.audio_tracks
             ],
@@ -1258,6 +1289,8 @@ class HlsService(HlsPlaylistPort):
                 title=t.get("title"),
                 is_default=t["is_default"],
                 bitrate=t.get("bitrate"),
+                sample_rate=t.get("sample_rate"),
+                profile=t.get("profile"),
             )
             for t in data.get("audio_tracks", [])
         ]

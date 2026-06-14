@@ -31,6 +31,10 @@ class AudioTrack(CompoundValueObject):
         title: Descriptive title from file metadata.
         is_default: Whether marked as default in the container.
         bitrate: Bitrate in kbps, if available.
+        sample_rate: Sample rate in Hz (e.g. 48000), if available.
+        profile: Codec profile from the container (e.g. "LC",
+            "HE-AAC"), if available. ``None`` when the prober did not
+            report one.
 
     Example:
         >>> track = AudioTrack(
@@ -52,6 +56,8 @@ class AudioTrack(CompoundValueObject):
     title: str | None = None
     is_default: bool = False
     bitrate: int | None = Field(default=None, ge=0)
+    sample_rate: int | None = Field(default=None, ge=1)
+    profile: str | None = None
 
     @property
     def is_stereo(self) -> bool:

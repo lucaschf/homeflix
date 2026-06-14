@@ -30,6 +30,8 @@ def _ffprobe_stream(
     forced: bool = False,
     title: str | None = None,
     bit_rate: str | None = None,
+    sample_rate: str | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     stream: dict[str, Any] = {
         "codec_type": codec_type,
@@ -44,6 +46,10 @@ def _ffprobe_stream(
         stream["tags"]["title"] = title
     if bit_rate is not None:
         stream["bit_rate"] = bit_rate
+    if sample_rate is not None:
+        stream["sample_rate"] = sample_rate
+    if profile is not None:
+        stream["profile"] = profile
     return stream
 
 
@@ -167,6 +173,23 @@ class TestParseAudioTracks:
         tracks = MediaProbeService._parse_audio_tracks(streams)
 
         assert tracks[0].channels == 16
+
+    def test_should_parse_sample_rate_and_profile(self) -> None:
+        streams = [_ffprobe_stream(codec_name="aac", sample_rate="48000", profile="LC")]
+
+        tracks = MediaProbeService._parse_audio_tracks(streams)
+
+        assert tracks[0].sample_rate == 48000
+        assert tracks[0].profile == "LC"
+
+    def test_should_default_sample_rate_and_profile_to_none(self) -> None:
+        # ffprobe omits these on some containers; absence must not crash.
+        streams = [_ffprobe_stream(codec_name="ac3")]
+
+        tracks = MediaProbeService._parse_audio_tracks(streams)
+
+        assert tracks[0].sample_rate is None
+        assert tracks[0].profile is None
 
     def test_should_return_empty_for_no_audio(self) -> None:
         tracks = MediaProbeService._parse_audio_tracks([])
