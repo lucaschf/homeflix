@@ -1,11 +1,16 @@
-"""Port for detecting per-episode intro segments from audio fingerprints.
+"""Port for detecting per-episode intro segments from episode media.
 
-The intro-detection job feeds the port a season's worth of episode
-fingerprints and receives, when convergence is reached, a marker per
-episode pointing to the shared opening sequence. Implementations
-(``ChromaprintIntroDetector``) live in the infrastructure layer; the
-application uses only the abstraction so the algorithm can evolve
-without touching the orchestrating use case.
+The intro-detection job hands the port a season's worth of episode
+*file references* and receives, when convergence is reached, a marker
+per episode pointing to the shared opening sequence. Each implementation
+owns its full analysis pipeline (audio fingerprinting, video frame
+hashing, …) behind this single abstraction, so the orchestrating job
+never binds to a particular technique.
+
+Implementations live in the infrastructure layer
+(``ChromaprintIntroDetector``, ``FrameHashIntroDetector``); the
+application uses only the abstraction so the algorithm can evolve — or
+be swapped at runtime — without touching the job.
 """
 
 from abc import ABC, abstractmethod
@@ -16,49 +21,52 @@ from src.modules.media.domain.value_objects import EpisodeId
 
 
 @dataclass(frozen=True)
-class EpisodeFingerprint:
-    """One episode's audio fingerprint, ready for cross-correlation.
+class EpisodeMediaRef:
+    """A single episode's identity plus the media file to analyse.
+
+    The port receives file references rather than pre-computed
+    fingerprints so the analysis technique (audio vs. video) stays an
+    implementation detail of the detector, not a leak in the contract.
 
     Attributes:
-        episode_id: External id of the episode the fingerprint was
-            computed for.
-        hashes: Raw 32-bit Chromaprint fingerprint values, in the same
-            order ``fpcalc`` emits them. The first hash corresponds to
-            the start of the audio window analysed.
-        duration_seconds: Length of audio that produced ``hashes``,
-            as reported by fpcalc. Used to translate hash indices back
-            to seconds without baking the Chromaprint hash rate into
-            the port's contract.
+        episode_id: External id of the episode under analysis. Used to
+            key the returned markers back to the episode.
+        file_path: Absolute path to the episode's primary media file.
+            The detector extracts whatever signal it needs (audio
+            window, sampled frames) from this file.
     """
 
     episode_id: EpisodeId
-    hashes: list[int]
-    duration_seconds: float
+    file_path: str
 
 
 @dataclass(frozen=True)
 class IntroDetectorTuning:
-    """Operator-tunable knobs for the cross-correlation algorithm.
+    """Operator-tunable knobs forwarded to the detector per call.
 
-    Passed per ``detect()`` call so the implementation stays stateless
-    with respect to runtime configuration — the orchestrator (the
-    intro-detection job) snapshots ``RuntimeSettings`` and forwards
-    the relevant fields, letting admin-panel edits propagate to the
-    next tick without re-constructing the detector.
+    Passed per ``detect()`` call so implementations stay stateless with
+    respect to runtime configuration — the orchestrator (the
+    intro-detection job) snapshots ``RuntimeSettings`` and forwards the
+    relevant fields, letting admin-panel edits propagate to the next
+    tick without re-constructing the detector.
+
+    The base carries the algorithm-neutral bounds shared by every
+    detector; technique-specific calibration (Hamming ceilings, frame
+    sample rates, …) is added by per-algorithm subclasses so the port
+    signature stays uniform.
 
     Attributes:
-        max_hash_hamming: Per-hash Hamming-distance ceiling (out of
-            32 bits) considered a "match".
-        tolerance_hashes: How many consecutive non-matching hashes a
-            run can absorb before terminating.
         min_intro_seconds: Discard matches shorter than this floor.
         max_intro_seconds: Hard cap on persisted match length.
+        analysis_window_seconds: How much leading media (in seconds) the
+            detector should analyse per episode. Covers the common
+            cold-open + title-sequence span; trimming it speeds up
+            analysis at the cost of missing late-starting intros.
     """
 
-    max_hash_hamming: int = 10
-    tolerance_hashes: int = 2
     min_intro_seconds: float = 5.0
     max_intro_seconds: float = 120.0
+    analysis_window_seconds: int = 600
 
 
 @dataclass(frozen=True)
@@ -66,7 +74,7 @@ class DetectedIntro:
     """Result of running the detector against a single episode.
 
     Attributes:
-        start_seconds: Offset from the start of the audio window where
+        start_seconds: Offset from the start of the analysed window where
             the shared intro begins.
         end_seconds: Offset where the intro ends. Always strictly
             greater than ``start_seconds``.
@@ -80,41 +88,70 @@ class DetectedIntro:
     confidence: float
 
 
+@dataclass(frozen=True)
+class IntroDetectionResult:
+    """Outcome of a season-level detection run.
+
+    Carries both the per-episode markers and how many episodes could
+    actually be analysed, so the orchestrator can distinguish "analysed
+    enough material but found no shared intro" (→ ``COMPLETED``) from
+    "could not analyse enough episodes" (→ ``INSUFFICIENT_EPISODES``,
+    which is retried on a later tick). Without ``analyzed_count`` a
+    transient I/O failure — drive unmounted, file unreadable — would be
+    silently flagged ``COMPLETED`` and never retried.
+
+    Attributes:
+        markers: One :class:`DetectedIntro` per episode where the
+            detector converged. May be a partial map; a missing entry
+            means "no intro detected for this episode".
+        analyzed_count: How many episodes the detector successfully
+            extracted signal from. Episodes whose media could not be
+            read are excluded from this count.
+    """
+
+    markers: Mapping[EpisodeId, DetectedIntro]
+    analyzed_count: int
+
+
 class IntroDetectorPort(ABC):
-    """Cross-correlate fingerprints to find a shared opening sequence."""
+    """Locate a season's shared opening sequence from episode media."""
 
     @abstractmethod
     def detect(
         self,
-        fingerprints: Sequence[EpisodeFingerprint],
+        episodes: Sequence[EpisodeMediaRef],
         tuning: IntroDetectorTuning,
-    ) -> Mapping[EpisodeId, DetectedIntro]:
-        """Return a marker per episode where detection converged.
+    ) -> IntroDetectionResult:
+        """Analyse a season's episodes and return one marker per match.
 
-        Implementations may return a partial map — episodes whose
-        fingerprint did not align with enough peers are omitted rather
-        than being given a low-confidence guess. The orchestrator
-        treats a missing entry as "no intro detected for this episode".
+        Implementations own their full pipeline: extracting signal from
+        each ``file_path``, dropping episodes whose media cannot be
+        read, then cross-correlating the survivors. Episodes that did
+        not align with enough peers are omitted from ``markers`` rather
+        than given a low-confidence guess.
 
         Args:
-            fingerprints: One per episode in the season under analysis.
-                Order is not significant; episodes are matched by id.
+            episodes: One reference per episode in the season under
+                analysis. Order is not significant; episodes are keyed
+                by id in the result.
             tuning: Operator-tunable knobs for this call. Allows
                 admin-panel edits to take effect on the next tick
-                without re-constructing the detector.
+                without re-constructing the detector. Implementations
+                may receive a technique-specific subclass.
 
         Returns:
-            A mapping keyed by episode id. May be empty when the season
-            does not have enough episodes for cross-correlation, or when
-            no shared segment crossed the implementation's confidence
-            threshold.
+            An :class:`IntroDetectionResult` whose ``markers`` may be
+            empty when the season lacks enough analysable episodes, or
+            when no shared segment crossed the implementation's
+            confidence threshold.
         """
         ...
 
 
 __all__ = [
     "DetectedIntro",
-    "EpisodeFingerprint",
+    "EpisodeMediaRef",
+    "IntroDetectionResult",
     "IntroDetectorPort",
     "IntroDetectorTuning",
 ]

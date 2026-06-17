@@ -1,5 +1,8 @@
 """Media module entity-to-ORM mappers."""
 
+from src.modules.media.infrastructure.persistence.mappers.intro_detection_run_mapper import (
+    IntroDetectionRunMapper,
+)
 from src.modules.media.infrastructure.persistence.mappers.media_conflict_mapper import (
     MediaConflictMapper,
 )
@@ -18,6 +21,7 @@ from src.modules.media.infrastructure.persistence.mappers.series_mapper import (
 
 __all__ = [
     "EpisodeMapper",
+    "IntroDetectionRunMapper",
     "MediaConflictMapper",
     "MediaFileMapper",
     "MovieMapper",

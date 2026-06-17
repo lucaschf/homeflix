@@ -34,6 +34,7 @@ from src.modules.library.presentation.routes.library_routes import (
 )
 from src.modules.media.presentation.routes import (
     admin_conflicts_router,
+    admin_intro_detection_router,
     admin_overview_router,
     admin_relink_router,
     admin_scan_router,
@@ -63,6 +64,7 @@ from src.modules.watch_progress.presentation.routes import progress_router
 #: list (drift between the two would mean tests miss DI-resolved deps).
 WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.media.presentation.routes.admin_conflicts_routes",
+    "src.modules.media.presentation.routes.admin_intro_detection_routes",
     "src.modules.media.presentation.routes.admin_overview_routes",
     "src.modules.media.presentation.routes.admin_relink_routes",
     "src.modules.media.presentation.routes.admin_scan_routes",
@@ -434,6 +436,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_overview_router)
     app.include_router(admin_relink_router)
     app.include_router(admin_scan_router)
+    app.include_router(admin_intro_detection_router)
     app.include_router(admin_system_router)
     app.include_router(catalog_router)
     app.include_router(collection_router)

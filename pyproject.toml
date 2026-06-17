@@ -57,6 +57,7 @@ fastapi-users = { extras = ["sqlalchemy"], version = "^14.0" }
 
 # Image processing (profile avatar resize — see ADR-010 / project-avatar-upload)
 pillow = "^11.0.0"
+numpy = "^2.4.6"
 
 [tool.poetry.group.dev.dependencies]
 # Testing

@@ -12,6 +12,7 @@ from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.media.application.dtos.intro_dtos import (
     ClearEpisodeIntroInput,
+    ResetSeasonIntroDetectionInput,
     SetEpisodeIntroInput,
 )
 from src.modules.media.application.dtos.media_file_dtos import (
@@ -40,6 +41,9 @@ from src.modules.media.application.use_cases.list_recently_added_series import (
 )
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
+from src.modules.media.application.use_cases.reset_season_intro_detection import (
+    ResetSeasonIntroDetectionUseCase,
+)
 from src.modules.media.application.use_cases.set_episode_intro import SetEpisodeIntroUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
 from src.modules.media.presentation.dependencies import resolve_profile_id
@@ -310,6 +314,28 @@ async def clear_episode_intro(
     job tick.
     """
     await use_case.execute(ClearEpisodeIntroInput(episode_id=episode_id))
+
+
+@router.post("/seasons/{season_id}/intro-detection/reset")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def reset_season_intro_detection(
+    season_id: str,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: ResetSeasonIntroDetectionUseCase = Depends(
+        Provide[ApplicationContainer.media.reset_season_intro_detection],
+    ),
+) -> dict[str, Any]:
+    """Requeue one season for automatic intro detection.
+
+    Returns the season to ``NOT_STARTED`` so the next job tick
+    reprocesses it, and clears AUTO_DETECTED markers (MANUAL ones are
+    kept). Use after switching the detection algorithm or re-tuning —
+    a season already ``COMPLETED`` would otherwise never re-run.
+    """
+    result = await use_case.execute(
+        ResetSeasonIntroDetectionInput(season_id=season_id),
+    )
+    return api_single("intro_detection_reset", _dataclass_to_dict(result))
 
 
 def _dataclass_to_dict(obj: Any) -> dict[str, Any]:

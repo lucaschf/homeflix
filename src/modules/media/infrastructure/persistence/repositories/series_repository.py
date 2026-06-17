@@ -23,6 +23,7 @@ from src.modules.media.domain.value_objects import (
     Genre,
     IntroDetectionState,
     IntroMarker,
+    IntroMarkerSource,
     SeasonId,
     SeriesId,
     Title,
@@ -784,6 +785,30 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         )
         result = await self._session.execute(stmt)
         return bool(result.rowcount)
+
+    async def clear_auto_intro_markers_for_season(self, season_id: SeasonId) -> int:
+        """Null the intro columns of a season's AUTO_DETECTED episodes."""
+        season_pk = select(SeasonModel.id).where(
+            SeasonModel.external_id == str(season_id),
+            SeasonModel.deleted_at.is_(None),
+        )
+        stmt = (
+            update(EpisodeModel)
+            .where(
+                EpisodeModel.season_id.in_(season_pk),
+                EpisodeModel.intro_source == IntroMarkerSource.AUTO_DETECTED.value,
+                EpisodeModel.deleted_at.is_(None),
+            )
+            .values(
+                intro_start_seconds=None,
+                intro_end_seconds=None,
+                intro_source=None,
+                intro_confidence=None,
+                intro_detected_at=None,
+            )
+        )
+        result = await self._session.execute(stmt)
+        return int(result.rowcount or 0)
 
     async def count_under_paths(self, paths: Sequence[str]) -> int:
         """Count distinct series with at least one episode under ``paths``.

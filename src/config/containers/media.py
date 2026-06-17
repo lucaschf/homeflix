@@ -48,6 +48,9 @@ from src.modules.media.application.use_cases.get_file_variants import GetFileVar
 from src.modules.media.application.use_cases.get_hls_cache_stats import (
     GetHlsCacheStatsUseCase,
 )
+from src.modules.media.application.use_cases.get_intro_detection_run import (
+    GetIntroDetectionRunUseCase,
+)
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
     GetMovieTmdbSuggestionsUseCase,
@@ -66,6 +69,9 @@ from src.modules.media.application.use_cases.get_series_tmdb_suggestions import 
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_conflicts import ListConflictsUseCase
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
+from src.modules.media.application.use_cases.list_intro_detection_runs import (
+    ListIntroDetectionRunsUseCase,
+)
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
 from src.modules.media.application.use_cases.list_movies_by_actor import ListMoviesByActorUseCase
 from src.modules.media.application.use_cases.list_movies_needing_review import (
@@ -91,6 +97,9 @@ from src.modules.media.application.use_cases.promote_movie_to_series import (
 from src.modules.media.application.use_cases.relink_movie import RelinkMovieUseCase
 from src.modules.media.application.use_cases.relink_series import RelinkSeriesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
+from src.modules.media.application.use_cases.reset_season_intro_detection import (
+    ResetSeasonIntroDetectionUseCase,
+)
 from src.modules.media.application.use_cases.resolve_media_conflict import (
     ResolveMediaConflictUseCase,
 )
@@ -130,6 +139,10 @@ from src.modules.media.infrastructure.streaming import HlsService, MediaProbeSer
 from src.modules.media.infrastructure.streaming.file_streamer import LocalFileStreamer
 from src.modules.media.infrastructure.streaming.thumbnail_service import (
     ThumbnailGenerationService,
+)
+from src.modules.media.infrastructure.video import (
+    FrameHasher,
+    FrameHashIntroDetector,
 )
 
 
@@ -335,6 +348,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         event_bus=event_bus,
     )
 
+    reset_season_intro_detection = providers.Factory(
+        ResetSeasonIntroDetectionUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
     # =========================================================================
     # Infrastructure — File System
     # =========================================================================
@@ -373,7 +391,25 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     chromaprint_service = providers.Singleton(ChromaprintService)
 
-    intro_detector = providers.Singleton(ChromaprintIntroDetector)
+    # Each detector owns its full pipeline (extraction + hashing +
+    # cross-correlation) behind IntroDetectorPort; the job picks one per
+    # tick by IntroDetectionConfig.algorithm and only ever sees the
+    # abstraction.
+    chromaprint_intro_detector = providers.Singleton(
+        ChromaprintIntroDetector,
+        audio_extractor=audio_extractor,
+        chromaprint_service=chromaprint_service,
+    )
+
+    frame_hasher = providers.Singleton(
+        FrameHasher,
+        runtime_settings=runtime_settings,
+    )
+
+    frame_hash_intro_detector = providers.Singleton(
+        FrameHashIntroDetector,
+        frame_hasher=frame_hasher,
+    )
 
     file_streamer = providers.Factory(LocalFileStreamer)
 
@@ -519,6 +555,16 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     get_scan_run = providers.Factory(
         GetScanRunUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    list_intro_detection_runs = providers.Factory(
+        ListIntroDetectionRunsUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    get_intro_detection_run = providers.Factory(
+        GetIntroDetectionRunUseCase,
         media_uow_factory=media_unit_of_work_factory,
     )
 

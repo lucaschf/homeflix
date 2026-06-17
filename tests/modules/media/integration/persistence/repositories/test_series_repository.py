@@ -1330,6 +1330,57 @@ class TestSeriesRepositoryIntroPersistence:
         assert episode.intro.source == IntroMarkerSource.AUTO_DETECTED
         assert episode.intro.confidence == pytest.approx(0.91)
 
+    async def test_clear_auto_intro_markers_for_season_keeps_manual(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        sid = SeriesId.generate()
+        season_id = SeasonId.generate()
+        auto_ep = _create_episode(
+            sid, episode_number=1, file_path=f"/series/{sid}/s01e01.mkv"
+        ).with_intro_marker(
+            IntroMarker(
+                start_seconds=0,
+                end_seconds=60,
+                source=IntroMarkerSource.AUTO_DETECTED,
+                confidence=0.9,
+            )
+        )
+        manual_ep = _create_episode(
+            sid, episode_number=2, file_path=f"/series/{sid}/s01e02.mkv"
+        ).with_intro_marker(
+            IntroMarker(start_seconds=5, end_seconds=60, source=IntroMarkerSource.MANUAL)
+        )
+        season = Season(
+            id=season_id,
+            series_id=sid,
+            season_number=1,
+            title=Title("Season 1"),
+            episodes=[auto_ep, manual_ep],
+            intro_detection_state=IntroDetectionState.COMPLETED,
+        )
+        await repo.save(
+            Series(
+                library_id=_LIBRARY_ID,
+                id=sid,
+                title=Title("Reset Series"),
+                start_year=Year(2020),
+                seasons=[season],
+            )
+        )
+
+        cleared = await repo.clear_auto_intro_markers_for_season(season_id)
+
+        assert cleared == 1
+        found = await repo.find_by_id(sid)
+        assert found is not None
+        by_number = {e.episode_number.value: e for e in found.seasons[0].episodes}
+        # AUTO marker nulled; MANUAL marker preserved.
+        assert by_number[1].intro is None
+        assert by_number[2].intro is not None
+        assert by_number[2].intro.source == IntroMarkerSource.MANUAL
+
     async def test_save_clears_intro_when_entity_intro_is_none(
         self,
         db_session: AsyncSession,

@@ -16,7 +16,8 @@ from src.modules.media.application.ports.hls_playlist_port import (
 )
 from src.modules.media.application.ports.intro_detector_port import (
     DetectedIntro,
-    EpisodeFingerprint,
+    EpisodeMediaRef,
+    IntroDetectionResult,
     IntroDetectorPort,
     IntroDetectorTuning,
 )
@@ -56,12 +57,13 @@ __all__ = [
     "CollectionPartMetadata",
     "CreditPerson",
     "DetectedIntro",
-    "EpisodeFingerprint",
+    "EpisodeMediaRef",
     "EpisodeMetadata",
     "FileStreamerPort",
     "FileSystemScanner",
     "HlsCacheStats",
     "HlsPlaylistPort",
+    "IntroDetectionResult",
     "IntroDetectorPort",
     "IntroDetectorTuning",
     "LocalizedFields",

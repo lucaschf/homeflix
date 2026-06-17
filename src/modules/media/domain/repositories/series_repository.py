@@ -510,6 +510,23 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
+    async def clear_auto_intro_markers_for_season(self, season_id: SeasonId) -> int:
+        """Clear AUTO_DETECTED intro markers on a season's episodes.
+
+        Bulk UPDATE that nulls the five intro columns for every episode
+        of the season whose marker source is ``AUTO_DETECTED``. MANUAL
+        markers are left untouched. Used by the re-detect flow so a
+        re-run starts from a clean slate without dropping operator edits.
+
+        Args:
+            season_id: External id of the season (ssn_xxx).
+
+        Returns:
+            The number of episode rows cleared.
+        """
+        ...
+
+    @abstractmethod
     async def count_under_paths(self, paths: Sequence[str]) -> int:
         """Count distinct series with at least one episode under ``paths``.
 

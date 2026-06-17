@@ -38,14 +38,15 @@ class TestSettingMapper:
             key="intro_detection",
             value_json={
                 "enabled": True,
+                "algorithm": "frame_hash",
                 "batch_size": 2,
                 "interval_minutes": 30,
-                "audio_window_seconds": 600,
+                "analysis_window_seconds": 600,
                 "min_confidence": 0.85,
-                "max_hash_hamming": 10,
-                "tolerance_hashes": 2,
                 "min_intro_seconds": 5.0,
                 "max_intro_seconds": 120.0,
+                "chromaprint": {"max_hash_hamming": 10, "tolerance_hashes": 2},
+                "frame_hash": {"hash_distance_threshold": 8, "frame_sample_fps": 2.0},
             },
             source="admin",
             updated_by_user_id="usr_alice",
@@ -59,6 +60,8 @@ class TestSettingMapper:
         assert entity.id is SettingKey.INTRO_DETECTION
         assert isinstance(entity.value, IntroDetectionConfig)
         assert entity.value.min_confidence == 0.85
+        assert entity.value.algorithm.value == "frame_hash"
+        assert entity.value.chromaprint.max_hash_hamming == 10
         assert entity.source is SettingSource.ADMIN
         assert entity.updated_by_user_id == "usr_alice"
         assert entity.created_at == now

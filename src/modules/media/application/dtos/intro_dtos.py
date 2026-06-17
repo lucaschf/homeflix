@@ -36,6 +36,29 @@ class ClearEpisodeIntroInput:
 
 
 @dataclass(frozen=True)
+class ResetSeasonIntroDetectionInput:
+    """Input for ``ResetSeasonIntroDetectionUseCase``.
+
+    Attributes:
+        season_id: External id of the season (ssn_xxx).
+    """
+
+    season_id: str
+
+
+@dataclass(frozen=True)
+class ResetSeasonIntroDetectionOutput:
+    """Outcome of resetting a season's intro detection.
+
+    Attributes:
+        markers_cleared: Auto-detected episode markers removed. MANUAL
+            markers are preserved.
+    """
+
+    markers_cleared: int
+
+
+@dataclass(frozen=True)
 class IntroMarkerOutput:
     """Output representation of an :class:`IntroMarker`.
 
@@ -56,4 +79,10 @@ class IntroMarkerOutput:
     detected_at: str
 
 
-__all__ = ["ClearEpisodeIntroInput", "IntroMarkerOutput", "SetEpisodeIntroInput"]
+__all__ = [
+    "ClearEpisodeIntroInput",
+    "IntroMarkerOutput",
+    "ResetSeasonIntroDetectionInput",
+    "ResetSeasonIntroDetectionOutput",
+    "SetEpisodeIntroInput",
+]
