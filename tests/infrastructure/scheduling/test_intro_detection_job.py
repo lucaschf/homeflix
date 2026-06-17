@@ -1,22 +1,23 @@
 """Tests for IntroDetectionJob.
 
-Mocks the media UoW factory and the three audio services so the
-tests exercise orchestration (state transitions, episode filtering,
+Mocks the media UoW factory and the intro detector so the tests
+exercise orchestration (state transitions, episode filtering,
 confidence floor, error handling) without touching ffmpeg, fpcalc, or
-the database.
+the database. The detector owns its own analysis pipeline now, so the
+job only sees its :class:`IntroDetectionResult`.
 """
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from pathlib import Path
-from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from src.infrastructure.scheduling.intro_detection_job import IntroDetectionJob
-from src.modules.media.application.ports import DetectedIntro
+from src.modules.media.application.ports import (
+    DetectedIntro,
+    IntroDetectionResult,
+)
 from src.modules.media.domain.entities import Episode, Season
 from src.modules.media.domain.value_objects import (
     Duration,
@@ -33,11 +34,10 @@ from src.modules.media.domain.value_objects import (
     SeriesId,
     Title,
 )
-from src.modules.media.infrastructure.audio import ChromaprintFingerprint
-from src.modules.settings.domain.value_objects import IntroDetectionConfig
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
+from src.modules.settings.domain.value_objects import (
+    IntroDetectionAlgorithm,
+    IntroDetectionConfig,
+)
 
 
 def _make_episode(
@@ -90,44 +90,23 @@ def _build_uow(*, pending_seasons: list[Season]) -> AsyncMock:
     return uow
 
 
-def _make_audio_extractor(*, returns: list[Path | None] | None = None) -> MagicMock:
-    """Return a stub AudioExtractor whose ``extract_temporary`` yields paths.
-
-    ``returns`` is consumed in order — one path per call. A single
-    ``None`` triggers the "extraction failed" branch in the job.
-    """
-    queue: list[Path | None] = list(returns) if returns is not None else []
-    extractor = MagicMock()
-
-    @contextmanager
-    def extract_temporary(_file_path: str, *, duration_seconds: int) -> Iterator[Path | None]:
-        del duration_seconds
-        if queue:
-            yield queue.pop(0)
-        else:
-            yield Path("/tmp/fake.wav")
-
-    extractor.extract_temporary.side_effect = extract_temporary
-    return extractor
-
-
-def _make_chromaprint(*, returns: list[ChromaprintFingerprint | None] | None = None) -> MagicMock:
-    queue: list[ChromaprintFingerprint | None] = list(returns) if returns is not None else []
-    service = MagicMock()
-
-    def fingerprint(_path: object) -> ChromaprintFingerprint | None:
-        if queue:
-            return queue.pop(0)
-        return ChromaprintFingerprint(duration_seconds=300.0, hashes=[1, 2, 3])
-
-    service.fingerprint.side_effect = fingerprint
-    return service
-
-
-def _make_detector(*, detections: dict[EpisodeId, DetectedIntro]) -> MagicMock:
+def _make_detector(*, result: IntroDetectionResult | None = None) -> MagicMock:
     detector = MagicMock()
-    detector.detect.return_value = detections
+    detector.detect.return_value = result or IntroDetectionResult(markers={}, analyzed_count=0)
     return detector
+
+
+def _registry(detector: MagicMock) -> dict[IntroDetectionAlgorithm, MagicMock]:
+    """Map a single detector under every algorithm.
+
+    The default :class:`IntroDetectionConfig` selects ``FRAME_HASH``;
+    mapping the same mock under both keys keeps the orchestration tests
+    agnostic to which algorithm is active.
+    """
+    return {
+        IntroDetectionAlgorithm.CHROMAPRINT: detector,
+        IntroDetectionAlgorithm.FRAME_HASH: detector,
+    }
 
 
 def _make_runtime_settings(*, intro: IntroDetectionConfig | None = None) -> AsyncMock:
@@ -145,13 +124,11 @@ class TestIntroDetectionJob:
     async def test_does_nothing_when_no_pending_seasons(self) -> None:
         uow = _build_uow(pending_seasons=[])
         factory = MagicMock(return_value=uow)
-        detector = _make_detector(detections={})
+        detector = _make_detector()
 
         job = IntroDetectionJob(
             media_uow_factory=factory,
-            audio_extractor=_make_audio_extractor(),
-            chromaprint_service=_make_chromaprint(),
-            intro_detector=detector,
+            intro_detectors=_registry(detector),
             runtime_settings=_make_runtime_settings(),
         )
         await job.run()
@@ -167,22 +144,16 @@ class TestIntroDetectionJob:
         season = _make_season(episodes=episodes, series_id=sid)
         uow = _build_uow(pending_seasons=[season])
         factory = MagicMock(return_value=uow)
-        detections = {
-            ep.id: DetectedIntro(
-                start_seconds=10.0,
-                end_seconds=80.0,
-                confidence=0.9,
-            )
+        markers = {
+            ep.id: DetectedIntro(start_seconds=10.0, end_seconds=80.0, confidence=0.9)
             for ep in episodes
             if ep.id is not None
         }
-        detector = _make_detector(detections=detections)
+        detector = _make_detector(result=IntroDetectionResult(markers=markers, analyzed_count=3))
 
         job = IntroDetectionJob(
             media_uow_factory=factory,
-            audio_extractor=_make_audio_extractor(),
-            chromaprint_service=_make_chromaprint(),
-            intro_detector=detector,
+            intro_detectors=_registry(detector),
             runtime_settings=_make_runtime_settings(),
         )
         await job.run()
@@ -203,24 +174,42 @@ class TestIntroDetectionJob:
         ]
 
     @pytest.mark.asyncio
+    async def test_passes_episode_refs_to_the_detector(self) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[season])
+        factory = MagicMock(return_value=uow)
+        detector = _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=2))
+
+        job = IntroDetectionJob(
+            media_uow_factory=factory,
+            intro_detectors=_registry(detector),
+            runtime_settings=_make_runtime_settings(),
+        )
+        await job.run()
+
+        refs = detector.detect.call_args.args[0]
+        assert {ref.episode_id for ref in refs} == {ep.id for ep in episodes}
+        assert all(ref.file_path.endswith(".mkv") for ref in refs)
+
+    @pytest.mark.asyncio
     async def test_skips_low_confidence_detections_but_still_completes(self) -> None:
         sid = SeriesId.generate()
         episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
         season = _make_season(episodes=episodes, series_id=sid)
         uow = _build_uow(pending_seasons=[season])
         factory = MagicMock(return_value=uow)
-        detections = {
+        markers = {
             ep.id: DetectedIntro(start_seconds=0.0, end_seconds=60.0, confidence=0.4)
             for ep in episodes
             if ep.id is not None
         }
-        detector = _make_detector(detections=detections)
+        detector = _make_detector(result=IntroDetectionResult(markers=markers, analyzed_count=2))
 
         job = IntroDetectionJob(
             media_uow_factory=factory,
-            audio_extractor=_make_audio_extractor(),
-            chromaprint_service=_make_chromaprint(),
-            intro_detector=detector,
+            intro_detectors=_registry(detector),
             runtime_settings=_make_runtime_settings(),
         )
         await job.run()
@@ -232,9 +221,7 @@ class TestIntroDetectionJob:
         assert terminal_state == IntroDetectionState.COMPLETED
 
     @pytest.mark.asyncio
-    async def test_filters_episodes_with_manual_markers_from_detection_pool(
-        self,
-    ) -> None:
+    async def test_filters_episodes_with_manual_markers_from_detection_pool(self) -> None:
         sid = SeriesId.generate()
         manual_marker = IntroMarker(
             start_seconds=5,
@@ -252,13 +239,11 @@ class TestIntroDetectionJob:
         season = _make_season(episodes=episodes, series_id=sid)
         uow = _build_uow(pending_seasons=[season])
         factory = MagicMock(return_value=uow)
-        detector = _make_detector(detections={})
+        detector = _make_detector()
 
         job = IntroDetectionJob(
             media_uow_factory=factory,
-            audio_extractor=_make_audio_extractor(),
-            chromaprint_service=_make_chromaprint(),
-            intro_detector=detector,
+            intro_detectors=_registry(detector),
             runtime_settings=_make_runtime_settings(),
         )
         await job.run()
@@ -268,27 +253,24 @@ class TestIntroDetectionJob:
         assert terminal_state == IntroDetectionState.INSUFFICIENT_EPISODES
 
     @pytest.mark.asyncio
-    async def test_drops_to_insufficient_when_extraction_fails_for_most(self) -> None:
+    async def test_drops_to_insufficient_when_detector_analyzes_too_few(self) -> None:
         sid = SeriesId.generate()
         episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2, 3)]
         season = _make_season(episodes=episodes, series_id=sid)
         uow = _build_uow(pending_seasons=[season])
         factory = MagicMock(return_value=uow)
-        # Two of three extractions fail (None) — only one usable
-        # fingerprint, which is below the 2-episode floor.
-        extractor = _make_audio_extractor(returns=[None, None, Path("/tmp/fake.wav")])
-        detector = _make_detector(detections={})
+        # The detector could only analyse one episode (the rest had
+        # unreadable media) — below the 2-episode floor.
+        detector = _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=1))
 
         job = IntroDetectionJob(
             media_uow_factory=factory,
-            audio_extractor=extractor,
-            chromaprint_service=_make_chromaprint(),
-            intro_detector=detector,
+            intro_detectors=_registry(detector),
             runtime_settings=_make_runtime_settings(),
         )
         await job.run()
 
-        detector.detect.assert_not_called()
+        uow.series.update_episode_intro.assert_not_awaited()
         terminal_state = uow.series.update_season_intro_detection.await_args_list[-1].args[1]
         assert terminal_state == IntroDetectionState.INSUFFICIENT_EPISODES
 
@@ -305,9 +287,7 @@ class TestIntroDetectionJob:
 
         job = IntroDetectionJob(
             media_uow_factory=factory,
-            audio_extractor=_make_audio_extractor(),
-            chromaprint_service=_make_chromaprint(),
-            intro_detector=broken_detector,
+            intro_detectors=_registry(broken_detector),
             runtime_settings=_make_runtime_settings(),
         )
         await job.run()
@@ -321,83 +301,7 @@ class TestIntroDetectionJob:
         uow.series.update_episode_intro.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_skips_episodes_whose_fingerprint_fails(self) -> None:
-        sid = SeriesId.generate()
-        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2, 3)]
-        season = _make_season(episodes=episodes, series_id=sid)
-        uow = _build_uow(pending_seasons=[season])
-        factory = MagicMock(return_value=uow)
-        # The middle episode's fingerprint fails — the detector still
-        # gets the other two and produces a result.
-        chromaprint = _make_chromaprint(
-            returns=[
-                ChromaprintFingerprint(duration_seconds=300.0, hashes=[1, 2, 3]),
-                None,
-                ChromaprintFingerprint(duration_seconds=300.0, hashes=[1, 2, 3]),
-            ]
-        )
-        detector = _make_detector(detections={})
-
-        job = IntroDetectionJob(
-            media_uow_factory=factory,
-            audio_extractor=_make_audio_extractor(),
-            chromaprint_service=chromaprint,
-            intro_detector=detector,
-            runtime_settings=_make_runtime_settings(),
-        )
-        await job.run()
-
-        # Detector saw two fingerprints, one was dropped.
-        passed_to_detector = detector.detect.call_args.args[0]
-        assert len(passed_to_detector) == 2
-        terminal_state = uow.series.update_season_intro_detection.await_args_list[-1].args[1]
-        assert terminal_state == IntroDetectionState.COMPLETED
-
-    @pytest.mark.asyncio
-    async def test_unexpected_extractor_exception_drops_only_that_episode(
-        self,
-    ) -> None:
-        # The first episode's extraction raises an unexpected exception
-        # — the contract is best-effort: drop that episode, keep the
-        # season alive on the remaining ones rather than failing it.
-        sid = SeriesId.generate()
-        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2, 3)]
-        season = _make_season(episodes=episodes, series_id=sid)
-        uow = _build_uow(pending_seasons=[season])
-        factory = MagicMock(return_value=uow)
-
-        crashing_extractor = MagicMock()
-        call_counter = {"n": 0}
-
-        @contextmanager
-        def extract_temporary(_file_path: str, *, duration_seconds: int) -> Iterator[Path | None]:
-            del duration_seconds
-            call_counter["n"] += 1
-            if call_counter["n"] == 1:
-                raise RuntimeError("unexpected ffmpeg failure")
-            yield Path("/tmp/fake.wav")
-
-        crashing_extractor.extract_temporary.side_effect = extract_temporary
-
-        job = IntroDetectionJob(
-            media_uow_factory=factory,
-            audio_extractor=crashing_extractor,
-            chromaprint_service=_make_chromaprint(),
-            intro_detector=_make_detector(detections={}),
-            runtime_settings=_make_runtime_settings(),
-        )
-        await job.run()
-
-        # Detector still ran with the two surviving fingerprints.
-        passed_to_detector = job._intro_detector.detect.call_args.args[0]  # type: ignore[attr-defined]
-        assert len(passed_to_detector) == 2
-        terminal_state = uow.series.update_season_intro_detection.await_args_list[-1].args[1]
-        assert terminal_state == IntroDetectionState.COMPLETED
-
-    @pytest.mark.asyncio
-    async def test_does_not_abort_batch_when_failed_state_recording_raises(
-        self,
-    ) -> None:
+    async def test_does_not_abort_batch_when_failed_state_recording_raises(self) -> None:
         # If the FAILED transition itself raises (e.g. DB hiccup mid-tick)
         # the batch loop must continue to the next season rather than
         # aborting silently.
@@ -439,15 +343,16 @@ class TestIntroDetectionJob:
         factory = MagicMock(return_value=uow)
 
         broken_detector = MagicMock()
-        # First call (season_a) raises; second call (season_b) returns
-        # an empty mapping so the season completes cleanly.
-        broken_detector.detect.side_effect = [RuntimeError("kaboom"), {}]
+        # First call (season_a) raises; second call (season_b) returns an
+        # empty result with enough analysed episodes so it completes.
+        broken_detector.detect.side_effect = [
+            RuntimeError("kaboom"),
+            IntroDetectionResult(markers={}, analyzed_count=2),
+        ]
 
         job = IntroDetectionJob(
             media_uow_factory=factory,
-            audio_extractor=_make_audio_extractor(),
-            chromaprint_service=_make_chromaprint(),
-            intro_detector=broken_detector,
+            intro_detectors=_registry(broken_detector),
             runtime_settings=_make_runtime_settings(),
         )
         # Must not raise — the batch loop survives the failed
@@ -491,12 +396,74 @@ class TestIntroDetectionJob:
 
         job = IntroDetectionJob(
             media_uow_factory=factory,
-            audio_extractor=_make_audio_extractor(),
-            chromaprint_service=_make_chromaprint(),
-            intro_detector=_make_detector(detections={}),
+            intro_detectors=_registry(
+                _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=2))
+            ),
             runtime_settings=_make_runtime_settings(),
         )
         await job.run()
 
         called_with = uow.series.find_seasons_pending_intro_detection.await_args
         assert called_with.args[0] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "algorithm",
+        [IntroDetectionAlgorithm.CHROMAPRINT, IntroDetectionAlgorithm.FRAME_HASH],
+    )
+    async def test_runs_only_the_configured_algorithm(
+        self,
+        algorithm: IntroDetectionAlgorithm,
+    ) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[season])
+        factory = MagicMock(return_value=uow)
+
+        chromaprint = _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=2))
+        frame_hash = _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=2))
+        detectors = {
+            IntroDetectionAlgorithm.CHROMAPRINT: chromaprint,
+            IntroDetectionAlgorithm.FRAME_HASH: frame_hash,
+        }
+
+        job = IntroDetectionJob(
+            media_uow_factory=factory,
+            intro_detectors=detectors,
+            runtime_settings=_make_runtime_settings(
+                intro=IntroDetectionConfig(algorithm=algorithm)
+            ),
+        )
+        await job.run()
+
+        chosen = detectors[algorithm]
+        other = frame_hash if algorithm is IntroDetectionAlgorithm.CHROMAPRINT else chromaprint
+        chosen.detect.assert_called_once()
+        other.detect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_marks_failed_when_algorithm_has_no_registered_detector(self) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[season])
+        factory = MagicMock(return_value=uow)
+
+        # Registry is missing the configured algorithm — a wiring error
+        # that must surface as a FAILED season, not a silent no-op.
+        detectors = {
+            IntroDetectionAlgorithm.CHROMAPRINT: _make_detector(),
+        }
+
+        job = IntroDetectionJob(
+            media_uow_factory=factory,
+            intro_detectors=detectors,
+            runtime_settings=_make_runtime_settings(
+                intro=IntroDetectionConfig(algorithm=IntroDetectionAlgorithm.FRAME_HASH)
+            ),
+        )
+        await job.run()
+
+        terminal_state = uow.series.update_season_intro_detection.await_args_list[-1].args[1]
+        assert terminal_state == IntroDetectionState.FAILED

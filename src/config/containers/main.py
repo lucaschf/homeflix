@@ -37,6 +37,7 @@ from src.modules.media.infrastructure.acl import (
     ProfileLibraryAccessAdapter,
     ProgressLookupAdapter,
 )
+from src.modules.settings.domain.value_objects import IntroDetectionAlgorithm
 from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyWatchProgressUnitOfWorkFactory,
 )
@@ -240,9 +241,12 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     intro_detection_job = providers.Singleton(
         IntroDetectionJob,
         media_uow_factory=media.media_unit_of_work_factory,
-        audio_extractor=media.audio_extractor,
-        chromaprint_service=media.chromaprint_service,
-        intro_detector=media.intro_detector,
+        intro_detectors=providers.Dict(
+            {
+                IntroDetectionAlgorithm.CHROMAPRINT: media.chromaprint_intro_detector,
+                IntroDetectionAlgorithm.FRAME_HASH: media.frame_hash_intro_detector,
+            },
+        ),
         runtime_settings=settings.runtime_settings,
     )
 
