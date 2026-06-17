@@ -101,7 +101,7 @@ class IntroDetectionConfig(CompoundValueObject):
     batch_size: int = Field(default=1, ge=1)
     interval_minutes: int = Field(default=30, ge=1)
     analysis_window_seconds: int = Field(default=600, ge=60)
-    min_confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+    min_confidence: float = Field(default=0.65, ge=0.0, le=1.0)
     min_intro_seconds: float = Field(default=5.0, ge=0.0)
     max_intro_seconds: float = Field(default=120.0, ge=10.0)
     chromaprint: ChromaprintTuningConfig = Field(default_factory=ChromaprintTuningConfig)

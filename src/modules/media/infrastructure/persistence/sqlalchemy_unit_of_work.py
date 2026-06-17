@@ -7,6 +7,9 @@ from src.modules.media.application.unit_of_work import (
     MediaUnitOfWork,
     MediaUnitOfWorkFactory,
 )
+from src.modules.media.infrastructure.persistence.repositories.intro_detection_run_repository import (
+    SqlAlchemyIntroDetectionRunRepository,
+)
 from src.modules.media.infrastructure.persistence.repositories.media_conflict_repository import (
     SqlAlchemyMediaConflictRepository,
 )
@@ -34,6 +37,7 @@ class SqlAlchemyMediaUnitOfWork(SqlAlchemyUnitOfWork, MediaUnitOfWork):
         self.movies = SQLAlchemyMovieRepository(session)
         self.series = SQLAlchemySeriesRepository(session)
         self.scan_runs = SqlAlchemyScanRunRepository(session)
+        self.intro_detection_runs = SqlAlchemyIntroDetectionRunRepository(session)
         self.media_conflicts = SqlAlchemyMediaConflictRepository(session)
 
 

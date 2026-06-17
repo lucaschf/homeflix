@@ -3,6 +3,9 @@
 from src.modules.media.presentation.routes.admin_conflicts_routes import (
     router as admin_conflicts_router,
 )
+from src.modules.media.presentation.routes.admin_intro_detection_routes import (
+    router as admin_intro_detection_router,
+)
 from src.modules.media.presentation.routes.admin_overview_routes import (
     router as admin_overview_router,
 )
@@ -31,6 +34,7 @@ from src.modules.media.presentation.routes.tmdb_lookup_routes import (
 
 __all__ = [
     "admin_conflicts_router",
+    "admin_intro_detection_router",
     "admin_overview_router",
     "admin_relink_router",
     "admin_scan_router",

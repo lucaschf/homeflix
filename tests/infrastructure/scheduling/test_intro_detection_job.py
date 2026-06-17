@@ -9,6 +9,7 @@ job only sees its :class:`IntroDetectionResult`.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -87,6 +88,11 @@ def _build_uow(*, pending_seasons: list[Season]) -> AsyncMock:
     uow.series.find_seasons_pending_intro_detection = AsyncMock(return_value=pending_seasons)
     uow.series.update_season_intro_detection = AsyncMock(return_value=True)
     uow.series.update_episode_intro = AsyncMock(return_value=True)
+    # The audit-run recorder looks up the series to denormalize its
+    # title; return a stub whose ``title.value`` is a real string.
+    uow.series.find_by_id = AsyncMock(
+        return_value=SimpleNamespace(title=SimpleNamespace(value="Test Series"))
+    )
     return uow
 
 
@@ -467,3 +473,36 @@ class TestIntroDetectionJob:
 
         terminal_state = uow.series.update_season_intro_detection.await_args_list[-1].args[1]
         assert terminal_state == IntroDetectionState.FAILED
+
+    @pytest.mark.asyncio
+    async def test_records_audit_run_with_drop_detail(self) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[season])
+        factory = MagicMock(return_value=uow)
+        # One above the 0.65 floor (persisted), one below (dropped).
+        ep1, ep2 = episodes
+        markers = {
+            ep1.id: DetectedIntro(start_seconds=0.0, end_seconds=70.0, confidence=0.9),
+            ep2.id: DetectedIntro(start_seconds=0.0, end_seconds=65.0, confidence=0.5),
+        }
+        detector = _make_detector(result=IntroDetectionResult(markers=markers, analyzed_count=2))
+
+        job = IntroDetectionJob(
+            media_uow_factory=factory,
+            intro_detectors=_registry(detector),
+            runtime_settings=_make_runtime_settings(),
+        )
+        await job.run()
+
+        uow.intro_detection_runs.add.assert_awaited_once()
+        run = uow.intro_detection_runs.add.await_args.args[0]
+        assert run.outcome == IntroDetectionState.COMPLETED
+        assert run.detected_count == 2
+        assert run.persisted_count == 1
+        assert run.min_confidence == pytest.approx(0.65)
+        persisted_flags = {r.episode_number: r.persisted for r in run.episode_results}
+        assert persisted_flags == {1: True, 2: False}
+        # Only the high-confidence marker was actually written.
+        assert uow.series.update_episode_intro.await_count == 1

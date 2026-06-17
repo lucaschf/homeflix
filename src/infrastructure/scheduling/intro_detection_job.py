@@ -26,11 +26,16 @@ can tell "found nothing" apart from "not enough material".
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from src.config.logging import get_logger
 from src.modules.media.application.ports import EpisodeMediaRef
+from src.modules.media.domain.entities.intro_detection_run import (
+    EpisodeDetectionResult,
+    IntroDetectionRun,
+)
 from src.modules.media.domain.value_objects import (
     IntroDetectionState,
     IntroMarker,
@@ -53,6 +58,20 @@ if TYPE_CHECKING:
     from src.modules.media.domain.value_objects import EpisodeId, SeasonId
     from src.modules.settings.domain.value_objects import IntroDetectionConfig
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
+
+
+@dataclass
+class _RunMetrics:
+    """Per-season outcome + counters, used to record an audit run."""
+
+    outcome: IntroDetectionState
+    ref_count: int = 0
+    analyzed_count: int = 0
+    detected_count: int = 0
+    persisted_count: int = 0
+    episode_results: list[EpisodeDetectionResult] = field(default_factory=list)
+    error: str | None = None
+
 
 _logger = get_logger()
 
@@ -158,8 +177,9 @@ class IntroDetectionJob:
             )
             return IntroDetectionState.FAILED
 
+        started_at = datetime.now(UTC)
         try:
-            return await self._detect_and_persist(season, season_id, log_ctx, config)
+            metrics = await self._detect_and_persist(season, season_id, log_ctx, config)
         except Exception as exc:
             _logger.exception(
                 "[intro-detection] season processing failed",
@@ -181,7 +201,10 @@ class IntroDetectionJob:
                     "[intro-detection] failed to record FAILED state",
                     **log_ctx,
                 )
-            return IntroDetectionState.FAILED
+            metrics = _RunMetrics(outcome=IntroDetectionState.FAILED, error=error_message)
+
+        await self._record_run(season, season_id, config, metrics, started_at)
+        return metrics.outcome
 
     async def _detect_and_persist(
         self,
@@ -189,7 +212,7 @@ class IntroDetectionJob:
         season_id: SeasonId,
         log_ctx: dict[str, str | int],
         config: IntroDetectionConfig,
-    ) -> IntroDetectionState:
+    ) -> _RunMetrics:
         candidates = [ep for ep in season.episodes if not _has_manual_marker(ep)]
         candidate_count = len(candidates)
         if candidate_count < _MIN_EPISODES_FOR_DETECTION:
@@ -200,7 +223,7 @@ class IntroDetectionJob:
                 total_episodes=len(season.episodes),
                 candidate_count=candidate_count,
             )
-            return IntroDetectionState.INSUFFICIENT_EPISODES
+            return _RunMetrics(outcome=IntroDetectionState.INSUFFICIENT_EPISODES)
 
         refs = _build_media_refs(candidates)
         if len(refs) < _MIN_EPISODES_FOR_DETECTION:
@@ -211,7 +234,10 @@ class IntroDetectionJob:
                 candidate_count=candidate_count,
                 ref_count=len(refs),
             )
-            return IntroDetectionState.INSUFFICIENT_EPISODES
+            return _RunMetrics(
+                outcome=IntroDetectionState.INSUFFICIENT_EPISODES,
+                ref_count=len(refs),
+            )
 
         detector = self._intro_detectors.get(config.algorithm)
         if detector is None:
@@ -230,8 +256,13 @@ class IntroDetectionJob:
                 ref_count=len(refs),
                 analyzed_count=result.analyzed_count,
             )
-            return IntroDetectionState.INSUFFICIENT_EPISODES
+            return _RunMetrics(
+                outcome=IntroDetectionState.INSUFFICIENT_EPISODES,
+                ref_count=len(refs),
+                analyzed_count=result.analyzed_count,
+            )
 
+        episode_results = _build_episode_results(result.markers, candidates, config.min_confidence)
         persisted_count = await self._persist_detections(result.markers, config.min_confidence)
         await self._mark_state(season_id, IntroDetectionState.COMPLETED)
         _logger.info(
@@ -242,7 +273,53 @@ class IntroDetectionJob:
             detected_count=len(result.markers),
             persisted_count=persisted_count,
         )
-        return IntroDetectionState.COMPLETED
+        return _RunMetrics(
+            outcome=IntroDetectionState.COMPLETED,
+            ref_count=len(refs),
+            analyzed_count=result.analyzed_count,
+            detected_count=len(result.markers),
+            persisted_count=persisted_count,
+            episode_results=episode_results,
+        )
+
+    async def _record_run(
+        self,
+        season: Season,
+        season_id: SeasonId,
+        config: IntroDetectionConfig,
+        metrics: _RunMetrics,
+        started_at: datetime,
+    ) -> None:
+        """Append an audit row for this season's run. Never raises."""
+        try:
+            async with self._media_uow_factory() as uow:
+                # Denormalize the series title so the audit row stays
+                # self-contained (survives a later rename/delete). One
+                # extra lookup per recorded run — runs are infrequent.
+                series = await uow.series.find_by_id(season.series_id)
+                run = IntroDetectionRun(
+                    series_id=str(season.series_id),
+                    series_title=series.title.value if series is not None else "",
+                    season_id=str(season_id),
+                    season_number=season.season_number.value,
+                    algorithm=config.algorithm.value,
+                    outcome=metrics.outcome,
+                    ref_count=metrics.ref_count,
+                    analyzed_count=metrics.analyzed_count,
+                    detected_count=metrics.detected_count,
+                    persisted_count=metrics.persisted_count,
+                    min_confidence=config.min_confidence,
+                    episode_results=metrics.episode_results,
+                    error=metrics.error,
+                    started_at=started_at,
+                    finished_at=datetime.now(UTC),
+                )
+                await uow.intro_detection_runs.add(run)
+        except Exception:
+            _logger.exception(
+                "[intro-detection] failed to record audit run",
+                **_season_log_context(season),
+            )
 
     async def _persist_detections(
         self,
@@ -327,6 +404,33 @@ def _build_media_refs(episodes: list[Episode]) -> list[EpisodeMediaRef]:
             continue
         refs.append(EpisodeMediaRef(episode_id=episode.id, file_path=primary.file_path.value))
     return refs
+
+
+def _build_episode_results(
+    markers: Mapping[EpisodeId, DetectedIntro],
+    candidates: list[Episode],
+    min_confidence: float,
+) -> list[EpisodeDetectionResult]:
+    """Build the per-episode audit detail from the detector's markers.
+
+    ``persisted`` mirrors the job's confidence floor so the audit row
+    records exactly which detections were saved vs dropped — the answer
+    to "detected but nothing showed up".
+    """
+    number_by_id = {ep.id: ep.episode_number.value for ep in candidates if ep.id is not None}
+    results = [
+        EpisodeDetectionResult(
+            episode_id=str(episode_id),
+            episode_number=number_by_id.get(episode_id, 0),
+            start_seconds=detected.start_seconds,
+            end_seconds=detected.end_seconds,
+            confidence=detected.confidence,
+            persisted=detected.confidence >= min_confidence,
+        )
+        for episode_id, detected in markers.items()
+    ]
+    results.sort(key=lambda result: result.episode_number)
+    return results
 
 
 def _build_auto_marker(detected: DetectedIntro) -> IntroMarker:

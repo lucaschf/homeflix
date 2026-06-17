@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 
 from src.building_blocks.application.unit_of_work import UnitOfWork
 from src.modules.media.domain.repositories import (
+    IntroDetectionRunRepository,
     MediaConflictRepository,
     MovieRepository,
     ScanRunRepository,
@@ -31,6 +32,7 @@ class MediaUnitOfWork(UnitOfWork):
     movies: MovieRepository
     series: SeriesRepository
     scan_runs: ScanRunRepository
+    intro_detection_runs: IntroDetectionRunRepository
     media_conflicts: MediaConflictRepository
 
 
