@@ -4,6 +4,12 @@ from src.modules.media.application.ports.catalog_request_lookup_port import (
     CatalogRequestLookupPort,
     CatalogRequestStatus,
 )
+from src.modules.media.application.ports.credits_detector_port import (
+    CreditsDetectorPort,
+    CreditsDetectorTuning,
+    CreditsSignal,
+    DetectedCredits,
+)
 from src.modules.media.application.ports.file_scanner_port import (
     FileSystemScanner,
     MediaType,
@@ -56,6 +62,10 @@ __all__ = [
     "CollectionMetadata",
     "CollectionPartMetadata",
     "CreditPerson",
+    "CreditsDetectorPort",
+    "CreditsDetectorTuning",
+    "CreditsSignal",
+    "DetectedCredits",
     "DetectedIntro",
     "EpisodeMediaRef",
     "EpisodeMetadata",

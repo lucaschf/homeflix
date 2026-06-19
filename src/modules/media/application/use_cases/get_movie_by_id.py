@@ -11,6 +11,9 @@ from src.modules.media.application.ports.profile_library_access_port import (
     ProfileLibraryAccessPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.use_cases._credits_media_helpers import (
+    to_credits_marker_output,
+)
 from src.modules.media.application.use_cases._media_file_helpers import (
     to_media_file_output,
 )
@@ -136,6 +139,7 @@ class GetMovieByIdUseCase:
             needs_enrichment_review=movie.needs_enrichment_review,
             created_at=movie.created_at.isoformat(),
             updated_at=movie.updated_at.isoformat(),
+            credits=to_credits_marker_output(movie.credits),
         )
 
 

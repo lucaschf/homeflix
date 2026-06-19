@@ -32,6 +32,7 @@ from src.modules.settings.domain.value_objects import (
     SETTING_VO_TYPES,
     AvatarConfig,
     ConfigVO,
+    CreditsDetectionConfig,
     IntroDetectionConfig,
     ScanDedupConfig,
     SchedulerConfig,
@@ -134,6 +135,14 @@ class RuntimeSettings:
         return cast(
             IntroDetectionConfig,
             self._snapshot[SettingKey.INTRO_DETECTION],
+        )
+
+    async def credits_detection(self) -> CreditsDetectionConfig:
+        """Return the current :class:`CreditsDetectionConfig` snapshot."""
+        await self._ensure_fresh()
+        return cast(
+            CreditsDetectionConfig,
+            self._snapshot[SettingKey.CREDITS_DETECTION],
         )
 
     async def streaming(self) -> StreamingConfig:

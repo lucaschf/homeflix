@@ -6,6 +6,9 @@ from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
     AirDate,
     ContentRating,
+    CreditsDetectionState,
+    CreditsMarker,
+    CreditsMarkerSource,
     Duration,
     EpisodeId,
     EpisodeNumber,
@@ -82,6 +85,8 @@ class EpisodeMapper:
             else None,
             air_date=entity.air_date.value if entity.air_date else None,
             **_intro_marker_to_columns(entity.intro),
+            **_credits_marker_to_columns(entity.credits),
+            credits_detection_state=entity.credits_detection_state.value,
         )
 
         for file in entity.files:
@@ -132,6 +137,12 @@ class EpisodeMapper:
             else None,
             air_date=AirDate(model.air_date) if model.air_date else None,
             intro=_intro_marker_from_columns(model),
+            credits=_credits_marker_from_columns(model),
+            # ``server_default`` only fills on INSERT; in-memory models
+            # (tests, pre-flush rows) can carry ``None`` here, so coerce.
+            credits_detection_state=CreditsDetectionState(
+                model.credits_detection_state or CreditsDetectionState.NOT_STARTED.value
+            ),
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -166,6 +177,10 @@ class EpisodeMapper:
 
         for column, value in _intro_marker_to_columns(entity.intro).items():
             setattr(model, column, value)
+
+        for column, value in _credits_marker_to_columns(entity.credits).items():
+            setattr(model, column, value)
+        model.credits_detection_state = entity.credits_detection_state.value
 
         _sync_episode_file_variants(model.file_variants, entity.files)
 
@@ -436,6 +451,41 @@ def _intro_marker_from_columns(model: EpisodeModel) -> IntroMarker | None:
         source=IntroMarkerSource(model.intro_source),
         confidence=model.intro_confidence,
         detected_at=model.intro_detected_at,
+    )
+
+
+def _credits_marker_to_columns(marker: CreditsMarker | None) -> dict[str, object]:
+    """Explode a CreditsMarker (or absence) into the 4 marker columns.
+
+    The ``credits_detection_state`` column is independent of the marker
+    and handled by the caller, so it is not touched here.
+    """
+    if marker is None:
+        return {
+            "credits_start_seconds": None,
+            "credits_source": None,
+            "credits_confidence": None,
+            "credits_detected_at": None,
+        }
+
+    return {
+        "credits_start_seconds": marker.start_seconds,
+        "credits_source": marker.source.value,
+        "credits_confidence": marker.confidence,
+        "credits_detected_at": marker.detected_at,
+    }
+
+
+def _credits_marker_from_columns(model: EpisodeModel) -> CreditsMarker | None:
+    """Reconstruct a CreditsMarker, or ``None`` when no onset is stored."""
+    if model.credits_start_seconds is None:
+        return None
+
+    return CreditsMarker(
+        start_seconds=model.credits_start_seconds,
+        source=CreditsMarkerSource(model.credits_source),
+        confidence=model.credits_confidence,
+        detected_at=model.credits_detected_at,
     )
 
 

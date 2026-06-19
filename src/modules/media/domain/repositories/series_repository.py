@@ -10,6 +10,8 @@ from src.modules.media.domain.entities.season import Season
 from src.modules.media.domain.entities.series import Series
 from src.modules.media.domain.repositories.movie_repository import GenreRow
 from src.modules.media.domain.value_objects import (
+    CreditsDetectionState,
+    CreditsMarker,
     EpisodeId,
     FilePath,
     Genre,
@@ -523,6 +525,49 @@ class SeriesRepository(ABC):
 
         Returns:
             The number of episode rows cleared.
+        """
+        ...
+
+    @abstractmethod
+    async def find_episodes_pending_credits_detection(self, limit: int) -> Sequence[Episode]:
+        """Return episodes whose credits detection has not run yet.
+
+        Filters for episodes in ``NOT_STARTED`` credits-detection state
+        (per-file, unlike the season-scoped intro detection), with their
+        file variants eager-loaded so the job can read the primary file
+        path without an N+1. Soft-deleted episodes are excluded.
+
+        Args:
+            limit: Maximum number of episodes to return.
+
+        Returns:
+            Sequence of episodes eligible for the next credits tick.
+        """
+        ...
+
+    @abstractmethod
+    async def update_episode_credits(
+        self,
+        episode_id: EpisodeId,
+        marker: CreditsMarker | None,
+        state: CreditsDetectionState,
+    ) -> bool:
+        """Persist the credits marker + detection state for one episode.
+
+        Direct UPDATE of the four credits-marker columns plus
+        ``credits_detection_state`` on the ``episodes`` row, avoiding a
+        round-trip through the ``Series`` aggregate. ``marker=None`` clears
+        the marker columns (used for IN_PROGRESS / NO_CREDITS_FOUND /
+        FAILED transitions and for clearing); a non-null marker writes the
+        onset (used on COMPLETED and manual edits).
+
+        Args:
+            episode_id: External id of the episode (epi_xxx).
+            marker: The marker to persist, or ``None`` to clear it.
+            state: New ``CreditsDetectionState`` value.
+
+        Returns:
+            ``True`` if a row was updated, ``False`` if no episode matched.
         """
         ...
 

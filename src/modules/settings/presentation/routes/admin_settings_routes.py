@@ -24,6 +24,7 @@ from src.modules.settings.application.use_cases import (
 )
 from src.modules.settings.domain.value_objects import (
     AvatarConfig,
+    CreditsDetectionConfig,
     IntroDetectionConfig,
     ScanDedupConfig,
     SchedulerConfig,
@@ -106,6 +107,26 @@ async def update_intro_detection_settings(
     detail = await use_case.execute(
         UpdateSettingInput(
             key=SettingKey.INTRO_DETECTION.value,
+            value=body.model_dump(mode="json"),
+            acting_admin_id=admin.external_id,
+        ),
+    )
+    return api_single("setting", asdict(detail))
+
+
+@router.patch("/credits-detection")
+@inject
+async def update_credits_detection_settings(
+    body: CreditsDetectionConfig,
+    admin: UserModel = Depends(current_admin_user),
+    use_case: UpdateSettingUseCase = Depends(
+        Provide[ApplicationContainer.settings.update_setting],
+    ),
+) -> dict[str, Any]:
+    """Replace the persisted :class:`CreditsDetectionConfig`."""
+    detail = await use_case.execute(
+        UpdateSettingInput(
+            key=SettingKey.CREDITS_DETECTION.value,
             value=body.model_dump(mode="json"),
             acting_admin_id=admin.external_id,
         ),

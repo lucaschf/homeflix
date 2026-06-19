@@ -1,8 +1,9 @@
 """Movie ORM model."""
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Boolean, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.infrastructure.persistence.base import Base
@@ -97,6 +98,18 @@ class MovieModel(Base):
         default=False,
         server_default="0",
         index=True,
+    )
+
+    # Skip-credits support: flat columns persisting the CreditsMarker VO.
+    # Credits run to the end, so only the onset is stored (no end column).
+    credits_start_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credits_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    credits_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    credits_detected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    credits_detection_state: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="NOT_STARTED", server_default="NOT_STARTED"
     )
 
     # Relationships

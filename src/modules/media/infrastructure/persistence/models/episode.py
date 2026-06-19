@@ -103,6 +103,20 @@ class EpisodeModel(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Skip-credits support: flat columns persisting the CreditsMarker VO.
+    # Credits run to the end, so only the onset is stored (no end column).
+    # All marker fields are NULL until a marker is set; the per-file
+    # detection lifecycle is tracked separately by ``credits_detection_state``.
+    credits_start_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credits_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    credits_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    credits_detected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    credits_detection_state: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="NOT_STARTED", server_default="NOT_STARTED"
+    )
+
     # Relationships
     file_variants: Mapped[list["MediaFileModel"]] = relationship(
         "MediaFileModel",

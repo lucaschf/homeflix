@@ -18,6 +18,7 @@ class SettingKey(StrEnum):
     SCHEDULER = "scheduler"
     THUMBNAIL_BACKFILL = "thumbnail_backfill"
     INTRO_DETECTION = "intro_detection"
+    CREDITS_DETECTION = "credits_detection"
     STREAMING = "streaming"
     AVATAR = "avatar"
     SCAN_DEDUP = "scan_dedup"

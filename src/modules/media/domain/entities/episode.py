@@ -12,6 +12,8 @@ from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixi
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
     AirDate,
+    CreditsDetectionState,
+    CreditsMarker,
     Duration,
     EpisodeId,
     EpisodeNumber,
@@ -70,6 +72,10 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
     # Skip-intro support
     intro: IntroMarker | None = None
 
+    # Skip-credits support (per-file detection; credits run to the end)
+    credits: CreditsMarker | None = None
+    credits_detection_state: CreditsDetectionState = CreditsDetectionState.NOT_STARTED
+
     # noinspection PyNestedDecorators
     @field_validator("id", mode="before")
     @classmethod
@@ -116,6 +122,50 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
         if self.intro is None:
             return self
         return self.with_updates(intro=None)
+
+    def with_credits_marker(self, marker: CreditsMarker) -> Self:
+        """Return a copy with the credits marker set.
+
+        Args:
+            marker: The credits marker to attach to this episode.
+
+        Returns:
+            A new Episode with the marker applied, or ``self`` if the same
+            marker is already in place.
+
+        Raises:
+            BusinessRuleViolationException: If ``marker.start_seconds``
+                exceeds the episode's duration.
+        """
+        if marker.start_seconds > self.duration.value:
+            raise BusinessRuleViolationException(
+                message="Credits start_seconds cannot exceed episode duration",
+                rule_code=MediaRuleCodes.CREDITS_EXCEEDS_DURATION,
+                tags={
+                    "episode_duration": self.duration.value,
+                    "credits_start_seconds": marker.start_seconds,
+                },
+            )
+        if self.credits == marker:
+            return self
+        return self.with_updates(credits=marker)
+
+    def with_credits_cleared(self) -> Self:
+        """Return a copy with the credits marker removed.
+
+        Returns:
+            A new Episode with ``credits`` set to ``None``, or ``self`` if
+            it was already absent.
+        """
+        if self.credits is None:
+            return self
+        return self.with_updates(credits=None)
+
+    def with_credits_detection_state(self, state: CreditsDetectionState) -> Self:
+        """Return a copy with the credits-detection state set."""
+        if self.credits_detection_state == state:
+            return self
+        return self.with_updates(credits_detection_state=state)
 
 
 __all__ = ["Episode"]
