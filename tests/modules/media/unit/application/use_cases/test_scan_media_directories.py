@@ -345,6 +345,22 @@ class TestRescanResolutionUpgrade:
         probe.probe.assert_called_once_with("/movies/inception.mkv")
 
     @pytest.mark.asyncio
+    async def test_should_stamp_probed_duration_on_new_movie(self) -> None:
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda _fp: None
+        saved: list[Movie] = []
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
+        probe = MagicMock(spec=MediaProbePort)
+        probe.probe.return_value = ProbeResult(resolution="1080p", duration_seconds=7245)
+        files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
+
+        await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        # Real file duration is stamped at scan time (not left 0 for enrichment).
+        assert saved[0].duration.value == 7245
+
+    @pytest.mark.asyncio
     async def test_should_probe_when_existing_resolution_is_unknown(self) -> None:
         existing = Movie.create(
             library_id=_LIBRARY_ID,

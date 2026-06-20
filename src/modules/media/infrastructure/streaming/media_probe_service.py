@@ -4,6 +4,7 @@ Discovers audio tracks, subtitle tracks (embedded and external)
 from a media file, returning structured domain value objects.
 """
 
+import contextlib
 import functools
 import json
 import logging
@@ -182,18 +183,21 @@ class MediaProbeService(MediaProbePort):
             _logger.warning("Cannot probe non-existent file: %s", file_path)
             return ProbeResult()
 
-        streams = self._run_ffprobe(str(source))
+        data = self._run_ffprobe(str(source))
+        streams = list(data.get("streams", []))
         audio_tracks = self._parse_audio_tracks(streams)
         subtitle_tracks = self._parse_subtitle_tracks(streams)
         external_subs = self._scan_external_subtitles(source, len(subtitle_tracks))
         resolution = self._parse_resolution(streams)
+        duration = self._parse_duration(data)
 
         _logger.info(
-            "Probed %s: %d audio, %d embedded subs, %d external subs",
+            "Probed %s: %d audio, %d embedded subs, %d external subs, duration=%ss",
             source.name,
             len(audio_tracks),
             len(subtitle_tracks),
             len(external_subs),
+            duration if duration is not None else "?",
         )
 
         return ProbeResult(
@@ -201,7 +205,30 @@ class MediaProbeService(MediaProbePort):
             subtitle_tracks=subtitle_tracks,
             external_subtitles=external_subs,
             resolution=resolution,
+            duration_seconds=duration,
         )
+
+    @staticmethod
+    def _parse_duration(data: dict[str, Any]) -> int | None:
+        """Read the container duration (seconds) from the ffprobe payload.
+
+        Prefers ``format.duration`` (reliable across containers,
+        especially MKV where per-stream durations are often absent);
+        falls back to the longest stream duration. Returns whole seconds,
+        or ``None`` when no usable value is present.
+        """
+        candidates: list[float] = []
+        fmt_duration = data.get("format", {}).get("duration")
+        if fmt_duration is not None:
+            with contextlib.suppress(TypeError, ValueError):
+                candidates.append(float(fmt_duration))
+        for stream in data.get("streams", []):
+            value = stream.get("duration")
+            if value is not None:
+                with contextlib.suppress(TypeError, ValueError):
+                    candidates.append(float(value))
+        usable = [c for c in candidates if c > 0]
+        return round(max(usable)) if usable else None
 
     @staticmethod
     def _run_ffprobe_video_dimensions(file_path: str) -> tuple[int, int] | None:
@@ -245,11 +272,16 @@ class MediaProbeService(MediaProbePort):
             return None
 
     @staticmethod
-    def _run_ffprobe(file_path: str) -> list[dict[str, Any]]:
-        """Run ffprobe and return stream data as JSON."""
+    def _run_ffprobe(file_path: str) -> dict[str, Any]:
+        """Run ffprobe and return the full JSON payload (streams + format).
+
+        ``format`` is requested alongside ``streams`` so callers can read
+        the container duration (``format.duration``) from the same single
+        invocation. Returns an empty dict on any failure.
+        """
         ffprobe = _ffprobe_path()
         if ffprobe is None:
-            return []
+            return {}
         try:
             result = subprocess.run(
                 [
@@ -257,6 +289,7 @@ class MediaProbeService(MediaProbePort):
                     "-v",
                     "error",
                     "-show_streams",
+                    "-show_format",
                     "-of",
                     "json",
                     file_path,
@@ -267,12 +300,12 @@ class MediaProbeService(MediaProbePort):
             )
             if result.returncode != 0:
                 _logger.error("ffprobe failed for %s: %s", file_path, result.stderr)
-                return []
+                return {}
             data: dict[str, Any] = json.loads(result.stdout)
-            return list(data.get("streams", []))
+            return data
         except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
             _logger.error("ffprobe error for %s: %s", file_path, e)
-            return []
+            return {}
 
     @staticmethod
     def _parse_resolution(streams: list[dict[str, Any]]) -> str | None:
