@@ -64,9 +64,13 @@ _STRIP_PATTERNS = [
     r"UNRATED",
     r"DC",
     r"IMAX",
-    # Release group in brackets
+    # Release group / quality tags in brackets or parentheses. The
+    # parenthesis case deliberately skips a bare 4-digit year — ``(2002)``
+    # vs ``(2025)`` is what distinguishes two same-titled movies, so the
+    # year must stay in the base name or the scanner groups them as one
+    # movie's variants (e.g. "Lilo & Stitch (2002)" + "(2025)").
     r"\[.*?\]",
-    r"\(.*?\)",
+    r"\((?![12]\d{3}\))[^)]*\)",
 ]
 
 _COMBINED_PATTERN = re.compile(
