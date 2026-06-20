@@ -115,7 +115,7 @@ class TestAudioVersionLabels:
         assert labels[0] == TrackVersion("studio", "Herbert Richers")
         assert labels[1] == TrackVersion("channel_layout", "Stereo")
 
-    def test_should_guard_against_duplicate_studio_names(self) -> None:
+    def test_should_number_repeated_studio_names(self) -> None:
         tracks = [
             _audio(0, "pt", title="Netflix", channels=2),
             _audio(1, "pt", title="Netflix", channels=2),
@@ -123,8 +123,30 @@ class TestAudioVersionLabels:
 
         labels = audio_version_labels(tracks)
 
-        assert labels[0] == TrackVersion("ordinal", "1")
-        assert labels[1] == TrackVersion("ordinal", "2")
+        assert labels[0] == TrackVersion("studio", "Netflix 1")
+        assert labels[1] == TrackVersion("studio", "Netflix 2")
+
+    def test_should_keep_distinct_studios_while_numbering_repeats(self) -> None:
+        # Real-world case: 3 Herbert Richers takes + DublaVídeo + Centauro,
+        # all pt-BR. Repeats are numbered; the other studios keep their name
+        # (previously the whole group collapsed to plain ordinals).
+        tracks = [
+            _audio(0, "pt", title="1ª Dublagem Clássica - Herbert Richers - Completa"),
+            _audio(1, "pt", title="2ª Dublagem Clássica - Herbert Richers - Fonte 2 - 2.0"),
+            _audio(2, "pt", title="2ª Dublagem Clássica - Herbert Richers - 2.0"),
+            _audio(3, "pt", title="3ª Redublagem - DublaVideo SP"),
+            _audio(4, "pt", title="4ª Redublagem - Centauro"),
+            _audio(5, "en", title="Inglês - 5.1", channels=6),
+        ]
+
+        labels = audio_version_labels(tracks)
+
+        assert labels[0] == TrackVersion("studio", "Herbert Richers 1")
+        assert labels[1] == TrackVersion("studio", "Herbert Richers 2")
+        assert labels[2] == TrackVersion("studio", "Herbert Richers 3")
+        assert labels[3] == TrackVersion("studio", "Dublavídeo")
+        assert labels[4] == TrackVersion("studio", "Centauro")
+        assert labels[5] is None  # single English track → just the language
 
     def test_should_label_each_language_group_independently(self) -> None:
         tracks = [
