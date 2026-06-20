@@ -17,11 +17,15 @@ from src.config.containers import ApplicationContainer
 from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.media.application.dtos.credits_dtos import (
+    ListCreditsStatusInput,
     ResetCreditsDetectionInput,
     SetCreditsMarkerInput,
 )
 from src.modules.media.application.use_cases.clear_credits_marker import (
     ClearCreditsMarkerUseCase,
+)
+from src.modules.media.application.use_cases.list_credits_status import (
+    ListCreditsStatusUseCase,
 )
 from src.modules.media.application.use_cases.reset_credits_detection import (
     ResetCreditsDetectionUseCase,
@@ -30,6 +34,35 @@ from src.modules.media.application.use_cases.set_credits_marker import SetCredit
 from src.modules.media.presentation.schemas.credits_schemas import SetCreditsRequest
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Credits"])
+
+
+@router.get("/credits/status")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def list_credits_status(
+    media_type: str = "movie",
+    state: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: ListCreditsStatusUseCase = Depends(
+        Provide[ApplicationContainer.media.list_credits_status],
+    ),
+) -> dict[str, Any]:
+    """Observability: titles by credits-detection state + per-state counts.
+
+    ``media_type`` is ``movie`` or ``episode``; ``state`` optionally filters
+    by detection state. Returns a single object with the page, total, and
+    the unfiltered per-state counts for the filter chips.
+    """
+    output = await use_case.execute(
+        ListCreditsStatusInput(
+            media_type=media_type,
+            state=state,
+            limit=limit,
+            offset=offset,
+        ),
+    )
+    return api_single("credits_status", asdict(output))
 
 
 @router.put("/media/{media_id}/credits")  # type: ignore[misc]

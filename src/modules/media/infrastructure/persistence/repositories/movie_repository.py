@@ -17,7 +17,7 @@ from src.building_blocks.application.pagination import (
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
-from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.modules.media.domain.repositories.movie_repository import CreditsStatusRow, GenreRow
 from src.modules.media.domain.value_objects import (
     CreditsDetectionState,
     CreditsMarker,
@@ -744,6 +744,60 @@ class SQLAlchemyMovieRepository(MovieRepository):
         )
         result = await self._session.execute(stmt)
         return [MovieMapper.to_entity(model) for model in result.scalars().all()]
+
+    async def count_credits_states(self) -> dict[str, int]:
+        """Return ``{credits_detection_state: count}`` over non-deleted movies."""
+        stmt = (
+            select(MovieModel.credits_detection_state, func.count())
+            .where(MovieModel.deleted_at.is_(None))
+            .group_by(MovieModel.credits_detection_state)
+        )
+        result = await self._session.execute(stmt)
+        return dict(result.all())
+
+    async def list_credits_status(
+        self, state: str | None, limit: int, offset: int
+    ) -> tuple[Sequence[CreditsStatusRow], int]:
+        """Return a page of movie credits-status rows + total (newest first)."""
+        conditions = [MovieModel.deleted_at.is_(None)]
+        if state is not None:
+            conditions.append(MovieModel.credits_detection_state == state)
+
+        total = (
+            await self._session.execute(
+                select(func.count()).select_from(MovieModel).where(*conditions)
+            )
+        ).scalar_one()
+
+        stmt = (
+            select(
+                MovieModel.external_id,
+                MovieModel.title,
+                MovieModel.credits_detection_state,
+                MovieModel.credits_start_seconds,
+                MovieModel.credits_source,
+                MovieModel.credits_confidence,
+            )
+            .where(*conditions)
+            # SQLite sorts NULLs last under DESC, so freshly-marked rows
+            # surface first and never-marked ones sink to the bottom.
+            .order_by(MovieModel.credits_detected_at.desc(), MovieModel.title.asc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        items = [
+            CreditsStatusRow(
+                media_id=r[0],
+                title=r[1],
+                state=r[2],
+                start_seconds=r[3],
+                source=r[4],
+                confidence=r[5],
+            )
+            for r in rows
+        ]
+        return items, int(total)
 
     async def find_pending_credits_detection(self, limit: int) -> Sequence[Movie]:
         """Return NOT_STARTED-credits movies with file variants loaded."""

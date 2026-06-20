@@ -8,7 +8,7 @@ from src.building_blocks.application.pagination import PaginatedResult
 from src.modules.media.domain.entities.episode import Episode
 from src.modules.media.domain.entities.season import Season
 from src.modules.media.domain.entities.series import Series
-from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.modules.media.domain.repositories.movie_repository import CreditsStatusRow, GenreRow
 from src.modules.media.domain.value_objects import (
     CreditsDetectionState,
     CreditsMarker,
@@ -525,6 +525,23 @@ class SeriesRepository(ABC):
 
         Returns:
             The number of episode rows cleared.
+        """
+        ...
+
+    @abstractmethod
+    async def count_episode_credits_states(self) -> dict[str, int]:
+        """Return ``{credits_detection_state: count}`` over non-deleted episodes."""
+        ...
+
+    @abstractmethod
+    async def list_episode_credits_status(
+        self, state: str | None, limit: int, offset: int
+    ) -> tuple[Sequence[CreditsStatusRow], int]:
+        """Return a page of episode credits-status rows + the total count.
+
+        Rows carry ``series_id``/``season_number``/``episode_number`` so the
+        admin UI can deep-link into the per-episode editor. Newest-marker
+        first, then by series + season + episode.
         """
         ...
 

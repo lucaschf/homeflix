@@ -33,6 +33,28 @@ class GenreRow:
     localized_genres: list[str]
 
 
+@dataclass(frozen=True)
+class CreditsStatusRow:
+    """Lightweight projection of a title's credits-detection status.
+
+    Used by the admin "credits status" listing so it can show every
+    title's state + marker without loading entities and their file
+    variants. Episode-only context (``series_id``/``season_number``/
+    ``episode_number``) is ``None`` for movies; the admin UI uses it to
+    deep-link into the per-episode editor.
+    """
+
+    media_id: str
+    title: str
+    state: str
+    start_seconds: int | None
+    source: str | None
+    confidence: float | None
+    series_id: str | None = None
+    season_number: int | None = None
+    episode_number: int | None = None
+
+
 class MovieRepository(ABC):
     """Repository interface for Movie aggregate.
 
@@ -562,6 +584,27 @@ class MovieRepository(ABC):
 
         Returns:
             Sequence of movies whose ``scrub_preview_path`` is null.
+        """
+        ...
+
+    @abstractmethod
+    async def count_credits_states(self) -> dict[str, int]:
+        """Return ``{credits_detection_state: count}`` over non-deleted movies."""
+        ...
+
+    @abstractmethod
+    async def list_credits_status(
+        self, state: str | None, limit: int, offset: int
+    ) -> tuple[Sequence[CreditsStatusRow], int]:
+        """Return a page of movie credits-status rows + the total count.
+
+        Args:
+            state: Filter by ``credits_detection_state``, or ``None`` for all.
+            limit: Page size.
+            offset: Page offset.
+
+        Returns:
+            ``(rows, total)`` — newest-marker-first, then by title.
         """
         ...
 

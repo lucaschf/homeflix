@@ -71,6 +71,9 @@ from src.modules.media.application.use_cases.get_series_tmdb_suggestions import 
 )
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_conflicts import ListConflictsUseCase
+from src.modules.media.application.use_cases.list_credits_status import (
+    ListCreditsStatusUseCase,
+)
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
 from src.modules.media.application.use_cases.list_intro_detection_runs import (
     ListIntroDetectionRunsUseCase,
@@ -373,6 +376,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     reset_credits_detection = providers.Factory(
         ResetCreditsDetectionUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
+    list_credits_status = providers.Factory(
+        ListCreditsStatusUseCase,
         uow_factory=media_unit_of_work_factory,
     )
 

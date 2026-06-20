@@ -66,8 +66,72 @@ class ResetCreditsDetectionOutput:
     marker_cleared: bool
 
 
+@dataclass(frozen=True)
+class ListCreditsStatusInput:
+    """Input for ``ListCreditsStatusUseCase``.
+
+    Attributes:
+        media_type: ``"movie"`` or ``"episode"``.
+        state: Filter by detection state (enum value), or ``None`` for all.
+        limit: Page size.
+        offset: Page offset.
+    """
+
+    media_type: str
+    state: str | None = None
+    limit: int = 50
+    offset: int = 0
+
+
+@dataclass(frozen=True)
+class CreditsStatusItem:
+    """One title's credits-detection status row.
+
+    Attributes:
+        media_id: External id (mov_xxx / epi_xxx).
+        media_type: ``"movie"`` or ``"episode"``.
+        title: Display title.
+        state: ``CreditsDetectionState`` value.
+        start_seconds: Detected/manual onset, or ``None``.
+        source: ``"AUTO_DETECTED"`` / ``"MANUAL"`` / ``None``.
+        confidence: ``[0,1]`` or ``None``.
+        series_id / season_number / episode_number: Episode context for
+            deep-linking the editor; ``None`` for movies.
+    """
+
+    media_id: str
+    media_type: str
+    title: str
+    state: str
+    start_seconds: int | None
+    source: str | None
+    confidence: float | None
+    series_id: str | None
+    season_number: int | None
+    episode_number: int | None
+
+
+@dataclass(frozen=True)
+class CreditsStatusOutput:
+    """A page of credits-status rows + the per-state totals.
+
+    Attributes:
+        items: The requested page.
+        total: Row count matching the filter (for pagination).
+        counts: ``{state: count}`` across all rows of the media type
+            (unfiltered) — drives the filter chips.
+    """
+
+    items: list[CreditsStatusItem]
+    total: int
+    counts: dict[str, int]
+
+
 __all__ = [
     "CreditsMarkerOutput",
+    "CreditsStatusItem",
+    "CreditsStatusOutput",
+    "ListCreditsStatusInput",
     "ResetCreditsDetectionInput",
     "ResetCreditsDetectionOutput",
     "SetCreditsMarkerInput",
