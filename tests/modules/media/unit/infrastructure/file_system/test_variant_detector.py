@@ -52,6 +52,18 @@ class TestExtractBaseName:
     def test_preserves_name_without_tags(self, detector: VariantDetector) -> None:
         assert detector.extract_base_name("my_video.mkv") == "my_video"
 
+    def test_preserves_parenthesized_year(self, detector: VariantDetector) -> None:
+        # A bare year in parens distinguishes same-titled movies and must
+        # survive, even with quality tags also in parens around it.
+        assert detector.extract_base_name("Lilo & Stitch (2002).mkv") == "Lilo & Stitch (2002)"
+        assert (
+            detector.extract_base_name("Lilo & Stitch (2025) 1080p BluRay.mkv")
+            == "Lilo & Stitch (2025)"
+        )
+
+    def test_strips_non_year_parentheses(self, detector: VariantDetector) -> None:
+        assert detector.extract_base_name("Movie (BluRay).mkv") == "Movie"
+
     def test_windows_path_does_not_eat_parent_folder(self, detector: VariantDetector) -> None:
         # Sibling movie folders with "(YYYY)" must produce distinct base names.
         # Regression: ``\(.*?\)`` previously backtracked across path separators
@@ -63,8 +75,11 @@ class TestExtractBaseName:
         mib = detector.extract_base_name(
             r"D:\homeflix\Movies\Predator (2002)\Men in Black II (2002).mkv",
         )
-        assert predator == "Predator"
-        assert mib == "Men in Black II"
+        # The parenthesized year stays in the base name (it distinguishes
+        # same-titled movies across years); only the parent folder must
+        # not bleed in.
+        assert predator == "Predator (1987)"
+        assert mib == "Men in Black II (2002)"
         assert predator != mib
 
     def test_handles_mixed_and_unc_windows_paths(self, detector: VariantDetector) -> None:
@@ -76,8 +91,8 @@ class TestExtractBaseName:
         unc = detector.extract_base_name(
             r"\\server\share\Movies\Predator (1987)\Predator (1987).mkv",
         )
-        assert mixed == "Predator"
-        assert unc == "Predator"
+        assert mixed == "Predator (1987)"
+        assert unc == "Predator (1987)"
 
 
 @pytest.mark.unit
@@ -94,6 +109,12 @@ class TestAreVariants:
         assert not detector.are_variants(
             "Inception.2010.1080p.mkv",
             "Interstellar.2014.1080p.mkv",
+        )
+
+    def test_same_title_different_year_not_variants(self, detector: VariantDetector) -> None:
+        assert not detector.are_variants(
+            r"G:\Movies\Lilo & Stitch (2002)\Lilo & Stitch (2002).mkv",
+            r"G:\Movies\Lilo & Stitch (2025)\Lilo & Stitch (2025).mkv",
         )
 
 
@@ -116,3 +137,14 @@ class TestGroupVariants:
 
     def test_empty_list(self, detector: VariantDetector) -> None:
         assert detector.group_variants([]) == {}
+
+    def test_same_title_different_years_stay_separate(self, detector: VariantDetector) -> None:
+        # Regression: ``(2002)`` and ``(2025)`` were both stripped to the
+        # same base name and merged into one movie's variants.
+        groups = detector.group_variants(
+            [
+                r"G:\homeflix\Movies\Lilo & Stitch (2002)\Lilo & Stitch (2002).mkv",
+                r"G:\homeflix\Movies\Lilo & Stitch (2025)\Lilo & Stitch (2025).mkv",
+            ]
+        )
+        assert len(groups) == 2
