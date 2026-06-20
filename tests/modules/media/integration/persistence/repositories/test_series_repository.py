@@ -1503,6 +1503,50 @@ class TestFindSeasonsPendingIntroDetection:
 
         assert len(pending) == 2
 
+    async def test_orders_never_attempted_first_then_oldest_attempted(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """Fresh seasons run before retried ones; retried rotate oldest-first.
+
+        Guards against a permanently-INSUFFICIENT season (recent
+        ``attempted_at``) starving never-attempted ones under a small
+        ``batch_size``.
+        """
+        repo = SQLAlchemySeriesRepository(db_session)
+        older = datetime(2020, 1, 1, tzinfo=UTC)
+        newer = datetime(2020, 6, 1, tzinfo=UTC)
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.INSUFFICIENT_EPISODES,
+                detection_attempted_at=newer,
+                series_title="newer-retry",
+            )
+        )
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.INSUFFICIENT_EPISODES,
+                detection_attempted_at=older,
+                series_title="older-retry",
+            )
+        )
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.NOT_STARTED,
+                detection_attempted_at=None,
+                series_title="never-attempted",
+            )
+        )
+
+        pending = await repo.find_seasons_pending_intro_detection(limit=10)
+        attempted = [s.intro_detection_attempted_at for s in pending]
+
+        assert len(attempted) == 3
+        assert attempted[0] is None  # never-attempted first
+        assert attempted[1] is not None
+        assert attempted[2] is not None
+        assert attempted[1] <= attempted[2]  # then oldest-attempted before newest
+
 
 @pytest.mark.integration
 class TestUpdateSeasonIntroDetection:
