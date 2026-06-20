@@ -22,10 +22,10 @@ class GenerateHlsPlaylistInput:
             does not know its own mount point, so presentation passes
             it in.
         start: Source-time second the player wants playback to begin
-            from. ``0`` (the default) keeps the legacy single-bucket
-            cache. Non-zero values are rounded down to a coarser
-            bucket by the adapter so adjacent resume positions reuse
-            the same encode.
+            from, honoured exactly by the adapter so a forward seek
+            anchors a fresh encode on the target second. ``0`` (the
+            default) keeps the legacy single-bucket cache. The player
+            quantises resume positions itself when it wants cache reuse.
     """
 
     file_path: str

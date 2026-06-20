@@ -138,9 +138,9 @@ async def movie_hls_playlist(
         0,
         ge=0,
         description=(
-            "Source-time second to begin transcoding at. Rounded down "
-            "to a 5-minute bucket. Defaults to 0 for legacy single-bucket "
-            "caching."
+            "Source-time second to begin transcoding at, honoured "
+            "exactly so a forward seek starts a fresh encode at the "
+            "target. Defaults to 0 for legacy single-bucket caching."
         ),
     ),
     profile_id: str = Depends(resolve_profile_id),
@@ -177,9 +177,9 @@ async def episode_hls_playlist(
         0,
         ge=0,
         description=(
-            "Source-time second to begin transcoding at. Rounded down "
-            "to a 5-minute bucket. Defaults to 0 for legacy single-bucket "
-            "caching."
+            "Source-time second to begin transcoding at, honoured "
+            "exactly so a forward seek starts a fresh encode at the "
+            "target. Defaults to 0 for legacy single-bucket caching."
         ),
     ),
     profile_id: str = Depends(resolve_profile_id),
