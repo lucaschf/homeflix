@@ -40,6 +40,27 @@ _logger = logging.getLogger(__name__)
 SPRITE_FILENAME = "sprite.jpg"
 VTT_FILENAME = "sprite.vtt"
 
+
+def scrub_preview_output_dir(source: Path, subdir: str) -> Path:
+    """Return the deterministic per-stem sprite directory for a source file.
+
+    Mirrors the layout the backfill job and HLS pipeline write to —
+    ``<source-dir>/<subdir>/<source-stem>/`` — one folder per media stem
+    so episodes sharing a season directory don't overwrite each other's
+    ``sprite.jpg`` / ``sprite.vtt``. Centralised here so the scanner can
+    predict an already-generated preview's location and re-link it
+    without re-running ffmpeg.
+
+    Args:
+        source: Absolute path to the source media file.
+        subdir: Configured sprite sub-directory (e.g. ``.homeflix/thumbnails``).
+
+    Returns:
+        The directory that holds (or would hold) this file's sprite + VTT.
+    """
+    return source.parent / subdir / source.stem
+
+
 # JPEG quality for the sprite: ffmpeg -q:v where 2 is near-lossless and
 # 31 is worst. 5 keeps previews sharp enough for hover without bloating
 # the sprite — each 160x90 tile lands around 5-8KB on real content.

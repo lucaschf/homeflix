@@ -147,6 +147,9 @@ from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import
 )
 from src.modules.media.infrastructure.streaming import HlsService, MediaProbeService
 from src.modules.media.infrastructure.streaming.file_streamer import LocalFileStreamer
+from src.modules.media.infrastructure.streaming.scrub_preview_locator import (
+    FilesystemScrubPreviewLocator,
+)
 from src.modules.media.infrastructure.streaming.thumbnail_service import (
     ThumbnailGenerationService,
 )
@@ -411,6 +414,14 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         runtime_settings=runtime_settings,
     )
 
+    # Re-links scrub previews that already exist on disk (e.g. after a DB
+    # reset) during a scan, so the scanner can populate scrub_preview_path
+    # without waiting for the backfill job to regenerate the sprites.
+    scrub_preview_locator = providers.Singleton(
+        FilesystemScrubPreviewLocator,
+        runtime_settings=runtime_settings,
+    )
+
     # Audio analysis primitives — shared by the periodic intro detection
     # job. Singletons because each wrapper is stateless apart from the
     # runtime config it reads per call, and the job runs them serially
@@ -502,6 +513,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         uow_factory=media_unit_of_work_factory,
         probe_service=media_probe_service,
         event_bus=event_bus,
+        scrub_preview_locator=scrub_preview_locator,
     )
 
     # =========================================================================

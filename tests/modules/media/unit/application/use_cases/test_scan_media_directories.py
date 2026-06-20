@@ -1,6 +1,6 @@
 """Tests for ScanMediaDirectoriesUseCase."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -25,6 +25,7 @@ from src.modules.media.domain.value_objects import (
 )
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
 from src.shared_kernel.value_objects.file_path import FilePath
+from src.shared_kernel.value_objects.image_url import ImageUrl
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 from tests.modules.media.unit.conftest import MediaUoWMocks, make_media_uow_mock
@@ -93,6 +94,7 @@ def _make_use_case(
     scanner_results: list[ScannedFile] | None = None,
     mocks: MediaUoWMocks | None = None,
     probe_service: MediaProbePort | MagicMock | None = None,
+    scrub_preview_locator: MagicMock | None = None,
 ) -> tuple[ScanMediaDirectoriesUseCase, MediaUoWMocks]:
     """Build the scan use case wired to a mock Unit of Work factory."""
     file_scanner = MagicMock()
@@ -113,8 +115,16 @@ def _make_use_case(
         variant_detector=variant_detector,
         uow_factory=mocks.factory,
         probe_service=probe_service,
+        scrub_preview_locator=scrub_preview_locator,
     )
     return use_case, mocks
+
+
+def _locator(return_value: str | None) -> MagicMock:
+    """A ScrubPreviewLocatorPort mock whose ``locate`` returns a fixed value."""
+    locator = MagicMock()
+    locator.locate = AsyncMock(return_value=return_value)
+    return locator
 
 
 @pytest.mark.unit
@@ -814,3 +824,154 @@ class TestScanIdempotencyAndErrors:
         assert "INSERT INTO" not in joined
         assert "UNIQUE constraint" not in joined
         assert "SQL" not in joined
+
+
+@pytest.mark.unit
+class TestScanMediaScrubPreviewLinking:
+    """Linking already-generated scrub previews found on disk during a scan."""
+
+    @pytest.mark.asyncio
+    async def test_should_link_existing_scrub_preview_on_new_movie(self) -> None:
+        saved: list[Movie] = []
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.return_value = None
+        mocks.series.find_by_title.return_value = None
+        mocks.series.find_by_file_path.return_value = None
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
+
+        vtt = "/movies/.homeflix/thumbnails/Inception/sprite.vtt"
+        use_case, _ = _make_use_case(
+            scanner_results=[_movie_file("/movies/Inception.mkv", "Inception")],
+            mocks=mocks,
+            scrub_preview_locator=_locator(vtt),
+        )
+
+        await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert saved
+        assert saved[0].scrub_preview_path is not None
+        assert saved[0].scrub_preview_path.value == vtt
+
+    @pytest.mark.asyncio
+    async def test_should_leave_scrub_preview_none_when_not_on_disk(self) -> None:
+        saved: list[Movie] = []
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.return_value = None
+        mocks.series.find_by_title.return_value = None
+        mocks.series.find_by_file_path.return_value = None
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
+
+        use_case, _ = _make_use_case(
+            scanner_results=[_movie_file("/movies/Inception.mkv", "Inception")],
+            mocks=mocks,
+            scrub_preview_locator=_locator(None),
+        )
+
+        await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert saved
+        assert saved[0].scrub_preview_path is None
+
+    @pytest.mark.asyncio
+    async def test_should_leave_scrub_preview_none_without_locator(self) -> None:
+        saved: list[Movie] = []
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.return_value = None
+        mocks.series.find_by_title.return_value = None
+        mocks.series.find_by_file_path.return_value = None
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
+
+        use_case, _ = _make_use_case(
+            scanner_results=[_movie_file("/movies/Inception.mkv", "Inception")],
+            mocks=mocks,
+        )
+
+        await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert saved
+        assert saved[0].scrub_preview_path is None
+
+    @pytest.mark.asyncio
+    async def test_should_link_existing_scrub_preview_on_new_episode(self) -> None:
+        saved: list[Series] = []
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_title.return_value = None
+        mocks.series.find_by_file_path.return_value = None
+        mocks.series.save.side_effect = lambda s: saved.append(s) or s
+
+        vtt = "/series/Show/S01/.homeflix/thumbnails/S01E01/sprite.vtt"
+        use_case, _ = _make_use_case(
+            scanner_results=[_episode_file("/series/Show/S01/S01E01.mkv", series_name="Show")],
+            mocks=mocks,
+            scrub_preview_locator=_locator(vtt),
+        )
+
+        await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert saved
+        episode = saved[0].seasons[0].episodes[0]
+        assert episode.scrub_preview_path is not None
+        assert episode.scrub_preview_path.value == vtt
+
+    @pytest.mark.asyncio
+    async def test_should_link_scrub_preview_on_existing_movie_without_one(self) -> None:
+        existing = Movie.create(
+            library_id=_LIBRARY_ID,
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/Inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        saved: list[Movie] = []
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+            existing if fp.value == "/movies/Inception.mkv" else None
+        )
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
+
+        vtt = "/movies/.homeflix/thumbnails/Inception/sprite.vtt"
+        use_case, _ = _make_use_case(
+            scanner_results=[_movie_file("/movies/Inception.mkv", "Inception", 2010, "1080p")],
+            mocks=mocks,
+            scrub_preview_locator=_locator(vtt),
+        )
+
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert result.movies_updated == 1
+        assert saved
+        assert saved[0].scrub_preview_path is not None
+        assert saved[0].scrub_preview_path.value == vtt
+
+    @pytest.mark.asyncio
+    async def test_should_not_overwrite_existing_scrub_preview(self) -> None:
+        existing = Movie.create(
+            library_id=_LIBRARY_ID,
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/Inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+            scrub_preview_path=ImageUrl("/movies/.homeflix/thumbnails/Inception/sprite.vtt"),
+        )
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+            existing if fp.value == "/movies/Inception.mkv" else None
+        )
+        mocks.movies.save.side_effect = lambda m: m
+
+        locator = _locator("/somewhere/else/sprite.vtt")
+        use_case, _ = _make_use_case(
+            scanner_results=[_movie_file("/movies/Inception.mkv", "Inception", 2010, "1080p")],
+            mocks=mocks,
+            scrub_preview_locator=locator,
+        )
+
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert result.movies_updated == 0
+        mocks.movies.save.assert_not_called()
+        locator.locate.assert_not_awaited()

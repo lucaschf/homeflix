@@ -51,6 +51,9 @@ from src.modules.media.application.ports.progress_lookup_port import (
     ProgressLookupPort,
     ProgressSummary,
 )
+from src.modules.media.application.ports.scrub_preview_locator_port import (
+    ScrubPreviewLocatorPort,
+)
 from src.modules.media.application.ports.variant_detector_port import (
     VariantDetectorPort,
 )
@@ -87,6 +90,7 @@ __all__ = [
     "ProgressLookupPort",
     "ProgressSummary",
     "ScannedFile",
+    "ScrubPreviewLocatorPort",
     "SearchCandidate",
     "SeasonMetadata",
     "VariantDetectorPort",
