@@ -9,10 +9,12 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -51,6 +53,16 @@ class EpisodeModel(Base):
             "episode_number",
             name="uq_episode_season_number",
         ),
+        # Partial unique index: file_path is unique only among live rows.
+        # Soft-deleted episodes keep their path (audit/undo) but must not
+        # block a rescan from re-registering the same file.
+        Index(
+            "ix_episodes_file_path",
+            "file_path",
+            unique=True,
+            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     # Relationships
@@ -79,8 +91,6 @@ class EpisodeModel(Base):
     file_path: Mapped[str | None] = mapped_column(
         String(2000),
         nullable=True,
-        unique=True,
-        index=True,
     )
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # bytes
     resolution: Mapped[str | None] = mapped_column(String(20), nullable=True)

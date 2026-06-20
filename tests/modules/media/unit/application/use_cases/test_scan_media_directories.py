@@ -105,6 +105,7 @@ def _make_use_case(
         mocks.movies.find_by_file_path.return_value = None
         mocks.movies.save.side_effect = lambda m: m
         mocks.series.find_by_title.return_value = None
+        mocks.series.find_by_file_path.return_value = None
         mocks.series.save.side_effect = lambda s: s
 
     use_case = ScanMediaDirectoriesUseCase(
@@ -726,3 +727,90 @@ class TestScanLibraryIdPropagation:
 
         assert len(saved) == 1
         assert saved[0].library_id == other_library
+
+
+@pytest.mark.unit
+class TestScanIdempotencyAndErrors:
+    """Scanner must not re-create promoted/renamed media nor leak infra."""
+
+    @pytest.mark.asyncio
+    async def test_should_skip_movie_when_path_owned_by_series(self) -> None:
+        # A movie promoted to a series leaves its flat file behind; on a
+        # rescan that file must not be re-registered as a movie.
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.return_value = None
+        mocks.series.find_by_file_path.return_value = Series.create(
+            library_id=_LIBRARY_ID, title="Promoted", start_year=1994
+        )
+        saved: list[Movie] = []
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
+
+        files = [_movie_file("/series/The Stand (1994)/The Stand (1994).mkv", "The Stand", 1994)]
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
+
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert result.movies_created == 0
+        assert saved == []
+
+    @pytest.mark.asyncio
+    async def test_should_find_series_by_path_when_title_changed(self) -> None:
+        # Enrichment renamed the series, so find_by_title misses; the
+        # scanner must locate it by an episode file path and update it
+        # instead of creating a duplicate series.
+        series = Series.create(library_id=_LIBRARY_ID, title="Canonical", start_year=2016)
+        assert series.id is not None
+        path = "/series/Folder Name (2016)/S01/S01E01.mkv"
+        episode = Episode(
+            series_id=series.id,
+            season_number=SeasonNumber(1),
+            episode_number=EpisodeNumber(1),
+            title=Title("Pilot"),
+            duration=Duration(0),
+            files=[
+                MediaFile(
+                    file_path=FilePath(path),
+                    file_size=500_000,
+                    resolution=Resolution("Unknown"),
+                    is_primary=True,
+                )
+            ],
+        )
+        series = series.with_updates(
+            seasons=[Season(series_id=series.id, season_number=SeasonNumber(1), episodes=[episode])]
+        )
+
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_title.return_value = None
+        mocks.series.find_by_file_path.return_value = series
+        saved: list[Series] = []
+        mocks.series.save.side_effect = lambda s: saved.append(s) or s
+
+        files = [_episode_file(path, series_name="Folder Name (2016)", season=1, episode=1)]
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
+
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert result.episodes_created == 0
+        assert saved and saved[0].id == series.id  # existing series reused, not duplicated
+
+    @pytest.mark.asyncio
+    async def test_error_message_does_not_leak_infrastructure(self) -> None:
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_title.return_value = None
+        mocks.series.find_by_file_path.return_value = None
+        mocks.series.save.side_effect = Exception(
+            "UNIQUE constraint failed: episodes.file_path "
+            "[SQL: INSERT INTO episodes (season_id, series_external_id, ...) VALUES (?, ?)]"
+        )
+
+        files = [_episode_file("/series/Show/S01/S01E01.mkv", series_name="Show")]
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
+
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert result.errors == ["Failed to process series: Show"]
+        joined = " ".join(result.errors)
+        assert "INSERT INTO" not in joined
+        assert "UNIQUE constraint" not in joined
+        assert "SQL" not in joined

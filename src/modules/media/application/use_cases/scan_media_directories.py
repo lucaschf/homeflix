@@ -1,6 +1,7 @@
 """Use case for scanning media directories and registering discovered files."""
 
 import asyncio
+import logging
 from collections import defaultdict
 
 from src.building_blocks.application.event_bus import EventBus
@@ -35,6 +36,8 @@ from src.modules.media.domain.value_objects import (
 # (movie | episode, a file-classification enum). This is the catalog
 # discriminator (movie | series) carried on domain events (ADR-016).
 from src.shared_kernel.value_objects.media_type import MediaType as CatalogMediaType
+
+_logger = logging.getLogger(__name__)
 
 
 class ScanMediaDirectoriesUseCase:
@@ -212,8 +215,11 @@ class ScanMediaDirectoriesUseCase:
                 c, u = await self._process_movie_group(paths, by_path, library_id=library_id)
                 created += c
                 updated += u
-            except Exception as e:
-                errors.append(f"Error processing movie files {paths}: {e}")
+            except Exception:
+                # Log the full exception (it may carry SQL / driver detail)
+                # but keep the user-facing message free of infrastructure.
+                _logger.exception("Failed to process movie file group: %s", paths)
+                errors.append(f"Failed to process movie: {_base_name}")
 
         return created, updated, errors
 
@@ -229,12 +235,31 @@ class ScanMediaDirectoriesUseCase:
             existing = await self._find_existing_movie(uow, paths, by_path)
             if existing:
                 created, updated, events = await self._update_movie(uow, existing, paths, by_path)
+            elif await self._path_owned_by_series(uow, paths, by_path):
+                # A path already registered to a series episode (e.g. a
+                # movie that was promoted to a series) must not be
+                # re-registered as a movie — that would duplicate the file
+                # and collide on the unique file_path. Skip it.
+                _logger.info("Skipping movie create; path belongs to a series episode: %s", paths)
+                return 0, 0
             else:
                 created, updated, events = await self._create_movie(
                     uow, paths, by_path, library_id=library_id
                 )
         await self._dispatch_events(events)
         return created, updated
+
+    @staticmethod
+    async def _path_owned_by_series(
+        uow: MediaUnitOfWork,
+        paths: list[str],
+        by_path: dict[str, ScannedFile],
+    ) -> bool:
+        """Return True if any path is already an episode of some series."""
+        for path in paths:
+            if await uow.series.find_by_file_path(by_path[path].file_path):
+                return True
+        return False
 
     @staticmethod
     async def _find_existing_movie(
@@ -337,8 +362,11 @@ class ScanMediaDirectoriesUseCase:
                 c, u = await self._process_series(series_name, series_files, library_id=library_id)
                 created += c
                 updated += u
-            except Exception as e:
-                errors.append(f"Error processing series '{series_name}': {e}")
+            except Exception:
+                # Log the full exception (it may carry SQL / driver detail)
+                # but keep the user-facing message free of infrastructure.
+                _logger.exception("Failed to process series '%s'", series_name)
+                errors.append(f"Failed to process series: {series_name}")
 
         return created, updated, errors
 
@@ -355,6 +383,17 @@ class ScanMediaDirectoriesUseCase:
 
         async with self._uow_factory() as uow:
             series = await uow.series.find_by_title(Title(series_name))
+            if not series:
+                # Enrichment may have rewritten the title (the folder name
+                # no longer matches the canonical title), so a title lookup
+                # misses an existing series. Fall back to matching any of
+                # its episode files by path before creating a new series —
+                # otherwise we'd re-create the series and collide on the
+                # globally-unique episode file_path.
+                for f in files:
+                    series = await uow.series.find_by_file_path(f.file_path)
+                    if series:
+                        break
             if not series:
                 year = min((f.year for f in files if f.year), default=_current_year())
                 series = Series.create(title=series_name, start_year=year, library_id=library_id)
