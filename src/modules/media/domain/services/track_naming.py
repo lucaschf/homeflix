@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -166,9 +166,11 @@ def audio_version_labels(tracks: Iterable[AudioTrack]) -> dict[int, TrackVersion
 
     A language with a single track gets ``None`` (just show the language).
     Within a same-language group the chain is: detected studio → channel
-    layout (when it uniquely separates the rest) → ordinal. A final guard
-    falls the whole group back to ordinals if any label would collide, so
-    every track in a group always renders distinctly.
+    layout (when it uniquely separates the rest) → ordinal. Multiple takes
+    from the *same* studio are numbered ("Herbert Richers 1/2/3") so they
+    stay distinct without dragging other studios in the group down to bare
+    ordinals. A final guard falls the whole group back to ordinals only if
+    a label would still collide, so every track always renders distinctly.
     """
     result: dict[int, TrackVersion | None] = {}
     for group in _group_by_language(tracks):
@@ -176,10 +178,20 @@ def audio_version_labels(tracks: Iterable[AudioTrack]) -> dict[int, TrackVersion
             result[group[0].index] = None
             continue
 
+        # Studio pass — number repeats so several takes from one studio
+        # remain distinct while other studios keep their plain name.
+        detected = {track.index: detect_studio(track.title) for track in group}
+        studio_totals = Counter(s for s in detected.values() if s is not None)
+        studio_seen: Counter[str] = Counter()
         labels: dict[int, TrackVersion] = {}
         for track in group:
-            studio = detect_studio(track.title)
-            if studio is not None:
+            studio = detected[track.index]
+            if studio is None:
+                continue
+            if studio_totals[studio] > 1:
+                studio_seen[studio] += 1
+                labels[track.index] = TrackVersion("studio", f"{studio} {studio_seen[studio]}")
+            else:
                 labels[track.index] = TrackVersion("studio", studio)
 
         remaining = [t for t in group if t.index not in labels]
