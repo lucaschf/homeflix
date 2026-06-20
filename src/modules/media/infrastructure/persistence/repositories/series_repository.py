@@ -698,6 +698,17 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         Episodes (and their file_variants) are eager-loaded so the
         detection job can iterate file paths without N+1 queries.
         Soft-deleted rows are filtered out at both levels.
+
+        Ordered by ``intro_detection_attempted_at`` ascending with NULLs
+        first, then ``id``. NULL means never attempted (a fresh
+        ``NOT_STARTED`` season), so brand-new seasons run first; a season
+        that keeps landing in ``INSUFFICIENT_EPISODES`` (e.g. an extras
+        season with too few playable episodes) has its ``attempted_at``
+        stamped on each pass and so rotates to the BACK of the queue
+        instead of monopolizing every tick — without this a permanently
+        insufficient season starves all others when ``batch_size`` is
+        small. ``nullsfirst`` is explicit because SQLite (NULLs first on
+        ASC) and PostgreSQL (NULLs last) disagree on the default.
         """
         eligible_states = (
             IntroDetectionState.NOT_STARTED.value,
@@ -710,7 +721,10 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 SeasonModel.intro_detection_state.in_(eligible_states),
             )
             .options(selectinload(SeasonModel.episodes).selectinload(EpisodeModel.file_variants))
-            .order_by(SeasonModel.id.asc())
+            .order_by(
+                SeasonModel.intro_detection_attempted_at.asc().nullsfirst(),
+                SeasonModel.id.asc(),
+            )
             .limit(limit)
         )
         result = await self._session.execute(stmt)
