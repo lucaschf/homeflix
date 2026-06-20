@@ -3,6 +3,7 @@
 from src.modules.media.domain.repositories.intro_detection_run_repository import (
     IntroDetectionRunRepository,
 )
+from src.modules.media.domain.repositories.job_run_repository import JobRunRepository
 from src.modules.media.domain.repositories.media_conflict_repository import (
     MediaConflictRepository,
 )
@@ -12,6 +13,7 @@ from src.modules.media.domain.repositories.series_repository import SeriesReposi
 
 __all__ = [
     "IntroDetectionRunRepository",
+    "JobRunRepository",
     "MediaConflictRepository",
     "MovieRepository",
     "ScanRunRepository",

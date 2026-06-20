@@ -36,6 +36,7 @@ from src.modules.media.presentation.routes import (
     admin_conflicts_router,
     admin_credits_router,
     admin_intro_detection_router,
+    admin_jobs_router,
     admin_overview_router,
     admin_relink_router,
     admin_scan_router,
@@ -67,6 +68,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.media.presentation.routes.admin_conflicts_routes",
     "src.modules.media.presentation.routes.admin_credits_routes",
     "src.modules.media.presentation.routes.admin_intro_detection_routes",
+    "src.modules.media.presentation.routes.admin_jobs_routes",
     "src.modules.media.presentation.routes.admin_overview_routes",
     "src.modules.media.presentation.routes.admin_relink_routes",
     "src.modules.media.presentation.routes.admin_scan_routes",
@@ -188,6 +190,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # must be awaited before ``.execute()``.
     sweep_scan_runs = await container.media.sweep_interrupted_scan_runs()
     await sweep_scan_runs.execute()
+
+    # Same repair for the generic job_runs log — any tick that was
+    # mid-flight at the previous shutdown is closed as ``interrupted``.
+    sweep_job_runs = await container.media.sweep_interrupted_job_runs()
+    await sweep_job_runs.execute()
 
     # Start background scheduler (library scans + thumbnail backfill +
     # intro detection). Scheduler-on/off + per-job intervals come from
@@ -447,6 +454,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_relink_router)
     app.include_router(admin_scan_router)
     app.include_router(admin_intro_detection_router)
+    app.include_router(admin_jobs_router)
     app.include_router(admin_credits_router)
     app.include_router(admin_system_router)
     app.include_router(catalog_router)

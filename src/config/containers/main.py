@@ -33,10 +33,14 @@ from src.modules.identity.infrastructure.persistence.sqlalchemy_unit_of_work imp
 from src.modules.library.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyLibraryUnitOfWorkFactory,
 )
+from src.modules.media.application.use_cases.list_jobs import ListJobsUseCase
 from src.modules.media.infrastructure.acl import (
     LibraryHealthAdapter,
     ProfileLibraryAccessAdapter,
     ProgressLookupAdapter,
+)
+from src.modules.media.infrastructure.scheduling.scheduler_inspector import (
+    LibraryScanSchedulerInspector,
 )
 from src.modules.settings.domain.value_objects import IntroDetectionAlgorithm
 from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_work import (
@@ -230,6 +234,20 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         library_uow_factory=library.library_unit_of_work_factory,
         scan_run_service=media.scan_run_service,
         runtime_settings=settings.runtime_settings,
+        job_run_recorder=media.job_run_service,
+    )
+
+    # Read-only window into the live scheduler for the admin Jobs page.
+    # Shares the same scheduler singleton the lifespan starts.
+    scheduler_inspector = providers.Singleton(
+        LibraryScanSchedulerInspector,
+        scheduler=library_scan_scheduler,
+    )
+
+    list_jobs = providers.Factory(
+        ListJobsUseCase,
+        scheduler_inspector=scheduler_inspector,
+        media_uow_factory=media.media_unit_of_work_factory,
     )
 
     thumbnail_backfill_job = providers.Singleton(

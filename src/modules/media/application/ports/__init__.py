@@ -51,6 +51,11 @@ from src.modules.media.application.ports.progress_lookup_port import (
     ProgressLookupPort,
     ProgressSummary,
 )
+from src.modules.media.application.ports.scheduler_inspector_port import (
+    ScheduledJob,
+    SchedulerInspectorPort,
+    SchedulerSnapshot,
+)
 from src.modules.media.application.ports.scrub_preview_locator_port import (
     ScrubPreviewLocatorPort,
 )
@@ -90,6 +95,9 @@ __all__ = [
     "ProgressLookupPort",
     "ProgressSummary",
     "ScannedFile",
+    "ScheduledJob",
+    "SchedulerInspectorPort",
+    "SchedulerSnapshot",
     "ScrubPreviewLocatorPort",
     "SearchCandidate",
     "SeasonMetadata",
