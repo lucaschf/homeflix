@@ -21,6 +21,7 @@ from src.config.containers.watch_progress import WatchProgressContainer
 from src.config.settings import Settings
 from src.infrastructure.health import DatabaseProbe, FilesystemProbe
 from src.infrastructure.scheduling import (
+    CreditsDetectionJob,
     IntroDetectionJob,
     LibraryScanScheduler,
     ScanDedupSweepJob,
@@ -247,6 +248,13 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
                 IntroDetectionAlgorithm.FRAME_HASH: media.frame_hash_intro_detector,
             },
         ),
+        runtime_settings=settings.runtime_settings,
+    )
+
+    credits_detection_job = providers.Singleton(
+        CreditsDetectionJob,
+        media_uow_factory=media.media_unit_of_work_factory,
+        credits_detector=media.credits_detector,
         runtime_settings=settings.runtime_settings,
     )
 

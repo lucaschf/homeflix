@@ -13,6 +13,9 @@ from src.modules.media.application.ports.profile_library_access_port import (
     ProfileLibraryAccessPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.use_cases._credits_media_helpers import (
+    to_credits_marker_output,
+)
 from src.modules.media.application.use_cases._intro_marker_helpers import (
     to_intro_marker_output,
 )
@@ -225,6 +228,7 @@ class GetSeriesByIdUseCase:
             else None,
             air_date=episode.air_date.value.isoformat() if episode.air_date else None,
             intro=to_intro_marker_output(episode.intro),
+            credits=to_credits_marker_output(episode.credits),
             progress_percentage=progress.percentage if progress else None,
             position_seconds=progress.position_seconds if progress else None,
             watch_status=progress.status if progress else None,

@@ -16,8 +16,10 @@ from src.building_blocks.application.pagination import (
 )
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
-from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.modules.media.domain.repositories.movie_repository import CreditsStatusRow, GenreRow
 from src.modules.media.domain.value_objects import (
+    CreditsDetectionState,
+    CreditsMarker,
     EpisodeId,
     FilePath,
     Genre,
@@ -809,6 +811,117 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         )
         result = await self._session.execute(stmt)
         return int(result.rowcount or 0)
+
+    async def count_episode_credits_states(self) -> dict[str, int]:
+        """Return ``{credits_detection_state: count}`` over non-deleted episodes."""
+        stmt = (
+            select(EpisodeModel.credits_detection_state, func.count())
+            .where(EpisodeModel.deleted_at.is_(None))
+            .group_by(EpisodeModel.credits_detection_state)
+        )
+        result = await self._session.execute(stmt)
+        return dict(result.all())
+
+    async def list_episode_credits_status(
+        self, state: str | None, limit: int, offset: int
+    ) -> tuple[Sequence[CreditsStatusRow], int]:
+        """Return a page of episode credits-status rows + total (newest first)."""
+        conditions = [EpisodeModel.deleted_at.is_(None)]
+        if state is not None:
+            conditions.append(EpisodeModel.credits_detection_state == state)
+
+        total = (
+            await self._session.execute(
+                select(func.count()).select_from(EpisodeModel).where(*conditions)
+            )
+        ).scalar_one()
+
+        stmt = (
+            select(
+                EpisodeModel.external_id,
+                EpisodeModel.title,
+                EpisodeModel.credits_detection_state,
+                EpisodeModel.credits_start_seconds,
+                EpisodeModel.credits_source,
+                EpisodeModel.credits_confidence,
+                EpisodeModel.series_external_id,
+                EpisodeModel.season_number,
+                EpisodeModel.episode_number,
+            )
+            .where(*conditions)
+            .order_by(
+                EpisodeModel.credits_detected_at.desc(),
+                EpisodeModel.series_external_id.asc(),
+                EpisodeModel.season_number.asc(),
+                EpisodeModel.episode_number.asc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        items = [
+            CreditsStatusRow(
+                media_id=r[0],
+                title=r[1],
+                state=r[2],
+                start_seconds=r[3],
+                source=r[4],
+                confidence=r[5],
+                series_id=r[6],
+                season_number=r[7],
+                episode_number=r[8],
+            )
+            for r in rows
+        ]
+        return items, int(total)
+
+    async def find_episodes_pending_credits_detection(self, limit: int) -> Sequence[Episode]:
+        """Return NOT_STARTED-credits episodes with file variants loaded."""
+        stmt = (
+            select(EpisodeModel)
+            .where(
+                EpisodeModel.deleted_at.is_(None),
+                EpisodeModel.credits_detection_state == CreditsDetectionState.NOT_STARTED.value,
+            )
+            .options(selectinload(EpisodeModel.file_variants))
+            .order_by(EpisodeModel.id.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [EpisodeMapper.to_entity(model) for model in result.scalars().all()]
+
+    async def update_episode_credits(
+        self,
+        episode_id: EpisodeId,
+        marker: CreditsMarker | None,
+        state: CreditsDetectionState,
+    ) -> bool:
+        """Direct UPDATE of the 4 credits columns + state on the episodes row."""
+        values: dict[str, Any] = {"credits_detection_state": state.value}
+        if marker is None:
+            values.update(
+                credits_start_seconds=None,
+                credits_source=None,
+                credits_confidence=None,
+                credits_detected_at=None,
+            )
+        else:
+            values.update(
+                credits_start_seconds=marker.start_seconds,
+                credits_source=marker.source.value,
+                credits_confidence=marker.confidence,
+                credits_detected_at=marker.detected_at,
+            )
+        stmt = (
+            update(EpisodeModel)
+            .where(
+                EpisodeModel.external_id == str(episode_id),
+                EpisodeModel.deleted_at.is_(None),
+            )
+            .values(**values)
+        )
+        result = await self._session.execute(stmt)
+        return bool(result.rowcount)
 
     async def count_under_paths(self, paths: Sequence[str]) -> int:
         """Count distinct series with at least one episode under ``paths``.

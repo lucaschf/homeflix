@@ -4,6 +4,8 @@ from src.modules.media.domain.value_objects.air_date import AirDate
 from src.modules.media.domain.value_objects.cast_member import CastMember
 from src.modules.media.domain.value_objects.collection import Collection
 from src.modules.media.domain.value_objects.content_rating import ContentRating
+from src.modules.media.domain.value_objects.credits_detection_state import CreditsDetectionState
+from src.modules.media.domain.value_objects.credits_marker import CreditsMarker, CreditsMarkerSource
 from src.modules.media.domain.value_objects.duration import Duration
 from src.modules.media.domain.value_objects.episode_number import EpisodeNumber
 from src.modules.media.domain.value_objects.genre import Genre
@@ -38,6 +40,9 @@ __all__ = [
     "CastMember",
     "Collection",
     "ContentRating",
+    "CreditsDetectionState",
+    "CreditsMarker",
+    "CreditsMarkerSource",
     "Duration",
     "EpisodeId",
     "EpisodeNumber",

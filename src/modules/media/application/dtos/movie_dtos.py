@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE
 
 if TYPE_CHECKING:
+    from src.modules.media.application.dtos.credits_dtos import CreditsMarkerOutput
     from src.modules.media.application.dtos.media_file_dtos import MediaFileOutput
 
 
@@ -147,6 +148,7 @@ class MovieOutput:
     needs_enrichment_review: bool
     created_at: str
     updated_at: str
+    credits: CreditsMarkerOutput | None = None
 
 
 @dataclass(frozen=True)

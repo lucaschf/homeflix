@@ -6,6 +6,9 @@ from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
     Collection,
     ContentRating,
+    CreditsDetectionState,
+    CreditsMarker,
+    CreditsMarkerSource,
     Duration,
     FilePath,
     Genre,
@@ -94,6 +97,8 @@ class MovieMapper:
             tmdb_id=entity.tmdb_id.value if entity.tmdb_id else None,
             imdb_id=entity.imdb_id.value if entity.imdb_id else None,
             needs_enrichment_review=entity.needs_enrichment_review,
+            **_credits_marker_to_columns(entity.credits),
+            credits_detection_state=entity.credits_detection_state.value,
         )
 
         for file in entity.files:
@@ -183,6 +188,10 @@ class MovieMapper:
             # in-memory models built by tests can have ``None`` here.
             # Domain default is ``False`` so coerce safely.
             needs_enrichment_review=bool(model.needs_enrichment_review),
+            credits=_credits_marker_from_columns(model),
+            credits_detection_state=CreditsDetectionState(
+                model.credits_detection_state or CreditsDetectionState.NOT_STARTED.value
+            ),
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -238,9 +247,48 @@ class MovieMapper:
         model.imdb_id = entity.imdb_id.value if entity.imdb_id else None
         model.needs_enrichment_review = entity.needs_enrichment_review
 
+        for column, value in _credits_marker_to_columns(entity.credits).items():
+            setattr(model, column, value)
+        model.credits_detection_state = entity.credits_detection_state.value
+
         _sync_file_variants(model.file_variants, entity.files)
 
         return model
+
+
+def _credits_marker_to_columns(marker: CreditsMarker | None) -> dict[str, object]:
+    """Explode a CreditsMarker (or absence) into the 4 marker columns.
+
+    ``credits_detection_state`` is independent of the marker and handled
+    by the caller, so it is not touched here.
+    """
+    if marker is None:
+        return {
+            "credits_start_seconds": None,
+            "credits_source": None,
+            "credits_confidence": None,
+            "credits_detected_at": None,
+        }
+
+    return {
+        "credits_start_seconds": marker.start_seconds,
+        "credits_source": marker.source.value,
+        "credits_confidence": marker.confidence,
+        "credits_detected_at": marker.detected_at,
+    }
+
+
+def _credits_marker_from_columns(model: MovieModel) -> CreditsMarker | None:
+    """Reconstruct a CreditsMarker, or ``None`` when no onset is stored."""
+    if model.credits_start_seconds is None:
+        return None
+
+    return CreditsMarker(
+        start_seconds=model.credits_start_seconds,
+        source=CreditsMarkerSource(model.credits_source),
+        confidence=model.credits_confidence,
+        detected_at=model.credits_detected_at,
+    )
 
 
 def _sync_file_variants(

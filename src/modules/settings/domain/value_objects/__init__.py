@@ -7,6 +7,9 @@ the row's provenance for audit.
 """
 
 from src.modules.settings.domain.value_objects.avatar_config import AvatarConfig
+from src.modules.settings.domain.value_objects.credits_detection_config import (
+    CreditsDetectionConfig,
+)
 from src.modules.settings.domain.value_objects.intro_detection_config import (
     ChromaprintTuningConfig,
     FrameHashTuningConfig,
@@ -33,6 +36,7 @@ ConfigVO = (
     SchedulerConfig
     | ThumbnailBackfillConfig
     | IntroDetectionConfig
+    | CreditsDetectionConfig
     | StreamingConfig
     | AvatarConfig
     | ScanDedupConfig
@@ -43,6 +47,7 @@ __all__ = [
     "AvatarConfig",
     "ChromaprintTuningConfig",
     "ConfigVO",
+    "CreditsDetectionConfig",
     "SETTING_VO_TYPES",
     "FrameHashTuningConfig",
     "HardwareAccel",

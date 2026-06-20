@@ -34,6 +34,7 @@ from src.modules.library.presentation.routes.library_routes import (
 )
 from src.modules.media.presentation.routes import (
     admin_conflicts_router,
+    admin_credits_router,
     admin_intro_detection_router,
     admin_overview_router,
     admin_relink_router,
@@ -64,6 +65,7 @@ from src.modules.watch_progress.presentation.routes import progress_router
 #: list (drift between the two would mean tests miss DI-resolved deps).
 WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.media.presentation.routes.admin_conflicts_routes",
+    "src.modules.media.presentation.routes.admin_credits_routes",
     "src.modules.media.presentation.routes.admin_intro_detection_routes",
     "src.modules.media.presentation.routes.admin_overview_routes",
     "src.modules.media.presentation.routes.admin_relink_routes",
@@ -214,6 +216,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 intro_job.run,
                 minutes=intro_cfg.interval_minutes,
                 job_id="homeflix:intro-detection",
+            )
+        credits_cfg = await runtime_settings.credits_detection()
+        if credits_cfg.enabled:
+            credits_job = await container.credits_detection_job()
+            scheduler.add_interval_job(
+                credits_job.run,
+                minutes=credits_cfg.interval_minutes,
+                job_id="homeflix:credits-detection",
             )
         scan_dedup_cfg = await runtime_settings.scan_dedup()
         if scan_dedup_cfg.sweep_enabled:
@@ -437,6 +447,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_relink_router)
     app.include_router(admin_scan_router)
     app.include_router(admin_intro_detection_router)
+    app.include_router(admin_credits_router)
     app.include_router(admin_system_router)
     app.include_router(catalog_router)
     app.include_router(collection_router)

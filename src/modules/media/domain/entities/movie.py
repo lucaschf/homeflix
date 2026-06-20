@@ -7,12 +7,16 @@ from typing import Any, Self
 from pydantic import Field, field_validator
 
 from src.building_blocks.domain import AggregateRoot
+from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixin
 from src.modules.media.domain.events import MediaCreatedEvent
+from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
     CastMember,
     Collection,
     ContentRating,
+    CreditsDetectionState,
+    CreditsMarker,
     Duration,
     FilePath,
     Genre,
@@ -101,6 +105,10 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     # "needs review" listing so the operator can relink manually.
     # Cleared on the next successful enrichment.
     needs_enrichment_review: bool = False
+
+    # Skip-credits support (per-file detection; credits run to the end)
+    credits: CreditsMarker | None = None
+    credits_detection_state: CreditsDetectionState = CreditsDetectionState.NOT_STARTED
 
     # noinspection PyNestedDecorators
     @field_validator("id", mode="before")
@@ -193,6 +201,47 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
         if self.needs_enrichment_review:
             return self
         return self.with_updates(needs_enrichment_review=True)
+
+    # ── skip-credits ──────────────────────────────────────────────────
+
+    def with_credits_marker(self, marker: CreditsMarker) -> Self:
+        """Return a copy with the credits marker set.
+
+        Args:
+            marker: The credits marker to attach to this movie.
+
+        Returns:
+            A new Movie with the marker applied, or ``self`` if the same
+            marker is already in place.
+
+        Raises:
+            BusinessRuleViolationException: If ``marker.start_seconds``
+                exceeds the movie's duration.
+        """
+        if marker.start_seconds > self.duration.value:
+            raise BusinessRuleViolationException(
+                message="Credits start_seconds cannot exceed movie duration",
+                rule_code=MediaRuleCodes.CREDITS_EXCEEDS_DURATION,
+                tags={
+                    "movie_duration": self.duration.value,
+                    "credits_start_seconds": marker.start_seconds,
+                },
+            )
+        if self.credits == marker:
+            return self
+        return self.with_updates(credits=marker)
+
+    def with_credits_cleared(self) -> Self:
+        """Return a copy with the credits marker removed, or ``self``."""
+        if self.credits is None:
+            return self
+        return self.with_updates(credits=None)
+
+    def with_credits_detection_state(self, state: CreditsDetectionState) -> Self:
+        """Return a copy with the credits-detection state set, or ``self``."""
+        if self.credits_detection_state == state:
+            return self
+        return self.with_updates(credits_detection_state=state)
 
     # ── factory ───────────────────────────────────────────────────────
 

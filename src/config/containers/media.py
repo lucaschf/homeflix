@@ -14,6 +14,9 @@ from src.modules.media.application.use_cases.bulk_enrich_metadata import (
 from src.modules.media.application.use_cases.bulk_mark_distinct_conflicts import (
     BulkMarkDistinctConflictsUseCase,
 )
+from src.modules.media.application.use_cases.clear_credits_marker import (
+    ClearCreditsMarkerUseCase,
+)
 from src.modules.media.application.use_cases.clear_episode_intro import ClearEpisodeIntroUseCase
 from src.modules.media.application.use_cases.clear_hls_cache import ClearHlsCacheUseCase
 from src.modules.media.application.use_cases.clear_hls_cache_global import (
@@ -68,6 +71,9 @@ from src.modules.media.application.use_cases.get_series_tmdb_suggestions import 
 )
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_conflicts import ListConflictsUseCase
+from src.modules.media.application.use_cases.list_credits_status import (
+    ListCreditsStatusUseCase,
+)
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
 from src.modules.media.application.use_cases.list_intro_detection_runs import (
     ListIntroDetectionRunsUseCase,
@@ -97,6 +103,9 @@ from src.modules.media.application.use_cases.promote_movie_to_series import (
 from src.modules.media.application.use_cases.relink_movie import RelinkMovieUseCase
 from src.modules.media.application.use_cases.relink_series import RelinkSeriesUseCase
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
+from src.modules.media.application.use_cases.reset_credits_detection import (
+    ResetCreditsDetectionUseCase,
+)
 from src.modules.media.application.use_cases.reset_season_intro_detection import (
     ResetSeasonIntroDetectionUseCase,
 )
@@ -111,6 +120,7 @@ from src.modules.media.application.use_cases.search_tmdb_titles import (
     SearchTmdbTitlesUseCase,
 )
 from src.modules.media.application.use_cases.serve_hls_file import ServeHlsFileUseCase
+from src.modules.media.application.use_cases.set_credits_marker import SetCreditsMarkerUseCase
 from src.modules.media.application.use_cases.set_episode_intro import SetEpisodeIntroUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
 from src.modules.media.application.use_cases.stream_file_range import StreamFileRangeUseCase
@@ -141,6 +151,7 @@ from src.modules.media.infrastructure.streaming.thumbnail_service import (
     ThumbnailGenerationService,
 )
 from src.modules.media.infrastructure.video import (
+    CreditsDetector,
     FrameHasher,
     FrameHashIntroDetector,
 )
@@ -353,6 +364,26 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         uow_factory=media_unit_of_work_factory,
     )
 
+    set_credits_marker = providers.Factory(
+        SetCreditsMarkerUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
+    clear_credits_marker = providers.Factory(
+        ClearCreditsMarkerUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
+    reset_credits_detection = providers.Factory(
+        ResetCreditsDetectionUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
+    list_credits_status = providers.Factory(
+        ListCreditsStatusUseCase,
+        uow_factory=media_unit_of_work_factory,
+    )
+
     # =========================================================================
     # Infrastructure — File System
     # =========================================================================
@@ -409,6 +440,14 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     frame_hash_intro_detector = providers.Singleton(
         FrameHashIntroDetector,
         frame_hasher=frame_hasher,
+    )
+
+    # Per-file end-credits detector (combined edge + low-motion signals)
+    # behind CreditsDetectorPort; consumed by the CreditsDetectionJob
+    # wired from the composition root.
+    credits_detector = providers.Singleton(
+        CreditsDetector,
+        runtime_settings=runtime_settings,
     )
 
     file_streamer = providers.Factory(LocalFileStreamer)

@@ -29,6 +29,8 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-017](./ADR-017-domain-invariants-in-domain-layer.md) | Invariantes de domínio na camada de domínio | ✅ Aceito | 2026-06-04 |
 | [ADR-018](./ADR-018-domain-identifiers-as-vos-at-boundaries.md) | Identificadores de domínio como Value Objects nas fronteiras | ✅ Aceito | 2026-06-04 |
 | [ADR-019](./ADR-019-hardware-accelerated-transcoding.md) | Transcodificação por Hardware (NVENC/NVDEC) com Seleção de Encoder Configurável | ✅ Aceito | 2026-06-14 |
+| [ADR-020](./ADR-020-pluggable-intro-detector-frame-hash.md) | Detector de Intro Plugável + Algoritmo por Frame-Hash de Vídeo | ✅ Aceito | 2026-06-15 |
+| [ADR-021](./ADR-021-credits-detector-per-file-visual.md) | Detector de Créditos Per-Arquivo por Sinais Visuais (Borda + Movimento) | ✅ Aceito | 2026-06-19 |
 
 ## Como Criar um Novo ADR
 

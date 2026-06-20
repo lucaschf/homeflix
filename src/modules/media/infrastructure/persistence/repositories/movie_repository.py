@@ -3,7 +3,7 @@
 import json
 from collections.abc import Sequence
 
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,8 +17,15 @@ from src.building_blocks.application.pagination import (
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
-from src.modules.media.domain.repositories.movie_repository import GenreRow
-from src.modules.media.domain.value_objects import EpisodeId, FilePath, Genre, MovieId
+from src.modules.media.domain.repositories.movie_repository import CreditsStatusRow, GenreRow
+from src.modules.media.domain.value_objects import (
+    CreditsDetectionState,
+    CreditsMarker,
+    EpisodeId,
+    FilePath,
+    Genre,
+    MovieId,
+)
 from src.modules.media.infrastructure.persistence.mappers import MovieMapper
 from src.modules.media.infrastructure.persistence.models import (
     EpisodeModel,
@@ -737,6 +744,108 @@ class SQLAlchemyMovieRepository(MovieRepository):
         )
         result = await self._session.execute(stmt)
         return [MovieMapper.to_entity(model) for model in result.scalars().all()]
+
+    async def count_credits_states(self) -> dict[str, int]:
+        """Return ``{credits_detection_state: count}`` over non-deleted movies."""
+        stmt = (
+            select(MovieModel.credits_detection_state, func.count())
+            .where(MovieModel.deleted_at.is_(None))
+            .group_by(MovieModel.credits_detection_state)
+        )
+        result = await self._session.execute(stmt)
+        return dict(result.all())
+
+    async def list_credits_status(
+        self, state: str | None, limit: int, offset: int
+    ) -> tuple[Sequence[CreditsStatusRow], int]:
+        """Return a page of movie credits-status rows + total (newest first)."""
+        conditions = [MovieModel.deleted_at.is_(None)]
+        if state is not None:
+            conditions.append(MovieModel.credits_detection_state == state)
+
+        total = (
+            await self._session.execute(
+                select(func.count()).select_from(MovieModel).where(*conditions)
+            )
+        ).scalar_one()
+
+        stmt = (
+            select(
+                MovieModel.external_id,
+                MovieModel.title,
+                MovieModel.credits_detection_state,
+                MovieModel.credits_start_seconds,
+                MovieModel.credits_source,
+                MovieModel.credits_confidence,
+            )
+            .where(*conditions)
+            # SQLite sorts NULLs last under DESC, so freshly-marked rows
+            # surface first and never-marked ones sink to the bottom.
+            .order_by(MovieModel.credits_detected_at.desc(), MovieModel.title.asc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        items = [
+            CreditsStatusRow(
+                media_id=r[0],
+                title=r[1],
+                state=r[2],
+                start_seconds=r[3],
+                source=r[4],
+                confidence=r[5],
+            )
+            for r in rows
+        ]
+        return items, int(total)
+
+    async def find_pending_credits_detection(self, limit: int) -> Sequence[Movie]:
+        """Return NOT_STARTED-credits movies with file variants loaded."""
+        stmt = (
+            select(MovieModel)
+            .where(
+                MovieModel.deleted_at.is_(None),
+                MovieModel.credits_detection_state == CreditsDetectionState.NOT_STARTED.value,
+            )
+            .options(selectinload(MovieModel.file_variants))
+            .order_by(MovieModel.id.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [MovieMapper.to_entity(model) for model in result.scalars().all()]
+
+    async def update_movie_credits(
+        self,
+        movie_id: MovieId,
+        marker: CreditsMarker | None,
+        state: CreditsDetectionState,
+    ) -> bool:
+        """Direct UPDATE of the 4 credits columns + state on the movies row."""
+        values: dict[str, object] = {"credits_detection_state": state.value}
+        if marker is None:
+            values.update(
+                credits_start_seconds=None,
+                credits_source=None,
+                credits_confidence=None,
+                credits_detected_at=None,
+            )
+        else:
+            values.update(
+                credits_start_seconds=marker.start_seconds,
+                credits_source=marker.source.value,
+                credits_confidence=marker.confidence,
+                credits_detected_at=marker.detected_at,
+            )
+        stmt = (
+            update(MovieModel)
+            .where(
+                MovieModel.external_id == str(movie_id),
+                MovieModel.deleted_at.is_(None),
+            )
+            .values(**values)
+        )
+        result = await self._session.execute(stmt)
+        return bool(result.rowcount)
 
     async def count_under_paths(self, paths: Sequence[str]) -> int:
         r"""Count non-deleted movies whose ``file_path`` is under any of ``paths``.

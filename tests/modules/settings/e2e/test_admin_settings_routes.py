@@ -91,6 +91,7 @@ class TestAdminSettingsList:
                 "scheduler",
                 "thumbnail_backfill",
                 "intro_detection",
+                "credits_detection",
                 "streaming",
                 "avatar",
                 "scan_dedup",

@@ -6,7 +6,14 @@ from dataclasses import dataclass
 
 from src.building_blocks.application.pagination import PaginatedResult
 from src.modules.media.domain.entities.movie import Movie
-from src.modules.media.domain.value_objects import EpisodeId, FilePath, Genre, MovieId
+from src.modules.media.domain.value_objects import (
+    CreditsDetectionState,
+    CreditsMarker,
+    EpisodeId,
+    FilePath,
+    Genre,
+    MovieId,
+)
 from src.shared_kernel.value_objects.library_id import LibraryId
 
 
@@ -24,6 +31,28 @@ class GenreRow:
 
     canonical_genres: list[str]
     localized_genres: list[str]
+
+
+@dataclass(frozen=True)
+class CreditsStatusRow:
+    """Lightweight projection of a title's credits-detection status.
+
+    Used by the admin "credits status" listing so it can show every
+    title's state + marker without loading entities and their file
+    variants. Episode-only context (``series_id``/``season_number``/
+    ``episode_number``) is ``None`` for movies; the admin UI uses it to
+    deep-link into the per-episode editor.
+    """
+
+    media_id: str
+    title: str
+    state: str
+    start_seconds: int | None
+    source: str | None
+    confidence: float | None
+    series_id: str | None = None
+    season_number: int | None = None
+    episode_number: int | None = None
 
 
 class MovieRepository(ABC):
@@ -555,6 +584,69 @@ class MovieRepository(ABC):
 
         Returns:
             Sequence of movies whose ``scrub_preview_path`` is null.
+        """
+        ...
+
+    @abstractmethod
+    async def count_credits_states(self) -> dict[str, int]:
+        """Return ``{credits_detection_state: count}`` over non-deleted movies."""
+        ...
+
+    @abstractmethod
+    async def list_credits_status(
+        self, state: str | None, limit: int, offset: int
+    ) -> tuple[Sequence[CreditsStatusRow], int]:
+        """Return a page of movie credits-status rows + the total count.
+
+        Args:
+            state: Filter by ``credits_detection_state``, or ``None`` for all.
+            limit: Page size.
+            offset: Page offset.
+
+        Returns:
+            ``(rows, total)`` — newest-marker-first, then by title.
+        """
+        ...
+
+    @abstractmethod
+    async def find_pending_credits_detection(self, limit: int) -> Sequence[Movie]:
+        """Return up to ``limit`` movies whose credits detection has not run.
+
+        Filters for ``credits_detection_state == NOT_STARTED`` with
+        file variants eager-loaded (the job needs ``primary_file``).
+        Soft-deleted rows excluded; sorted ``id ASC`` for steady forward
+        progress across ticks.
+
+        Args:
+            limit: Maximum number of movies to return.
+
+        Returns:
+            Sequence of movies eligible for the next credits tick.
+        """
+        ...
+
+    @abstractmethod
+    async def update_movie_credits(
+        self,
+        movie_id: MovieId,
+        marker: CreditsMarker | None,
+        state: CreditsDetectionState,
+    ) -> bool:
+        """Persist the credits marker + detection state for one movie.
+
+        Direct UPDATE of the four credits-marker columns plus
+        ``credits_detection_state`` on the ``movies`` row. ``marker=None``
+        clears the marker columns (IN_PROGRESS / NO_CREDITS_FOUND /
+        FAILED / clear); a non-null marker writes the onset (COMPLETED /
+        manual edit).
+
+        Args:
+            movie_id: External id of the movie (mov_xxx).
+            marker: The marker to persist, or ``None`` to clear it.
+            state: New ``CreditsDetectionState`` value.
+
+        Returns:
+            ``True`` if a row was updated, ``False`` if no movie matched.
         """
         ...
 

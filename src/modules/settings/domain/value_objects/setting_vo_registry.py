@@ -14,6 +14,9 @@ from typing import Final
 
 from src.building_blocks.domain.value_objects import CompoundValueObject
 from src.modules.settings.domain.value_objects.avatar_config import AvatarConfig
+from src.modules.settings.domain.value_objects.credits_detection_config import (
+    CreditsDetectionConfig,
+)
 from src.modules.settings.domain.value_objects.intro_detection_config import (
     IntroDetectionConfig,
 )
@@ -30,6 +33,7 @@ SETTING_VO_TYPES: Final[Mapping[SettingKey, type[CompoundValueObject]]] = Mappin
         SettingKey.SCHEDULER: SchedulerConfig,
         SettingKey.THUMBNAIL_BACKFILL: ThumbnailBackfillConfig,
         SettingKey.INTRO_DETECTION: IntroDetectionConfig,
+        SettingKey.CREDITS_DETECTION: CreditsDetectionConfig,
         SettingKey.STREAMING: StreamingConfig,
         SettingKey.AVATAR: AvatarConfig,
         SettingKey.SCAN_DEDUP: ScanDedupConfig,
