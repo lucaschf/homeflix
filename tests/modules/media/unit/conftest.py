@@ -55,6 +55,13 @@ def make_media_uow_mock() -> MediaUoWMocks:
     series = AsyncMock(spec=SeriesRepository)
     media_conflicts = AsyncMock(spec=MediaConflictRepository)
 
+    # Empty-catalog defaults: path lookups miss unless a test wires them.
+    # Without this, AsyncMock returns a truthy Mock and the scanner's
+    # idempotency guard / title-fallback would treat every path as already
+    # owned.
+    movies.find_by_file_path.return_value = None
+    series.find_by_file_path.return_value = None
+
     uow: MediaUnitOfWork = AsyncMock()
     uow.__aenter__.return_value = uow  # type: ignore[attr-defined]
     uow.__aexit__.return_value = None  # type: ignore[attr-defined]

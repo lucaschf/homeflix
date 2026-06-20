@@ -3,7 +3,17 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.infrastructure.persistence.base import Base
@@ -33,6 +43,19 @@ class MovieModel(Base):
         imdb_id: IMDb ID (e.g., "tt1234567").
     """
 
+    __table_args__ = (
+        # Partial unique index: file_path is unique only among live rows.
+        # A soft-deleted movie (e.g. one promoted to a series) keeps its
+        # path but must not block a rescan from registering the same file.
+        Index(
+            "ix_movies_file_path",
+            "file_path",
+            unique=True,
+            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
+
     # Library scoping (lib_xxx prefixed external id; cross-BC string
     # reference, no FK because the catalog and library tables live in
     # different bounded contexts).
@@ -59,8 +82,6 @@ class MovieModel(Base):
     file_path: Mapped[str | None] = mapped_column(
         String(2000),
         nullable=True,
-        unique=True,
-        index=True,
     )
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # bytes
     resolution: Mapped[str | None] = mapped_column(String(20), nullable=True)
