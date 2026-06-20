@@ -49,6 +49,12 @@ from src.modules.media.application.ports.hls_playlist_port import (
     HlsPlaylistPort,
 )
 from src.modules.media.application.ports.media_probe_port import ProbeResult
+from src.modules.media.domain.services.track_naming import (
+    TrackVersion,
+    audio_version_labels,
+    render_version_token,
+    subtitle_version_labels,
+)
 from src.modules.media.infrastructure.streaming._subprocess import (
     HW_ACCEL_NVENC,
     HW_ACCEL_OFF,
@@ -99,6 +105,19 @@ _NVENC_PROBE_TIMEOUT = 30
 def _primary_audio_index(probe: ProbeResult) -> int:
     """Get the index of the primary audio track (first one, always index 0)."""
     return probe.audio_tracks[0].index if probe.audio_tracks else 0
+
+
+def _manifest_track_name(language: str, version: TrackVersion | None) -> str:
+    """Compose a fallback ``NAME=`` for a manifest rendition.
+
+    The manifest can't carry structured data and isn't localized, so we
+    use the language code plus a short version token (e.g. "PT",
+    "PT · Herbert Richers", "PT · 5.1"). Clients should prefer the
+    structured ``/tracks`` payload and localize it themselves.
+    """
+    base = language.upper()
+    token = render_version_token(version)
+    return f"{base} · {token}" if token else base
 
 
 def _audio_args_for(track: AudioTrack | None, start: int) -> list[str]:
@@ -1200,11 +1219,14 @@ class HlsService(HlsPlaylistPort):
         text_subs = [s for s in probe.all_subtitles if s.is_text_based]
         sub_group = 'SUBTITLES="subs"' if text_subs else ""
 
+        audio_versions = audio_version_labels(probe.audio_tracks)
+        sub_versions = subtitle_version_labels(text_subs)
+
         primary_idx = _primary_audio_index(probe)
         if has_alt_audio:
             for track in probe.audio_tracks:
                 is_primary = track.index == primary_idx
-                name = track.title or f"{track.language.value.upper()} ({track.channel_layout})"
+                name = _manifest_track_name(track.language.value, audio_versions.get(track.index))
                 if is_primary:
                     lines.append(
                         f'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",'
@@ -1220,7 +1242,7 @@ class HlsService(HlsPlaylistPort):
                     )
 
         for sub in text_subs:
-            sub_name = sub.title or f"{sub.language.value.upper()}"
+            sub_name = _manifest_track_name(sub.language.value, sub_versions.get(sub.index))
             is_forced = "YES" if sub.is_forced else "NO"
             lines.append(
                 f'#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",'
