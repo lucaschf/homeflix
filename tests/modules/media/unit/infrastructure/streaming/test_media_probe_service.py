@@ -413,7 +413,7 @@ class TestMediaProbeServiceRunFfprobe:
     )
     def test_should_return_empty_when_ffprobe_missing(self, _which: MagicMock) -> None:
         result = MediaProbeService._run_ffprobe("/path/to/movie.mkv")
-        assert result == []
+        assert result == {}
 
     @patch("src.modules.media.infrastructure.streaming.media_probe_service.subprocess.run")
     @patch(
@@ -422,14 +422,15 @@ class TestMediaProbeServiceRunFfprobe:
     )
     def test_should_return_streams_on_success(self, _which: MagicMock, mock_run: MagicMock) -> None:
         streams = [{"codec_type": "audio", "codec_name": "aac"}]
+        payload = {"streams": streams, "format": {"duration": "120.5"}}
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = json.dumps({"streams": streams})
+        mock_result.stdout = json.dumps(payload)
         mock_run.return_value = mock_result
 
         result = MediaProbeService._run_ffprobe("/path/to/movie.mkv")
 
-        assert result == streams
+        assert result == payload
 
     @patch("src.modules.media.infrastructure.streaming.media_probe_service.subprocess.run")
     @patch(
@@ -446,7 +447,7 @@ class TestMediaProbeServiceRunFfprobe:
 
         result = MediaProbeService._run_ffprobe("/path/to/movie.mkv")
 
-        assert result == []
+        assert result == {}
 
     @patch(
         "src.modules.media.infrastructure.streaming.media_probe_service.subprocess.run",
@@ -458,7 +459,27 @@ class TestMediaProbeServiceRunFfprobe:
     )
     def test_should_return_empty_on_os_error(self, _which: MagicMock, _run: MagicMock) -> None:
         result = MediaProbeService._run_ffprobe("/path/to/movie.mkv")
-        assert result == []
+        assert result == {}
+
+
+@pytest.mark.unit
+class TestMediaProbeServiceParseDuration:
+    """Tests for MediaProbeService._parse_duration."""
+
+    def test_prefers_format_duration(self) -> None:
+        data = {"format": {"duration": "5430.6"}, "streams": [{"duration": "10.0"}]}
+        assert MediaProbeService._parse_duration(data) == 5431
+
+    def test_falls_back_to_longest_stream(self) -> None:
+        data = {"streams": [{"duration": "100.0"}, {"duration": "2700.4"}]}
+        assert MediaProbeService._parse_duration(data) == 2700
+
+    def test_none_when_no_duration(self) -> None:
+        assert MediaProbeService._parse_duration({"streams": [{}]}) is None
+
+    def test_ignores_zero_and_garbage(self) -> None:
+        data = {"format": {"duration": "0"}, "streams": [{"duration": "N/A"}]}
+        assert MediaProbeService._parse_duration(data) is None
 
 
 @pytest.mark.unit

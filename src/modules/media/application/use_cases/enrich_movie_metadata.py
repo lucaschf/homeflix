@@ -261,7 +261,10 @@ def _apply_movie_metadata(
         updates["imdb_id"] = ImdbId(metadata.imdb_id)
     if metadata.original_title:
         updates["original_title"] = Title(metadata.original_title)
-    if metadata.duration_seconds and (force or movie.duration.value == 0):
+    # Duration is the file's real (probed) length — the scanner stamps it.
+    # TMDB's nominal runtime is only a fallback when the probe failed
+    # (duration still 0); never overwrite a real duration, even on force.
+    if metadata.duration_seconds and movie.duration.value == 0:
         updates["duration"] = Duration(metadata.duration_seconds)
     if metadata.year:
         updates["year"] = Year(metadata.year)

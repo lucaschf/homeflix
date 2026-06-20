@@ -129,15 +129,18 @@ class ScanMediaDirectoriesUseCase:
         scanned: ScannedFile,
         *,
         is_primary: bool,
-    ) -> MediaFile:
+    ) -> tuple[MediaFile, int | None]:
         """Build a MediaFile for a path being registered for the first time.
 
         Always probes the file so audio and subtitle tracks — including their
-        languages — are persisted on first registration.
+        languages — are persisted on first registration. Returns the probed
+        container ``duration_seconds`` alongside the file (the caller stamps
+        it on the entity for a primary file) so a single probe serves both;
+        ``None`` when the duration could not be read.
         """
         probed = await self._probe(scanned.file_path.value)
         resolution = scanned.resolution or (probed.resolution if probed else None) or "Unknown"
-        return MediaFile(
+        media_file = MediaFile(
             file_path=scanned.file_path,
             file_size=scanned.file_size,
             resolution=Resolution(resolution),
@@ -145,6 +148,7 @@ class ScanMediaDirectoriesUseCase:
             subtitle_tracks=list(probed.all_subtitles) if probed else [],
             is_primary=is_primary,
         )
+        return media_file, (probed.duration_seconds if probed else None)
 
     async def _maybe_refresh_media_file(
         self,
@@ -263,7 +267,8 @@ class ScanMediaDirectoriesUseCase:
                 None,
             )
             if existing_idx is None:
-                files.append(await self._build_new_media_file(scanned, is_primary=False))
+                variant_file, _ = await self._build_new_media_file(scanned, is_primary=False)
+                files.append(variant_file)
                 changed = True
                 continue
 
@@ -289,21 +294,20 @@ class ScanMediaDirectoriesUseCase:
     ) -> tuple[int, int, list[DomainEvent]]:
         """Create a new movie from a group of file variants."""
         first = by_path[paths[0]]
-        primary_file = await self._build_new_media_file(first, is_primary=True)
+        primary_file, duration = await self._build_new_media_file(first, is_primary=True)
         movie_id = MovieId.generate()
         movie = Movie(
             id=movie_id,
             library_id=library_id,
             title=Title(first.title),
             year=Year(first.year or _current_year()),
-            duration=Duration(0),
+            duration=Duration(duration or 0),
             files=[primary_file],
         )
         movie.add_event(MediaCreatedEvent(media_id=movie_id, media_type=CatalogMediaType.MOVIE))
         for path in paths[1:]:
-            movie = movie.with_file(
-                await self._build_new_media_file(by_path[path], is_primary=False)
-            )
+            variant_file, _ = await self._build_new_media_file(by_path[path], is_primary=False)
+            movie = movie.with_file(variant_file)
         events = movie.pull_events()
         await uow.movies.save(movie)
         return 1, 0, events
@@ -412,16 +416,18 @@ class ScanMediaDirectoriesUseCase:
         if series.id is None:
             raise RuntimeError("Series id must be assigned before creating episodes")
         ep_title = first.episode_title or f"Episode {episode_num}"
+        primary_file, duration = await self._build_new_media_file(first, is_primary=True)
         episode = Episode(
             series_id=series.id,
             season_number=SeasonNumber(season_num),
             episode_number=EpisodeNumber(episode_num),
             title=Title(ep_title),
-            duration=Duration(0),
-            files=[await self._build_new_media_file(first, is_primary=True)],
+            duration=Duration(duration or 0),
+            files=[primary_file],
         )
         for f in ep_files[1:]:
-            episode = episode.with_file(await self._build_new_media_file(f, is_primary=False))
+            variant_file, _ = await self._build_new_media_file(f, is_primary=False)
+            episode = episode.with_file(variant_file)
         return episode
 
     async def _refresh_episode(
@@ -439,7 +445,8 @@ class ScanMediaDirectoriesUseCase:
                 None,
             )
             if existing_idx is None:
-                files.append(await self._build_new_media_file(scanned, is_primary=False))
+                variant_file, _ = await self._build_new_media_file(scanned, is_primary=False)
+                files.append(variant_file)
                 changed = True
                 continue
 

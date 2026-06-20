@@ -382,9 +382,11 @@ def _apply_multi_episode_metadata(
     if synopses and (force or not episode.synopsis):
         updates["synopsis"] = " ◆ ".join(synopses)
 
-    # Sum durations from all segments
+    # Sum durations from all segments. Only a fallback — the scanner
+    # stamps the file's real probed duration; never overwrite it (even on
+    # force) with TMDB's nominal runtime.
     total_duration = sum(m.duration_seconds or 0 for m in present)
-    if total_duration and (force or episode.duration.value == 0):
+    if total_duration and episode.duration.value == 0:
         updates["duration"] = Duration(total_duration)
 
     # Thumbnail: first available
@@ -424,7 +426,8 @@ def _apply_episode_metadata(
         parsed = _parse_date(meta.air_date)
         if parsed:
             updates["air_date"] = AirDate(parsed)
-    if meta.duration_seconds and (force or episode.duration.value == 0):
+    # Fallback only — real duration comes from the file probe at scan time.
+    if meta.duration_seconds and episode.duration.value == 0:
         updates["duration"] = Duration(meta.duration_seconds)
     if meta.still_url and (force or not episode.thumbnail_path):
         updates["thumbnail_path"] = ImageUrl(meta.still_url)
