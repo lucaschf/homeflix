@@ -9,6 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from src.modules.media.domain.services.track_naming import (
+    TrackVersion,
+    audio_version_labels,
+    subtitle_version_labels,
+)
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from pathlib import Path
@@ -71,8 +77,25 @@ class RangeStreamOutput:
     body: AsyncIterator[bytes]
 
 
+def _version_dict(version: TrackVersion | None) -> dict[str, str] | None:
+    """Project a structured ``TrackVersion`` into a JSON-friendly dict."""
+    if version is None:
+        return None
+    return {"kind": version.kind, "value": version.value}
+
+
 def serialize_tracks(probe: ProbeResult) -> TrackListOutput:
-    """Project a ``ProbeResult`` into the flat track DTO."""
+    """Project a ``ProbeResult`` into the flat track DTO.
+
+    Each track carries a structured ``version`` differentiating it from
+    same-language siblings (e.g. a dub studio, channel layout, or an
+    ordinal), or ``None`` when the language alone is unambiguous. The
+    raw ``title`` is kept for reference; the player should prefer the
+    language + ``version`` and localize them.
+    """
+    audio_versions = audio_version_labels(probe.audio_tracks)
+    text_subs = [t for t in probe.all_subtitles if t.is_text_based]
+    sub_versions = subtitle_version_labels(text_subs)
     return TrackListOutput(
         audio_tracks=[
             {
@@ -82,6 +105,7 @@ def serialize_tracks(probe: ProbeResult) -> TrackListOutput:
                 "channels": t.channels,
                 "channel_layout": t.channel_layout,
                 "title": t.title,
+                "version": _version_dict(audio_versions.get(t.index)),
                 "is_default": t.is_default,
             }
             for t in probe.audio_tracks
@@ -92,13 +116,13 @@ def serialize_tracks(probe: ProbeResult) -> TrackListOutput:
                 "language": t.language.value,
                 "format": t.format,
                 "title": t.title,
+                "version": _version_dict(sub_versions.get(t.index)),
                 "is_default": t.is_default,
                 "is_forced": t.is_forced,
                 "is_external": t.is_external,
                 "is_image_based": t.is_image_based,
             }
-            for t in probe.all_subtitles
-            if t.is_text_based
+            for t in text_subs
         ],
     )
 
