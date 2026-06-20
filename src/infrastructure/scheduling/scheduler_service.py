@@ -10,6 +10,8 @@ background work never shares a request-scoped session.
 
 from __future__ import annotations
 
+import functools
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
 
     from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
     from src.modules.library.domain.entities.library import Library
+    from src.modules.media.application.services.job_run_service import JobRunService
     from src.modules.media.application.services.scan_run_service import ScanRunService
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
@@ -36,6 +39,21 @@ _LIBRARY_JOB_PREFIX = "library-scan:"
 
 def _job_id_for(library_id: str) -> str:
     return f"{_LIBRARY_JOB_PREFIX}{library_id}"
+
+
+@dataclass(frozen=True)
+class ScheduledJobSnapshot:
+    """Live view of one registered APScheduler job (for admin introspection).
+
+    Attributes:
+        id: The job's stable id.
+        next_run_at: ISO-8601 of the next fire, or ``None`` when paused.
+        schedule: Human-readable trigger (interval/cron) string.
+    """
+
+    id: str
+    next_run_at: str | None
+    schedule: str
 
 
 class LibraryScanScheduler:
@@ -58,11 +76,50 @@ class LibraryScanScheduler:
         library_uow_factory: LibraryUnitOfWorkFactory,
         scan_run_service: ScanRunService,
         runtime_settings: RuntimeSettings,
+        job_run_recorder: JobRunService | None = None,
     ) -> None:
         self._library_uow_factory = library_uow_factory
         self._scan_run_service = scan_run_service
         self._runtime_settings = runtime_settings
+        self._job_run_recorder = job_run_recorder
         self._scheduler = AsyncIOScheduler(timezone="UTC")
+
+    @property
+    def is_running(self) -> bool:
+        """Whether the scheduler is started and ticking."""
+        return self._scheduler.running
+
+    def list_jobs(self) -> list[ScheduledJobSnapshot]:
+        """Snapshot every currently-registered job (in-memory, no I/O)."""
+        snapshots: list[ScheduledJobSnapshot] = []
+        for job in self._scheduler.get_jobs():
+            next_run = getattr(job, "next_run_time", None)
+            snapshots.append(
+                ScheduledJobSnapshot(
+                    id=job.id,
+                    next_run_at=next_run.isoformat() if next_run else None,
+                    schedule=str(job.trigger),
+                ),
+            )
+        return snapshots
+
+    def _recorded(
+        self,
+        job_id: str,
+        func: Callable[[], Awaitable[None]],
+    ) -> Callable[[], Awaitable[None]]:
+        """Wrap ``func`` so each run is logged to ``job_runs``.
+
+        Returns ``func`` unchanged when no recorder is configured.
+        """
+        recorder = self._job_run_recorder
+        if recorder is None:
+            return func
+
+        async def _wrapped() -> None:
+            await recorder.record(job_id, func)
+
+        return _wrapped
 
     async def start(self) -> None:
         """Start the scheduler and register the reconcile + initial jobs."""
@@ -111,7 +168,7 @@ class LibraryScanScheduler:
                 stale jobs around.
         """
         self._scheduler.add_job(
-            func,
+            self._recorded(job_id, func),
             trigger="interval",
             minutes=minutes,
             id=job_id,
@@ -169,9 +226,8 @@ class LibraryScanScheduler:
                 continue
 
             self._scheduler.add_job(
-                self._run_scan,
+                self._recorded(job_id, functools.partial(self._run_scan, library_id)),
                 trigger=trigger,
-                args=[library_id],
                 id=job_id,
                 replace_existing=True,
                 max_instances=1,
@@ -240,4 +296,4 @@ class LibraryScanScheduler:
             await uow.libraries.save(updated)
 
 
-__all__ = ["LibraryScanScheduler"]
+__all__ = ["LibraryScanScheduler", "ScheduledJobSnapshot"]

@@ -9,6 +9,9 @@ from src.modules.media.presentation.routes.admin_credits_routes import (
 from src.modules.media.presentation.routes.admin_intro_detection_routes import (
     router as admin_intro_detection_router,
 )
+from src.modules.media.presentation.routes.admin_jobs_routes import (
+    router as admin_jobs_router,
+)
 from src.modules.media.presentation.routes.admin_overview_routes import (
     router as admin_overview_router,
 )
@@ -39,6 +42,7 @@ __all__ = [
     "admin_conflicts_router",
     "admin_credits_router",
     "admin_intro_detection_router",
+    "admin_jobs_router",
     "admin_overview_router",
     "admin_relink_router",
     "admin_scan_router",

@@ -10,6 +10,9 @@ from src.modules.media.application.unit_of_work import (
 from src.modules.media.infrastructure.persistence.repositories.intro_detection_run_repository import (
     SqlAlchemyIntroDetectionRunRepository,
 )
+from src.modules.media.infrastructure.persistence.repositories.job_run_repository import (
+    SqlAlchemyJobRunRepository,
+)
 from src.modules.media.infrastructure.persistence.repositories.media_conflict_repository import (
     SqlAlchemyMediaConflictRepository,
 )
@@ -39,6 +42,7 @@ class SqlAlchemyMediaUnitOfWork(SqlAlchemyUnitOfWork, MediaUnitOfWork):
         self.scan_runs = SqlAlchemyScanRunRepository(session)
         self.intro_detection_runs = SqlAlchemyIntroDetectionRunRepository(session)
         self.media_conflicts = SqlAlchemyMediaConflictRepository(session)
+        self.job_runs = SqlAlchemyJobRunRepository(session)
 
 
 class SqlAlchemyMediaUnitOfWorkFactory(MediaUnitOfWorkFactory):

@@ -6,6 +6,7 @@ Provides repositories and use cases for the Media module.
 from dependency_injector import containers, providers
 
 from src.modules.media.application.event_handlers import OnMediaCreatedHandler
+from src.modules.media.application.services.job_run_service import JobRunService
 from src.modules.media.application.services.scan_run_service import ScanRunService
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
 from src.modules.media.application.use_cases.bulk_enrich_metadata import (
@@ -78,6 +79,7 @@ from src.modules.media.application.use_cases.list_genres import ListGenresUseCas
 from src.modules.media.application.use_cases.list_intro_detection_runs import (
     ListIntroDetectionRunsUseCase,
 )
+from src.modules.media.application.use_cases.list_job_runs import ListJobRunsUseCase
 from src.modules.media.application.use_cases.list_movies import ListMoviesUseCase
 from src.modules.media.application.use_cases.list_movies_by_actor import ListMoviesByActorUseCase
 from src.modules.media.application.use_cases.list_movies_needing_review import (
@@ -124,6 +126,9 @@ from src.modules.media.application.use_cases.set_credits_marker import SetCredit
 from src.modules.media.application.use_cases.set_episode_intro import SetEpisodeIntroUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
 from src.modules.media.application.use_cases.stream_file_range import StreamFileRangeUseCase
+from src.modules.media.application.use_cases.sweep_interrupted_job_runs import (
+    SweepInterruptedJobRunsUseCase,
+)
 from src.modules.media.application.use_cases.sweep_interrupted_scan_runs import (
     SweepInterruptedScanRunsUseCase,
 )
@@ -621,6 +626,23 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     sweep_interrupted_scan_runs = providers.Factory(
         SweepInterruptedScanRunsUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    # Background-jobs dashboard: a recorder the scheduler wraps every job
+    # with, plus read use cases for the history list.
+    job_run_service = providers.Singleton(
+        JobRunService,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    list_job_runs = providers.Factory(
+        ListJobRunsUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    sweep_interrupted_job_runs = providers.Factory(
+        SweepInterruptedJobRunsUseCase,
         media_uow_factory=media_unit_of_work_factory,
     )
 
