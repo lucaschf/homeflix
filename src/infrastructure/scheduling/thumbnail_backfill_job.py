@@ -21,6 +21,7 @@ from src.modules.media.domain.value_objects import EpisodeId, ImageUrl, MovieId
 from src.modules.media.infrastructure.streaming.thumbnail_service import (
     ThumbnailGenerationService,
     ThumbnailResult,
+    scrub_preview_output_dir,
 )
 
 if TYPE_CHECKING:
@@ -217,13 +218,7 @@ class ThumbnailBackfillJob:
                 file_path=file_path,
             )
             return None
-        # Per-stem subfolder so episodes that share a season directory
-        # do not overwrite each other's ``sprite.jpg`` / ``sprite.vtt``.
-        # Movies typically sit in their own folders so the change is a
-        # no-op for them in practice, but the consistent layout means a
-        # "Movies/" folder hosting multiple titles flat would survive
-        # the same overwrite hazard.
-        output_dir = source.parent / subdir / source.stem
+        output_dir = scrub_preview_output_dir(source, subdir)
         return await asyncio.to_thread(
             self._thumbnail_service.generate,
             file_path,

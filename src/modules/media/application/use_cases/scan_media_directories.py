@@ -13,6 +13,7 @@ from src.modules.media.application.ports import (
     MediaType,
     ProbeResult,
     ScannedFile,
+    ScrubPreviewLocatorPort,
     VariantDetectorPort,
 )
 from src.modules.media.application.unit_of_work import (
@@ -31,6 +32,7 @@ from src.modules.media.domain.value_objects import (
     Title,
     Year,
 )
+from src.shared_kernel.value_objects.image_url import ImageUrl
 
 # Aliased to avoid colliding with the scanner port's ``MediaType``
 # (movie | episode, a file-classification enum). This is the catalog
@@ -60,6 +62,11 @@ class ScanMediaDirectoriesUseCase:
         uow_factory: Factory that opens a fresh media Unit of Work per group.
         probe_service: Optional probe port for track and resolution detection.
         event_bus: Optional event bus for domain events.
+        scrub_preview_locator: Optional port that re-links an already-generated
+            scrub-preview found on disk. When provided, newly-created and
+            preview-less existing media get their ``scrub_preview_path`` set
+            during the scan instead of waiting for the backfill job — useful
+            after a database reset where the sprites survived on disk.
     """
 
     def __init__(
@@ -69,12 +76,14 @@ class ScanMediaDirectoriesUseCase:
         uow_factory: MediaUnitOfWorkFactory,
         probe_service: MediaProbePort | None = None,
         event_bus: EventBus | None = None,
+        scrub_preview_locator: ScrubPreviewLocatorPort | None = None,
     ) -> None:
         self._file_scanner = file_scanner
         self._variant_detector = variant_detector
         self._uow_factory = uow_factory
         self._probe_service = probe_service
         self._event_bus = event_bus
+        self._scrub_preview_locator = scrub_preview_locator
 
     async def execute(self, input_dto: ScanMediaInput) -> ScanMediaOutput:
         """Execute the media scan.
@@ -126,6 +135,32 @@ class ScanMediaDirectoriesUseCase:
         if self._probe_service is None:
             return None
         return await asyncio.to_thread(self._probe_service.probe, file_path)
+
+    async def _locate_scrub_preview(self, source_file_path: str) -> ImageUrl | None:
+        """Resolve an already-generated scrub-preview for a source file.
+
+        Returns an ``ImageUrl`` pointing at the on-disk WebVTT when the
+        locator finds a complete preview, else ``None`` (no locator wired,
+        or nothing on disk yet — the backfill job handles that case).
+        """
+        if self._scrub_preview_locator is None:
+            return None
+        located = await self._scrub_preview_locator.locate(source_file_path)
+        return ImageUrl(located) if located else None
+
+    async def _maybe_link_scrub_preview(self, entity: Movie | Episode) -> ImageUrl | None:
+        """Locate a preview for an existing entity that has none yet.
+
+        Returns ``None`` when the entity already has a preview, has no
+        primary file, or nothing is on disk — so callers only set the
+        field when there's a fresh link to make, never overwriting one.
+        """
+        if entity.scrub_preview_path is not None:
+            return None
+        primary = entity.primary_file
+        if primary is None:
+            return None
+        return await self._locate_scrub_preview(primary.file_path.value)
 
     async def _build_new_media_file(
         self,
@@ -302,8 +337,15 @@ class ScanMediaDirectoriesUseCase:
                 files[existing_idx] = refreshed
                 changed = True
 
+        updates: dict[str, object] = {}
         if changed:
-            movie = movie.with_updates(files=files)
+            updates["files"] = files
+        scrub_preview = await self._maybe_link_scrub_preview(movie)
+        if scrub_preview is not None:
+            updates["scrub_preview_path"] = scrub_preview
+
+        if updates:
+            movie = movie.with_updates(**updates)
             events = movie.pull_events()
             await uow.movies.save(movie)
             return 0, 1, events
@@ -328,6 +370,7 @@ class ScanMediaDirectoriesUseCase:
             year=Year(first.year or _current_year()),
             duration=Duration(duration or 0),
             files=[primary_file],
+            scrub_preview_path=await self._locate_scrub_preview(first.file_path.value),
         )
         movie.add_event(MediaCreatedEvent(media_id=movie_id, media_type=CatalogMediaType.MOVIE))
         for path in paths[1:]:
@@ -463,6 +506,7 @@ class ScanMediaDirectoriesUseCase:
             title=Title(ep_title),
             duration=Duration(duration or 0),
             files=[primary_file],
+            scrub_preview_path=await self._locate_scrub_preview(first.file_path.value),
         )
         for f in ep_files[1:]:
             variant_file, _ = await self._build_new_media_file(f, is_primary=False)
@@ -494,9 +538,17 @@ class ScanMediaDirectoriesUseCase:
                 files[existing_idx] = refreshed
                 changed = True
 
+        updates: dict[str, object] = {}
         if changed:
-            episode = episode.with_updates(files=files)
-        return episode, changed
+            updates["files"] = files
+        scrub_preview = await self._maybe_link_scrub_preview(episode)
+        if scrub_preview is not None:
+            updates["scrub_preview_path"] = scrub_preview
+
+        if updates:
+            episode = episode.with_updates(**updates)
+            return episode, True
+        return episode, False
 
 
 def _upsert_episode_in_season(season: Season, episode: Episode) -> Season:
