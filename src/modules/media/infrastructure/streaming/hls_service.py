@@ -73,13 +73,6 @@ _BROWSER_SAFE_CODECS = {"h264"}
 # hls.js something to render; the rest stream in as they're written.
 _MIN_SEGMENTS_FRESH = 1
 
-# Granularity (in source-time seconds) for the cache key when a non-zero
-# ``start`` offset is requested. Adjacent resume positions inside the
-# same bucket reuse the same encode instead of spawning a fresh ffmpeg
-# per second; coarser buckets save disk at the cost of a longer wait
-# for ``video.currentTime`` to land on the exact saved point.
-_RESUME_BUCKET_SECONDS = 300
-
 # Idle eviction defaults: kill ffmpeg after this many seconds with no
 # segment requests. Trade-off: short timeout frees CPU faster after the
 # user navigates away, but a paused user beyond this window will see the
@@ -302,11 +295,14 @@ class HlsService(HlsPlaylistPort):
 
         Args:
             file_path: Absolute path to the source video file.
-            start: Source-time second the playback session starts from.
-                Rounded down to ``_RESUME_BUCKET_SECONDS`` so adjacent
-                resume positions share a cache bucket. ``0`` (the
-                default) hashes the file path alone, keeping
-                pre-existing cache directories valid after upgrade.
+            start: Source-time second the playback session starts from,
+                honoured exactly so a forward seek (e.g. Skip Intro) can
+                anchor a fresh encode at the target second instead of
+                snapping onto a coarser bucket. Callers that want cache
+                reuse across nearby positions (the resume flow) quantise
+                ``start`` themselves before calling. ``0`` (the default)
+                hashes the file path alone, keeping pre-existing cache
+                directories valid after upgrade.
 
         Returns:
             Hex MD5 digest uniquely identifying the cache bucket. The
@@ -314,8 +310,7 @@ class HlsService(HlsPlaylistPort):
             being deterministic so the same offset always re-attaches
             to the same on-disk bucket.
         """
-        bucket = (start // _RESUME_BUCKET_SECONDS) * _RESUME_BUCKET_SECONDS
-        key = file_path if bucket == 0 else f"{file_path}:{bucket}"
+        key = file_path if start == 0 else f"{file_path}:{start}"
         return hashlib.md5(key.encode()).hexdigest()
 
     def get_file_by_hash(self, path_hash: str, relative_path: str) -> Path | None:
@@ -423,10 +418,11 @@ class HlsService(HlsPlaylistPort):
 
         Args:
             file_path: Absolute path to the source video file.
-            start: Source-time second to begin transcoding at. Rounded
-                down to a 5-minute bucket via ``get_path_hash`` so a
-                small change in resume position reuses the same encode.
-                ``0`` is the legacy behaviour (single bucket per file).
+            start: Source-time second to begin transcoding at, honoured
+                exactly so a forward seek anchors a fresh encode on the
+                target second. Callers wanting cache reuse across nearby
+                positions quantise ``start`` before calling. ``0`` is the
+                legacy behaviour (single bucket per file).
 
         Returns:
             The path hash for the bucket — unique per ``(file_path,
@@ -601,12 +597,11 @@ class HlsService(HlsPlaylistPort):
     def _start_generation(self, file_path: str, start: int = 0) -> str:
         """Start all FFmpeg processes for multi-track HLS generation.
 
-        Transcodes from ``start`` seconds (rounded down to the cache
-        bucket) into a bucket keyed by ``(file_path, start_bucket)``.
-        Each ffmpeg invocation gets ``-ss N`` as an input seek so the
-        encode skips fast to the nearest preceding keyframe before
-        producing segments. ENDLIST sealing happens via the watcher
-        spawned in ``_spawn_ffmpeg``.
+        Transcodes from the exact ``start`` second into a bucket keyed
+        by ``(file_path, start)``. Each ffmpeg invocation gets ``-ss N``
+        as an input seek so the encode skips fast to the nearest
+        preceding keyframe before producing segments. ENDLIST sealing
+        happens via the watcher spawned in ``_spawn_ffmpeg``.
 
         Args:
             file_path: Absolute path to the source video file.
@@ -615,7 +610,12 @@ class HlsService(HlsPlaylistPort):
         source = self._validate_source(file_path)
         safe_path = str(source)
         path_hash = self.get_path_hash(file_path, start)
-        bucket_start = (start // _RESUME_BUCKET_SECONDS) * _RESUME_BUCKET_SECONDS
+        # The encode is anchored at the exact requested second so a
+        # forward seek lands on the first segment of a fresh manifest
+        # (no out-of-range seek on the live/event playlist). Cache reuse
+        # for nearby resume positions is the caller's responsibility —
+        # the resume flow quantises ``start`` before it gets here.
+        bucket_start = start
 
         if self.is_complete(path_hash):
             return path_hash

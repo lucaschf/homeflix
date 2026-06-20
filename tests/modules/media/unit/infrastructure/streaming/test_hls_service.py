@@ -166,20 +166,19 @@ class TestHlsServiceGetPathHash:
         assert service.get_path_hash(path) == expected
         assert service.get_path_hash(path, start=0) == expected
 
-    def test_should_round_start_down_to_bucket(self, tmp_path: Path) -> None:
-        # Adjacent resume positions inside the same 5-minute window
-        # collapse onto the same bucket so a player resuming at t=302
-        # reuses the ffmpeg encode started at t=300.
+    def test_should_honour_exact_start_second(self, tmp_path: Path) -> None:
+        # The start offset is honoured exactly (not floored to a coarse
+        # bucket) so a forward seek — e.g. Skip Intro — anchors a fresh
+        # encode at the target second instead of snapping onto a shared
+        # bucket that transcodes from an earlier point.
         service = HlsService(
             runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
         )
         path = "/movies/test.mkv"
-        # 299s rounds down to bucket 0 — same as default
-        assert service.get_path_hash(path, start=299) == service.get_path_hash(path)
-        # 300s and 599s share the same bucket (300)
-        assert service.get_path_hash(path, start=300) == service.get_path_hash(path, start=599)
-        # 600s steps to the next bucket
-        assert service.get_path_hash(path, start=300) != service.get_path_hash(path, start=600)
+        # Every distinct non-zero second is its own bucket.
+        assert service.get_path_hash(path, start=90) != service.get_path_hash(path)
+        assert service.get_path_hash(path, start=90) != service.get_path_hash(path, start=91)
+        assert service.get_path_hash(path, start=302) != service.get_path_hash(path, start=300)
 
     def test_should_differ_across_buckets_for_same_file(self, tmp_path: Path) -> None:
         service = HlsService(
