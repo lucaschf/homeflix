@@ -9,6 +9,7 @@ job only sees its :class:`IntroDetectionResult`.
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -506,3 +507,43 @@ class TestIntroDetectionJob:
         assert persisted_flags == {1: True, 2: False}
         # Only the high-confidence marker was actually written.
         assert uow.series.update_episode_intro.await_count == 1
+
+    async def test_logs_series_and_season_at_start(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[season])
+        job = IntroDetectionJob(
+            media_uow_factory=MagicMock(return_value=uow),
+            intro_detectors=_registry(_make_detector()),
+            runtime_settings=_make_runtime_settings(),
+        )
+
+        await job.run()
+
+        # structlog renders to stdout; strip ANSI colour codes (present in
+        # CI's console renderer) so the key=value pairs match contiguously.
+        raw = capsys.readouterr().out
+        out = re.sub(r"\x1b\[[0-9;]*m", "", raw)
+        assert "season started" in out
+        assert "series_title=Test Series" in out
+        assert "season_number=1" in out
+
+    async def test_records_resolved_series_title_on_run(self) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[season])
+        job = IntroDetectionJob(
+            media_uow_factory=MagicMock(return_value=uow),
+            intro_detectors=_registry(_make_detector()),
+            runtime_settings=_make_runtime_settings(),
+        )
+
+        await job.run()
+
+        uow.intro_detection_runs.add.assert_awaited_once()
+        run = uow.intro_detection_runs.add.await_args.args[0]
+        assert run.series_title == "Test Series"
