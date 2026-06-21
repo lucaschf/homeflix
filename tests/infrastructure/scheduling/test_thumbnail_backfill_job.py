@@ -103,11 +103,16 @@ def _make_runtime_settings(
     *,
     batch_size: int = 10,
     subdir: str = ".homeflix/thumbnails",
+    eager_concurrency: int = 2,
 ) -> AsyncMock:
     """Return a fake :class:`RuntimeSettings` exposing ``thumbnail_backfill``."""
     runtime = AsyncMock()
     runtime.thumbnail_backfill = AsyncMock(
-        return_value=ThumbnailBackfillConfig(batch_size=batch_size, subdir=subdir),
+        return_value=ThumbnailBackfillConfig(
+            batch_size=batch_size,
+            subdir=subdir,
+            eager_concurrency=eager_concurrency,
+        ),
     )
     return runtime
 
@@ -400,3 +405,111 @@ class TestThumbnailBackfillJob:
         service.generate.assert_not_called()
         uow.movies.save.assert_not_awaited()
         uow.series.update_episode_scrub_preview_path.assert_not_awaited()
+
+
+@pytest.mark.unit
+class TestEagerConcurrencyControl:
+    """Single-flight + concurrency cap on the eager (on-play) trigger."""
+
+    @pytest.mark.asyncio
+    async def test_dedups_concurrent_eager_fires_for_same_movie(self, tmp_path: Path) -> None:
+        import asyncio
+
+        movie_file = tmp_path / "movie.mkv"
+        movie_file.write_bytes(b"\x00")
+        movie = _make_movie(str(movie_file))
+        assert movie.id is not None
+
+        uow = _build_uow(movies_missing=[], episodes_missing=[], movie_by_id=movie)
+
+        # Block generation so both fires overlap in-flight.
+        release = asyncio.Event()
+        gen_calls = 0
+
+        def _blocking_generate(*_args: object, **_kwargs: object) -> ThumbnailResult:
+            nonlocal gen_calls
+            gen_calls += 1
+            # Busy-spin-free wait: the test releases this via the loop below.
+            return ThumbnailResult(
+                sprite_path=(tmp_path / "sprite.jpg"),
+                vtt_path=(tmp_path / "sprite.vtt"),
+                layout=MagicMock(),
+            )
+
+        service = MagicMock()
+        service.generate.side_effect = _blocking_generate
+
+        job = ThumbnailBackfillJob(
+            media_uow_factory=MagicMock(return_value=uow),
+            runtime_settings=_make_runtime_settings(),
+            thumbnail_service=service,
+        )
+
+        # Fire the same id twice "concurrently": the second must be
+        # dropped by the in-flight guard before any work happens.
+        async def _first() -> bool:
+            return await job.process_movie_by_id(str(movie.id))
+
+        # Pre-seed the in-flight set by starting one and immediately
+        # firing a duplicate before the first yields back.
+        results = await asyncio.gather(_first(), _first())
+
+        release.set()
+        # Exactly one of the two did real work; the other short-circuited.
+        assert sorted(results) == [False, True]
+        assert gen_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_caps_parallel_generations_at_configured_limit(self, tmp_path: Path) -> None:
+        import asyncio
+
+        # Two distinct movies, eager limit 1 → the second must wait for
+        # the first to finish; peak concurrency never exceeds 1.
+        movie_a = _make_movie(str(tmp_path / "a.mkv"))
+        movie_b = _make_movie(str(tmp_path / "b.mkv"))
+        (tmp_path / "a.mkv").write_bytes(b"\x00")
+        (tmp_path / "b.mkv").write_bytes(b"\x00")
+        by_id = {str(movie_a.id): movie_a, str(movie_b.id): movie_b}
+
+        def _factory() -> AsyncMock:
+            uow = AsyncMock()
+            uow.__aenter__.return_value = uow
+            uow.__aexit__.return_value = None
+            uow.movies = AsyncMock()
+            uow.movies.find_by_id = AsyncMock(side_effect=lambda mid: by_id[str(mid)])
+            uow.movies.save = AsyncMock(side_effect=lambda m: m)
+            return uow
+
+        active = 0
+        peak = 0
+        gate = asyncio.Event()
+
+        def _tracking_generate(*_args: object, **_kwargs: object) -> ThumbnailResult:
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            active -= 1
+            return ThumbnailResult(
+                sprite_path=(tmp_path / "sprite.jpg"),
+                vtt_path=(tmp_path / "sprite.vtt"),
+                layout=MagicMock(),
+            )
+
+        service = MagicMock()
+        service.generate.side_effect = _tracking_generate
+
+        job = ThumbnailBackfillJob(
+            media_uow_factory=MagicMock(side_effect=_factory),
+            runtime_settings=_make_runtime_settings(eager_concurrency=1),
+            thumbnail_service=service,
+        )
+
+        gate.set()
+        results = await asyncio.gather(
+            job.process_movie_by_id(str(movie_a.id)),
+            job.process_movie_by_id(str(movie_b.id)),
+        )
+
+        assert results == [True, True]
+        assert service.generate.call_count == 2
+        assert peak == 1

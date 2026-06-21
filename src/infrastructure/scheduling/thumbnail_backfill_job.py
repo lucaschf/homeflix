@@ -69,6 +69,35 @@ class ThumbnailBackfillJob:
         self._thumbnail_service = thumbnail_service or ThumbnailGenerationService(
             runtime_settings=runtime_settings,
         )
+        # Guard for the eager (fire-and-forget) trigger fired per HLS
+        # playlist request. Without it, an HLS remount (resume bucket,
+        # skip-intro re-anchor) or a replay re-fires generation for the
+        # *same* still-preview-less file, and several whole-file NVDEC
+        # sprite decodes stack up and peg the GPU. ``_eager_inflight``
+        # de-dups by media key; ``_eager_gate`` + ``_eager_active`` bound
+        # how many distinct files generate at once (``eager_concurrency``
+        # from settings — re-read per slot so admin edits apply live).
+        # The periodic ``run()`` is already sequential and ignores this.
+        self._eager_inflight: set[str] = set()
+        self._eager_active = 0
+        self._eager_gate = asyncio.Condition()
+
+    async def _eager_limit(self) -> int:
+        """Current max parallel eager generations (from settings)."""
+        return (await self._runtime_settings.thumbnail_backfill()).eager_concurrency
+
+    async def _acquire_eager_slot(self) -> None:
+        """Block until an eager generation slot is free, then claim it."""
+        async with self._eager_gate:
+            while self._eager_active >= await self._eager_limit():
+                await self._eager_gate.wait()
+            self._eager_active += 1
+
+    async def _release_eager_slot(self) -> None:
+        """Release a slot and wake one waiter."""
+        async with self._eager_gate:
+            self._eager_active = max(0, self._eager_active - 1)
+            self._eager_gate.notify(1)
 
     async def run(self) -> None:
         """Process one batch of missing thumbnails.
@@ -119,22 +148,48 @@ class ThumbnailBackfillJob:
         Re-checks ``scrub_preview_path`` on the freshly-loaded entity
         to avoid a redundant ffmpeg run if another tick already filled
         it in between request and dispatch.
+
+        Single-flighted + concurrency-capped (see ``__init__``): a repeat
+        eager fire for a movie already generating is dropped, and distinct
+        movies queue on the semaphore instead of all decoding at once.
         """
-        async with self._media_uow_factory() as uow:
-            movie = await uow.movies.find_by_id(MovieId(movie_id))
-        if movie is None or movie.scrub_preview_path is not None:
+        key = f"mov:{movie_id}"
+        if key in self._eager_inflight:
             return False
-        subdir = (await self._runtime_settings.thumbnail_backfill()).subdir
-        return await self.process_movie(movie, subdir)
+        self._eager_inflight.add(key)
+        try:
+            async with self._media_uow_factory() as uow:
+                movie = await uow.movies.find_by_id(MovieId(movie_id))
+            if movie is None or movie.scrub_preview_path is not None:
+                return False
+            subdir = (await self._runtime_settings.thumbnail_backfill()).subdir
+            await self._acquire_eager_slot()
+            try:
+                return await self.process_movie(movie, subdir)
+            finally:
+                await self._release_eager_slot()
+        finally:
+            self._eager_inflight.discard(key)
 
     async def process_episode_by_id(self, episode_id: str) -> bool:
         """Eager-trigger entry point for episodes — see ``process_movie_by_id``."""
-        async with self._media_uow_factory() as uow:
-            episode = await uow.series.find_episode_by_id(EpisodeId(episode_id))
-        if episode is None or episode.scrub_preview_path is not None:
+        key = f"epi:{episode_id}"
+        if key in self._eager_inflight:
             return False
-        subdir = (await self._runtime_settings.thumbnail_backfill()).subdir
-        return await self.process_episode(episode, subdir)
+        self._eager_inflight.add(key)
+        try:
+            async with self._media_uow_factory() as uow:
+                episode = await uow.series.find_episode_by_id(EpisodeId(episode_id))
+            if episode is None or episode.scrub_preview_path is not None:
+                return False
+            subdir = (await self._runtime_settings.thumbnail_backfill()).subdir
+            await self._acquire_eager_slot()
+            try:
+                return await self.process_episode(episode, subdir)
+            finally:
+                await self._release_eager_slot()
+        finally:
+            self._eager_inflight.discard(key)
 
     async def process_movie(self, movie: Movie, subdir: str) -> bool:
         """Generate and persist scrub-preview thumbnails for a single movie.

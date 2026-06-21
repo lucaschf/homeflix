@@ -20,6 +20,13 @@ class ThumbnailBackfillConfig(CompoundValueObject):
             folder) where the generated sprite + VTT pair is written,
             nested under a per-stem leaf so episodes that share a
             season folder do not overwrite each other.
+        eager_concurrency: Maximum number of sprite generations the
+            eager (on-play) trigger runs in parallel. Each generation
+            decodes a whole file (NVDEC), so an unbounded burst — e.g.
+            HLS remounts re-firing for the same session, or several
+            preview-less titles played back-to-back — would peg the GPU.
+            Excess eager requests queue until a slot frees. The periodic
+            backfill is always sequential and ignores this cap.
 
     Example:
         >>> cfg = ThumbnailBackfillConfig()
@@ -30,6 +37,7 @@ class ThumbnailBackfillConfig(CompoundValueObject):
     batch_size: int = Field(default=10, ge=1)
     interval_minutes: int = Field(default=20, ge=1)
     subdir: str = Field(default=".homeflix/thumbnails", min_length=1)
+    eager_concurrency: int = Field(default=2, ge=1, le=4)
 
 
 __all__ = ["ThumbnailBackfillConfig"]
