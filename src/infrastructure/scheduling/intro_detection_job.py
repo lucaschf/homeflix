@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     )
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities import Episode, Season
-    from src.modules.media.domain.value_objects import EpisodeId, SeasonId
+    from src.modules.media.domain.value_objects import EpisodeId, SeasonId, SeriesId
     from src.modules.settings.domain.value_objects import IntroDetectionConfig
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
@@ -154,7 +154,8 @@ class IntroDetectionJob:
         method never raising — a single bad season must not abort the
         rest of the tick.
         """
-        log_ctx = _season_log_context(season)
+        series_title = await self._resolve_series_title(season.series_id)
+        log_ctx = _season_log_context(season, series_title)
         season_id = season.id
         if season_id is None:
             # Defensive: the repository fetches persisted seasons, so a
@@ -167,6 +168,11 @@ class IntroDetectionJob:
                 **log_ctx,
             )
             return IntroDetectionState.FAILED
+
+        # Emit up front so operators can see which series/season is being
+        # worked on *while* the (slow) detection runs, not only once it
+        # finishes.
+        _logger.info("[intro-detection] season started", **log_ctx)
 
         try:
             await self._mark_state(season_id, IntroDetectionState.IN_PROGRESS)
@@ -203,7 +209,7 @@ class IntroDetectionJob:
                 )
             metrics = _RunMetrics(outcome=IntroDetectionState.FAILED, error=error_message)
 
-        await self._record_run(season, season_id, config, metrics, started_at)
+        await self._record_run(season, season_id, config, metrics, started_at, series_title)
         return metrics.outcome
 
     async def _detect_and_persist(
@@ -282,6 +288,21 @@ class IntroDetectionJob:
             episode_results=episode_results,
         )
 
+    async def _resolve_series_title(self, series_id: SeriesId) -> str:
+        """Best-effort fetch of the parent series title for log + audit.
+
+        Returns an empty string when the series can't be resolved (a
+        mid-tick delete, say) — never raises, so a lookup hiccup can't
+        abort the season's processing.
+        """
+        try:
+            async with self._media_uow_factory() as uow:
+                series = await uow.series.find_by_id(series_id)
+        except Exception:
+            _logger.exception("[intro-detection] failed to resolve series title")
+            return ""
+        return series.title.value if series is not None else ""
+
     async def _record_run(
         self,
         season: Season,
@@ -289,17 +310,19 @@ class IntroDetectionJob:
         config: IntroDetectionConfig,
         metrics: _RunMetrics,
         started_at: datetime,
+        series_title: str,
     ) -> None:
-        """Append an audit row for this season's run. Never raises."""
+        """Append an audit row for this season's run. Never raises.
+
+        ``series_title`` is resolved once by the caller and threaded in so
+        the audit row stays self-contained (survives a later rename/delete)
+        without a second lookup.
+        """
         try:
             async with self._media_uow_factory() as uow:
-                # Denormalize the series title so the audit row stays
-                # self-contained (survives a later rename/delete). One
-                # extra lookup per recorded run — runs are infrequent.
-                series = await uow.series.find_by_id(season.series_id)
                 run = IntroDetectionRun(
                     series_id=str(season.series_id),
-                    series_title=series.title.value if series is not None else "",
+                    series_title=series_title,
                     season_id=str(season_id),
                     season_number=season.season_number.value,
                     algorithm=config.algorithm.value,
@@ -456,18 +479,23 @@ def _has_manual_marker(episode: Episode) -> bool:
     return episode.intro is not None and episode.intro.is_manual
 
 
-def _season_log_context(season: Season) -> dict[str, str | int]:
+def _season_log_context(season: Season, series_title: str = "") -> dict[str, str | int]:
     """Build the structured log fields for a season under processing.
 
     ``season.series_id`` is always set (it's the parent FK), even on a
     season that somehow lacks its own external id, so the context is
-    safe to compute before any guard checks.
+    safe to compute before any guard checks. ``series_title`` is included
+    when resolved so log lines read as "Show — Season 2" rather than bare
+    ids; it defaults to empty for call sites that log before resolving it.
     """
-    return {
+    ctx: dict[str, str | int] = {
         "series_id": str(season.series_id),
         "season_id": str(season.id) if season.id is not None else "",
         "season_number": season.season_number.value,
     }
+    if series_title:
+        ctx["series_title"] = series_title
+    return ctx
 
 
 __all__ = ["IntroDetectionJob"]
