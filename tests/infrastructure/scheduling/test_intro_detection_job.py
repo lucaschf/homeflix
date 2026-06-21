@@ -9,6 +9,7 @@ job only sees its :class:`IntroDetectionResult`.
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -522,8 +523,10 @@ class TestIntroDetectionJob:
 
         await job.run()
 
-        # structlog renders to stdout, so assert on the captured line.
-        out = capsys.readouterr().out
+        # structlog renders to stdout; strip ANSI colour codes (present in
+        # CI's console renderer) so the key=value pairs match contiguously.
+        raw = capsys.readouterr().out
+        out = re.sub(r"\x1b\[[0-9;]*m", "", raw)
         assert "season started" in out
         assert "series_title=Test Series" in out
         assert "season_number=1" in out
