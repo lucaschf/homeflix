@@ -157,6 +157,9 @@ class SeriesSummaryOutput:
         poster_path: Path to poster (optional).
         season_count: Number of seasons.
         total_episodes: Total episode count.
+        intro_marked_count: Number of episodes with an intro marker set
+            (auto-detected or manual). Drives the admin intro-coverage
+            progress shown per series.
         genres: List of genre strings.
         library_id: External library id (``lib_xxx``) owning the
             series. Used by the admin Catalog "Library" column.
@@ -175,6 +178,7 @@ class SeriesSummaryOutput:
     backdrop_path: str | None
     season_count: int
     total_episodes: int
+    intro_marked_count: int
     genres: list[str]
     library_id: str
     tmdb_id: int | None

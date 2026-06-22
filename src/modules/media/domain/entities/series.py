@@ -161,6 +161,22 @@ class Series(AggregateRoot[SeriesId]):
         return sum(s.episode_count for s in self.seasons)
 
     @property
+    def intro_marked_count(self) -> int:
+        """Return the number of episodes that have an intro marker set.
+
+        Counts episodes (across all seasons) whose intro span has been
+        recorded, whether auto-detected or set manually. Lets the admin
+        UI show per-series "skip intro" coverage without loading each
+        season's detail.
+
+        Returns:
+            The count of episodes with an intro marker.
+        """
+        return sum(
+            1 for season in self.seasons for episode in season.episodes if episode.intro is not None
+        )
+
+    @property
     def is_ongoing(self) -> bool:
         """Check if the series is still ongoing.
 

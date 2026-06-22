@@ -24,6 +24,7 @@ def to_series_summary(series: Series, lang: str = "en") -> SeriesSummaryOutput:
         backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
         season_count=series.season_count,
         total_episodes=series.total_episodes,
+        intro_marked_count=series.intro_marked_count,
         genres=series.get_genres(lang),
         library_id=series.library_id,
         tmdb_id=series.tmdb_id.value if series.tmdb_id else None,
