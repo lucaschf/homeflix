@@ -1,5 +1,7 @@
 """Integration tests for SqlAlchemyJobRunRepository."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +49,52 @@ class TestLatestPerJob:
         assert set(by_job) == {"job-a", "job-b"}
         assert by_job["job-a"].status == JobRunStatus.FAILED
         assert by_job["job-b"].status == JobRunStatus.SUCCEEDED
+
+
+@pytest.mark.integration
+class TestRecentPerJob:
+    async def test_returns_up_to_limit_newest_per_job(self, db_session: AsyncSession) -> None:
+        repo = SqlAlchemyJobRunRepository(db_session)
+        for _ in range(5):
+            await repo.save(JobRun.start("job-a").succeed())
+        await repo.save(JobRun.start("job-a").fail("boom"))  # newest for job-a
+        await repo.save(JobRun.start("job-b").succeed())
+
+        recent = await repo.recent_per_job(limit=3)
+        by_job: dict[str, list[JobRun]] = {}
+        for run in recent:
+            by_job.setdefault(run.job_id, []).append(run)
+
+        assert len(by_job["job-a"]) == 3
+        assert len(by_job["job-b"]) == 1
+        # Newest-first within each job: the failed run leads job-a.
+        assert by_job["job-a"][0].status == JobRunStatus.FAILED
+
+
+@pytest.mark.integration
+class TestCountFilters:
+    async def test_count_since_excludes_older_runs(self, db_session: AsyncSession) -> None:
+        repo = SqlAlchemyJobRunRepository(db_session)
+        old = JobRun.start("job-a").with_updates(
+            started_at=datetime.now(UTC) - timedelta(days=2),
+        )
+        await repo.save(old.succeed())
+        await repo.save(JobRun.start("job-a").succeed())  # now
+
+        cutoff = datetime.now(UTC) - timedelta(hours=24)
+        assert await repo.count(since=cutoff) == 1
+        assert await repo.count() == 2
+
+    async def test_count_filters_by_statuses(self, db_session: AsyncSession) -> None:
+        repo = SqlAlchemyJobRunRepository(db_session)
+        await repo.save(JobRun.start("job-a").succeed())
+        await repo.save(JobRun.start("job-a").fail("boom"))
+        await repo.save(JobRun.start("job-b").mark_interrupted())
+
+        failures = await repo.count(
+            statuses=[JobRunStatus.FAILED, JobRunStatus.INTERRUPTED],
+        )
+        assert failures == 2
 
 
 @pytest.mark.integration

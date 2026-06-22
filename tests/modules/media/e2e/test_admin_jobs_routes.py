@@ -15,6 +15,7 @@ from tests.modules.media.e2e.conftest import SeededUser
 LOGIN_PATH = "/api/v1/auth/cookie/login"
 JOBS_PATH = "/api/v1/admin/jobs"
 JOB_RUNS_PATH = "/api/v1/admin/jobs/runs"
+JOB_RUN_NOW_PATH = "/api/v1/admin/jobs/homeflix:thumbnail-backfill/run"
 
 
 async def _login(client: AsyncClient, user: SeededUser) -> None:
@@ -45,6 +46,7 @@ class TestAdminJobsAuth:
     async def test_unauthenticated_returns_401(self, client: AsyncClient) -> None:
         assert (await client.get(JOBS_PATH)).status_code == 401
         assert (await client.get(JOB_RUNS_PATH)).status_code == 401
+        assert (await client.post(JOB_RUN_NOW_PATH)).status_code == 401
 
     async def test_member_returns_403(
         self,
@@ -54,6 +56,7 @@ class TestAdminJobsAuth:
         member = await seed_user_with_profile(email="member@example.com", is_admin=False)
         await _login(client, member)
         assert (await client.get(JOBS_PATH)).status_code == 403
+        assert (await client.post(JOB_RUN_NOW_PATH)).status_code == 403
 
 
 @pytest.mark.e2e
@@ -72,6 +75,8 @@ class TestAdminJobsOverview:
         assert body["type"] == "jobs_overview"
         assert body["data"]["scheduler_running"] is False
         assert body["data"]["jobs"] == []
+        assert body["data"]["executions_24h"] == 0
+        assert body["data"]["failures_24h"] == 0
 
     async def test_overview_surfaces_recorded_job_as_last_run(
         self,
@@ -89,6 +94,25 @@ class TestAdminJobsOverview:
         assert job["scheduled"] is False  # scheduler not started in e2e
         assert job["running"] is False
         assert job["last_run"]["status"] == "succeeded"
+        assert job["recent_runs"] == ["succeeded"]
+        assert body["data"]["executions_24h"] == 1
+        assert body["data"]["failures_24h"] == 0
+
+
+@pytest.mark.e2e
+class TestAdminJobTrigger:
+    async def test_run_now_unscheduled_job_returns_404(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        # The scheduler isn't started in e2e, so nothing is registered
+        # and "run now" reports the job as not scheduled.
+        await _login_as_admin(client, seed_user_with_profile)
+
+        response = await client.post(JOB_RUN_NOW_PATH)
+
+        assert response.status_code == 404
 
 
 @pytest.mark.e2e

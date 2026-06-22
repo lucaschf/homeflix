@@ -34,10 +34,14 @@ from src.modules.library.infrastructure.persistence.sqlalchemy_unit_of_work impo
     SqlAlchemyLibraryUnitOfWorkFactory,
 )
 from src.modules.media.application.use_cases.list_jobs import ListJobsUseCase
+from src.modules.media.application.use_cases.trigger_job import TriggerJobUseCase
 from src.modules.media.infrastructure.acl import (
     LibraryHealthAdapter,
     ProfileLibraryAccessAdapter,
     ProgressLookupAdapter,
+)
+from src.modules.media.infrastructure.scheduling.scheduler_controller import (
+    LibraryScanSchedulerController,
 )
 from src.modules.media.infrastructure.scheduling.scheduler_inspector import (
     LibraryScanSchedulerInspector,
@@ -248,6 +252,18 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         ListJobsUseCase,
         scheduler_inspector=scheduler_inspector,
         media_uow_factory=media.media_unit_of_work_factory,
+    )
+
+    # Write-side control of the same scheduler singleton for the admin
+    # "run now" action.
+    scheduler_controller = providers.Singleton(
+        LibraryScanSchedulerController,
+        scheduler=library_scan_scheduler,
+    )
+
+    trigger_job = providers.Factory(
+        TriggerJobUseCase,
+        scheduler_control=scheduler_controller,
     )
 
     thumbnail_backfill_job = providers.Singleton(
