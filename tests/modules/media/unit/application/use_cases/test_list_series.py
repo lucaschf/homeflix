@@ -179,6 +179,7 @@ class TestListSeriesUseCase:
 
         assert result.series[0].season_count == 0
         assert result.series[0].total_episodes == 0
+        assert result.series[0].intro_marked_count == 0
 
     @pytest.mark.asyncio
     async def test_should_request_total_when_include_total_is_true(self) -> None:

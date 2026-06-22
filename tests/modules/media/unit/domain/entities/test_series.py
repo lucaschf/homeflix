@@ -145,6 +145,85 @@ class TestSeriesSeasonManagement:
         assert found is None
 
 
+class TestSeriesIntroMarkedCount:
+    """Tests for Series.intro_marked_count."""
+
+    @staticmethod
+    def _episode(series_id, season_number, episode_number, *, with_intro):
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
+            Duration,
+            FilePath,
+            IntroMarker,
+            IntroMarkerSource,
+            MediaFile,
+            Resolution,
+            Title,
+        )
+
+        episode = Episode(
+            series_id=series_id,
+            season_number=season_number,
+            episode_number=episode_number,
+            title=Title(f"Ep {episode_number}"),
+            duration=Duration(2700),
+            files=[
+                MediaFile(
+                    file_path=FilePath(
+                        f"/series/show/s{season_number:02d}e{episode_number:02d}.mkv"
+                    ),
+                    file_size=1_000_000_000,
+                    resolution=Resolution("1080p"),
+                    is_primary=True,
+                )
+            ],
+        )
+        if with_intro:
+            episode = episode.with_intro_marker(
+                IntroMarker(start_seconds=10, end_seconds=80, source=IntroMarkerSource.MANUAL)
+            )
+        return episode
+
+    def _series_with(self, marked_flags_by_season):
+        from src.modules.media.domain.entities import Season, Series
+        from src.modules.media.domain.value_objects import SeasonId
+
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
+        for season_number, flags in enumerate(marked_flags_by_season, start=1):
+            season = Season(
+                id=SeasonId.generate(),
+                series_id=series.id,
+                season_number=season_number,
+                episodes=[
+                    self._episode(series.id, season_number, n + 1, with_intro=flag)
+                    for n, flag in enumerate(flags)
+                ],
+            )
+            series = series.with_season(season)
+        return series
+
+    def test_should_return_zero_when_no_episodes(self):
+        series = self._series_with([])
+
+        assert series.intro_marked_count == 0
+
+    def test_should_return_zero_when_no_episode_has_intro(self):
+        series = self._series_with([[False, False, False]])
+
+        assert series.intro_marked_count == 0
+
+    def test_should_count_only_episodes_with_intro_marker(self):
+        series = self._series_with([[True, False, True]])
+
+        assert series.intro_marked_count == 2
+
+    def test_should_sum_marked_episodes_across_seasons(self):
+        series = self._series_with([[True, False], [True, True, False]])
+
+        assert series.intro_marked_count == 3
+        assert series.total_episodes == 5
+
+
 class TestSeriesEquality:
     """Tests for Series equality based on ID."""
 
