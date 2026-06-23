@@ -89,6 +89,28 @@ class LibraryScanScheduler:
         """Whether the scheduler is started and ticking."""
         return self._scheduler.running
 
+    def trigger_now(self, job_id: str) -> bool:
+        """Reschedule a registered job to fire immediately.
+
+        Sets the job's next run time to "now" so APScheduler dispatches
+        it on the next tick; the regular cadence resumes afterwards
+        (the trigger recomputes the following run as usual). Used by the
+        admin "run now" action.
+
+        Args:
+            job_id: Stable scheduler job id to run immediately.
+
+        Returns:
+            ``True`` when the job exists and was rescheduled; ``False``
+            when no job with that id is currently registered.
+        """
+        job = self._scheduler.get_job(job_id)
+        if job is None:
+            return False
+        job.modify(next_run_time=datetime.now(UTC))
+        _logger.info("[scheduler] Triggered job to run now", job_id=job_id)
+        return True
+
     def list_jobs(self) -> list[ScheduledJobSnapshot]:
         """Snapshot every currently-registered job (in-memory, no I/O)."""
         snapshots: list[ScheduledJobSnapshot] = []

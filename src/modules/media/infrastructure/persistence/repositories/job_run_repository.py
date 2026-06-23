@@ -63,11 +63,21 @@ class SqlAlchemyJobRunRepository(JobRunRepository):
         result = await self._session.execute(stmt)
         return [JobRunMapper.to_entity(m) for m in result.scalars().all()]
 
-    async def count(self, *, job_id: str | None = None) -> int:
-        """Count non-deleted runs matching the filter."""
+    async def count(
+        self,
+        *,
+        job_id: str | None = None,
+        since: datetime | None = None,
+        statuses: Sequence[JobRunStatus] | None = None,
+    ) -> int:
+        """Count non-deleted runs matching the filters."""
         stmt = select(func.count(JobRunModel.id)).where(JobRunModel.deleted_at.is_(None))
         if job_id is not None:
             stmt = stmt.where(JobRunModel.job_id == job_id)
+        if since is not None:
+            stmt = stmt.where(JobRunModel.started_at >= since)
+        if statuses is not None:
+            stmt = stmt.where(JobRunModel.status.in_([s.value for s in statuses]))
         result = await self._session.execute(stmt)
         return int(result.scalar_one())
 
@@ -89,6 +99,32 @@ class SqlAlchemyJobRunRepository(JobRunRepository):
             .join(ranked, JobRunModel.id == ranked.c.id)
             .where(ranked.c.rn == 1)
             .order_by(JobRunModel.job_id.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [JobRunMapper.to_entity(m) for m in result.scalars().all()]
+
+    async def recent_per_job(self, *, limit: int) -> Sequence[JobRun]:
+        """Return up to ``limit`` newest non-deleted runs per distinct job."""
+        row_number = (
+            func.row_number()
+            .over(
+                partition_by=JobRunModel.job_id,
+                order_by=(JobRunModel.started_at.desc(), JobRunModel.id.desc()),
+            )
+            .label("rn")
+        )
+        ranked = (
+            select(JobRunModel.id, row_number).where(JobRunModel.deleted_at.is_(None)).subquery()
+        )
+        stmt = (
+            select(JobRunModel)
+            .join(ranked, JobRunModel.id == ranked.c.id)
+            .where(ranked.c.rn <= limit)
+            .order_by(
+                JobRunModel.job_id.asc(),
+                JobRunModel.started_at.desc(),
+                JobRunModel.id.desc(),
+            )
         )
         result = await self._session.execute(stmt)
         return [JobRunMapper.to_entity(m) for m in result.scalars().all()]

@@ -4,15 +4,19 @@ from dataclasses import asdict
 from typing import Any
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
 from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
-from src.modules.media.application.dtos.job_dtos import ListJobRunsInput
+from src.modules.media.application.dtos.job_dtos import ListJobRunsInput, TriggerJobInput
 from src.modules.media.application.use_cases.list_job_runs import ListJobRunsUseCase
 from src.modules.media.application.use_cases.list_jobs import ListJobsUseCase
+from src.modules.media.application.use_cases.trigger_job import (
+    JobNotScheduledError,
+    TriggerJobUseCase,
+)
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Jobs"])
 
@@ -49,6 +53,32 @@ async def list_admin_job_runs(
         ListJobRunsInput(job_id=job_id, limit=limit, offset=offset),
     )
     return api_list([asdict(r) for r in rows])
+
+
+@router.post("/jobs/{job_id}/run", status_code=202)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def trigger_admin_job(
+    job_id: str,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: TriggerJobUseCase = Depends(
+        Provide[ApplicationContainer.trigger_job],
+    ),
+) -> dict[str, Any]:
+    """Run a scheduled job immediately ("run now").
+
+    Reschedules the registered job to fire on the next scheduler tick;
+    its execution is recorded in ``job_runs`` like any scheduled run, so
+    the dashboard reflects it within a poll cycle. Returns 202 with the
+    job id; 404 when the job isn't currently scheduled.
+    """
+    try:
+        await use_case.execute(TriggerJobInput(job_id=job_id))
+    except JobNotScheduledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    return api_single("job_trigger", {"job_id": job_id, "triggered": True})
 
 
 __all__ = ["router"]

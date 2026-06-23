@@ -21,11 +21,25 @@ class _FakeInspector(SchedulerInspectorPort):
 
 
 class _FakeJobRuns:
-    def __init__(self, latest: list[JobRun]) -> None:
-        self._latest = latest
+    def __init__(self, recent: list[JobRun]) -> None:
+        # Stored newest-first within each job, matching the real repo.
+        self._recent = recent
 
-    async def latest_per_job(self) -> list[JobRun]:
-        return self._latest
+    async def recent_per_job(self, *, limit: int) -> list[JobRun]:
+        by_job: dict[str, list[JobRun]] = {}
+        for run in self._recent:
+            by_job.setdefault(run.job_id, []).append(run)
+        out: list[JobRun] = []
+        for runs in by_job.values():
+            out.extend(runs[:limit])
+        return out
+
+    async def count(self, *, job_id=None, since=None, statuses=None) -> int:
+        runs = self._recent
+        if statuses is not None:
+            allowed = set(statuses)
+            runs = [r for r in runs if r.status in allowed]
+        return len(runs)
 
 
 class _FakeUoW:
@@ -44,10 +58,10 @@ def _run(job_id: str, status: JobRunStatus) -> JobRun:
     return run if status == JobRunStatus.RUNNING else run.with_updates(status=status)
 
 
-def _use_case(snapshot: SchedulerSnapshot, latest: list[JobRun]) -> ListJobsUseCase:
+def _use_case(snapshot: SchedulerSnapshot, recent: list[JobRun]) -> ListJobsUseCase:
     return ListJobsUseCase(
         scheduler_inspector=_FakeInspector(snapshot),
-        media_uow_factory=lambda: _FakeUoW(_FakeJobRuns(latest)),  # type: ignore[arg-type]
+        media_uow_factory=lambda: _FakeUoW(_FakeJobRuns(recent)),  # type: ignore[arg-type]
     )
 
 
@@ -97,3 +111,38 @@ class TestListJobs:
         assert job.scheduled is False
         assert job.schedule is None
         assert job.last_run is not None
+
+    @pytest.mark.asyncio
+    async def test_recent_runs_are_oldest_first(self) -> None:
+        snapshot = SchedulerSnapshot(
+            running=True,
+            jobs=[ScheduledJob(job_id="job-a", next_run_at=None, schedule="i")],
+        )
+        # Repo order is newest-first: failed (newest) then succeeded.
+        recent = [
+            _run("job-a", JobRunStatus.FAILED),
+            _run("job-a", JobRunStatus.SUCCEEDED),
+        ]
+        use_case = _use_case(snapshot, recent)
+
+        out = await use_case.execute()
+
+        # Strip reads left (old) to right (new): the failure is last.
+        assert out.jobs[0].recent_runs == ["succeeded", "failed"]
+        assert out.jobs[0].last_run is not None
+        assert out.jobs[0].last_run.status == "failed"
+
+    @pytest.mark.asyncio
+    async def test_aggregates_executions_and_failures(self) -> None:
+        snapshot = SchedulerSnapshot(running=True, jobs=[])
+        recent = [
+            _run("job-a", JobRunStatus.SUCCEEDED),
+            _run("job-a", JobRunStatus.FAILED),
+            _run("job-b", JobRunStatus.INTERRUPTED),
+        ]
+        use_case = _use_case(snapshot, recent)
+
+        out = await use_case.execute()
+
+        assert out.executions_24h == 3
+        assert out.failures_24h == 2

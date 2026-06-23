@@ -35,6 +35,11 @@ from src.shared_kernel.value_objects.library_id import LibraryId
 class _FakeJob:
     def __init__(self, job_id: str) -> None:
         self.id = job_id
+        self.next_run_time: datetime | None = None
+
+    def modify(self, **changes: object) -> None:
+        if "next_run_time" in changes:
+            self.next_run_time = changes["next_run_time"]  # type: ignore[assignment]
 
 
 class _FakeScheduler:
@@ -60,6 +65,15 @@ class _FakeScheduler:
 
     def get_jobs(self) -> list[_FakeJob]:
         return [_FakeJob(jid) for jid in self.jobs]
+
+    def get_job(self, job_id: str) -> _FakeJob | None:
+        if job_id not in self.jobs:
+            return None
+        existing = self.jobs[job_id].get("_job")
+        if not isinstance(existing, _FakeJob):
+            existing = _FakeJob(job_id)
+            self.jobs[job_id]["_job"] = existing
+        return existing
 
 
 def _make_library(name: str = "Test", schedule: str | None = "0 * * * *") -> Library:
@@ -187,6 +201,23 @@ class TestReconcile:
 
         fake: _FakeScheduler = scheduler._scheduler
         assert _job_id_for(str(lib.id)) not in fake.jobs
+
+
+class TestTriggerNow:
+    def test_reschedules_registered_job_to_now(self, scheduler: LibraryScanScheduler) -> None:
+        fake: _FakeScheduler = scheduler._scheduler
+        fake.jobs["homeflix:thumbnail-backfill"] = {}
+
+        result = scheduler.trigger_now("homeflix:thumbnail-backfill")
+
+        assert result is True
+        job = fake.get_job("homeflix:thumbnail-backfill")
+        assert job is not None
+        assert job.next_run_time is not None
+        assert job.next_run_time <= datetime.now(UTC)
+
+    def test_returns_false_for_unknown_job(self, scheduler: LibraryScanScheduler) -> None:
+        assert scheduler.trigger_now("does-not-exist") is False
 
 
 class TestRunScan:
