@@ -19,7 +19,7 @@ O redesign de UI (handoff) pressupõe um sistema multi-inscrito: contagem de "{N
 
 Vamos **separar "o título está na fila" de "quem quer ser avisado"**, introduzindo subscriptions por-usuário com fanout.
 
-1. **`CatalogSubscription` como agregado próprio** (id `csub_xxx`), referenciando `request_id` + `user_id`, com invariante de unicidade por `(request_id, user_id)`. **Não** é coleção dentro do `CatalogRequest` — manter o agregado-raiz pequeno e a relação um-para-muitos como query de repositório (`count_by_request`, `list_for_user`, `exists`, `add`, `remove`).
+1. **`CatalogSubscription` como agregado próprio** (id `sub_xxx`), referenciando `request_id` + `user_id`, com invariante de unicidade por `(request_id, user_id)`. **Não** é coleção dentro do `CatalogRequest` — manter o agregado-raiz pequeno e a relação um-para-muitos como query de repositório (`count_by_request`, `list_for_user`, `exists`, `add`, `remove`).
 
 2. **`CatalogRequest` continua sendo "o título na fila"** (a peça que o admin gerencia). O campo `requester_user_id` muda de semântica: deixa de ser o alvo da notificação e passa a ser **atribuição de origem** (quem primeiro colocou na fila) — alimenta `source` e `requestedBy`.
 
@@ -85,7 +85,7 @@ Cada (usuário, título) é uma linha; a fila é o group-by.
 - Handoff de design: `specs/design_handoff_catalog_requests/README.md`
 - ADR-009 Cross-BC Read Ports + ACL (padrão do `NotificationPublisherPort` usado no fanout)
 - ADR-018 Identificadores de Domínio como Value Objects nas Fronteiras (id do novo agregado)
-- ADR-002 Prefixed External IDs (`csub_xxx`)
+- ADR-002 Prefixed External IDs (`sub_xxx`, prefixo de 3 chars como a convenção)
 
 ---
 
@@ -94,7 +94,7 @@ Cada (usuário, título) é uma linha; a fila é o group-by.
 ```
 Tabela catalog_subscriptions:
   id            INTEGER PK
-  external_id   VARCHAR  ("csub_xxx")
+  external_id   VARCHAR  ("sub_xxx")
   request_id    VARCHAR  FK → catalog_requests.external_id  (index)
   user_id       VARCHAR  (index)
   created_at    DateTime(tz)

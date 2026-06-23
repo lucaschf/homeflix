@@ -3,13 +3,17 @@
 from abc import ABC, abstractmethod
 
 from src.building_blocks.application.unit_of_work import UnitOfWork
-from src.modules.catalog_requests.domain.repositories import CatalogRequestRepository
+from src.modules.catalog_requests.domain.repositories import (
+    CatalogRequestRepository,
+    CatalogSubscriptionRepository,
+)
 
 
 class CatalogRequestsUnitOfWork(UnitOfWork):
     """Transactional boundary for catalog-request writes."""
 
     catalog_requests: CatalogRequestRepository
+    catalog_subscriptions: CatalogSubscriptionRepository
 
 
 class CatalogRequestsUnitOfWorkFactory(ABC):

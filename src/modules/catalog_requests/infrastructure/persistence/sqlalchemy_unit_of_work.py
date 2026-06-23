@@ -9,6 +9,7 @@ from src.modules.catalog_requests.application.unit_of_work import (
 )
 from src.modules.catalog_requests.infrastructure.persistence.repositories import (
     SQLAlchemyCatalogRequestRepository,
+    SQLAlchemyCatalogSubscriptionRepository,
 )
 
 
@@ -17,6 +18,7 @@ class SqlAlchemyCatalogRequestsUnitOfWork(SqlAlchemyUnitOfWork, CatalogRequestsU
 
     def _build_repositories(self, session: AsyncSession) -> None:
         self.catalog_requests = SQLAlchemyCatalogRequestRepository(session)
+        self.catalog_subscriptions = SQLAlchemyCatalogSubscriptionRepository(session)
 
 
 class SqlAlchemyCatalogRequestsUnitOfWorkFactory(CatalogRequestsUnitOfWorkFactory):

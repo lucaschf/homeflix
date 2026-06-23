@@ -49,6 +49,27 @@ class SubscribeCatalogNotificationInput:
 
 
 @dataclass(frozen=True)
+class UnsubscribeCatalogNotificationInput:
+    """Input for ``UnsubscribeCatalogNotificationUseCase``.
+
+    The "Você será avisado → desligar" toggle on the consumer side.
+    Identifies the title by its TMDB target (every member entry point
+    speaks TMDB ids) plus the acting user, so we drop only that user's
+    subscription and leave the request — and everyone else's
+    subscriptions — in place.
+
+    Attributes:
+        tmdb_id: TMDB numeric id of the title to stop following.
+        media_type: Whether the target is a movie or a series.
+        user_id: External id (``usr_xxx``) of the user unsubscribing.
+    """
+
+    tmdb_id: int
+    media_type: MediaType
+    user_id: str
+
+
+@dataclass(frozen=True)
 class DismissCatalogRequestInput:
     """Input for ``DismissCatalogRequestUseCase``.
 
