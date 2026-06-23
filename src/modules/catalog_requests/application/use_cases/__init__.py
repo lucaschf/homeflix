@@ -12,10 +12,14 @@ from src.modules.catalog_requests.application.use_cases.request_catalog_inclusio
 from src.modules.catalog_requests.application.use_cases.subscribe_catalog_notification import (
     SubscribeCatalogNotificationUseCase,
 )
+from src.modules.catalog_requests.application.use_cases.unsubscribe_catalog_notification import (
+    UnsubscribeCatalogNotificationUseCase,
+)
 
 __all__ = [
     "DismissCatalogRequestUseCase",
     "ListCatalogRequestsUseCase",
     "RequestCatalogInclusionUseCase",
     "SubscribeCatalogNotificationUseCase",
+    "UnsubscribeCatalogNotificationUseCase",
 ]

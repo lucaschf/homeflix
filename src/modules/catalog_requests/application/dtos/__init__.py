@@ -5,6 +5,7 @@ from src.modules.catalog_requests.application.dtos.catalog_request_dtos import (
     CreateCatalogRequestInput,
     DismissCatalogRequestInput,
     SubscribeCatalogNotificationInput,
+    UnsubscribeCatalogNotificationInput,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "CreateCatalogRequestInput",
     "DismissCatalogRequestInput",
     "SubscribeCatalogNotificationInput",
+    "UnsubscribeCatalogNotificationInput",
 ]

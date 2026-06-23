@@ -7,6 +7,7 @@ from src.modules.catalog_requests.application.use_cases import (
     ListCatalogRequestsUseCase,
     RequestCatalogInclusionUseCase,
     SubscribeCatalogNotificationUseCase,
+    UnsubscribeCatalogNotificationUseCase,
 )
 from src.modules.catalog_requests.infrastructure.acl import CatalogRequestLookupAdapter
 from src.modules.catalog_requests.infrastructure.persistence.sqlalchemy_unit_of_work import (
@@ -57,6 +58,11 @@ class CatalogRequestsContainer(containers.DeclarativeContainer):  # type: ignore
 
     subscribe_catalog_notification = providers.Factory(
         SubscribeCatalogNotificationUseCase,
+        uow_factory=catalog_requests_unit_of_work_factory,
+    )
+
+    unsubscribe_catalog_notification = providers.Factory(
+        UnsubscribeCatalogNotificationUseCase,
         uow_factory=catalog_requests_unit_of_work_factory,
     )
 

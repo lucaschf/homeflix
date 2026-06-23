@@ -34,13 +34,14 @@ class OnMediaEnrichedHandler(EventHandler):
     title). Already-fulfilled request → no-op (the event fired
     again after a force-refresh).
 
-    When fulfillment succeeds AND the requester opted in to
-    arrival notifications AND we know who they are, the handler
-    pings them through the optional ``NotificationPublisherPort``.
-    The publisher is optional so tests / earlier slices of the
-    rollout can run without the Notifications BC wired in —
-    fulfillment still closes the loop on the admin queue either
-    way.
+    When fulfillment succeeds, the handler fans a "title now
+    available" ping out to every active ``CatalogSubscription`` on
+    the request (ADR-022) through the optional
+    ``NotificationPublisherPort`` — one notification per subscriber,
+    not just the original requester. The publisher is optional so
+    tests / earlier slices of the rollout can run without the
+    Notifications BC wired in — fulfillment still closes the loop on
+    the admin queue either way.
 
     Runs out of the event bus, which is fire-and-forget — failures
     here don't roll back the enrichment that just succeeded. A
@@ -75,6 +76,7 @@ class OnMediaEnrichedHandler(EventHandler):
         if media_type is None:
             return
 
+        subscriber_ids: list[str] = []
         async with self._uow_factory() as uow:
             existing = await uow.catalog_requests.find_by_tmdb_id(
                 event.tmdb_id,
@@ -84,16 +86,25 @@ class OnMediaEnrichedHandler(EventHandler):
                 return
             fulfilled = existing.mark_fulfilled()
             await uow.catalog_requests.update(fulfilled)
+            # Collect subscribers inside the UoW so the fanout has the
+            # list once the session closes. Skip the query entirely when
+            # there's no publisher wired (earlier rollout slices / tests).
+            if self._notification_publisher is not None:
+                subscriptions = await uow.catalog_subscriptions.list_for_request(
+                    existing.id,
+                )
+                subscriber_ids = [sub.user_id for sub in subscriptions]
 
         _logger.info(
-            "Fulfilled catalog request %s (tmdb/%s/%s → media %s)",
+            "Fulfilled catalog request %s (tmdb/%s/%s → media %s); %d subscriber(s)",
             existing.id,
             event.media_type,
             event.tmdb_id,
             event.media_id,
+            len(subscriber_ids),
         )
 
-        await self._maybe_publish_arrival(existing, event)
+        await self._publish_arrivals(existing, event, subscriber_ids)
 
     @staticmethod
     def _normalize_media_type(raw: str) -> MediaType | None:
@@ -117,45 +128,43 @@ class OnMediaEnrichedHandler(EventHandler):
             )
             return None
 
-    async def _maybe_publish_arrival(
+    async def _publish_arrivals(
         self,
         request: CatalogRequest,
         event: MediaEnrichedEvent,
+        subscriber_ids: list[str],
     ) -> None:
-        """Dispatch the user-facing notification when conditions allow.
+        """Fan the "title now available" notification out to every subscriber.
 
-        Conditions: publisher wired, the requester opted in, the
-        requester is known, and we have a title to show. The
-        title falls back to the bare TMDB id when no snapshot
-        exists on the request, so legacy rows still produce a
-        readable row instead of a blank.
+        One ping per ``CatalogSubscription`` on the request (ADR-022),
+        replacing the old single-requester path. The title falls back
+        to the bare TMDB id when no snapshot exists on the request, so
+        legacy rows still produce a readable row instead of a blank.
+        Each publish is isolated: a failure for one subscriber is
+        logged and swallowed so it can't block the others or roll back
+        the fulfillment already committed.
         """
-        if self._notification_publisher is None:
-            return
-        if not request.notify_on_arrival:
-            return
-        if request.requester_user_id is None:
+        if self._notification_publisher is None or not subscriber_ids:
             return
 
-        try:
-            await self._notification_publisher.publish_catalog_arrival(
-                CatalogArrivalNotification(
-                    recipient_user_id=request.requester_user_id,
-                    title=request.title or f"tmdb/{event.media_type}/{event.tmdb_id}",
-                    tmdb_id=event.tmdb_id,
-                    media_id=event.media_id,
-                    media_type=event.media_type,
-                ),
-            )
-        except Exception:
-            # Fire-and-forget: a publisher failure can't roll back
-            # the catalog-request update we already committed. Log
-            # and move on — the worst case is the user doesn't see
-            # the badge for this title.
-            _logger.exception(
-                "Failed to publish catalog-arrival notification for request %s",
-                request.id,
-            )
+        title = request.title or f"tmdb/{event.media_type}/{event.tmdb_id}"
+        for user_id in subscriber_ids:
+            try:
+                await self._notification_publisher.publish_catalog_arrival(
+                    CatalogArrivalNotification(
+                        recipient_user_id=user_id,
+                        title=title,
+                        tmdb_id=event.tmdb_id,
+                        media_id=event.media_id,
+                        media_type=event.media_type,
+                    ),
+                )
+            except Exception:
+                _logger.exception(
+                    "Failed to publish catalog-arrival notification for request %s to user %s",
+                    request.id,
+                    user_id,
+                )
 
 
 __all__ = ["OnMediaEnrichedHandler"]

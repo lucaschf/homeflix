@@ -134,6 +134,18 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         """
         return self.with_updates(notify_on_arrival=True)
 
+    def disable_notification(self) -> CatalogRequest:
+        """Return a copy with ``notify_on_arrival=False``.
+
+        The mirror of :meth:`enable_notification`. Since ADR-022 the
+        flag is a denormalized "has at least one active subscriber"
+        cache (the precise fanout list lives in ``CatalogSubscription``
+        rows): the unsubscribe use case calls this once the last
+        subscriber drops off so the read-side CTA flips back to
+        "Avisar quando chegar".
+        """
+        return self.with_updates(notify_on_arrival=False)
+
     def reconcile(
         self,
         *,
