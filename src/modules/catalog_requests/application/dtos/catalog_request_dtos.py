@@ -98,8 +98,10 @@ class CatalogRequestOutput:
         requester_user_id: External id (``usr_xxx``) of the user who
             registered the request. ``None`` on legacy rows.
         collection_tmdb_id: Originating TMDB collection id, if any.
+        source: ``"user"`` or ``"household"`` — who put it in the queue.
         notify_on_arrival: Whether the user opted in to a notification.
         is_fulfilled: ``True`` when the title is already in the catalog.
+        status: Derived ``"pending"`` / ``"fulfilled"`` (honest, thin).
         requested_at: ISO-8601 creation timestamp.
         fulfilled_at: ISO-8601 fulfillment timestamp, or ``None``.
     """
@@ -110,8 +112,10 @@ class CatalogRequestOutput:
     title: str | None
     requester_user_id: str | None
     collection_tmdb_id: int | None
+    source: str
     notify_on_arrival: bool
     is_fulfilled: bool
+    status: str
     requested_at: str
     fulfilled_at: str | None
 
@@ -125,8 +129,10 @@ class CatalogRequestOutput:
             title=entity.title,
             requester_user_id=entity.requester_user_id,
             collection_tmdb_id=entity.collection_tmdb_id,
+            source=entity.source.value,
             notify_on_arrival=entity.notify_on_arrival,
             is_fulfilled=entity.is_fulfilled,
+            status=entity.status.value,
             requested_at=entity.requested_at.isoformat(),
             fulfilled_at=entity.fulfilled_at.isoformat() if entity.fulfilled_at else None,
         )

@@ -7,6 +7,8 @@ import pytest
 from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestId,
+    CatalogRequestSource,
+    CatalogRequestStatus,
 )
 from src.shared_kernel.value_objects import MediaType
 
@@ -110,3 +112,43 @@ class TestCatalogRequest:
         )
 
         assert request.reconcile() is None
+
+    def test_source_is_user_when_a_member_requested(self) -> None:
+        request = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=MediaType.MOVIE,
+            requester_user_id="usr_aaaaaaaaaaaa",
+        )
+
+        assert request.source is CatalogRequestSource.USER
+
+    def test_source_is_household_without_requester(self) -> None:
+        request = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=MediaType.MOVIE,
+        )
+
+        assert request.source is CatalogRequestSource.HOUSEHOLD
+
+    def test_source_is_fixed_at_creation(self) -> None:
+        # A later requester backfill (first-owner) records the notify
+        # anchor but must not rewrite the household origin.
+        request = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=MediaType.MOVIE,
+        )
+
+        reconciled = request.reconcile(requester_user_id="usr_aaaaaaaaaaaa")
+
+        assert reconciled is not None
+        assert reconciled.requester_user_id == "usr_aaaaaaaaaaaa"
+        assert reconciled.source is CatalogRequestSource.HOUSEHOLD
+
+    def test_status_tracks_fulfillment(self) -> None:
+        request = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=MediaType.MOVIE,
+        )
+
+        assert request.status is CatalogRequestStatus.PENDING
+        assert request.mark_fulfilled().status is CatalogRequestStatus.FULFILLED

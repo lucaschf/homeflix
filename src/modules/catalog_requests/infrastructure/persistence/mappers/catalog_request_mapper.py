@@ -3,6 +3,7 @@
 from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestId,
+    CatalogRequestSource,
 )
 from src.modules.catalog_requests.infrastructure.persistence.models import (
     CatalogRequestModel,
@@ -42,6 +43,7 @@ class CatalogRequestMapper:
             title=entity.title,
             requester_user_id=entity.requester_user_id,
             collection_tmdb_id=entity.collection_tmdb_id,
+            source=entity.source.value,
             notify_on_arrival=entity.notify_on_arrival,
             requested_at=entity.requested_at,
             fulfilled_at=entity.fulfilled_at,
@@ -57,6 +59,7 @@ class CatalogRequestMapper:
             title=model.title,
             requester_user_id=model.requester_user_id,
             collection_tmdb_id=model.collection_tmdb_id,
+            source=CatalogRequestSource(model.source),
             notify_on_arrival=model.notify_on_arrival,
             requested_at=model.requested_at,
             fulfilled_at=model.fulfilled_at,

@@ -33,6 +33,8 @@ class CatalogRequestModel(Base):
             rows or programmatic seeds — those stay anonymous and
             never produce a notification.
         collection_tmdb_id: Originating TMDB collection id, if any.
+        source: ``"user"`` when a member asked for the title,
+            ``"household"`` when the system seeded it (ADR-022).
         notify_on_arrival: Whether the user opted in to a "title
             now available" notification.
         requested_at: First-time creation timestamp (separate from
@@ -54,6 +56,12 @@ class CatalogRequestModel(Base):
         Integer,
         nullable=True,
         index=True,
+    )
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="household",
+        server_default="household",
     )
     notify_on_arrival: Mapped[bool] = mapped_column(
         Boolean,
