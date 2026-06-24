@@ -1,6 +1,7 @@
 """Catalog Requests application DTOs."""
 
 from src.modules.catalog_requests.application.dtos.catalog_request_dtos import (
+    CatalogRequestFeedItem,
     CatalogRequestOutput,
     CreateCatalogRequestInput,
     DismissCatalogRequestInput,
@@ -9,6 +10,7 @@ from src.modules.catalog_requests.application.dtos.catalog_request_dtos import (
 )
 
 __all__ = [
+    "CatalogRequestFeedItem",
     "CatalogRequestOutput",
     "CreateCatalogRequestInput",
     "DismissCatalogRequestInput",

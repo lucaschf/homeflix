@@ -138,9 +138,32 @@ class CatalogRequestOutput:
         )
 
 
+@dataclass(frozen=True)
+class CatalogRequestFeedItem:
+    """A pending request enriched for the member "Em breve" feed.
+
+    Wraps the base request DTO with the two per-view extras the
+    consumer page needs (ADR-022): how many people are waiting and
+    whether the caller is one of them. The route flattens this onto
+    the base fields for the wire.
+
+    Attributes:
+        request: The underlying request DTO (id, title, status, …).
+        subscriber_count: Active subscribers — the "{N} pessoas
+            aguardando" figure.
+        is_subscribed: Whether the calling user follows this title.
+    """
+
+    request: CatalogRequestOutput
+    subscriber_count: int
+    is_subscribed: bool
+
+
 __all__ = [
+    "CatalogRequestFeedItem",
     "CatalogRequestOutput",
     "CreateCatalogRequestInput",
     "DismissCatalogRequestInput",
     "SubscribeCatalogNotificationInput",
+    "UnsubscribeCatalogNotificationInput",
 ]

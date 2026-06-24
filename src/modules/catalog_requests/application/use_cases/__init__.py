@@ -3,6 +3,9 @@
 from src.modules.catalog_requests.application.use_cases.dismiss_catalog_request import (
     DismissCatalogRequestUseCase,
 )
+from src.modules.catalog_requests.application.use_cases.list_catalog_request_feed import (
+    ListCatalogRequestFeedUseCase,
+)
 from src.modules.catalog_requests.application.use_cases.list_catalog_requests import (
     ListCatalogRequestsUseCase,
 )
@@ -18,6 +21,7 @@ from src.modules.catalog_requests.application.use_cases.unsubscribe_catalog_noti
 
 __all__ = [
     "DismissCatalogRequestUseCase",
+    "ListCatalogRequestFeedUseCase",
     "ListCatalogRequestsUseCase",
     "RequestCatalogInclusionUseCase",
     "SubscribeCatalogNotificationUseCase",
