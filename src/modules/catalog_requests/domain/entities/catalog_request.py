@@ -9,6 +9,8 @@ from pydantic import Field
 from src.building_blocks.domain import AggregateRoot
 from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestId,
+    CatalogRequestSource,
+    CatalogRequestStatus,
 )
 from src.shared_kernel.value_objects import (
     MediaType,  # noqa: TCH001 — runtime for Pydantic
@@ -45,6 +47,11 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
             request, if any. Lets us scope listings to a single
             franchise (e.g. "all pending requests in the Alien
             Anthology").
+        source: Where the request originated — :attr:`USER` when a
+            member asked for it, :attr:`HOUSEHOLD` when the system
+            seeded it (ADR-022). Derived from ``requester_user_id`` at
+            creation and fixed thereafter. See also the derived
+            :attr:`status` property (pending vs. fulfilled).
         notify_on_arrival: ``True`` when the user has opted in to a
             notification once the title enters the catalog. Defaults
             to ``False`` — "Solicitar inclusão" alone does not
@@ -71,6 +78,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     title: str | None = None
     requester_user_id: str | None = None
     collection_tmdb_id: int | None = None
+    source: CatalogRequestSource = CatalogRequestSource.HOUSEHOLD
     notify_on_arrival: bool = False
     requested_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     fulfilled_at: datetime | None = None
@@ -114,6 +122,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
             title=title,
             requester_user_id=requester_user_id,
             collection_tmdb_id=collection_tmdb_id,
+            source=CatalogRequestSource.for_requester(requester_user_id),
             notify_on_arrival=notify_on_arrival,
             requested_at=datetime.now(UTC),
             fulfilled_at=None,
@@ -123,6 +132,11 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     def is_fulfilled(self) -> bool:
         """``True`` once the requested title has reached the catalog."""
         return self.fulfilled_at is not None
+
+    @property
+    def status(self) -> CatalogRequestStatus:
+        """Honest, derived status (pending vs. fulfilled) — never stored."""
+        return CatalogRequestStatus.FULFILLED if self.is_fulfilled else CatalogRequestStatus.PENDING
 
     def enable_notification(self) -> CatalogRequest:
         """Return a copy with ``notify_on_arrival=True``.
