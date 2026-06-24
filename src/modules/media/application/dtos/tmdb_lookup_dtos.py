@@ -40,6 +40,9 @@ class TmdbLookupCandidate:
             lacks a usable date.
         overview: Synopsis (possibly empty).
         poster_url: Absolute poster URL, or ``None``.
+        in_catalog: ``True`` when the title is already hosted locally —
+            the request dialog disables "request" for these so a user
+            can't ask for something already available.
     """
 
     tmdb_id: int
@@ -48,6 +51,7 @@ class TmdbLookupCandidate:
     year: int | None
     overview: str | None
     poster_url: str | None
+    in_catalog: bool = False
 
 
 @dataclass(frozen=True)

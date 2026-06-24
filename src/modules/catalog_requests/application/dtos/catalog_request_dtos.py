@@ -32,6 +32,7 @@ class CreateCatalogRequestInput:
     tmdb_id: int
     media_type: MediaType
     title: str | None = None
+    poster_url: str | None = None
     requester_user_id: str | None = None
     collection_tmdb_id: int | None = None
     notify_on_arrival: bool = False
@@ -44,6 +45,7 @@ class SubscribeCatalogNotificationInput:
     tmdb_id: int
     media_type: MediaType
     title: str | None = None
+    poster_url: str | None = None
     requester_user_id: str | None = None
     collection_tmdb_id: int | None = None
 
@@ -95,6 +97,8 @@ class CatalogRequestOutput:
         media_type: ``"movie"`` or ``"series"``.
         title: Snapshot of the title taken at request time. ``None``
             on legacy rows created before the column existed.
+        poster_url: Snapshot of the TMDB poster URL, or ``None`` when
+            not captured / not yet backfilled.
         requester_user_id: External id (``usr_xxx``) of the user who
             registered the request. ``None`` on legacy rows.
         collection_tmdb_id: Originating TMDB collection id, if any.
@@ -110,6 +114,7 @@ class CatalogRequestOutput:
     tmdb_id: int
     media_type: str
     title: str | None
+    poster_url: str | None
     requester_user_id: str | None
     collection_tmdb_id: int | None
     source: str
@@ -127,6 +132,7 @@ class CatalogRequestOutput:
             tmdb_id=entity.tmdb_id,
             media_type=entity.media_type.value,
             title=entity.title,
+            poster_url=entity.poster_url,
             requester_user_id=entity.requester_user_id,
             collection_tmdb_id=entity.collection_tmdb_id,
             source=entity.source.value,

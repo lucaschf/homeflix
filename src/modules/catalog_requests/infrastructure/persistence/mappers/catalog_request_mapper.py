@@ -41,6 +41,7 @@ class CatalogRequestMapper:
             tmdb_id=entity.tmdb_id,
             media_type=entity.media_type.value,
             title=entity.title,
+            poster_url=entity.poster_url,
             requester_user_id=entity.requester_user_id,
             collection_tmdb_id=entity.collection_tmdb_id,
             source=entity.source.value,
@@ -57,6 +58,7 @@ class CatalogRequestMapper:
             tmdb_id=model.tmdb_id,
             media_type=MediaType(model.media_type),
             title=model.title,
+            poster_url=model.poster_url,
             requester_user_id=model.requester_user_id,
             collection_tmdb_id=model.collection_tmdb_id,
             source=CatalogRequestSource(model.source),
@@ -83,6 +85,7 @@ class CatalogRequestMapper:
         recipient on legacy rows.
         """
         model.title = entity.title
+        model.poster_url = entity.poster_url
         model.requester_user_id = entity.requester_user_id
         model.collection_tmdb_id = entity.collection_tmdb_id
         model.notify_on_arrival = entity.notify_on_arrival

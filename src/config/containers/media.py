@@ -681,6 +681,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     search_tmdb_titles = providers.Factory(
         SearchTmdbTitlesUseCase,
         metadata_provider=tmdb_client,
+        uow_factory=media_unit_of_work_factory,
     )
 
     relink_movie = providers.Factory(
