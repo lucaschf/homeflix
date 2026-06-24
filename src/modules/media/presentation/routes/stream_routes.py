@@ -25,7 +25,12 @@ from src.infrastructure.scheduling import ThumbnailBackfillJob
 from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput
-from src.modules.media.application.dtos.series_dtos import EpisodeOutput, GetSeriesByIdInput
+from src.modules.media.application.dtos.series_dtos import (
+    EpisodeOutput,
+    GetSeriesByIdInput,
+    SeriesOutput,
+)
+from src.modules.media.application.ports.now_playing_port import NowPlayingViewContext
 from src.modules.media.application.use_cases.clear_hls_cache import (
     ClearHlsCacheInput,
     ClearHlsCacheUseCase,
@@ -134,6 +139,7 @@ async def hls_file(
 @inject  # type: ignore[misc]
 async def movie_hls_playlist(
     movie_id: str,
+    request: Request,
     start: int = Query(
         0,
         ge=0,
@@ -164,7 +170,19 @@ async def movie_hls_playlist(
     file_path = _require_file(movie.file_path)
     if movie.scrub_preview_path is None:
         _fire_eager_movie(backfill_job, movie_id)
-    return await _serve_master(hls_uc, file_path, start=start)
+    view = NowPlayingViewContext(
+        profile_id=profile_id,
+        media_id=movie_id,
+        media_kind="movie",
+        title=movie.title,
+        year=movie.year,
+        meta=movie.resolution,
+        poster_url=movie.poster_path,
+        ip=_client_ip(request),
+        device=_device_label(request),
+        duration_seconds=movie.duration_seconds,
+    )
+    return await _serve_master(hls_uc, file_path, start=start, view=view)
 
 
 @router.get("/episode/{series_id}/{season_number}/{episode_number}/hls/playlist.m3u8")  # type: ignore[misc]
@@ -173,6 +191,7 @@ async def episode_hls_playlist(
     series_id: str,
     season_number: int,
     episode_number: int,
+    request: Request,
     start: int = Query(
         0,
         ge=0,
@@ -194,13 +213,25 @@ async def episode_hls_playlist(
     ),
 ) -> Response:
     """Generate and serve HLS master playlist for an episode."""
-    episode = await _find_episode(series_uc, profile_id, series_id, season_number, episode_number)
+    series, episode = await _find_series_and_episode(
+        series_uc, profile_id, series_id, season_number, episode_number
+    )
     if episode is None:
         raise HTTPException(status_code=404, detail="Episode not found")
     file_path = _require_file(episode.file_path)
     if episode.scrub_preview_path is None and episode.id is not None:
         _fire_eager_episode(backfill_job, episode.id)
-    return await _serve_master(hls_uc, file_path, start=start)
+    view = NowPlayingViewContext(
+        profile_id=profile_id,
+        media_id=series_id,
+        media_kind="episode",
+        title=series.title if series else episode.title,
+        meta=f"T{season_number} · E{episode_number} · {episode.title}",
+        ip=_client_ip(request),
+        device=_device_label(request),
+        duration_seconds=episode.duration_seconds,
+    )
+    return await _serve_master(hls_uc, file_path, start=start, view=view)
 
 
 # -- Track info ----------------------------------------------------------------
@@ -417,10 +448,22 @@ async def stream_episode(
 # -- Helpers -------------------------------------------------------------------
 
 
+def _client_ip(request: Request) -> str | None:
+    """Best-effort client IP for the now-playing row."""
+    return request.client.host if request.client else None
+
+
+def _device_label(request: Request) -> str | None:
+    """Truncated User-Agent as the device label (no friendly names yet)."""
+    ua = request.headers.get("user-agent")
+    return ua[:120] if ua else None
+
+
 async def _serve_master(
     use_case: GenerateHlsPlaylistUseCase,
     file_path: str,
     start: int = 0,
+    view: NowPlayingViewContext | None = None,
 ) -> Response:
     """Run the generate-playlist use case and wrap its DTO in a Response."""
     output = await use_case.execute(
@@ -428,6 +471,7 @@ async def _serve_master(
             file_path=file_path,
             base_url_template=_MASTER_BASE_URL,
             start=start,
+            view=view,
         )
     )
     return Response(
@@ -466,6 +510,24 @@ async def _find_episode_file(
     return episode.file_path if episode else None
 
 
+async def _find_series_and_episode(
+    use_case: GetSeriesByIdUseCase,
+    profile_id: str,
+    series_id: str,
+    season_number: int,
+    episode_number: int,
+) -> tuple[SeriesOutput | None, EpisodeOutput | None]:
+    """Resolve the series aggregate plus a single episode within it."""
+    series = await use_case.execute(GetSeriesByIdInput(profile_id=profile_id, series_id=series_id))
+    for season in series.seasons:
+        if season.season_number == season_number:
+            for episode in season.episodes:
+                if episode.episode_number == episode_number:
+                    return series, episode
+            break
+    return series, None
+
+
 async def _find_episode(
     use_case: GetSeriesByIdUseCase,
     profile_id: str,
@@ -474,14 +536,10 @@ async def _find_episode(
     episode_number: int,
 ) -> EpisodeOutput | None:
     """Resolve a single ``EpisodeOutput`` from the series aggregate."""
-    series = await use_case.execute(GetSeriesByIdInput(profile_id=profile_id, series_id=series_id))
-    for season in series.seasons:
-        if season.season_number == season_number:
-            for episode in season.episodes:
-                if episode.episode_number == episode_number:
-                    return episode
-            break
-    return None
+    _, episode = await _find_series_and_episode(
+        use_case, profile_id, series_id, season_number, episode_number
+    )
+    return episode
 
 
 __all__ = ["router"]

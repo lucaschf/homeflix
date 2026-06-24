@@ -59,6 +59,7 @@ from src.modules.media.application.use_cases.get_movie_by_id import GetMovieById
 from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
     GetMovieTmdbSuggestionsUseCase,
 )
+from src.modules.media.application.use_cases.get_now_playing import GetNowPlayingUseCase
 from src.modules.media.application.use_cases.get_overview_stats import (
     GetOverviewStatsUseCase,
 )
@@ -139,6 +140,9 @@ from src.modules.media.application.use_cases.trigger_bulk_enrich import (
     TriggerBulkEnrichUseCase,
 )
 from src.modules.media.application.use_cases.trigger_scan import TriggerScanUseCase
+from src.modules.media.infrastructure.acl.profile_summary_adapter import (
+    ProfileSummaryAdapter,
+)
 from src.modules.media.infrastructure.audio import (
     AudioExtractor,
     ChromaprintIntroDetector,
@@ -152,6 +156,9 @@ from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import
 )
 from src.modules.media.infrastructure.streaming import HlsService, MediaProbeService
 from src.modules.media.infrastructure.streaming.file_streamer import LocalFileStreamer
+from src.modules.media.infrastructure.streaming.now_playing_registry import (
+    NowPlayingRegistry,
+)
 from src.modules.media.infrastructure.streaming.scrub_preview_locator import (
     FilesystemScrubPreviewLocator,
 )
@@ -410,6 +417,18 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         enable_eviction=True,
     )
 
+    # In-memory registry of active playback sessions (admin now-playing).
+    # Singleton — one ffmpeg fleet / cache, one source of truth. Written
+    # by the streaming use cases (observationally), read by GetNowPlaying.
+    now_playing_registry = providers.Singleton(NowPlayingRegistry)
+
+    # Resolves watching profiles' display names via the identity UoW
+    # (ADR-009 ACL), for the now-playing "who" column.
+    profile_summary = providers.Singleton(
+        ProfileSummaryAdapter,
+        identity_uow_factory=identity_uow_factory,
+    )
+
     # Singleton because ``ThumbnailGenerationService`` is stateless apart
     # from the runtime config it reads per call; sharing one instance
     # across the eager fire-and-forget path (``stream_routes``) and the
@@ -475,11 +494,19 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     generate_hls_playlist = providers.Factory(
         GenerateHlsPlaylistUseCase,
         hls=hls_service,
+        now_playing=now_playing_registry,
     )
 
     serve_hls_file = providers.Factory(
         ServeHlsFileUseCase,
         hls=hls_service,
+        now_playing=now_playing_registry,
+    )
+
+    get_now_playing = providers.Factory(
+        GetNowPlayingUseCase,
+        now_playing=now_playing_registry,
+        profile_summary=profile_summary,
     )
 
     get_file_tracks = providers.Factory(

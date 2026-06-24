@@ -1,17 +1,24 @@
 """ServeHlsFileUseCase — resolve a cached HLS file (segment/playlist/VTT)."""
 
 import asyncio
+import contextlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.stream_dtos import HlsFileOutput
 from src.modules.media.application.ports.hls_playlist_port import HlsPlaylistPort
+from src.modules.media.application.ports.now_playing_port import NowPlayingPort
 from src.modules.media.application.streaming.playlist_rewriter import (
     SUB_PATH_RE,
     media_type_for,
     rewrite_m3u8,
 )
+
+# Matches the ffmpeg segment naming (``segment_0007.ts``) to recover the
+# index for the now-playing progress estimate.
+_SEGMENT_INDEX_RE = re.compile(r"segment_(\d+)\.ts$")
 
 # Hard cap on how long the use case will park a request waiting for a
 # background subtitle extraction. Must comfortably exceed the per-track
@@ -43,8 +50,13 @@ class ServeHlsFileInput:
 class ServeHlsFileUseCase:
     """Resolve a cached HLS file, rewriting nested playlists inline."""
 
-    def __init__(self, hls: HlsPlaylistPort) -> None:
+    def __init__(
+        self,
+        hls: HlsPlaylistPort,
+        now_playing: NowPlayingPort | None = None,
+    ) -> None:
         self._hls = hls
+        self._now_playing = now_playing
 
     async def execute(self, input_dto: ServeHlsFileInput) -> HlsFileOutput:
         """Return the requested file (or rewritten playlist).
@@ -64,11 +76,27 @@ class ServeHlsFileUseCase:
         if resolved.suffix == ".m3u8":
             return self._build_playlist_output(resolved, input_dto)
 
+        self._note_segment(input_dto.path_hash, resolved, input_dto.relative_path)
+
         return HlsFileOutput(
             kind="file",
             media_type=media_type_for(input_dto.relative_path),
             path=resolved,
         )
+
+    def _note_segment(self, path_hash: str, resolved: Path, relative_path: str) -> None:
+        """Feed the now-playing registry a served ``.ts`` segment.
+
+        Best-effort + observational: byte size for the rolling bitrate
+        and the segment index for the progress estimate. Wrapped so a
+        bookkeeping error can never fail the segment response.
+        """
+        if self._now_playing is None or resolved.suffix != ".ts":
+            return
+        with contextlib.suppress(Exception):
+            match = _SEGMENT_INDEX_RE.search(relative_path)
+            index = int(match.group(1)) if match else None
+            self._now_playing.note_segment(path_hash, resolved.stat().st_size, index)
 
     async def _maybe_wait_for_subtitle(self, path_hash: str, relative_path: str) -> None:
         """Block on subtitle extraction when the request targets ``sub_<idx>``."""
