@@ -55,6 +55,7 @@ class CreateCatalogRequestRequest(BaseModel):
     tmdb_id: int = Field(..., ge=1)
     media_type: MediaType
     title: str | None = Field(default=None, max_length=500)
+    poster_url: str | None = Field(default=None, max_length=500)
     collection_tmdb_id: int | None = Field(default=None, ge=1)
     notify_on_arrival: bool = False
 
@@ -64,6 +65,7 @@ class SubscribeNotifyRequest(BaseModel):
 
     media_type: MediaType
     title: str | None = Field(default=None, max_length=500)
+    poster_url: str | None = Field(default=None, max_length=500)
     collection_tmdb_id: int | None = Field(default=None, ge=1)
 
 
@@ -93,6 +95,7 @@ async def create_catalog_request(
             tmdb_id=body.tmdb_id,
             media_type=body.media_type,
             title=body.title,
+            poster_url=body.poster_url,
             requester_user_id=user.external_id,
             collection_tmdb_id=body.collection_tmdb_id,
             notify_on_arrival=body.notify_on_arrival,
@@ -123,6 +126,7 @@ async def subscribe_catalog_notification(
             tmdb_id=tmdb_id,
             media_type=body.media_type,
             title=body.title,
+            poster_url=body.poster_url,
             requester_user_id=user.external_id,
             collection_tmdb_id=body.collection_tmdb_id,
         ),

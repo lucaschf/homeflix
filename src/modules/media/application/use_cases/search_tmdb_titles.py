@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
 from src.modules.media.application.dtos.tmdb_lookup_dtos import (
@@ -21,6 +21,7 @@ from src.modules.media.application.dtos.tmdb_lookup_dtos import (
 
 if TYPE_CHECKING:
     from src.modules.media.application.ports import MetadataProvider, SearchCandidate
+    from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 
 
 # TMDB URL example: https://www.themoviedb.org/movie/603-the-matrix
@@ -101,8 +102,13 @@ class SearchTmdbTitlesUseCase:
             already wired into the rest of the media BC.
     """
 
-    def __init__(self, metadata_provider: MetadataProvider) -> None:
+    def __init__(
+        self,
+        metadata_provider: MetadataProvider,
+        uow_factory: MediaUnitOfWorkFactory,
+    ) -> None:
         self._provider = metadata_provider
+        self._uow_factory = uow_factory
 
     async def execute(self, input_dto: SearchTmdbTitlesInput) -> SearchTmdbTitlesOutput:
         """Parse ``input_dto.query`` and return the matching TMDB candidates."""
@@ -119,7 +125,7 @@ class SearchTmdbTitlesUseCase:
             return SearchTmdbTitlesOutput(
                 query=display,
                 kind="tmdb_id",
-                candidates=candidates,
+                candidates=await self._mark_in_catalog(candidates),
             )
 
         if parsed.kind == "imdb_id":
@@ -127,7 +133,7 @@ class SearchTmdbTitlesUseCase:
             return SearchTmdbTitlesOutput(
                 query=parsed.imdb_id or "",
                 kind="imdb_id",
-                candidates=[_to_dto(c) for c in results],
+                candidates=await self._mark_in_catalog([_to_dto(c) for c in results]),
             )
 
         # text branch
@@ -140,8 +146,37 @@ class SearchTmdbTitlesUseCase:
         return SearchTmdbTitlesOutput(
             query=text,
             kind="text",
-            candidates=[_to_dto(c) for c in (*movies, *series)],
+            candidates=await self._mark_in_catalog(
+                [_to_dto(c) for c in (*movies, *series)],
+            ),
         )
+
+    async def _mark_in_catalog(
+        self,
+        candidates: list[TmdbLookupCandidate],
+    ) -> list[TmdbLookupCandidate]:
+        """Flag candidates whose ``tmdb_id`` is already hosted locally.
+
+        One batch query per kind against the catalog, so the picker can
+        disable "request" for titles that are already available
+        (regardless of profile library access — "in the catalog" is a
+        household-level fact here).
+        """
+        if not candidates:
+            return candidates
+        movie_ids = [c.tmdb_id for c in candidates if c.media_type == "movie"]
+        series_ids = [c.tmdb_id for c in candidates if c.media_type == "tv"]
+        async with self._uow_factory() as uow:
+            movies = await uow.movies.find_by_tmdb_ids(movie_ids) if movie_ids else {}
+            series = await uow.series.find_by_tmdb_ids(series_ids) if series_ids else {}
+        return [
+            replace(
+                candidate,
+                in_catalog=candidate.tmdb_id
+                in (movies if candidate.media_type == "movie" else series),
+            )
+            for candidate in candidates
+        ]
 
     async def _fetch_by_tmdb_id(
         self,

@@ -67,6 +67,7 @@ class SubscribeCatalogNotificationUseCase:
                 # entry point always wants the notification flag on.
                 reconciled = existing.reconcile(
                     title=input_dto.title,
+                    poster_url=input_dto.poster_url,
                     requester_user_id=input_dto.requester_user_id,
                     notify=True,
                 )
@@ -81,6 +82,7 @@ class SubscribeCatalogNotificationUseCase:
                         tmdb_id=input_dto.tmdb_id,
                         media_type=input_dto.media_type,
                         title=input_dto.title,
+                        poster_url=input_dto.poster_url,
                         requester_user_id=input_dto.requester_user_id,
                         collection_tmdb_id=input_dto.collection_tmdb_id,
                         notify_on_arrival=True,

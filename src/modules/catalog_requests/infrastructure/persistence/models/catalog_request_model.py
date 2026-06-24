@@ -47,6 +47,7 @@ class CatalogRequestModel(Base):
     tmdb_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     media_type: Mapped[str] = mapped_column(String(20), nullable=False)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    poster_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     requester_user_id: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,

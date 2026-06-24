@@ -67,6 +67,7 @@ class RequestCatalogInclusionUseCase:
                 # ``None`` means nothing changed, so skip the write.
                 reconciled = existing.reconcile(
                     title=input_dto.title,
+                    poster_url=input_dto.poster_url,
                     requester_user_id=input_dto.requester_user_id,
                     notify=input_dto.notify_on_arrival,
                 )
@@ -79,6 +80,7 @@ class RequestCatalogInclusionUseCase:
                 tmdb_id=input_dto.tmdb_id,
                 media_type=input_dto.media_type,
                 title=input_dto.title,
+                poster_url=input_dto.poster_url,
                 requester_user_id=input_dto.requester_user_id,
                 collection_tmdb_id=input_dto.collection_tmdb_id,
                 notify_on_arrival=input_dto.notify_on_arrival,

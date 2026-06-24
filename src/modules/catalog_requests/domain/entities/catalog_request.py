@@ -76,6 +76,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     tmdb_id: int
     media_type: MediaType
     title: str | None = None
+    poster_url: str | None = None
     requester_user_id: str | None = None
     collection_tmdb_id: int | None = None
     source: CatalogRequestSource = CatalogRequestSource.HOUSEHOLD
@@ -89,6 +90,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         tmdb_id: int,
         media_type: MediaType,
         title: str | None = None,
+        poster_url: str | None = None,
         requester_user_id: str | None = None,
         collection_tmdb_id: int | None = None,
         notify_on_arrival: bool = False,
@@ -103,6 +105,8 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
                 (older clients, programmatic ingest), the field stays
                 ``None`` and the admin queue falls back to the bare
                 ``tmdb/<id>`` link.
+            poster_url: Snapshot of the TMDB poster URL at request
+                time, for the "Em breve" grid. ``None`` when unknown.
             requester_user_id: External id (``usr_xxx``) of the user
                 creating the request. Powers the per-user arrival
                 notification; ``None`` skips the ping (legacy or
@@ -120,6 +124,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
             tmdb_id=tmdb_id,
             media_type=media_type,
             title=title,
+            poster_url=poster_url,
             requester_user_id=requester_user_id,
             collection_tmdb_id=collection_tmdb_id,
             source=CatalogRequestSource.for_requester(requester_user_id),
@@ -164,6 +169,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         self,
         *,
         title: str | None = None,
+        poster_url: str | None = None,
         requester_user_id: str | None = None,
         notify: bool = False,
     ) -> CatalogRequest | None:
@@ -183,6 +189,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
 
         Args:
             title: Candidate title snapshot from the repeat request.
+            poster_url: Candidate poster URL from the repeat request.
             requester_user_id: Candidate requester from the repeat
                 request.
             notify: Whether this entry point wants the arrival
@@ -196,6 +203,8 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         updates: dict[str, object] = {}
         if self.title is None and title:
             updates["title"] = title
+        if self.poster_url is None and poster_url:
+            updates["poster_url"] = poster_url
         if self.requester_user_id is None and requester_user_id:
             updates["requester_user_id"] = requester_user_id
         if notify and not self.notify_on_arrival:
