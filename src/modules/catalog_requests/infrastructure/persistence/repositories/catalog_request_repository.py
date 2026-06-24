@@ -50,6 +50,16 @@ class SQLAlchemyCatalogRequestRepository(CatalogRequestRepository):
         model = result.scalar_one_or_none()
         return None if model is None else CatalogRequestMapper.to_entity(model)
 
+    async def find_by_id(self, request_id: CatalogRequestId) -> CatalogRequest | None:
+        """Look up a single request by its external id."""
+        stmt = select(CatalogRequestModel).where(
+            CatalogRequestModel.external_id == str(request_id),
+            CatalogRequestModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return None if model is None else CatalogRequestMapper.to_entity(model)
+
     async def find_by_tmdb_ids(
         self,
         tmdb_ids: Sequence[int],

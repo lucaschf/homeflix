@@ -6,15 +6,16 @@ from typing import Any
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 
-from src.building_blocks.presentation import api_list
+from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.catalog_requests.application.dtos import DismissCatalogRequestInput
+from src.modules.catalog_requests.application.dtos import (
+    DismissCatalogRequestInput,
+    IncludeCatalogRequestInput,
+)
 from src.modules.catalog_requests.application.use_cases import (
     DismissCatalogRequestUseCase,
-    ListCatalogRequestsUseCase,
-)
-from src.modules.catalog_requests.application.use_cases.list_catalog_requests import (
-    ListCatalogRequestsInput,
+    IncludeCatalogRequestUseCase,
+    ListAdminCatalogRequestsUseCase,
 )
 from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
@@ -26,19 +27,41 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Catalog Requests"])
 @inject  # type: ignore[misc]
 async def list_admin_catalog_requests(
     _admin: UserModel = Depends(current_admin_user),
-    use_case: ListCatalogRequestsUseCase = Depends(
-        Provide[ApplicationContainer.catalog_requests.list_catalog_requests],
+    use_case: ListAdminCatalogRequestsUseCase = Depends(
+        Provide[ApplicationContainer.catalog_requests.list_admin_catalog_requests],
     ),
 ) -> dict[str, Any]:
-    """List every pending catalog request across the household.
+    """List every pending catalog request with its subscriber count.
 
-    Same shape as the user-facing ``GET /api/v1/catalog-requests``
-    but admin-only; the admin endpoint exists so the panel page can
-    sit behind ``RequireAdmin`` even though the user-facing endpoint
-    is intentionally available to any authenticated profile.
+    Admin-only queue: each row carries the base request fields
+    (including ``source`` + derived ``status``) plus ``subscriber_count``
+    (the "Inscritos" column). Admin-gated via ``current_admin_user``.
     """
-    items = await use_case.execute(ListCatalogRequestsInput())
-    return api_list([asdict(item) for item in items])
+    items = await use_case.execute()
+    return api_list(
+        [{**asdict(item.request), "subscriber_count": item.subscriber_count} for item in items],
+    )
+
+
+@router.post("/catalog-requests/{request_id}/include", status_code=200)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def include_catalog_request(
+    request_id: str,
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: IncludeCatalogRequestUseCase = Depends(
+        Provide[ApplicationContainer.catalog_requests.include_catalog_request],
+    ),
+) -> dict[str, Any]:
+    """Mark a request as included — fulfill it and notify every subscriber.
+
+    The manual counterpart to auto-fulfillment, for the orphan-rescue
+    case (the title is in the catalog but the request never
+    auto-matched). The request leaves the pending queue and each
+    subscriber gets the "já disponível" ping. ``404`` when no active
+    request matches; idempotent on an already-fulfilled request.
+    """
+    result = await use_case.execute(IncludeCatalogRequestInput(request_id=request_id))
+    return api_single("catalog_request", asdict(result))
 
 
 @router.delete("/catalog-requests/{request_id}", status_code=204)  # type: ignore[misc]

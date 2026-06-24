@@ -51,7 +51,7 @@ class NotificationPublisherAdapter(NotificationPublisherPort):
                 body=None,
                 payload={
                     "tmdb_id": notification.tmdb_id,
-                    "media_id": notification.media_id.value,
+                    "media_id": (notification.media_id.value if notification.media_id else None),
                     "media_type": notification.media_type,
                 },
             ),

@@ -160,6 +160,16 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         session_factory=infrastructure.session_factory,
     )
 
+    # Notifications is built before Catalog Requests so its publisher
+    # adapter can be injected as the latter's ``NotificationPublisherPort``
+    # — used by both the OnMediaEnriched fanout and the manual
+    # "mark as included" action. Notifications takes no Catalog Requests
+    # dependency, so the ordering stays acyclic.
+    notifications = providers.Container(
+        NotificationsContainer,
+        session_factory=infrastructure.session_factory,
+    )
+
     # Catalog Requests is built before Media so its ACL adapter can be
     # plumbed into the Media container as the ``CatalogRequestLookupPort``
     # implementation. Catalog Requests itself takes no Media dependency,
@@ -167,6 +177,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
     catalog_requests = providers.Container(
         CatalogRequestsContainer,
         session_factory=infrastructure.session_factory,
+        notification_publisher=notifications.notification_publisher,
     )
 
     media = providers.Container(
@@ -216,15 +227,6 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         CollectionsContainer,
         session_factory=infrastructure.session_factory,
         media_uow_factory=media.media_unit_of_work_factory,
-    )
-
-    # Notifications BC: provides the cross-BC publisher adapter
-    # consumed by ``catalog_requests``' ``OnMediaEnrichedHandler``
-    # (wired in main.py's event subscription block, not here, so the
-    # container parse order stays acyclic).
-    notifications = providers.Container(
-        NotificationsContainer,
-        session_factory=infrastructure.session_factory,
     )
 
     # =========================================================================
