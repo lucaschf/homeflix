@@ -7,19 +7,22 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
+from src.building_blocks.application.errors import ResourceNotFoundException
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
 from src.modules.catalog_requests.application.dtos import (
     CreateCatalogRequestInput,
     SubscribeCatalogNotificationInput,
+    UnsubscribeCatalogNotificationInput,
 )
 from src.modules.catalog_requests.application.use_cases import (
-    ListCatalogRequestsUseCase,
+    ListCatalogRequestFeedUseCase,
     RequestCatalogInclusionUseCase,
     SubscribeCatalogNotificationUseCase,
+    UnsubscribeCatalogNotificationUseCase,
 )
-from src.modules.catalog_requests.application.use_cases.list_catalog_requests import (
-    ListCatalogRequestsInput,
+from src.modules.catalog_requests.application.use_cases.list_catalog_request_feed import (
+    ListCatalogRequestFeedInput,
 )
 from src.modules.identity.infrastructure.auth import current_active_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
@@ -127,19 +130,69 @@ async def subscribe_catalog_notification(
     return api_single("catalog_request", asdict(result))
 
 
+@router.delete("/{tmdb_id}/notify", status_code=200)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def unsubscribe_catalog_notification(
+    tmdb_id: int,
+    media_type: MediaType = Query(...),
+    user: UserModel = Depends(current_active_user),
+    use_case: UnsubscribeCatalogNotificationUseCase = Depends(
+        Provide[ApplicationContainer.catalog_requests.unsubscribe_catalog_notification],
+    ),
+) -> dict[str, Any]:
+    """Turn the arrival notification off for the calling user.
+
+    Drops only this user's subscription; the request and every other
+    subscriber stay put. Idempotent — unsubscribing when not
+    subscribed still returns the request. ``404`` only when no request
+    exists for the title at all.
+    """
+    result = await use_case.execute(
+        UnsubscribeCatalogNotificationInput(
+            tmdb_id=tmdb_id,
+            media_type=media_type,
+            user_id=user.external_id,
+        ),
+    )
+    if result is None:
+        raise ResourceNotFoundException.for_resource(
+            "CatalogRequest",
+            f"tmdb/{media_type.value}/{tmdb_id}",
+        )
+    return api_single("catalog_request", asdict(result))
+
+
 @router.get("")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def list_catalog_requests(
     collection_tmdb_id: int | None = Query(default=None, ge=1),
-    use_case: ListCatalogRequestsUseCase = Depends(
-        Provide[ApplicationContainer.catalog_requests.list_catalog_requests],
+    user: UserModel = Depends(current_active_user),
+    use_case: ListCatalogRequestFeedUseCase = Depends(
+        Provide[ApplicationContainer.catalog_requests.list_catalog_request_feed],
     ),
 ) -> dict[str, Any]:
-    """List all pending (unfulfilled) catalog requests."""
+    """List pending requests for the "Em breve" feed.
+
+    Each item carries the base request fields plus ``subscriber_count``
+    and the caller's ``is_subscribed`` flag (ADR-022). Optionally
+    scoped to a single franchise via ``collection_tmdb_id``.
+    """
     items = await use_case.execute(
-        ListCatalogRequestsInput(collection_tmdb_id=collection_tmdb_id),
+        ListCatalogRequestFeedInput(
+            user_id=user.external_id,
+            collection_tmdb_id=collection_tmdb_id,
+        ),
     )
-    return api_list([asdict(item) for item in items])
+    return api_list(
+        [
+            {
+                **asdict(item.request),
+                "subscriber_count": item.subscriber_count,
+                "is_subscribed": item.is_subscribed,
+            }
+            for item in items
+        ],
+    )
 
 
 __all__ = ["router"]

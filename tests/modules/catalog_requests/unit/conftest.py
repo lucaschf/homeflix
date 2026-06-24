@@ -33,6 +33,8 @@ def make_catalog_requests_uow_mock() -> CatalogRequestsUoWMocks:
     catalog_subscriptions.find.return_value = None
     catalog_subscriptions.list_for_request.return_value = []
     catalog_subscriptions.count_for_request.return_value = 0
+    catalog_subscriptions.count_by_requests.return_value = {}
+    catalog_subscriptions.request_ids_for_user.return_value = set()
     catalog_subscriptions.remove.return_value = False
 
     uow: CatalogRequestsUnitOfWork = AsyncMock()
