@@ -40,7 +40,10 @@ class CatalogArrivalNotification:
             link if the local media id is unavailable.
         media_id: Typed external id of the local media row
             (``MovieId`` / ``SeriesId``) the request was fulfilled
-            by. Used as the primary click-through target.
+            by. Used as the primary click-through target. ``None`` for
+            a manual "mark as included" with no resolved local title
+            (ADR-022) — the notification still fires, the renderer just
+            falls back to search instead of a precise deep-link.
         media_type: ``"movie"`` or ``"series"`` so the renderer
             picks the right deep-link path.
     """
@@ -48,7 +51,7 @@ class CatalogArrivalNotification:
     recipient_user_id: str
     title: str
     tmdb_id: int
-    media_id: MovieId | SeriesId
+    media_id: MovieId | SeriesId | None
     media_type: str
 
 

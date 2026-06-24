@@ -159,11 +159,41 @@ class CatalogRequestFeedItem:
     is_subscribed: bool
 
 
+@dataclass(frozen=True)
+class AdminCatalogRequestItem:
+    """A pending request enriched for the admin queue.
+
+    Like the member feed item but without the per-caller
+    ``is_subscribed`` flag — the admin sees the aggregate count, not
+    their own subscription state.
+
+    Attributes:
+        request: The underlying request DTO (carries source + status).
+        subscriber_count: Active subscribers — the "Inscritos" column.
+    """
+
+    request: CatalogRequestOutput
+    subscriber_count: int
+
+
+@dataclass(frozen=True)
+class IncludeCatalogRequestInput:
+    """Input for ``IncludeCatalogRequestUseCase`` — admin "mark as included".
+
+    Attributes:
+        request_id: External catalog-request id (``req_xxx``).
+    """
+
+    request_id: str
+
+
 __all__ = [
+    "AdminCatalogRequestItem",
     "CatalogRequestFeedItem",
     "CatalogRequestOutput",
     "CreateCatalogRequestInput",
     "DismissCatalogRequestInput",
+    "IncludeCatalogRequestInput",
     "SubscribeCatalogNotificationInput",
     "UnsubscribeCatalogNotificationInput",
 ]

@@ -38,6 +38,20 @@ class CatalogRequestRepository(ABC):
         """
 
     @abstractmethod
+    async def find_by_id(self, request_id: CatalogRequestId) -> CatalogRequest | None:
+        """Look up a single request by its external id.
+
+        Backs the admin per-row actions (the "mark as included" flow),
+        which carry the ``req_xxx`` id rather than the TMDB target.
+
+        Args:
+            request_id: External id (``req_xxx``).
+
+        Returns:
+            The matching ``CatalogRequest`` or ``None``.
+        """
+
+    @abstractmethod
     async def find_by_tmdb_ids(
         self,
         tmdb_ids: Sequence[int],

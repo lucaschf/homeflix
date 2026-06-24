@@ -4,6 +4,8 @@ from dependency_injector import containers, providers
 
 from src.modules.catalog_requests.application.use_cases import (
     DismissCatalogRequestUseCase,
+    IncludeCatalogRequestUseCase,
+    ListAdminCatalogRequestsUseCase,
     ListCatalogRequestFeedUseCase,
     ListCatalogRequestsUseCase,
     RequestCatalogInclusionUseCase,
@@ -29,6 +31,10 @@ class CatalogRequestsContainer(containers.DeclarativeContainer):  # type: ignore
     """
 
     session_factory = providers.Dependency()
+
+    # Cross-BC publisher (Notifications BC) — powers the arrival fanout
+    # on the manual "mark as included" action (ADR-022 / ADR-009).
+    notification_publisher = providers.Dependency()
 
     # =========================================================================
     # Unit of Work
@@ -77,7 +83,18 @@ class CatalogRequestsContainer(containers.DeclarativeContainer):  # type: ignore
         uow_factory=catalog_requests_unit_of_work_factory,
     )
 
+    list_admin_catalog_requests = providers.Factory(
+        ListAdminCatalogRequestsUseCase,
+        uow_factory=catalog_requests_unit_of_work_factory,
+    )
+
     dismiss_catalog_request = providers.Factory(
         DismissCatalogRequestUseCase,
         uow_factory=catalog_requests_unit_of_work_factory,
+    )
+
+    include_catalog_request = providers.Factory(
+        IncludeCatalogRequestUseCase,
+        uow_factory=catalog_requests_unit_of_work_factory,
+        notification_publisher=notification_publisher,
     )
