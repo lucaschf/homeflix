@@ -534,6 +534,11 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
+    async def episode_file_size_by_library(self) -> dict[str, int]:
+        """Return ``{library_id: total episode primary-file bytes}``."""
+        ...
+
+    @abstractmethod
     async def list_episode_credits_status(
         self, state: str | None, limit: int, offset: int
     ) -> tuple[Sequence[CreditsStatusRow], int]:

@@ -836,6 +836,21 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         result = await self._session.execute(stmt)
         return dict(result.all())
 
+    async def episode_file_size_by_library(self) -> dict[str, int]:
+        """Sum episode primary-file bytes per library, via the parent series."""
+        stmt = (
+            select(
+                SeriesModel.library_id,
+                func.coalesce(func.sum(EpisodeModel.file_size), 0),
+            )
+            .join(SeasonModel, EpisodeModel.season_id == SeasonModel.id)
+            .join(SeriesModel, SeasonModel.series_id == SeriesModel.id)
+            .where(EpisodeModel.deleted_at.is_(None))
+            .group_by(SeriesModel.library_id)
+        )
+        result = await self._session.execute(stmt)
+        return {library_id: int(total) for library_id, total in result.all()}
+
     async def list_episode_credits_status(
         self, state: str | None, limit: int, offset: int
     ) -> tuple[Sequence[CreditsStatusRow], int]:

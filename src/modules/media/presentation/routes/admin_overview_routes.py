@@ -10,6 +10,9 @@ from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
 from src.modules.identity.infrastructure.auth import current_admin_user
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.media.application.use_cases.get_library_usage import (
+    GetLibraryUsageUseCase,
+)
 from src.modules.media.application.use_cases.get_now_playing import GetNowPlayingUseCase
 from src.modules.media.application.use_cases.get_overview_stats import (
     GetOverviewStatsUseCase,
@@ -54,6 +57,24 @@ async def get_admin_now_playing(
     """
     snapshot = await use_case.execute()
     return api_single("now_playing", asdict(snapshot))
+
+
+@router.get("/library-usage")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def get_admin_library_usage(
+    _admin: UserModel = Depends(current_admin_user),
+    use_case: GetLibraryUsageUseCase = Depends(
+        Provide[ApplicationContainer.media.get_library_usage],
+    ),
+) -> dict[str, Any]:
+    """Per-library catalog size (sum of primary-file bytes), largest first.
+
+    Cheap SQL aggregation, not a disk ``du`` — it ranks libraries
+    against each other for the "Uso de disco por library" panel. The
+    frontend joins ``library_id`` with the libraries list for names.
+    """
+    usage = await use_case.execute()
+    return api_single("library_usage", asdict(usage))
 
 
 __all__ = ["router"]

@@ -55,6 +55,9 @@ from src.modules.media.application.use_cases.get_hls_cache_stats import (
 from src.modules.media.application.use_cases.get_intro_detection_run import (
     GetIntroDetectionRunUseCase,
 )
+from src.modules.media.application.use_cases.get_library_usage import (
+    GetLibraryUsageUseCase,
+)
 from src.modules.media.application.use_cases.get_movie_by_id import GetMovieByIdUseCase
 from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
     GetMovieTmdbSuggestionsUseCase,
@@ -507,6 +510,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         GetNowPlayingUseCase,
         now_playing=now_playing_registry,
         profile_summary=profile_summary,
+    )
+
+    get_library_usage = providers.Factory(
+        GetLibraryUsageUseCase,
+        uow_factory=media_unit_of_work_factory,
     )
 
     get_file_tracks = providers.Factory(

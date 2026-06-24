@@ -755,6 +755,19 @@ class SQLAlchemyMovieRepository(MovieRepository):
         result = await self._session.execute(stmt)
         return dict(result.all())
 
+    async def total_file_size_by_library(self) -> dict[str, int]:
+        """Sum primary-file bytes per library over non-deleted movies."""
+        stmt = (
+            select(
+                MovieModel.library_id,
+                func.coalesce(func.sum(MovieModel.file_size), 0),
+            )
+            .where(MovieModel.deleted_at.is_(None))
+            .group_by(MovieModel.library_id)
+        )
+        result = await self._session.execute(stmt)
+        return {library_id: int(total) for library_id, total in result.all()}
+
     async def list_credits_status(
         self, state: str | None, limit: int, offset: int
     ) -> tuple[Sequence[CreditsStatusRow], int]:
