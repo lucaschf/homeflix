@@ -83,13 +83,7 @@ class GetCustomListItemsUseCase:
                     item.media_id,
                 )
                 continue
-            result.append(
-                CustomListItemOutput.from_entity(
-                    entity=item,
-                    title=summary.title,
-                    poster_path=summary.poster_path,
-                )
-            )
+            result.append(CustomListItemOutput.from_entity(entity=item, summary=summary))
 
         return result
 

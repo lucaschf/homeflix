@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from src.modules.collections.application.ports.media_lookup_port import MediaSummary
     from src.modules.collections.domain.entities import WatchlistItem
     from src.shared_kernel.value_objects import MediaType
 
@@ -44,21 +45,30 @@ class WatchlistItemOutput:
     title: str
     poster_path: str | None
     added_at: str
+    year: int | None = None
+    runtime_seconds: int | None = None
+    genres: tuple[str, ...] = ()
+    resolution: str | None = None
+    hdr: bool = False
 
     @classmethod
     def from_entity(
         cls,
         entity: WatchlistItem,
-        title: str,
-        poster_path: str | None,
+        summary: MediaSummary,
     ) -> WatchlistItemOutput:
-        """Create output DTO from a WatchlistItem entity with metadata."""
+        """Create output DTO from a WatchlistItem entity + media summary."""
         return cls(
             media_id=entity.media_id.value,
             media_type=entity.media_type,
-            title=title,
-            poster_path=poster_path,
+            title=summary.title,
+            poster_path=summary.poster_path,
             added_at=entity.added_at.isoformat(),
+            year=summary.year,
+            runtime_seconds=summary.runtime_seconds,
+            genres=summary.genres,
+            resolution=summary.resolution,
+            hdr=summary.hdr,
         )
 
 

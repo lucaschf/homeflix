@@ -19,12 +19,22 @@ def movie_summary() -> MediaSummaryFactory:
         media_id: str,
         title: str = "Test Movie",
         poster_path: str | None = "https://image.tmdb.org/poster.jpg",
+        year: int | None = 2010,
+        runtime_seconds: int | None = 8880,
+        genres: tuple[str, ...] = ("Action", "Sci-Fi"),
+        resolution: str | None = "4K",
+        hdr: bool = True,
     ) -> MediaSummary:
         return MediaSummary(
             media_id=media_id,
             media_type=MediaType.MOVIE,
             title=title,
             poster_path=poster_path,
+            year=year,
+            runtime_seconds=runtime_seconds,
+            genres=genres,
+            resolution=resolution,
+            hdr=hdr,
         )
 
     return _factory
@@ -38,12 +48,16 @@ def series_summary() -> MediaSummaryFactory:
         media_id: str,
         title: str = "Test Series",
         poster_path: str | None = "https://image.tmdb.org/series.jpg",
+        year: int | None = 2008,
+        genres: tuple[str, ...] = ("Drama",),
     ) -> MediaSummary:
         return MediaSummary(
             media_id=media_id,
             media_type=MediaType.SERIES,
             title=title,
             poster_path=poster_path,
+            year=year,
+            genres=genres,
         )
 
     return _factory

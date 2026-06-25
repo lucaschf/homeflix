@@ -71,6 +71,13 @@ class TestGetCustomListItemsUseCase:
         assert isinstance(result[0], CustomListItemOutput)
         assert result[0].title == "Inception"
         assert result[0].media_id == "mov_abc123def456"
+        assert result[0].position == 0
+        # Enrichment fields flow through from the media summary.
+        assert result[0].year == 2010
+        assert result[0].runtime_seconds == 8880
+        assert result[0].genres == ("Action", "Sci-Fi")
+        assert result[0].resolution == "4K"
+        assert result[0].hdr is True
 
     @pytest.mark.asyncio
     async def test_should_raise_when_list_not_found(self) -> None:
