@@ -64,6 +64,31 @@ class TestGetWatchlistUseCase:
         assert result[0].title == "Inception"
 
     @pytest.mark.asyncio
+    async def test_should_carry_enrichment_fields_from_summary(
+        self, movie_summary: MediaSummaryFactory
+    ) -> None:
+        items = [
+            WatchlistItem.create(
+                profile_id=_PROFILE_ID,
+                media_id="mov_abc123def456",
+                media_type=MediaType.MOVIE,
+            ),
+        ]
+        mocks = make_collections_uow_mock()
+        mocks.watchlist.list_all.return_value = items
+        media_lookup = make_media_lookup_mock(movie_summary("mov_abc123def456"))
+
+        use_case = GetWatchlistUseCase(uow_factory=mocks.factory, media_lookup=media_lookup)
+
+        out = (await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value)))[0]
+
+        assert out.year == 2010
+        assert out.runtime_seconds == 8880
+        assert out.genres == ("Action", "Sci-Fi")
+        assert out.resolution == "4K"
+        assert out.hdr is True
+
+    @pytest.mark.asyncio
     async def test_should_return_empty_list_when_no_items(self) -> None:
         mocks = make_collections_uow_mock()
         mocks.watchlist.list_all.return_value = []

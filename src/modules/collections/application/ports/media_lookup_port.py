@@ -27,12 +27,27 @@ class MediaSummary:
             ``lang`` argument passed to ``get_many``).
         poster_path: Absolute or relative poster URL, or ``None`` when
             the source has no poster.
+        year: Release year (movie) or first-air year (series), or
+            ``None`` when unknown.
+        runtime_seconds: Runtime in seconds. Set for movies; ``None``
+            for series (their runtime is per-episode and not surfaced
+            here yet).
+        genres: Localized genre names, ordered. Empty when none.
+        resolution: Best available resolution label (e.g. ``"4K"``,
+            ``"1080p"``). Set for movies with files; ``None`` for series
+            (episode-derived, deferred).
+        hdr: Whether the best file carries an HDR format. Movies only.
     """
 
     media_id: str
     media_type: MediaType
     title: str
     poster_path: str | None
+    year: int | None = None
+    runtime_seconds: int | None = None
+    genres: tuple[str, ...] = ()
+    resolution: str | None = None
+    hdr: bool = False
 
 
 class MediaLookupPort(ABC):

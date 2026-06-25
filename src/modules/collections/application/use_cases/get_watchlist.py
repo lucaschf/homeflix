@@ -69,13 +69,7 @@ class GetWatchlistUseCase:
             if summary is None:
                 _logger.warning("Could not find media for watchlist item: %s", item.media_id)
                 continue
-            result.append(
-                WatchlistItemOutput.from_entity(
-                    entity=item,
-                    title=summary.title,
-                    poster_path=summary.poster_path,
-                )
-            )
+            result.append(WatchlistItemOutput.from_entity(entity=item, summary=summary))
 
         return result
 
