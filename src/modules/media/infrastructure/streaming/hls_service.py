@@ -1075,6 +1075,13 @@ class HlsService(HlsPlaylistPort):
             *video_args,
             *audio_args,
             *ts_normalize_args,
+            # Zero the MPEG-TS muxer's ~1.4s initial offset so the first
+            # segment PTS starts at ~0, keeping the video / audio / subtitle
+            # timelines aligned (the WebVTT X-TIMESTAMP-MAP anchors to MPEGTS:0).
+            "-muxdelay",
+            "0",
+            "-muxpreload",
+            "0",
             "-hls_time",
             str(_SEGMENT_DURATION),
             "-hls_list_size",
@@ -1128,6 +1135,13 @@ class HlsService(HlsPlaylistPort):
             "-sn",
             *_audio_args_for(track, start),
             *ts_normalize_args,
+            # Zero the MPEG-TS muxer's ~1.4s initial offset so the first
+            # segment PTS starts at ~0, keeping the video / audio / subtitle
+            # timelines aligned (the WebVTT X-TIMESTAMP-MAP anchors to MPEGTS:0).
+            "-muxdelay",
+            "0",
+            "-muxpreload",
+            "0",
             "-hls_time",
             str(_SEGMENT_DURATION),
             "-hls_list_size",
@@ -1188,6 +1202,7 @@ class HlsService(HlsPlaylistPort):
             if vtt_path.is_file():
                 if start > 0:
                     _shift_webvtt_to_bucket_local(vtt_path, start)
+                _ensure_vtt_timestamp_map(vtt_path)
                 _write_subtitle_playlist(sub_dir)
                 _logger.info("Extracted %s to %s (start=%d)", log_label, vtt_path, start)
             else:
@@ -1522,6 +1537,42 @@ def _shift_webvtt_to_bucket_local(vtt_path: Path, shift_seconds: int) -> None:
         tmp_path.replace(vtt_path)
     except OSError:
         _logger.exception("Failed to write shifted VTT: %s", vtt_path)
+
+
+_VTT_TIMESTAMP_MAP = "X-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000"
+
+
+def _ensure_vtt_timestamp_map(vtt_path: Path) -> None:
+    """Insert the HLS ``X-TIMESTAMP-MAP`` header into a standalone WebVTT.
+
+    The video segments start at MPEG-TS PTS 0 (muxdelay/muxpreload
+    zeroed), so cues anchored to ``LOCAL`` 0 line up with the video
+    clock. Without this header hls.js falls back to the muxer's old
+    ~1.4 s start offset and renders subtitles a second or two early.
+    Idempotent and best-effort — runs after any bucket-local shift so it
+    never rewrites the map's own ``00:00:00.000``.
+    """
+    if not vtt_path.is_file():
+        return
+    try:
+        content = vtt_path.read_text(encoding="utf-8")
+    except OSError:
+        _logger.exception("Failed to read VTT for timestamp map: %s", vtt_path)
+        return
+    if "X-TIMESTAMP-MAP" in content:
+        return
+    # ffmpeg writes "WEBVTT\n\n<cues>"; the map must sit on the line
+    # right after the WEBVTT signature, before the blank line + cues.
+    head, _, rest = content.partition("\n")
+    if "WEBVTT" not in head:
+        return
+    new_content = f"{head}\n{_VTT_TIMESTAMP_MAP}\n{rest}"
+    tmp_path = vtt_path.with_name(vtt_path.name + ".tsmap.tmp")
+    try:
+        tmp_path.write_text(new_content, encoding="utf-8")
+        tmp_path.replace(vtt_path)
+    except OSError:
+        _logger.exception("Failed to write VTT timestamp map: %s", vtt_path)
 
 
 __all__ = ["HlsService"]

@@ -13,6 +13,7 @@ from src.modules.media.application.ports import ProbeResult
 from src.modules.media.infrastructure.streaming.hls_service import (
     HlsService,
     _append_endlist_atomic,
+    _ensure_vtt_timestamp_map,
     _has_endlist,
     _primary_audio_index,
     _shift_webvtt_to_bucket_local,
@@ -1235,7 +1236,12 @@ class TestHlsServiceExtractOneSubtitle:
         assert "-ss" not in captured["cmd"]
         assert "-accurate_seek" not in captured["cmd"]
         assert "-avoid_negative_ts" not in captured["cmd"]
-        assert (output_dir / "sub_0" / "sub.vtt").read_text(encoding="utf-8") == original_vtt
+        result_vtt = (output_dir / "sub_0" / "sub.vtt").read_text(encoding="utf-8")
+        # No shift at start=0: cues keep their source timestamps...
+        assert "00:00:05.000 --> 00:00:07.000" in result_vtt
+        # ...but the HLS timestamp-map header is added so hls.js aligns
+        # cues to the (now zero-based) video clock.
+        assert "X-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000" in result_vtt
 
     def test_should_post_shift_embedded_subtitle_cues_when_start_positive(
         self, tmp_path: Path
@@ -1789,3 +1795,54 @@ class TestEnsurePlaylistSoftwareFallback:
 
         # Software path failing is not retried.
         assert calls == [False]
+
+
+class TestMpegtsZeroStart:
+    """Video + audio commands zero the MPEG-TS muxer's initial offset."""
+
+    @pytest.mark.unit
+    def test_video_cmd_zeroes_muxer_offset(self, tmp_path: Path) -> None:
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+        assert cmd[cmd.index("-muxdelay") + 1] == "0"
+        assert cmd[cmd.index("-muxpreload") + 1] == "0"
+
+    @pytest.mark.unit
+    def test_audio_cmd_zeroes_muxer_offset(self, tmp_path: Path) -> None:
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
+        assert cmd[cmd.index("-muxdelay") + 1] == "0"
+        assert cmd[cmd.index("-muxpreload") + 1] == "0"
+
+
+class TestVttTimestampMap:
+    """``_ensure_vtt_timestamp_map`` anchors cues to the zero-based clock."""
+
+    @pytest.mark.unit
+    def test_injects_map_after_webvtt_signature(self, tmp_path: Path) -> None:
+        vtt = tmp_path / "sub.vtt"
+        vtt.write_text("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nhi\n", encoding="utf-8")
+
+        _ensure_vtt_timestamp_map(vtt)
+
+        content = vtt.read_text(encoding="utf-8")
+        assert content.startswith("WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n")
+        # Cue timestamps are untouched.
+        assert "00:00:01.000 --> 00:00:02.000" in content
+
+    @pytest.mark.unit
+    def test_is_idempotent(self, tmp_path: Path) -> None:
+        vtt = tmp_path / "sub.vtt"
+        vtt.write_text(
+            "WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n"
+            "00:00:01.000 --> 00:00:02.000\nhi\n",
+            encoding="utf-8",
+        )
+        before = vtt.read_text(encoding="utf-8")
+
+        _ensure_vtt_timestamp_map(vtt)
+
+        assert vtt.read_text(encoding="utf-8") == before
