@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from src.config.logging import get_logger
@@ -116,8 +116,13 @@ class IntroDetectionJob:
     async def run(self) -> None:
         """Process one batch of pending seasons."""
         config = await self._runtime_settings.intro_detection()
+        stale_before = datetime.now(UTC) - timedelta(minutes=config.stale_claim_timeout_minutes)
         async with self._media_uow_factory() as uow:
-            seasons = list(await uow.series.find_seasons_pending_intro_detection(config.batch_size))
+            seasons = list(
+                await uow.series.find_seasons_pending_intro_detection(
+                    config.batch_size, stale_before=stale_before
+                )
+            )
 
         if not seasons:
             return
@@ -219,10 +224,15 @@ class IntroDetectionJob:
         log_ctx: dict[str, str | int],
         config: IntroDetectionConfig,
     ) -> _RunMetrics:
+        episode_count = len(season.episodes)
         candidates = [ep for ep in season.episodes if not _has_manual_marker(ep)]
         candidate_count = len(candidates)
         if candidate_count < _MIN_EPISODES_FOR_DETECTION:
-            await self._mark_state(season_id, IntroDetectionState.INSUFFICIENT_EPISODES)
+            await self._mark_state(
+                season_id,
+                IntroDetectionState.INSUFFICIENT_EPISODES,
+                attempted_episode_count=episode_count,
+            )
             _logger.info(
                 "[intro-detection] season skipped: not enough non-MANUAL episodes",
                 **log_ctx,
@@ -233,7 +243,11 @@ class IntroDetectionJob:
 
         refs = _build_media_refs(candidates)
         if len(refs) < _MIN_EPISODES_FOR_DETECTION:
-            await self._mark_state(season_id, IntroDetectionState.INSUFFICIENT_EPISODES)
+            await self._mark_state(
+                season_id,
+                IntroDetectionState.INSUFFICIENT_EPISODES,
+                attempted_episode_count=episode_count,
+            )
             _logger.info(
                 "[intro-detection] season skipped: not enough episodes with a primary file",
                 **log_ctx,
@@ -255,7 +269,11 @@ class IntroDetectionJob:
         result = await asyncio.to_thread(detector.detect, refs, tuning)
 
         if result.analyzed_count < _MIN_EPISODES_FOR_DETECTION:
-            await self._mark_state(season_id, IntroDetectionState.INSUFFICIENT_EPISODES)
+            await self._mark_state(
+                season_id,
+                IntroDetectionState.INSUFFICIENT_EPISODES,
+                attempted_episode_count=episode_count,
+            )
             _logger.info(
                 "[intro-detection] season skipped: not enough analysable episodes",
                 **log_ctx,
@@ -270,7 +288,11 @@ class IntroDetectionJob:
 
         episode_results = _build_episode_results(result.markers, candidates, config.min_confidence)
         persisted_count = await self._persist_detections(result.markers, config.min_confidence)
-        await self._mark_state(season_id, IntroDetectionState.COMPLETED)
+        await self._mark_state(
+            season_id,
+            IntroDetectionState.COMPLETED,
+            attempted_episode_count=episode_count,
+        )
         _logger.info(
             "[intro-detection] season completed",
             **log_ctx,
@@ -374,6 +396,7 @@ class IntroDetectionJob:
         season_id: SeasonId,
         state: IntroDetectionState,
         *,
+        attempted_episode_count: int | None = None,
         error: str | None = None,
     ) -> None:
         async with self._media_uow_factory() as uow:
@@ -381,6 +404,7 @@ class IntroDetectionJob:
                 season_id,
                 state,
                 attempted_at=datetime.now(UTC),
+                attempted_episode_count=attempted_episode_count,
                 error=error,
             )
 

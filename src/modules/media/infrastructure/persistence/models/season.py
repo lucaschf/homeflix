@@ -77,6 +77,13 @@ class SeasonModel(Base):
     intro_detection_attempted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Episode count (non-deleted) at the last attempt. An
+    # INSUFFICIENT_EPISODES season is only re-attempted once its current
+    # count grows past this, so a permanently-small season stops being
+    # retried every tick. NULL means "never stamped" (re-eligible once).
+    intro_detection_attempted_episode_count: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     intro_detection_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships

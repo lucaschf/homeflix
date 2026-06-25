@@ -78,6 +78,13 @@ class IntroDetectionConfig(CompoundValueObject):
             season decodes/fingerprints every episode, so values above
             2 can saturate the host on large seasons.
         interval_minutes: How often the detection job runs.
+        stale_claim_timeout_minutes: How long a season may sit in the
+            transient ``IN_PROGRESS`` state before the job treats the
+            claim as orphaned (e.g. a restart killed the worker
+            mid-detection) and re-picks it. Without this, a crashed
+            claim would never be retried because ``IN_PROGRESS`` is
+            excluded from the pending query. Must comfortably exceed the
+            time to process one season.
         analysis_window_seconds: Leading media (in seconds) analysed per
             episode. 600s (10 min) covers long cold opens plus the title
             sequence; trimming it speeds up the job at the cost of
@@ -100,6 +107,7 @@ class IntroDetectionConfig(CompoundValueObject):
     algorithm: IntroDetectionAlgorithm = Field(default=IntroDetectionAlgorithm.FRAME_HASH)
     batch_size: int = Field(default=1, ge=1)
     interval_minutes: int = Field(default=30, ge=1)
+    stale_claim_timeout_minutes: int = Field(default=120, ge=1)
     analysis_window_seconds: int = Field(default=600, ge=60)
     min_confidence: float = Field(default=0.65, ge=0.0, le=1.0)
     min_intro_seconds: float = Field(default=5.0, ge=0.0)

@@ -10,6 +10,7 @@ job only sees its :class:`IntroDetectionResult`.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -278,8 +279,11 @@ class TestIntroDetectionJob:
         await job.run()
 
         uow.series.update_episode_intro.assert_not_awaited()
-        terminal_state = uow.series.update_season_intro_detection.await_args_list[-1].args[1]
-        assert terminal_state == IntroDetectionState.INSUFFICIENT_EPISODES
+        terminal_call = uow.series.update_season_intro_detection.await_args_list[-1]
+        assert terminal_call.args[1] == IntroDetectionState.INSUFFICIENT_EPISODES
+        # The episode count is stamped so the season is only re-armed once
+        # more episodes land, instead of being retried every tick.
+        assert terminal_call.kwargs["attempted_episode_count"] == 3
 
     @pytest.mark.asyncio
     async def test_marks_failed_when_detector_raises(self) -> None:
@@ -412,6 +416,9 @@ class TestIntroDetectionJob:
 
         called_with = uow.series.find_seasons_pending_intro_detection.await_args
         assert called_with.args[0] == 1
+        # A stale-claim cutoff is passed so orphaned IN_PROGRESS seasons
+        # become reclaimable instead of stuck forever.
+        assert isinstance(called_with.kwargs["stale_before"], datetime)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
