@@ -13,6 +13,7 @@ from src.modules.media.application.ports import ProbeResult
 from src.modules.media.infrastructure.streaming.hls_service import (
     HlsService,
     _append_endlist_atomic,
+    _atomic_write_text,
     _ensure_vtt_timestamp_map,
     _has_endlist,
     _primary_audio_index,
@@ -1846,3 +1847,47 @@ class TestVttTimestampMap:
         _ensure_vtt_timestamp_map(vtt)
 
         assert vtt.read_text(encoding="utf-8") == before
+
+
+class TestAtomicWriteText:
+    """``_atomic_write_text`` survives the Windows replace-while-open lock."""
+
+    @pytest.mark.unit
+    def test_writes_content(self, tmp_path: Path) -> None:
+        dest = tmp_path / "sub.vtt"
+        _atomic_write_text(dest, "hello")
+        assert dest.read_text(encoding="utf-8") == "hello"
+
+    @pytest.mark.unit
+    def test_retries_replace_on_permission_error(self, tmp_path: Path) -> None:
+        dest = tmp_path / "sub.vtt"
+        dest.write_text("old", encoding="utf-8")
+        real_replace = Path.replace
+        calls = {"n": 0}
+
+        def flaky_replace(self: Path, target: Path) -> None:
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise PermissionError(5, "locked")
+            real_replace(self, target)
+
+        with patch.object(Path, "replace", flaky_replace), patch("time.sleep"):
+            _atomic_write_text(dest, "new")
+
+        assert dest.read_text(encoding="utf-8") == "new"
+        assert calls["n"] == 3
+
+    @pytest.mark.unit
+    def test_gives_up_and_cleans_temp_after_attempts(self, tmp_path: Path) -> None:
+        dest = tmp_path / "sub.vtt"
+        dest.write_text("old", encoding="utf-8")
+
+        def always_locked(self: Path, target: Path) -> None:
+            raise PermissionError(5, "locked")
+
+        with patch.object(Path, "replace", always_locked), patch("time.sleep"):
+            _atomic_write_text(dest, "new")
+
+        # Destination untouched; no orphaned temp left behind.
+        assert dest.read_text(encoding="utf-8") == "old"
+        assert list(tmp_path.glob("sub.vtt.*.tmp")) == []
