@@ -218,6 +218,7 @@ class SeasonMapper:
             air_date=entity.air_date.value if entity.air_date else None,
             intro_detection_state=entity.intro_detection_state.value,
             intro_detection_attempted_at=entity.intro_detection_attempted_at,
+            intro_detection_attempted_episode_count=entity.intro_detection_attempted_episode_count,
             intro_detection_error=entity.intro_detection_error,
         )
 
@@ -249,6 +250,7 @@ class SeasonMapper:
             episodes=episode_list,
             intro_detection_state=IntroDetectionState(model.intro_detection_state),
             intro_detection_attempted_at=model.intro_detection_attempted_at,
+            intro_detection_attempted_episode_count=model.intro_detection_attempted_episode_count,
             intro_detection_error=model.intro_detection_error,
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -272,6 +274,9 @@ class SeasonMapper:
         model.air_date = entity.air_date.value if entity.air_date else None
         model.intro_detection_state = entity.intro_detection_state.value
         model.intro_detection_attempted_at = entity.intro_detection_attempted_at
+        model.intro_detection_attempted_episode_count = (
+            entity.intro_detection_attempted_episode_count
+        )
         model.intro_detection_error = entity.intro_detection_error
 
         return model

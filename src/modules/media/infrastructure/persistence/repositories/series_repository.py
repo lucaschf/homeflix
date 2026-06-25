@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import distinct, func, or_, select, text, update
+from sqlalchemy import and_, distinct, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -692,33 +692,62 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         result = await self._session.execute(stmt)
         return bool(result.rowcount)
 
-    async def find_seasons_pending_intro_detection(self, limit: int) -> Sequence[Season]:
-        """Return seasons in NOT_STARTED/INSUFFICIENT_EPISODES with episodes loaded.
+    async def find_seasons_pending_intro_detection(
+        self,
+        limit: int,
+        *,
+        stale_before: datetime,
+    ) -> Sequence[Season]:
+        """Return seasons eligible for the next intro-detection tick.
 
         Episodes (and their file_variants) are eager-loaded so the
         detection job can iterate file paths without N+1 queries.
         Soft-deleted rows are filtered out at both levels.
 
+        Eligibility (see the interface for the rationale):
+
+        * ``NOT_STARTED`` — never attempted.
+        * ``INSUFFICIENT_EPISODES`` whose live episode count now exceeds
+          ``intro_detection_attempted_episode_count`` (NULL counts as 0,
+          so legacy rows get exactly one more pass before the count is
+          stamped). A season whose episode set hasn't grown is skipped,
+          so a permanently-small season stops monopolising the queue.
+        * ``IN_PROGRESS`` last touched before ``stale_before`` — an
+          orphaned claim, reclaimed so a crash/restart self-heals.
+
         Ordered by ``intro_detection_attempted_at`` ascending with NULLs
-        first, then ``id``. NULL means never attempted (a fresh
-        ``NOT_STARTED`` season), so brand-new seasons run first; a season
-        that keeps landing in ``INSUFFICIENT_EPISODES`` (e.g. an extras
-        season with too few playable episodes) has its ``attempted_at``
-        stamped on each pass and so rotates to the BACK of the queue
-        instead of monopolizing every tick — without this a permanently
-        insufficient season starves all others when ``batch_size`` is
-        small. ``nullsfirst`` is explicit because SQLite (NULLs first on
-        ASC) and PostgreSQL (NULLs last) disagree on the default.
+        first, then ``id``: a never-attempted season (NULL) always runs
+        before any already-attempted one. ``nullsfirst`` is explicit
+        because SQLite (NULLs first on ASC) and PostgreSQL (NULLs last)
+        disagree on the default.
         """
-        eligible_states = (
-            IntroDetectionState.NOT_STARTED.value,
-            IntroDetectionState.INSUFFICIENT_EPISODES.value,
+        live_episode_count = (
+            select(func.count(EpisodeModel.id))
+            .where(
+                EpisodeModel.season_id == SeasonModel.id,
+                EpisodeModel.deleted_at.is_(None),
+            )
+            .correlate(SeasonModel)
+            .scalar_subquery()
         )
         stmt = (
             select(SeasonModel)
             .where(
                 SeasonModel.deleted_at.is_(None),
-                SeasonModel.intro_detection_state.in_(eligible_states),
+                or_(
+                    SeasonModel.intro_detection_state == IntroDetectionState.NOT_STARTED.value,
+                    and_(
+                        SeasonModel.intro_detection_state
+                        == IntroDetectionState.INSUFFICIENT_EPISODES.value,
+                        live_episode_count
+                        > func.coalesce(SeasonModel.intro_detection_attempted_episode_count, 0),
+                    ),
+                    and_(
+                        SeasonModel.intro_detection_state == IntroDetectionState.IN_PROGRESS.value,
+                        SeasonModel.intro_detection_attempted_at.is_not(None),
+                        SeasonModel.intro_detection_attempted_at < stale_before,
+                    ),
+                ),
             )
             .options(selectinload(SeasonModel.episodes).selectinload(EpisodeModel.file_variants))
             .order_by(
@@ -736,14 +765,16 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         state: IntroDetectionState,
         *,
         attempted_at: datetime | None = None,
+        attempted_episode_count: int | None = None,
         error: str | None = None,
     ) -> bool:
         """Direct UPDATE of intro-detection columns on the seasons row.
 
-        ``attempted_at`` is left untouched when ``None`` so transient
-        transitions (e.g. claiming a season as IN_PROGRESS) do not
-        overwrite the timestamp from the previous successful run.
-        ``error`` is always written through — pass ``None`` to clear.
+        ``attempted_at`` and ``attempted_episode_count`` are left
+        untouched when ``None`` so transient transitions (e.g. claiming a
+        season as IN_PROGRESS) do not overwrite the values from the
+        previous terminal run. ``error`` is always written through —
+        pass ``None`` to clear.
         """
         values: dict[str, Any] = {
             "intro_detection_state": state.value,
@@ -751,6 +782,8 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         }
         if attempted_at is not None:
             values["intro_detection_attempted_at"] = attempted_at
+        if attempted_episode_count is not None:
+            values["intro_detection_attempted_episode_count"] = attempted_episode_count
 
         stmt = (
             update(SeasonModel)

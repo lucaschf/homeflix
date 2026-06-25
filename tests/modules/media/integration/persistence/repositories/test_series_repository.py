@@ -1210,6 +1210,7 @@ def _series_with_intro(
     intro: IntroMarker | None = None,
     detection_state: IntroDetectionState = IntroDetectionState.NOT_STARTED,
     detection_attempted_at: datetime | None = None,
+    detection_attempted_episode_count: int | None = None,
     detection_error: str | None = None,
     series_title: str = "Intro Series",
 ) -> Series:
@@ -1232,6 +1233,7 @@ def _series_with_intro(
         episodes=[episode],
         intro_detection_state=detection_state,
         intro_detection_attempted_at=detection_attempted_at,
+        intro_detection_attempted_episode_count=detection_attempted_episode_count,
         intro_detection_error=detection_error,
     )
     return Series(
@@ -1470,7 +1472,9 @@ class TestFindSeasonsPendingIntroDetection:
             )
         )
 
-        pending = await repo.find_seasons_pending_intro_detection(limit=10)
+        pending = await repo.find_seasons_pending_intro_detection(
+            limit=10, stale_before=datetime.now(UTC)
+        )
 
         states = sorted(s.intro_detection_state.value for s in pending)
         assert states == ["INSUFFICIENT_EPISODES", "NOT_STARTED"]
@@ -1482,7 +1486,9 @@ class TestFindSeasonsPendingIntroDetection:
         repo = SQLAlchemySeriesRepository(db_session)
         await repo.save(_series_with_intro(detection_state=IntroDetectionState.NOT_STARTED))
 
-        pending = await repo.find_seasons_pending_intro_detection(limit=10)
+        pending = await repo.find_seasons_pending_intro_detection(
+            limit=10, stale_before=datetime.now(UTC)
+        )
 
         assert len(pending) == 1
         season = pending[0]
@@ -1499,7 +1505,9 @@ class TestFindSeasonsPendingIntroDetection:
                 )
             )
 
-        pending = await repo.find_seasons_pending_intro_detection(limit=2)
+        pending = await repo.find_seasons_pending_intro_detection(
+            limit=2, stale_before=datetime.now(UTC)
+        )
 
         assert len(pending) == 2
 
@@ -1538,7 +1546,9 @@ class TestFindSeasonsPendingIntroDetection:
             )
         )
 
-        pending = await repo.find_seasons_pending_intro_detection(limit=10)
+        pending = await repo.find_seasons_pending_intro_detection(
+            limit=10, stale_before=datetime.now(UTC)
+        )
         attempted = [s.intro_detection_attempted_at for s in pending]
 
         assert len(attempted) == 3
@@ -1546,6 +1556,108 @@ class TestFindSeasonsPendingIntroDetection:
         assert attempted[1] is not None
         assert attempted[2] is not None
         assert attempted[1] <= attempted[2]  # then oldest-attempted before newest
+
+    async def test_insufficient_not_retried_until_episode_count_grows(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """An INSUFFICIENT season with an unchanged episode count is skipped.
+
+        The helper builds a single-episode season; stamping
+        ``attempted_episode_count`` at that same count means nothing has
+        grown, so the season must not resurface and burn a tick.
+        """
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.INSUFFICIENT_EPISODES,
+                detection_attempted_at=datetime(2020, 1, 1, tzinfo=UTC),
+                detection_attempted_episode_count=1,  # == live episode count
+                series_title="stuck-insufficient",
+            )
+        )
+
+        pending = await repo.find_seasons_pending_intro_detection(
+            limit=10, stale_before=datetime.now(UTC)
+        )
+
+        assert pending == []
+
+    async def test_insufficient_retried_when_episode_count_grew(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """An INSUFFICIENT season re-qualifies once new episodes land.
+
+        Stamped count 0 vs a live count of 1 stands in for "an episode
+        was added since the last attempt", which is the only thing that
+        could change the detector's verdict.
+        """
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.INSUFFICIENT_EPISODES,
+                detection_attempted_at=datetime(2020, 1, 1, tzinfo=UTC),
+                detection_attempted_episode_count=0,  # < live episode count
+                series_title="grew-since-attempt",
+            )
+        )
+
+        pending = await repo.find_seasons_pending_intro_detection(
+            limit=10, stale_before=datetime.now(UTC)
+        )
+
+        assert len(pending) == 1
+        assert pending[0].intro_detection_state == IntroDetectionState.INSUFFICIENT_EPISODES
+
+    async def test_stale_in_progress_claim_is_reclaimed(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """An IN_PROGRESS season older than ``stale_before`` self-heals.
+
+        Orphaned claims (a restart killed the worker mid-detection) would
+        otherwise be excluded forever; the cutoff makes them eligible.
+        """
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.IN_PROGRESS,
+                detection_attempted_at=datetime(2020, 1, 1, tzinfo=UTC),
+                series_title="orphaned-claim",
+            )
+        )
+
+        pending = await repo.find_seasons_pending_intro_detection(
+            limit=10, stale_before=datetime(2020, 6, 1, tzinfo=UTC)
+        )
+
+        assert len(pending) == 1
+        assert pending[0].intro_detection_state == IntroDetectionState.IN_PROGRESS
+
+    async def test_fresh_in_progress_claim_is_left_alone(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """An IN_PROGRESS season newer than ``stale_before`` is not reclaimed.
+
+        Guards against double-claiming a season that another tick is
+        legitimately processing right now.
+        """
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(
+            _series_with_intro(
+                detection_state=IntroDetectionState.IN_PROGRESS,
+                detection_attempted_at=datetime(2020, 6, 1, tzinfo=UTC),
+                series_title="active-claim",
+            )
+        )
+
+        pending = await repo.find_seasons_pending_intro_detection(
+            limit=10, stale_before=datetime(2020, 1, 1, tzinfo=UTC)
+        )
+
+        assert pending == []
 
 
 @pytest.mark.integration
@@ -1613,6 +1725,50 @@ class TestUpdateSeasonIntroDetection:
         found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
         assert found is not None
         assert found.seasons[0].intro_detection_attempted_at is not None
+
+    async def test_stamps_attempted_episode_count(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _series_with_intro(detection_state=IntroDetectionState.NOT_STARTED)
+        await repo.save(series)
+        season_id = series.seasons[0].id
+        assert season_id is not None
+
+        await repo.update_season_intro_detection(
+            season_id,
+            IntroDetectionState.INSUFFICIENT_EPISODES,
+            attempted_at=datetime(2026, 6, 25, 12, 0, tzinfo=UTC),
+            attempted_episode_count=7,
+        )
+        await db_session.commit()
+
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert found is not None
+        assert found.seasons[0].intro_detection_attempted_episode_count == 7
+
+    async def test_leaves_attempted_episode_count_untouched_when_none(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _series_with_intro(
+            detection_state=IntroDetectionState.INSUFFICIENT_EPISODES,
+            detection_attempted_episode_count=3,
+        )
+        await repo.save(series)
+        season_id = series.seasons[0].id
+        assert season_id is not None
+
+        # Transient IN_PROGRESS claim passes no count — the previous
+        # stamp must survive so re-arm logic still compares correctly.
+        await repo.update_season_intro_detection(
+            season_id,
+            IntroDetectionState.IN_PROGRESS,
+        )
+        await db_session.commit()
+
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert found is not None
+        assert found.seasons[0].intro_detection_attempted_episode_count == 3
 
 
 @pytest.mark.integration

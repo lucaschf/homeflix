@@ -61,6 +61,9 @@ class Season(DomainEntity[SeasonId]):
     # individual episodes are independent of this state)
     intro_detection_state: IntroDetectionState = IntroDetectionState.NOT_STARTED
     intro_detection_attempted_at: datetime | None = None
+    # Episodes present at the last attempt; the job re-arms an
+    # INSUFFICIENT_EPISODES season only once its count grows past this.
+    intro_detection_attempted_episode_count: int | None = None
     intro_detection_error: str | None = Field(default=None, max_length=2000)
 
     # noinspection PyNestedDecorators

@@ -429,15 +429,33 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_seasons_pending_intro_detection(self, limit: int) -> Sequence[Season]:
+    async def find_seasons_pending_intro_detection(
+        self,
+        limit: int,
+        *,
+        stale_before: datetime,
+    ) -> Sequence[Season]:
         """Return seasons whose intro-detection job has not converged yet.
 
-        Filters for seasons in ``NOT_STARTED`` or ``INSUFFICIENT_EPISODES``
-        state (the second so seasons that previously had too few
-        episodes get retried automatically once more land). ``COMPLETED``,
-        ``IN_PROGRESS``, ``FAILED``, and ``DISABLED`` are excluded —
-        ``FAILED`` and ``DISABLED`` require an explicit operator reset
-        before being retried.
+        A season is eligible when it is:
+
+        * ``NOT_STARTED`` — never attempted; or
+        * ``INSUFFICIENT_EPISODES`` *and* its current (non-deleted)
+          episode count exceeds ``intro_detection_attempted_episode_count``
+          — i.e. new episodes landed since the last attempt, so the
+          outcome could now differ. A season whose episode set hasn't
+          grown is NOT retried, so a permanently-small season (e.g. a
+          2-part miniseries) stops monopolising the queue; or
+        * ``IN_PROGRESS`` with ``intro_detection_attempted_at`` older than
+          ``stale_before`` — an orphaned claim (the worker died
+          mid-detection), reclaimed so it self-heals.
+
+        ``COMPLETED``, ``FAILED``, and ``DISABLED`` are excluded;
+        ``FAILED`` and ``DISABLED`` require an explicit operator reset.
+
+        Ordered by ``intro_detection_attempted_at`` ascending with NULLs
+        first, then ``id``, so never-attempted seasons run before any
+        already-attempted one.
 
         Returned ``Season`` entities have their ``episodes`` collection
         eagerly loaded (with file variants) so the detection job can
@@ -446,6 +464,9 @@ class SeriesRepository(ABC):
 
         Args:
             limit: Maximum number of seasons to return.
+            stale_before: Cutoff for reclaiming orphaned ``IN_PROGRESS``
+                seasons — those last attempted before this instant are
+                considered abandoned and made eligible again.
 
         Returns:
             Sequence of seasons eligible for the next detection tick.
@@ -459,6 +480,7 @@ class SeriesRepository(ABC):
         state: IntroDetectionState,
         *,
         attempted_at: datetime | None = None,
+        attempted_episode_count: int | None = None,
         error: str | None = None,
     ) -> bool:
         """Persist intro-detection job state for a season.
@@ -477,6 +499,10 @@ class SeriesRepository(ABC):
             attempted_at: When the job ran. Pass ``None`` to leave the
                 column unchanged for transient transitions like
                 ``IN_PROGRESS``.
+            attempted_episode_count: Episode count observed this attempt,
+                used to decide whether an ``INSUFFICIENT_EPISODES`` season
+                is worth retrying later. Pass ``None`` to leave it
+                unchanged (e.g. on the ``IN_PROGRESS`` claim).
             error: Diagnostic message for ``FAILED`` runs, or ``None`` to
                 clear.
 
