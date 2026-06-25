@@ -40,6 +40,7 @@ import shutil
 import subprocess
 import threading
 import time
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -1508,6 +1509,46 @@ def _shift_one_timestamp(match: re.Match[str], shift_seconds: int) -> str:
     return f"{new_h:02d}:{new_m:02d}:{new_s:02d}.{new_ms:03d}"
 
 
+# Windows refuses os.replace onto a file another handle has open (a
+# player fetching the .vtt, or an AV/indexer scanning a fresh write),
+# raising PermissionError. The lock is transient, so retry briefly.
+_VTT_REPLACE_ATTEMPTS = 5
+_VTT_REPLACE_BACKOFF = 0.1  # seconds, scaled by attempt number
+
+
+def _atomic_write_text(dest: Path, content: str) -> None:
+    """Atomically write ``content`` onto ``dest``, retrying a locked replace.
+
+    The unique temp name keeps two concurrent writers from clobbering
+    each other's temp (``WinError 2``); the retry rides out a momentary
+    open handle on the destination (``WinError 5``). Best-effort — gives
+    up and cleans the temp after a few attempts.
+    """
+    tmp_path = dest.with_name(f"{dest.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp_path.write_text(content, encoding="utf-8")
+    except OSError:
+        _logger.exception("Failed to write temp for %s", dest)
+        return
+    for attempt in range(_VTT_REPLACE_ATTEMPTS):
+        try:
+            tmp_path.replace(dest)
+            return
+        except PermissionError:
+            if attempt == _VTT_REPLACE_ATTEMPTS - 1:
+                _logger.warning(
+                    "Could not replace %s after %d tries (file locked)",
+                    dest,
+                    _VTT_REPLACE_ATTEMPTS,
+                )
+            else:
+                time.sleep(_VTT_REPLACE_BACKOFF * (attempt + 1))
+        except OSError:
+            _logger.exception("Failed to replace %s", dest)
+            break
+    tmp_path.unlink(missing_ok=True)
+
+
 def _shift_webvtt_to_bucket_local(vtt_path: Path, shift_seconds: int) -> None:
     """Subtract ``shift_seconds`` from every cue timestamp in the VTT.
 
@@ -1531,12 +1572,7 @@ def _shift_webvtt_to_bucket_local(vtt_path: Path, shift_seconds: int) -> None:
         return _shift_one_timestamp(m, shift_seconds)
 
     new_content = _VTT_TIMESTAMP_RE.sub(_replace, content)
-    tmp_path = vtt_path.with_name(vtt_path.name + ".shift.tmp")
-    try:
-        tmp_path.write_text(new_content, encoding="utf-8")
-        tmp_path.replace(vtt_path)
-    except OSError:
-        _logger.exception("Failed to write shifted VTT: %s", vtt_path)
+    _atomic_write_text(vtt_path, new_content)
 
 
 _VTT_TIMESTAMP_MAP = "X-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000"
@@ -1567,12 +1603,7 @@ def _ensure_vtt_timestamp_map(vtt_path: Path) -> None:
     if "WEBVTT" not in head:
         return
     new_content = f"{head}\n{_VTT_TIMESTAMP_MAP}\n{rest}"
-    tmp_path = vtt_path.with_name(vtt_path.name + ".tsmap.tmp")
-    try:
-        tmp_path.write_text(new_content, encoding="utf-8")
-        tmp_path.replace(vtt_path)
-    except OSError:
-        _logger.exception("Failed to write VTT timestamp map: %s", vtt_path)
+    _atomic_write_text(vtt_path, new_content)
 
 
 __all__ = ["HlsService"]
