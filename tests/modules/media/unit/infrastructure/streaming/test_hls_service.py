@@ -5,7 +5,7 @@ import json
 import subprocess
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -1720,3 +1720,72 @@ class TestHlsServiceSpawnFfmpegWatcher:
 
         # wait() must not have been called from a watcher — no watcher started.
         fake_proc.wait.assert_not_called()
+
+
+class TestEnsurePlaylistSoftwareFallback:
+    """ensure_playlist retries in software when a HW (NVENC) attempt fails."""
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_falls_back_to_software_on_hw_failure(self, tmp_path: Path) -> None:
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hw_accel=HardwareAccel.NVENC),
+            cache_dir=str(tmp_path / "hls"),
+        )
+        source = tmp_path / "movie.mkv"
+        source.write_bytes(b"data")
+
+        calls: list[bool] = []
+
+        def fake_generate(_file_path, _start, _path_hash, *, force_software):
+            calls.append(force_software)
+            if not force_software:
+                msg = "FFmpeg failed (hwaccel init)"
+                raise RuntimeError(msg)
+
+        with (
+            patch.object(service, "is_complete", return_value=False),
+            patch.object(service, "_would_use_hw_transcode", return_value=True),
+            patch.object(service, "_generate_and_wait", new=AsyncMock(side_effect=fake_generate)),
+            patch(
+                "src.modules.media.infrastructure.streaming.hls_service.shutil.which",
+                return_value="ffmpeg",
+            ),
+        ):
+            result = await service.ensure_playlist(str(source), start=300)
+
+        # HW attempt first, then the software retry.
+        assert calls == [False, True]
+        assert result == service.get_path_hash(str(source), 300)
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_no_software_retry_when_not_hw_eligible(self, tmp_path: Path) -> None:
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hw_accel=HardwareAccel.OFF),
+            cache_dir=str(tmp_path / "hls"),
+        )
+        source = tmp_path / "movie.mkv"
+        source.write_bytes(b"data")
+
+        calls: list[bool] = []
+
+        def fake_generate(_file_path, _start, _path_hash, *, force_software):
+            calls.append(force_software)
+            msg = "FFmpeg failed"
+            raise RuntimeError(msg)
+
+        with (
+            patch.object(service, "is_complete", return_value=False),
+            patch.object(service, "_would_use_hw_transcode", return_value=False),
+            patch.object(service, "_generate_and_wait", new=AsyncMock(side_effect=fake_generate)),
+            patch(
+                "src.modules.media.infrastructure.streaming.hls_service.shutil.which",
+                return_value="ffmpeg",
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            await service.ensure_playlist(str(source), start=0)
+
+        # Software path failing is not retried.
+        assert calls == [False]

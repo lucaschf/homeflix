@@ -469,7 +469,55 @@ class HlsService(HlsPlaylistPort):
             msg = f"Source file not found: {file_path}"
             raise FileNotFoundError(msg)
 
-        await asyncio.to_thread(self._start_generation, file_path, start)
+        # Try the configured pipeline first; if a HW (NVENC/CUDA) attempt
+        # fails — transient GPU contention, a 10-bit profile NVDEC can't
+        # set up that moment — fall back to the proven libx264 path once
+        # instead of surfacing a 500/404 to the player. Purely additive:
+        # this only runs after the HW attempt already failed.
+        hw_eligible = self._would_use_hw_transcode(file_path, start)
+        try:
+            await self._generate_and_wait(file_path, start, path_hash, force_software=False)
+        except RuntimeError:
+            if not hw_eligible:
+                raise
+            _logger.warning(
+                "HW transcode failed for %s (start=%d) — retrying in software",
+                file_path,
+                start,
+            )
+            shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
+            self._kill_processes(path_hash)
+            await self._generate_and_wait(file_path, start, path_hash, force_software=True)
+        return path_hash
+
+    def _would_use_hw_transcode(self, file_path: str, start: int) -> bool:
+        """Whether the NVENC/CUDA pipeline would be chosen for this request.
+
+        Drives the software-fallback decision: a HW-only failure (CUDA
+        init, NVDEC capability, transient GPU contention) recovers on the
+        libx264 path, whereas a software failure would just repeat.
+        """
+        if not self._use_nvenc():
+            return False
+        if start > 0:
+            return True
+        return self._probe_video_codec(file_path) not in _BROWSER_SAFE_CODECS
+
+    async def _generate_and_wait(
+        self,
+        file_path: str,
+        start: int,
+        path_hash: str,
+        *,
+        force_software: bool,
+    ) -> None:
+        """Start generation and block until the first segments are ready.
+
+        Raises:
+            RuntimeError: if the ffmpeg process fails or no segments
+                appear within the poll timeout.
+        """
+        await asyncio.to_thread(self._start_generation, file_path, start, force_software)
 
         video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
         attempts = int(_POLL_TIMEOUT / _POLL_INTERVAL)
@@ -482,7 +530,7 @@ class HlsService(HlsPlaylistPort):
                     # so anything counted here is safe to serve.
                     extinf_count = content.count("#EXTINF:")
                     if extinf_count >= _MIN_SEGMENTS_FRESH:
-                        return path_hash
+                        return
                 except OSError:
                     pass
 
@@ -613,7 +661,9 @@ class HlsService(HlsPlaylistPort):
 
     # -- Private: generation ---------------------------------------------------
 
-    def _start_generation(self, file_path: str, start: int = 0) -> str:
+    def _start_generation(
+        self, file_path: str, start: int = 0, force_software: bool = False
+    ) -> str:
         """Start all FFmpeg processes for multi-track HLS generation.
 
         Transcodes from the exact ``start`` second into a bucket keyed
@@ -625,6 +675,8 @@ class HlsService(HlsPlaylistPort):
         Args:
             file_path: Absolute path to the source video file.
             start: Source-time second to begin the encode at.
+            force_software: Skip the NVENC pipeline and encode with
+                libx264 — the fallback used after a HW attempt fails.
         """
         source = self._validate_source(file_path)
         safe_path = str(source)
@@ -682,7 +734,9 @@ class HlsService(HlsPlaylistPort):
             video_dir = output_dir / _VIDEO_DIR
             video_dir.mkdir()
             cmd = with_ffmpeg_threads(
-                self._build_video_cmd(safe_path, video_dir, probe_result, bucket_start),
+                self._build_video_cmd(
+                    safe_path, video_dir, probe_result, bucket_start, force_software
+                ),
                 ffmpeg_threads,
             )
             _logger.info("Starting video HLS for %s (offset=%ds)", safe_path, bucket_start)
@@ -899,6 +953,7 @@ class HlsService(HlsPlaylistPort):
         output_dir: Path,
         probe: ProbeResult,
         start: int = 0,
+        force_software: bool = False,
     ) -> list[str]:
         """Build FFmpeg command for video + default audio.
 
@@ -941,7 +996,7 @@ class HlsService(HlsPlaylistPort):
         hwaccel_input_args: list[str] = []
         vf_args: list[str] = []
 
-        if needs_transcode and self._use_nvenc():
+        if needs_transcode and self._use_nvenc() and not force_software:
             _logger.info("Source codec %s — transcoding via NVENC (start=%d)", codec, start)
             # Full-GPU pipeline: NVDEC decode → scale_cuda (10→8 bit in
             # VRAM) → NVENC encode. ``spatial_aq`` redistributes bits to
