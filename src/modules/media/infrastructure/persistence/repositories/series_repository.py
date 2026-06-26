@@ -417,6 +417,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         cursor: str | None,
         limit: int,
         *,
+        lang: str = "en",
         allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Series]:
         """List series for a single genre, paginated and sorted by title.
@@ -436,6 +437,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             genre=genre,
             cursor=cursor,
             limit=limit,
+            lang=lang,
             allowed_library_ids=allowed_library_ids,
         )
 

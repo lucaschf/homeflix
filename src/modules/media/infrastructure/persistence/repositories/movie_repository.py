@@ -35,6 +35,8 @@ from src.modules.media.infrastructure.persistence.models import (
 from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
     fetch_genre_paginated_page,
     fetch_genre_rows,
+    localized_title_for,
+    localized_title_sort_key,
 )
 from src.modules.media.infrastructure.persistence.repositories._path_prefix_helpers import (
     build_path_prefix_filters,
@@ -363,15 +365,16 @@ class SQLAlchemyMovieRepository(MovieRepository):
         cursor: str | None,
         limit: int,
         *,
+        lang: str = "en",
         allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies for a single genre, paginated and sorted by title.
 
         Delegates the SQL boilerplate (delimited LIKE filter,
-        ``LOWER(title)`` cursor, fetch N+1 trick, per-item cursor
-        population) to the shared ``fetch_genre_paginated_page``
-        helper so this method and its series counterpart can't drift
-        apart.
+        localized ``LOWER(COALESCE(localized[lang].title, title))``
+        cursor, fetch N+1 trick, per-item cursor population) to the
+        shared ``fetch_genre_paginated_page`` helper so this method and
+        its series counterpart can't drift apart.
         """
         return await fetch_genre_paginated_page(
             session=self._session,
@@ -381,6 +384,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             genre=genre,
             cursor=cursor,
             limit=limit,
+            lang=lang,
             allowed_library_ids=allowed_library_ids,
         )
 
@@ -390,6 +394,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         cursor: str | None,
         limit: int,
         *,
+        lang: str = "en",
         allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies whose ``cast`` JSON contains an entry for ``actor_name``.
@@ -425,7 +430,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         # of ``name_json``.
         needle_escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
-        title_lower = func.lower(MovieModel.title)
+        title_lower = localized_title_sort_key(MovieModel, lang)
 
         stmt = (
             select(MovieModel)
@@ -461,7 +466,10 @@ class SQLAlchemyMovieRepository(MovieRepository):
 
         next_cursor: str | None = None
         if has_more and rows:
-            next_cursor = encode_title_cursor(rows[-1].title, rows[-1].id)
+            next_cursor = encode_title_cursor(
+                localized_title_for(rows[-1].localized, rows[-1].title, lang),
+                rows[-1].id,
+            )
 
         return PaginatedResult(
             items=[MovieMapper.to_entity(m) for m in rows],

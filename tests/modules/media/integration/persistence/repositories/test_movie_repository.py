@@ -1482,3 +1482,64 @@ class TestFindNeedsEnrichmentReview:
         result = await repo.find_needs_enrichment_review()
 
         assert result == []
+
+
+@pytest.mark.integration
+class TestLocalizedGenreOrdering:
+    """``list_paginated_by_genre`` orders by the localized title for ``lang``."""
+
+    async def test_orders_by_localized_title(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        # English order: "Apple" < "Zebra".
+        # pt-BR order is the opposite: "Abelha" (Zebra) < "Zztop" (Apple).
+        zebra = _create_movie(
+            title="Zebra",
+            file_path="/movies/zebra.mkv",
+            genres=[Genre("Action")],
+            localized={"pt-BR": {"title": "Abelha"}},
+        )
+        apple = _create_movie(
+            title="Apple",
+            file_path="/movies/apple.mkv",
+            genres=[Genre("Action")],
+            localized={"pt-BR": {"title": "Zztop"}},
+        )
+        await repo.save(zebra)
+        await repo.save(apple)
+
+        en_page = await repo.list_paginated_by_genre(
+            Genre("Action"), cursor=None, limit=10, lang="en"
+        )
+        pt_page = await repo.list_paginated_by_genre(
+            Genre("Action"), cursor=None, limit=10, lang="pt-BR"
+        )
+
+        assert [m.title.value for m in en_page.items] == ["Apple", "Zebra"]
+        # pt-BR reverses the order via the localized titles.
+        assert [m.title.value for m in pt_page.items] == ["Zebra", "Apple"]
+
+    async def test_falls_back_to_base_title_when_locale_missing(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        # Only one movie has a pt-BR title; the other falls back to base.
+        beta = _create_movie(
+            title="Beta",
+            file_path="/movies/beta.mkv",
+            genres=[Genre("Drama")],
+        )
+        alpha = _create_movie(
+            title="Zeta",
+            file_path="/movies/zeta.mkv",
+            genres=[Genre("Drama")],
+            localized={"pt-BR": {"title": "Alfa"}},
+        )
+        await repo.save(beta)
+        await repo.save(alpha)
+
+        pt_page = await repo.list_paginated_by_genre(
+            Genre("Drama"), cursor=None, limit=10, lang="pt-BR"
+        )
+
+        # "Alfa" (localized) < "Beta" (base fallback).
+        assert [m.title.value for m in pt_page.items] == ["Zeta", "Beta"]
