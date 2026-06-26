@@ -6,7 +6,7 @@ from src.modules.collections.application.dtos import (
     GetWatchlistInput,
     WatchlistItemOutput,
 )
-from src.modules.collections.application.ports import MediaLookupPort
+from src.modules.collections.application.ports import MediaLookupPort, ProgressLookupPort
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
 from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
@@ -31,15 +31,18 @@ class GetWatchlistUseCase:
         self,
         uow_factory: CollectionsUnitOfWorkFactory,
         media_lookup: MediaLookupPort,
+        progress_lookup: ProgressLookupPort,
     ) -> None:
         """Initialize the use case.
 
         Args:
             uow_factory: Factory that opens a fresh collections Unit of Work.
             media_lookup: Port for resolving media display metadata.
+            progress_lookup: Port for resolving the caller's watch progress.
         """
         self._uow_factory = uow_factory
         self._media_lookup = media_lookup
+        self._progress_lookup = progress_lookup
 
     async def execute(self, input_dto: GetWatchlistInput) -> list[WatchlistItemOutput]:
         """Execute the use case.
@@ -63,13 +66,26 @@ class GetWatchlistUseCase:
 
         summaries = await self._media_lookup.get_many(movie_ids, series_ids, input_dto.lang)
 
+        # Progress only exists for movies (series progress lives on
+        # episodes — deferred), so look up movie ids only.
+        movie_id_strs = [i.media_id.value for i in items if i.media_type == MediaType.MOVIE]
+        progress = await self._progress_lookup.get_progress(
+            movie_id_strs, profile_id=input_dto.profile_id
+        )
+
         result: list[WatchlistItemOutput] = []
         for item in items:
             summary = summaries.get((item.media_type, item.media_id.value))
             if summary is None:
                 _logger.warning("Could not find media for watchlist item: %s", item.media_id)
                 continue
-            result.append(WatchlistItemOutput.from_entity(entity=item, summary=summary))
+            result.append(
+                WatchlistItemOutput.from_entity(
+                    entity=item,
+                    summary=summary,
+                    progress=progress.get(item.media_id.value),
+                )
+            )
 
         return result
 

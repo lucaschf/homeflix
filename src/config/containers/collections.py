@@ -14,7 +14,7 @@ from src.modules.collections.application.use_cases import (
     RenameCustomListUseCase,
     ToggleWatchlistUseCase,
 )
-from src.modules.collections.infrastructure.acl import MediaLookupAdapter
+from src.modules.collections.infrastructure.acl import MediaLookupAdapter, ProgressLookupAdapter
 from src.modules.collections.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyCollectionsUnitOfWorkFactory,
 )
@@ -23,8 +23,9 @@ from src.modules.collections.infrastructure.persistence.sqlalchemy_unit_of_work 
 class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     """Container for Collections bounded context dependencies.
 
-    The ``session_factory`` and ``media_uow_factory`` dependencies must
-    be wired from the parent container.
+    The ``session_factory``, ``media_uow_factory`` and
+    ``watch_progress_uow_factory`` dependencies must be wired from the
+    parent container.
     """
 
     session_factory = providers.Dependency()
@@ -32,6 +33,10 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
     # short-lived Media transactions. Use cases only see
     # ``MediaLookupPort``.
     media_uow_factory = providers.Dependency()
+    # Watch Progress UoW factory — the progress ACL adapter opens its
+    # own short-lived transactions. Use cases only see
+    # ``ProgressLookupPort``.
+    watch_progress_uow_factory = providers.Dependency()
 
     # =========================================================================
     # Unit of Work
@@ -51,6 +56,11 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
         media_uow_factory=media_uow_factory,
     )
 
+    progress_lookup = providers.Factory(
+        ProgressLookupAdapter,
+        watch_progress_uow_factory=watch_progress_uow_factory,
+    )
+
     # =========================================================================
     # Watchlist Use Cases
     # =========================================================================
@@ -64,6 +74,7 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
         GetWatchlistUseCase,
         uow_factory=collections_unit_of_work_factory,
         media_lookup=media_lookup,
+        progress_lookup=progress_lookup,
     )
 
     check_watchlist = providers.Factory(
@@ -109,4 +120,5 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
         GetCustomListItemsUseCase,
         uow_factory=collections_unit_of_work_factory,
         media_lookup=media_lookup,
+        progress_lookup=progress_lookup,
     )

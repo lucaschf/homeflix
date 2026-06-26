@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from tests.modules.collections.unit.application.use_cases.conftest import (
     make_media_lookup_mock,
+    make_progress_lookup_mock,
 )
 from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
@@ -55,6 +56,7 @@ class TestGetWatchlistUseCase:
         use_case = GetWatchlistUseCase(
             uow_factory=mocks.factory,
             media_lookup=media_lookup,
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         result = await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value))
@@ -78,7 +80,11 @@ class TestGetWatchlistUseCase:
         mocks.watchlist.list_all.return_value = items
         media_lookup = make_media_lookup_mock(movie_summary("mov_abc123def456"))
 
-        use_case = GetWatchlistUseCase(uow_factory=mocks.factory, media_lookup=media_lookup)
+        use_case = GetWatchlistUseCase(
+            uow_factory=mocks.factory,
+            media_lookup=media_lookup,
+            progress_lookup=make_progress_lookup_mock(),
+        )
 
         out = (await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value)))[0]
 
@@ -89,12 +95,37 @@ class TestGetWatchlistUseCase:
         assert out.hdr is True
 
     @pytest.mark.asyncio
+    async def test_should_attach_progress_for_movies(
+        self, movie_summary: MediaSummaryFactory
+    ) -> None:
+        items = [
+            WatchlistItem.create(
+                profile_id=_PROFILE_ID,
+                media_id="mov_abc123def456",
+                media_type=MediaType.MOVIE,
+            ),
+        ]
+        mocks = make_collections_uow_mock()
+        mocks.watchlist.list_all.return_value = items
+
+        use_case = GetWatchlistUseCase(
+            uow_factory=mocks.factory,
+            media_lookup=make_media_lookup_mock(movie_summary("mov_abc123def456")),
+            progress_lookup=make_progress_lookup_mock({"mov_abc123def456": 0.42}),
+        )
+
+        out = (await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value)))[0]
+
+        assert out.progress == 0.42
+
+    @pytest.mark.asyncio
     async def test_should_return_empty_list_when_no_items(self) -> None:
         mocks = make_collections_uow_mock()
         mocks.watchlist.list_all.return_value = []
         use_case = GetWatchlistUseCase(
             uow_factory=mocks.factory,
             media_lookup=AsyncMock(spec=MediaLookupPort),
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         result = await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value))
@@ -116,6 +147,7 @@ class TestGetWatchlistUseCase:
         use_case = GetWatchlistUseCase(
             uow_factory=mocks.factory,
             media_lookup=make_media_lookup_mock(),  # no summaries
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         result = await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value))
@@ -151,6 +183,7 @@ class TestGetWatchlistUseCase:
         use_case = GetWatchlistUseCase(
             uow_factory=mocks.factory,
             media_lookup=media_lookup,
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         result = await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value))
@@ -166,6 +199,7 @@ class TestGetWatchlistUseCase:
         use_case = GetWatchlistUseCase(
             uow_factory=mocks.factory,
             media_lookup=AsyncMock(spec=MediaLookupPort),
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value, limit=25))
@@ -191,6 +225,7 @@ class TestGetWatchlistUseCase:
         use_case = GetWatchlistUseCase(
             uow_factory=mocks.factory,
             media_lookup=media_lookup,
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         await use_case.execute(GetWatchlistInput(profile_id=_PROFILE_ID.value, lang="pt-BR"))

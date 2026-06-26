@@ -3,5 +3,8 @@
 from src.modules.collections.infrastructure.acl.media_lookup_adapter import (
     MediaLookupAdapter,
 )
+from src.modules.collections.infrastructure.acl.progress_lookup_adapter import (
+    ProgressLookupAdapter,
+)
 
-__all__ = ["MediaLookupAdapter"]
+__all__ = ["MediaLookupAdapter", "ProgressLookupAdapter"]

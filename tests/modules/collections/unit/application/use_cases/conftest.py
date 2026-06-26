@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.modules.collections.application.ports import MediaLookupPort, MediaSummary
+from src.modules.collections.application.ports import (
+    MediaLookupPort,
+    MediaSummary,
+    ProgressLookupPort,
+)
 from src.shared_kernel.value_objects import MediaType
 
 MediaSummaryFactory = Callable[..., MediaSummary]
@@ -67,4 +71,11 @@ def make_media_lookup_mock(*summaries: MediaSummary) -> AsyncMock:
     """Build an ``AsyncMock`` of ``MediaLookupPort`` returning ``summaries``."""
     mock = AsyncMock(spec=MediaLookupPort)
     mock.get_many.return_value = {(s.media_type, s.media_id): s for s in summaries}
+    return mock
+
+
+def make_progress_lookup_mock(progress: dict[str, float] | None = None) -> AsyncMock:
+    """Build an ``AsyncMock`` of ``ProgressLookupPort`` returning ``progress``."""
+    mock = AsyncMock(spec=ProgressLookupPort)
+    mock.get_progress.return_value = progress or {}
     return mock
