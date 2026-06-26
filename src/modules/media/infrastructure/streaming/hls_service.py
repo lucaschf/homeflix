@@ -90,6 +90,11 @@ _EVICTION_INTERVAL = 10.0
 
 _VIDEO_DIR = "video"
 
+# Prefix marking a bucket dir that has been renamed out of the live cache
+# path and is awaiting deletion. The eviction scan skips (and retries
+# cleaning) these so they are never mistaken for a real bucket.
+_EVICTING_PREFIX = ".evicting-"
+
 # Wall-clock cap for the one-time NVENC functional probe. Deliberately
 # generous: the probe is the process's first CUDA call, so it absorbs the
 # cold driver / context init, which was measured at ~20s on a cold but
@@ -273,6 +278,11 @@ class HlsService(HlsPlaylistPort):
         for entry in self._cache_dir.iterdir():
             if not entry.is_dir():
                 continue
+            if entry.name.startswith(_EVICTING_PREFIX):
+                # Leftover from a prior cleanup whose delete was blocked
+                # (locked file). Retry it now and never count it as a bucket.
+                shutil.rmtree(entry, ignore_errors=True)
+                continue
             path_hash = entry.name
             size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
             total_size += size
@@ -301,12 +311,53 @@ class HlsService(HlsPlaylistPort):
                 path_hash,
                 size / (1024 * 1024),
             )
-            shutil.rmtree(bucket_path, ignore_errors=True)
+            if not self._remove_bucket_dir(bucket_path):
+                # A locked file blocked the atomic rename — the bucket is
+                # still fully intact. Leave it and retry next sweep rather
+                # than risk a partial delete; the cache stays briefly over
+                # budget, which is harmless.
+                continue
             with self._lock:
                 self._last_access.pop(path_hash, None)
             total_size -= size
             evicted.append(path_hash)
         return evicted
+
+    def _remove_bucket_dir(self, bucket_path: Path) -> bool:
+        """Remove a bucket directory without ever exposing a partial state.
+
+        Renames the bucket out of the live cache path in a single atomic
+        ``rename`` and only then deletes the renamed copy best-effort. A
+        reader therefore sees the bucket either fully present or fully
+        gone — never half-deleted. This is what closes the whole class of
+        partial-eviction zombies: a momentarily locked file (an AV scan
+        or the Windows indexer holding a segment) can no longer strand a
+        bucket with, say, its ``master.m3u8`` deleted but its nested
+        playlists intact, a state ``ensure_playlist`` would treat as
+        complete and then 404 on forever.
+
+        Args:
+            bucket_path: The live bucket directory to remove.
+
+        Returns:
+            ``True`` if the bucket left the live path (rename succeeded,
+            or it was already gone); ``False`` if a lock blocked the
+            rename and the bucket is still fully intact — the caller
+            should treat that as "not evicted" and retry on a later sweep.
+        """
+        if not bucket_path.exists():
+            return True
+        trash = bucket_path.with_name(f"{_EVICTING_PREFIX}{bucket_path.name}")
+        # A leftover trash dir from a previous blocked cleanup would make
+        # the rename target already exist; clear it first (best-effort).
+        if trash.exists():
+            shutil.rmtree(trash, ignore_errors=True)
+        try:
+            bucket_path.rename(trash)
+        except OSError:
+            return False
+        shutil.rmtree(trash, ignore_errors=True)
+        return True
 
     # -- Public API ------------------------------------------------------------
 
@@ -372,6 +423,21 @@ class HlsService(HlsPlaylistPort):
         nested_video_dir = bucket / _VIDEO_DIR
         if flat.is_file() and not nested_video_dir.is_dir():
             return _has_endlist(flat)
+
+        # The bucket is only reusable if the root master.m3u8 that
+        # get_master_playlist actually serves is present and non-empty.
+        # Without this guard a bucket whose nested playlists are sealed
+        # but whose master was lost — e.g. a partial rmtree that skipped
+        # a momentarily-locked file during LRU eviction — looks
+        # "complete", short-circuits regeneration in ensure_playlist, and
+        # then 404s forever on the missing master. Treating it as
+        # incomplete makes the next request regenerate and self-heal.
+        master = bucket / "master.m3u8"
+        try:
+            if not master.is_file() or master.stat().st_size == 0:
+                return False
+        except OSError:
+            return False
 
         playlists = list(bucket.glob("*/playlist.m3u8"))
         if not playlists:
