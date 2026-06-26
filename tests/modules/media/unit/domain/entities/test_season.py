@@ -345,3 +345,37 @@ class TestSeasonImmutability:
         result = season.with_episode(episode)
 
         assert result is season
+
+
+class TestSeasonLocalization:
+    """Tests for ``Season.get_title`` / ``get_synopsis`` per-language fallback."""
+
+    def _season(self, **kwargs):
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId, Title
+
+        defaults: dict[str, object] = {
+            "series_id": SeriesId.generate(),
+            "season_number": 1,
+            "title": Title("Season 1"),
+            "synopsis": "The first season.",
+            "localized": {
+                "pt-BR": {"title": "Temporada 1", "synopsis": "A primeira temporada."},
+            },
+        }
+        defaults.update(kwargs)
+        return Season(**defaults)
+
+    def test_returns_localized_when_lang_has_it(self):
+        season = self._season()
+        assert season.get_title("pt-BR") == "Temporada 1"
+        assert season.get_synopsis("pt-BR") == "A primeira temporada."
+
+    def test_falls_back_to_english_when_lang_missing(self):
+        season = self._season()
+        assert season.get_title("es") == "Season 1"
+        assert season.get_synopsis("es") == "The first season."
+
+    def test_title_none_when_no_base_and_no_override(self):
+        season = self._season(title=None, localized={})
+        assert season.get_title("pt-BR") is None

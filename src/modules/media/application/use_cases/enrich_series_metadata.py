@@ -19,6 +19,7 @@ from src.modules.media.application.ports import (
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._localized_metadata_helpers import (
+    build_localized_text,
     merge_localized_metadata,
 )
 from src.modules.media.domain.entities import Episode, Season, Series
@@ -298,6 +299,9 @@ def _apply_season_metadata(season: Season, meta: SeasonMetadata, *, force: bool 
         parsed = _parse_date(meta.air_date)
         if parsed:
             updates["air_date"] = AirDate(parsed)
+    season_localized = build_localized_text(meta.localized, season.localized, force=force)
+    if season_localized is not None:
+        updates["localized"] = season_localized
 
     if updates:
         season = season.with_updates(**updates)
@@ -401,10 +405,45 @@ def _apply_multi_episode_metadata(
         if parsed:
             updates["air_date"] = AirDate(parsed)
 
+    combined_localized = _combine_localized_segments(present, episode.localized, force=force)
+    if combined_localized is not None:
+        updates["localized"] = combined_localized
+
     if updates:
         episode = episode.with_updates(**updates)
 
     return episode
+
+
+def _combine_localized_segments(
+    present: list[EpisodeMetadata],
+    existing: dict[str, dict[str, Any]],
+    *,
+    force: bool,
+) -> dict[str, dict[str, Any]] | None:
+    """Combine per-locale title/synopsis across a multi-segment file's episodes.
+
+    Mirrors the English combine (titles joined with `` / ``, synopses
+    with `` ◆ ``) per locale so a translated multi-segment file keeps
+    its localized text. Returns ``None`` when no locale has data.
+    """
+    locales = {loc for m in present for loc in m.localized}
+    combined: dict[str, dict[str, Any]] = {}
+    for loc in locales:
+        segments = [m.localized[loc] for m in present if loc in m.localized]
+        titles = [s.title for s in segments if s.title]
+        synopses = [s.synopsis for s in segments if s.synopsis]
+        entry: dict[str, Any] = {}
+        if titles:
+            entry["title"] = " / ".join(titles)
+        if synopses:
+            entry["synopsis"] = " ◆ ".join(synopses)
+        if entry:
+            combined[loc] = entry
+
+    if not combined:
+        return None
+    return combined if force else {**existing, **combined}
 
 
 def _apply_episode_metadata(
@@ -431,6 +470,9 @@ def _apply_episode_metadata(
         updates["duration"] = Duration(meta.duration_seconds)
     if meta.still_url and (force or not episode.thumbnail_path):
         updates["thumbnail_path"] = ImageUrl(meta.still_url)
+    episode_localized = build_localized_text(meta.localized, episode.localized, force=force)
+    if episode_localized is not None:
+        updates["localized"] = episode_localized
 
     if updates:
         episode = episode.with_updates(**updates)

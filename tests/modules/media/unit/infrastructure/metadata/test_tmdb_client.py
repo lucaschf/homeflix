@@ -999,12 +999,12 @@ class TestGetSeriesLocalized:
             "overview": "Série brasileira localizada.",
             "genres": [{"name": "Drama BR"}],
         }
-        # Logos come bundled in details now — no extra ``/images`` calls.
+        # Series base carries no seasons here so the flow stays focused on
+        # series-level localization (season fan-out is covered separately).
         client = _make_client(
             get_responses=[
-                _build_response(json_data=_series_details()),  # series details (with images)
-                _build_response(json_data=_season_details()),  # season fetch
-                _build_response(json_data=pt_data),  # pt-BR details (with images)
+                _build_response(json_data={**_series_details(), "seasons": []}),  # series base
+                _build_response(json_data=pt_data),  # series-level pt-BR overlay
             ]
         )
 
@@ -1018,9 +1018,8 @@ class TestGetSeriesLocalized:
     async def test_should_return_en_only_when_pt_fails(self) -> None:
         client = _make_client(
             get_responses=[
-                _build_response(json_data=_series_details()),  # series details
-                _build_response(json_data=_season_details()),  # season fetch
-                _build_response(status_code=404),  # pt-BR details (fails)
+                _build_response(json_data={**_series_details(), "seasons": []}),  # series base
+                _build_response(status_code=404),  # series-level pt-BR overlay (fails)
             ]
         )
 
@@ -1119,13 +1118,13 @@ class TestLocalizedSupportedLocales:
 
     @pytest.mark.asyncio
     async def test_series_overlays_every_non_english_locale(self) -> None:
+        # Seasonless series base keeps the flow on series-level overlays.
         client = self._client_with_locales(
             ("en", "pt-BR", "es-ES"),
             [
-                _build_response(json_data=_series_details()),  # series base
-                _build_response(json_data=_season_details()),  # season fetch
-                _build_response(json_data={"name": "BB BR", "overview": "PT"}),  # pt-BR
-                _build_response(json_data={"name": "BB ES", "overview": "ES"}),  # es-ES
+                _build_response(json_data={**_series_details(), "seasons": []}),  # series base
+                _build_response(json_data={"name": "BB BR", "overview": "PT"}),  # pt-BR overlay
+                _build_response(json_data={"name": "BB ES", "overview": "ES"}),  # es-ES overlay
             ],
         )
 
@@ -1134,6 +1133,58 @@ class TestLocalizedSupportedLocales:
         assert result is not None
         assert set(result.localized) == {"pt-BR", "es-ES"}
         assert result.localized["es-ES"].synopsis == "ES"
+
+
+@pytest.mark.unit
+class TestSeasonEpisodeLocalization:
+    """``_fetch_season`` overlays per-locale season + episode title/synopsis."""
+
+    @pytest.mark.asyncio
+    async def test_season_and_episode_carry_localized_text(self) -> None:
+        season_ptbr = {
+            "name": "Temporada 1",
+            "overview": "Visão geral em português.",
+            "episodes": [
+                {"episode_number": 1, "name": "Piloto", "overview": "Walter começa."},
+            ],
+        }
+        client = _make_client(
+            get_responses=[
+                _build_response(json_data=_series_details()),  # series base (1 season)
+                _build_response(json_data=_season_details()),  # season English base
+                _build_response(json_data=season_ptbr),  # season pt-BR overlay
+                _build_response(json_data={"name": "BB BR"}),  # series-level pt-BR overlay
+            ]
+        )
+
+        result = await client.get_series_localized(1396)
+
+        assert result is not None
+        season = result.seasons[0]
+        assert season.localized["pt-BR"].title == "Temporada 1"
+        assert season.localized["pt-BR"].synopsis == "Visão geral em português."
+        episode = season.episodes[0]
+        assert episode.title == "Pilot"  # English base preserved
+        assert episode.localized["pt-BR"].title == "Piloto"
+        assert episode.localized["pt-BR"].synopsis == "Walter começa."
+
+    @pytest.mark.asyncio
+    async def test_season_locale_overlay_failure_is_skipped(self) -> None:
+        client = _make_client(
+            get_responses=[
+                _build_response(json_data=_series_details()),  # series base
+                _build_response(json_data=_season_details()),  # season English base
+                _build_response(status_code=500),  # season pt-BR overlay fails
+                _build_response(json_data={"name": "BB BR"}),  # series-level pt-BR overlay
+            ]
+        )
+
+        result = await client.get_series_localized(1396)
+
+        assert result is not None
+        season = result.seasons[0]
+        assert season.localized == {}
+        assert season.episodes[0].localized == {}
 
 
 @pytest.mark.unit

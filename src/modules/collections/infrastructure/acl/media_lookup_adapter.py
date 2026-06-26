@@ -42,7 +42,7 @@ class MediaLookupAdapter(MediaLookupPort):
                         media_id=media_id,
                         media_type=MediaType.MOVIE,
                         title=movie.get_title(lang),
-                        poster_path=movie.poster_path.value if movie.poster_path else None,
+                        poster_path=movie.get_poster_path(lang),
                         year=movie.year.value,
                         runtime_seconds=movie.duration.value or None,
                         genres=tuple(movie.get_genres(lang)),
@@ -60,7 +60,7 @@ class MediaLookupAdapter(MediaLookupPort):
                         media_id=media_id,
                         media_type=MediaType.SERIES,
                         title=series.get_title(lang),
-                        poster_path=series.poster_path.value if series.poster_path else None,
+                        poster_path=series.get_poster_path(lang),
                         year=series.start_year.value,
                         genres=tuple(series.get_genres(lang)),
                     )
