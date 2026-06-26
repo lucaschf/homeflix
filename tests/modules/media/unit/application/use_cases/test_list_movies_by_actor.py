@@ -83,6 +83,7 @@ class TestListMoviesByActorUseCase:
             actor_name="Sigourney Weaver",
             cursor=None,
             limit=20,
+            lang="en",
             allowed_library_ids=[_LIBRARY_ID],
         )
 
@@ -108,6 +109,7 @@ class TestListMoviesByActorUseCase:
             actor_name="Sigourney Weaver",
             cursor="abc123",
             limit=15,
+            lang="en",
             allowed_library_ids=[_LIBRARY_ID],
         )
 

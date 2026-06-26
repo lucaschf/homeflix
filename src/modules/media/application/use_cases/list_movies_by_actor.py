@@ -98,6 +98,7 @@ class ListMoviesByActorUseCase:
                 actor_name=input_dto.actor_name,
                 cursor=input_dto.cursor,
                 limit=input_dto.limit,
+                lang=input_dto.lang,
                 allowed_library_ids=allowed,
             )
 

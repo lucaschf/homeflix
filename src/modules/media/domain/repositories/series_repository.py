@@ -216,11 +216,13 @@ class SeriesRepository(ABC):
         cursor: str | None,
         limit: int,
         *,
+        lang: str = "en",
         allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Series]:
         """List series belonging to a specific genre, paginated.
 
-        Sorted by ``(LOWER(title) ASC, id ASC)``. Same contract as
+        Sorted by ``(LOWER(COALESCE(localized[lang].title, title)) ASC,
+        id ASC)``. Same contract as
         ``MovieRepository.list_paginated_by_genre`` — see that method
         for the full description of the cursor format and the genre
         filter (whole-word LIKE on the comma-separated ``genres``

@@ -20,6 +20,7 @@ the column format changes.
 """
 
 import json
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, TypeVar
 
@@ -50,6 +51,41 @@ def split_genres(raw: str | None) -> list[str]:
     if not raw:
         return []
     return [g.strip() for g in raw.split(",") if g.strip()]
+
+
+def localized_title_sort_key(model: Any, lang: str) -> Any:
+    """SQL sort key ``LOWER(COALESCE(localized[lang].title, title))``.
+
+    Orders a title listing by the localized title when the requested
+    language has one, falling back to the canonical (English base)
+    ``title`` column. ``lang`` is sanitized to ``[A-Za-z-]`` before
+    going into the JSON path; it binds as a parameter, so a stray
+    character can only yield a ``NULL`` extraction (→ fallback), never
+    SQL injection. SQLite-specific (``json_extract``) — consistent with
+    the FTS5 coupling already in the search path.
+    """
+    safe_lang = re.sub(r"[^A-Za-z-]", "", lang)
+    localized_title = func.json_extract(model.localized, f'$."{safe_lang}".title')
+    return func.lower(func.coalesce(localized_title, model.title))
+
+
+def localized_title_for(localized_json: str | None, base_title: str, lang: str) -> str:
+    """Python mirror of ``COALESCE(localized[lang].title, title)``.
+
+    Used to build the title cursor from a fetched row so the encoded
+    value matches the SQL ``ORDER BY`` key. Returns the localized title
+    when present and non-empty, otherwise ``base_title``.
+    """
+    if localized_json:
+        try:
+            data = json.loads(localized_json)
+        except (TypeError, ValueError):
+            data = None
+        if isinstance(data, dict):
+            block = data.get(lang)
+            if isinstance(block, dict) and block.get("title"):
+                return str(block["title"])
+    return base_title
 
 
 def localized_genres_for(localized_json: str | None, lang: str) -> list[str]:
@@ -125,6 +161,7 @@ async def fetch_genre_paginated_page(
     genre: Genre,
     cursor: str | None,
     limit: int,
+    lang: str = "en",
     allowed_library_ids: Sequence[LibraryId] | None = None,
 ) -> PaginatedResult[TEntity]:
     """Run one page of the title-sorted by-genre listing for ``model``.
@@ -153,6 +190,8 @@ async def fetch_genre_paginated_page(
             fall back to the first page.
         limit: Page size. The query fetches ``limit + 1`` rows and
             trims the sentinel.
+        lang: Language whose localized title drives the sort order
+            (falls back to the canonical ``title`` when absent).
         allowed_library_ids: Optional per-profile ACL filter. When
             non-``None``, rows are restricted to those whose
             ``library_id`` is in the supplied set. ``None`` (default)
@@ -169,7 +208,7 @@ async def fetch_genre_paginated_page(
     # "Action Adventure". The matching pattern wraps the genre value
     # the same way.
     delimited_genres = func.concat(",", func.coalesce(model.genres, ""), ",")
-    title_lower = func.lower(model.title)
+    title_lower = localized_title_sort_key(model, lang)
 
     stmt = (
         select(model)
@@ -209,7 +248,10 @@ async def fetch_genre_paginated_page(
     # Per-item cursor list — the catalog by-genre use case may
     # consume only a prefix of this page after merging with the
     # other media stream, so each item carries its own resume token.
-    item_cursors = [encode_title_cursor(row.title, row.id) for row in rows]
+    item_cursors = [
+        encode_title_cursor(localized_title_for(row.localized, row.title, lang), row.id)
+        for row in rows
+    ]
 
     next_cursor: str | None = None
     if has_more and rows:
@@ -227,5 +269,7 @@ __all__ = [
     "fetch_genre_paginated_page",
     "fetch_genre_rows",
     "localized_genres_for",
+    "localized_title_for",
+    "localized_title_sort_key",
     "split_genres",
 ]

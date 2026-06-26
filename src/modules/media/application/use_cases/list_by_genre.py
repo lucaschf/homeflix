@@ -128,6 +128,7 @@ class ListByGenreUseCase:
             decoded=decoded,
             limit=input_dto.limit,
             media_type=input_dto.media_type,
+            lang=input_dto.lang,
             allowed_library_ids=allowed,
         )
 
@@ -140,11 +141,17 @@ class ListByGenreUseCase:
             _MergedItem(kind=MediaType.SERIES, source_index=index, entity=item)
             for index, item in enumerate(series_page.items)
         ]
-        # Sort by (lowercase title, source index) — the source index
-        # tie-breaker matches the SQL `(LOWER(title), id) ASC` order
-        # within each stream and gives a stable cross-stream order
-        # when two rows share a title.
-        tagged.sort(key=lambda mi: (mi.entity.title.value.lower(), mi.source_index))
+        # Sort by (lowercase localized title, source index) — the source
+        # index tie-breaker matches the SQL
+        # `(LOWER(COALESCE(localized[lang].title, title)), id) ASC` order
+        # within each stream and gives a stable cross-stream order when
+        # two rows share a title.
+        tagged.sort(
+            key=lambda mi: (
+                (mi.entity.get_title(input_dto.lang) or "").lower(),
+                mi.source_index,
+            )
+        )
 
         page_items = tagged[: input_dto.limit]
 
@@ -190,6 +197,7 @@ class ListByGenreUseCase:
         decoded: DualCursorValue,
         limit: int,
         media_type: MediaType | None,
+        lang: str,
         allowed_library_ids: Sequence[LibraryId],
     ) -> tuple[PaginatedResult[Movie], PaginatedResult[Series]]:
         """Fetch the movie and series pages, honoring the media-type filter.
@@ -210,6 +218,7 @@ class ListByGenreUseCase:
                     genre=genre,
                     cursor=decoded.movies,
                     limit=limit,
+                    lang=lang,
                     allowed_library_ids=allowed_library_ids,
                 )
             return movies_page, _empty_page(Series)
@@ -219,6 +228,7 @@ class ListByGenreUseCase:
                     genre=genre,
                     cursor=decoded.series,
                     limit=limit,
+                    lang=lang,
                     allowed_library_ids=allowed_library_ids,
                 )
             return _empty_page(Movie), series_page
@@ -227,12 +237,14 @@ class ListByGenreUseCase:
                 genre=genre,
                 cursor=decoded.movies,
                 limit=limit,
+                lang=lang,
                 allowed_library_ids=allowed_library_ids,
             ),
             self._fetch_series_page(
                 genre=genre,
                 cursor=decoded.series,
                 limit=limit,
+                lang=lang,
                 allowed_library_ids=allowed_library_ids,
             ),
         )
@@ -243,6 +255,7 @@ class ListByGenreUseCase:
         genre: Genre,
         cursor: str | None,
         limit: int,
+        lang: str,
         allowed_library_ids: Sequence[LibraryId],
     ) -> PaginatedResult[Movie]:
         async with self._uow_factory() as uow:
@@ -250,6 +263,7 @@ class ListByGenreUseCase:
                 genre=genre,
                 cursor=cursor,
                 limit=limit,
+                lang=lang,
                 allowed_library_ids=allowed_library_ids,
             )
 
@@ -259,6 +273,7 @@ class ListByGenreUseCase:
         genre: Genre,
         cursor: str | None,
         limit: int,
+        lang: str,
         allowed_library_ids: Sequence[LibraryId],
     ) -> PaginatedResult[Series]:
         async with self._uow_factory() as uow:
@@ -266,6 +281,7 @@ class ListByGenreUseCase:
                 genre=genre,
                 cursor=cursor,
                 limit=limit,
+                lang=lang,
                 allowed_library_ids=allowed_library_ids,
             )
 

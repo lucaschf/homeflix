@@ -245,14 +245,16 @@ class MovieRepository(ABC):
         cursor: str | None,
         limit: int,
         *,
+        lang: str = "en",
         allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies belonging to a specific genre, paginated.
 
-        Sorted by ``(LOWER(title) ASC, id ASC)`` so the catalog
-        carousel renders alphabetically. The cursor is a
-        ``(title, id)`` composite (see ``encode_title_cursor`` in the
-        pagination building block) — the ``id`` tie-breaker keeps
+        Sorted by ``(LOWER(COALESCE(localized[lang].title, title)) ASC,
+        id ASC)`` so the catalog carousel renders alphabetically in the
+        viewer's language (falling back to the canonical title). The
+        cursor is a ``(title, id)`` composite (see ``encode_title_cursor``
+        in the pagination building block) — the ``id`` tie-breaker keeps
         pagination stable when two rows share a title.
 
         The genre filter matches the canonical English genre name
@@ -269,6 +271,8 @@ class MovieRepository(ABC):
                 fall back to the first page.
             limit: Page size. The repository fetches ``limit + 1``
                 rows and trims the sentinel to detect ``has_more``.
+            lang: Language whose localized title drives the sort order
+                (falls back to the canonical ``title`` when absent).
             allowed_library_ids: Optional per-profile ACL filter. When
                 non-``None``, results are restricted to rows whose
                 ``library_id`` is in the supplied set. ``None``
@@ -290,14 +294,16 @@ class MovieRepository(ABC):
         cursor: str | None,
         limit: int,
         *,
+        lang: str = "en",
         allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies whose cast includes a member named ``actor_name``.
 
-        Sorted by ``(LOWER(title) ASC, id ASC)`` so the actor-page
-        carousel renders alphabetically. The cursor is a
-        ``(title, id)`` composite (see ``encode_title_cursor``) — same
-        contract as ``list_paginated_by_genre``.
+        Sorted by ``(LOWER(COALESCE(localized[lang].title, title)) ASC,
+        id ASC)`` so the actor-page carousel renders alphabetically in
+        the viewer's language. The cursor is a ``(title, id)`` composite
+        (see ``encode_title_cursor``) — same contract as
+        ``list_paginated_by_genre``.
 
         Match is by exact name. The local catalog has no actor id
         (TMDB person ids aren't persisted yet, see CLAUDE.md
@@ -314,6 +320,8 @@ class MovieRepository(ABC):
                 fall back to the first page.
             limit: Page size. Implementations fetch ``limit + 1`` rows
                 to detect ``has_more`` cheaply.
+            lang: Language whose localized title drives the sort order
+                (falls back to the canonical ``title`` when absent).
             allowed_library_ids: Optional per-profile ACL filter. When
                 non-``None``, results are restricted to rows whose
                 ``library_id`` is in the supplied set. ``None``
