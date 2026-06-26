@@ -1,6 +1,7 @@
 """CustomList repository interface."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
 from src.modules.collections.domain.entities import CustomList, CustomListItem
 from src.modules.collections.domain.value_objects import CollectionMediaId
@@ -86,6 +87,20 @@ class CustomListRepository(ABC):
         profile_id: ProfileId,
     ) -> bool:
         """Remove an item from a list owned by ``profile_id``."""
+
+    @abstractmethod
+    async def reorder_items(
+        self,
+        list_id: str,
+        ordered_media_ids: Sequence[CollectionMediaId],
+        profile_id: ProfileId,
+    ) -> None:
+        """Set each item's position to its index in ``ordered_media_ids``.
+
+        Scoped to a list owned by ``profile_id``. Ids not present in the
+        list are ignored; items missing from the sequence keep their
+        current position. No-op when the list doesn't resolve.
+        """
 
     @abstractmethod
     async def list_items(

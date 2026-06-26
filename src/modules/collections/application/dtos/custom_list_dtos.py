@@ -82,6 +82,15 @@ class RemoveItemFromCustomListInput:
 
 
 @dataclass(frozen=True)
+class ReorderCustomListItemsInput:
+    """Input for ReorderCustomListItemsUseCase."""
+
+    profile_id: str
+    list_id: str
+    media_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class GetCustomListItemsInput:
     """Input for GetCustomListItemsUseCase."""
 

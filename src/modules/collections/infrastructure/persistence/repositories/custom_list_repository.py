@@ -1,6 +1,8 @@
 """SQLAlchemy implementation of CustomListRepository."""
 
-from sqlalchemy import func, select
+from collections.abc import Sequence
+
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.collections.domain.entities import CustomList, CustomListItem
@@ -258,6 +260,28 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         )
         result = await self._session.execute(stmt)
         return [CustomListItemMapper.to_entity(m) for m in result.scalars().all()]
+
+    async def reorder_items(
+        self,
+        list_id: str,
+        ordered_media_ids: Sequence[CollectionMediaId],
+        profile_id: ProfileId,
+    ) -> None:
+        """Rewrite each item's position to its index in the given order."""
+        internal_id = await self._get_list_internal_id(list_id, profile_id)
+        if internal_id is None:
+            return
+
+        for position, media_id in enumerate(ordered_media_ids):
+            await self._session.execute(
+                update(CustomListItemModel)
+                .where(
+                    CustomListItemModel.custom_list_id == internal_id,
+                    CustomListItemModel.media_id == media_id.value,
+                    CustomListItemModel.deleted_at.is_(None),
+                )
+                .values(position=position)
+            )
 
     async def get_next_position(
         self,

@@ -9,6 +9,7 @@ from src.modules.collections.application.dtos.custom_list_dtos import (
     GetCustomListItemsInput,
     RemoveItemFromCustomListInput,
     RenameCustomListInput,
+    ReorderCustomListItemsInput,
 )
 from src.modules.collections.application.dtos.watchlist_dtos import (
     CheckWatchlistInput,
@@ -29,6 +30,7 @@ __all__ = [
     "GetWatchlistInput",
     "RemoveItemFromCustomListInput",
     "RenameCustomListInput",
+    "ReorderCustomListItemsInput",
     "ToggleWatchlistInput",
     "ToggleWatchlistOutput",
     "WatchlistItemOutput",
