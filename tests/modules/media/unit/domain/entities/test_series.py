@@ -391,6 +391,49 @@ class TestSeriesLogoLocalization:
         assert series.get_logo_path("en") is None
 
 
+class TestSeriesPosterBackdropLocalization:
+    """Tests for ``Series.get_poster_path`` / ``get_backdrop_path`` fallback."""
+
+    def _series(self, **kwargs):
+        from src.modules.media.domain.entities import Series
+        from src.modules.media.domain.value_objects import ImageUrl, Title, Year
+
+        defaults: dict[str, object] = {
+            "title": Title("Breaking Bad"),
+            "start_year": Year(2008),
+            "poster_path": ImageUrl("https://img.example/en-poster.jpg"),
+            "backdrop_path": ImageUrl("https://img.example/en-backdrop.jpg"),
+            "localized": {
+                "pt-BR": {
+                    "poster_path": "https://img.example/ptbr-poster.jpg",
+                    "backdrop_path": "https://img.example/ptbr-backdrop.jpg",
+                },
+            },
+        }
+        defaults.update(kwargs)
+        return Series(library_id=_LIBRARY_ID, **defaults)
+
+    def test_returns_localized_artwork_when_lang_has_it(self):
+        series = self._series()
+        assert series.get_poster_path("pt-BR") == "https://img.example/ptbr-poster.jpg"
+        assert series.get_backdrop_path("pt-BR") == "https://img.example/ptbr-backdrop.jpg"
+
+    def test_falls_back_to_english_when_lang_missing(self):
+        series = self._series()
+        assert series.get_poster_path("es") == "https://img.example/en-poster.jpg"
+        assert series.get_backdrop_path("es") == "https://img.example/en-backdrop.jpg"
+
+    def test_falls_back_to_english_when_localized_entry_lacks_artwork(self):
+        series = self._series(localized={"pt-BR": {"title": "Quimica do Mal"}})
+        assert series.get_poster_path("pt-BR") == "https://img.example/en-poster.jpg"
+        assert series.get_backdrop_path("pt-BR") == "https://img.example/en-backdrop.jpg"
+
+    def test_returns_none_when_no_artwork_anywhere(self):
+        series = self._series(poster_path=None, backdrop_path=None, localized={})
+        assert series.get_poster_path("en") is None
+        assert series.get_backdrop_path("en") is None
+
+
 class TestSeriesEnrichmentReview:
     """Tests for the enrichment-review flag transition."""
 

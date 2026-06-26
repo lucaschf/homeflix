@@ -48,6 +48,8 @@ def merge_localized_metadata(
             "tagline": fields.tagline,
             "genres": fields.genres or None,
             "logo_path": fields.logo_url,
+            "poster_path": fields.poster_url,
+            "backdrop_path": fields.backdrop_url,
         }
         loc_entry: dict[str, object] = {k: v for k, v in candidates.items() if v}
         if loc_entry:

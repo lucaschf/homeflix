@@ -1,6 +1,7 @@
 """TMDB API client implementing MetadataProvider port."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 from typing import Literal
 
 import httpx
@@ -46,15 +47,38 @@ def _is_english(language: str) -> bool:
 class TmdbClient(MetadataProvider):
     """The Movie Database (TMDB) API client.
 
+    Localized enrichment always fetches English as the base metadata,
+    then overlays one translation per configured non-English locale
+    (``supported_locales`` from ``Settings``). Each overlay is stored
+    under its BCP-47 tag in ``MediaMetadata.localized``, so adding a
+    language is a config change — no code edit. A locale whose
+    translation fetch fails is skipped; the others still apply.
+
     Args:
         api_key: TMDB API key (v3 auth).
         base_url: TMDB API base URL.
+        supported_locales: BCP-47 tags the catalog serves (e.g.
+            ``("en", "pt-BR")``). English is the base and is dropped
+            from the overlay set, so only the remaining locales drive
+            extra translation fetches. Defaults to ``("en", "pt-BR")``
+            to preserve the legacy English + pt-BR behavior when the
+            client is constructed without explicit config.
     """
 
-    def __init__(self, api_key: str, base_url: str = "https://api.themoviedb.org/3") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://api.themoviedb.org/3",
+        supported_locales: Sequence[str] = ("en", "pt-BR"),
+    ) -> None:
         self._api_key = api_key
         self._base_url = base_url
         self._client = httpx.AsyncClient(timeout=30.0)
+        # English is the base metadata, so it never appears as an
+        # overlay. Everything else becomes one extra details fetch.
+        self._localized_locales = [
+            locale for locale in supported_locales if not _is_english(locale)
+        ]
 
     def _params(self, **extra: str | int | None) -> dict[str, str | int]:
         params: dict[str, str | int] = {"api_key": self._api_key}
@@ -273,41 +297,55 @@ class TmdbClient(MetadataProvider):
         return await self._fetch_movie_details(tmdb_id)
 
     async def get_movie_localized(self, tmdb_id: int) -> MediaMetadata | None:
-        """Fetch movie details in English with pt-BR localization.
+        """Fetch movie details in English with per-locale localization.
 
-        The pt-BR details call also appends ``images`` filtered to
-        pt-BR / en / language-neutral, so the localized logo comes
+        English is the base metadata; one translation is overlaid per
+        configured non-English locale (``supported_locales``). Each
+        localized details call appends ``images`` filtered to that
+        locale / en / language-neutral, so the localized logo comes
         back in the same round-trip. ``Movie.get_logo_path(lang)``
         picks the localized one when present and falls back to the
-        global (en) otherwise — same shape as title/synopsis.
+        global (en) otherwise — same shape as title/synopsis. A locale
+        whose fetch fails is skipped; the English base is still
+        returned.
         """
         en_meta = await self._fetch_movie_details(tmdb_id, language="en-US")
         if not en_meta:
             return None
 
-        pt_resp = await self._client.get(
+        localized: dict[str, LocalizedFields] = {}
+        for locale in self._localized_locales:
+            fields = await self._fetch_movie_localized_fields(tmdb_id, locale)
+            if fields is not None:
+                localized[locale] = fields
+
+        return replace(en_meta, localized=localized)
+
+    async def _fetch_movie_localized_fields(
+        self, tmdb_id: int, locale: str
+    ) -> LocalizedFields | None:
+        """Fetch one locale's translated movie fields, or ``None`` on failure."""
+        resp = await self._client.get(
             f"{self._base_url}/movie/{tmdb_id}",
             params=self._params(
-                language="pt-BR",
+                language=locale,
                 append_to_response="images",
-                include_image_language="pt-BR,en,null",
+                include_image_language=f"{locale},en,null",
             ),
         )
-        if pt_resp.status_code != 200:
-            return en_meta
+        if resp.status_code != 200:
+            return None
 
-        pt_data = pt_resp.json()
-        pt_fields = LocalizedFields(
-            title=pt_data.get("title"),
-            synopsis=pt_data.get("overview"),
-            tagline=pt_data.get("tagline") or None,
-            genres=[g["name"] for g in pt_data.get("genres", [])],
-            logo_url=self._pick_best_logo_url(pt_data.get("images", {}).get("logos"), "pt-BR"),
+        data = resp.json()
+        return LocalizedFields(
+            title=data.get("title"),
+            synopsis=data.get("overview"),
+            tagline=data.get("tagline") or None,
+            genres=[g["name"] for g in data.get("genres", [])],
+            logo_url=self._pick_best_logo_url(data.get("images", {}).get("logos"), locale),
+            poster_url=self._image_url(data.get("poster_path")),
+            backdrop_url=self._image_url(data.get("backdrop_path")),
         )
-
-        from dataclasses import replace
-
-        return replace(en_meta, localized={"pt-BR": pt_fields})
 
     async def get_series_by_id(self, tmdb_id: int) -> MediaMetadata | None:
         """Fetch series details by TMDB ID."""
@@ -633,39 +671,50 @@ class TmdbClient(MetadataProvider):
         )
 
     async def get_series_localized(self, tmdb_id: int) -> MediaMetadata | None:
-        """Fetch series details in English with pt-BR localization.
+        """Fetch series details in English with per-locale localization.
 
-        Same one-round-trip-per-language pattern as
-        ``get_movie_localized`` — the pt-BR details call appends
-        ``images`` so the localized logo comes back without an extra
-        HTTP fetch.
+        Same per-locale strategy as ``get_movie_localized``: English is
+        the base and one translation is overlaid per configured
+        non-English locale (``supported_locales``). Each localized
+        details call appends ``images`` so the localized logo comes
+        back without an extra HTTP fetch.
         """
         en_meta = await self._fetch_series_details(tmdb_id)
         if not en_meta:
             return None
 
-        pt_resp = await self._client.get(
+        localized: dict[str, LocalizedFields] = {}
+        for locale in self._localized_locales:
+            fields = await self._fetch_series_localized_fields(tmdb_id, locale)
+            if fields is not None:
+                localized[locale] = fields
+
+        return replace(en_meta, localized=localized)
+
+    async def _fetch_series_localized_fields(
+        self, tmdb_id: int, locale: str
+    ) -> LocalizedFields | None:
+        """Fetch one locale's translated series fields, or ``None`` on failure."""
+        resp = await self._client.get(
             f"{self._base_url}/tv/{tmdb_id}",
             params=self._params(
-                language="pt-BR",
+                language=locale,
                 append_to_response="images",
-                include_image_language="pt-BR,en,null",
+                include_image_language=f"{locale},en,null",
             ),
         )
-        if pt_resp.status_code != 200:
-            return en_meta
+        if resp.status_code != 200:
+            return None
 
-        pt_data = pt_resp.json()
-        pt_fields = LocalizedFields(
-            title=pt_data.get("name"),
-            synopsis=pt_data.get("overview"),
-            genres=[g["name"] for g in pt_data.get("genres", [])],
-            logo_url=self._pick_best_logo_url(pt_data.get("images", {}).get("logos"), "pt-BR"),
+        data = resp.json()
+        return LocalizedFields(
+            title=data.get("name"),
+            synopsis=data.get("overview"),
+            genres=[g["name"] for g in data.get("genres", [])],
+            logo_url=self._pick_best_logo_url(data.get("images", {}).get("logos"), locale),
+            poster_url=self._image_url(data.get("poster_path")),
+            backdrop_url=self._image_url(data.get("backdrop_path")),
         )
-
-        from dataclasses import replace
-
-        return replace(en_meta, localized={"pt-BR": pt_fields})
 
     async def _fetch_movie_details(
         self, tmdb_id: int, language: str = "en-US"

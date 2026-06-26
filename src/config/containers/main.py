@@ -191,6 +191,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         library_health=_library_health_adapter,
         identity_uow_factory=_identity_uow_factory_for_profile_library_access,
         tmdb_api_key=config.provided.tmdb_api_key,
+        supported_locales=config.provided.supported_locales,
         hls_cache_directory=config.provided.hls_cache_directory,
         runtime_settings=settings.runtime_settings,
     )

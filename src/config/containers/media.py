@@ -563,7 +563,16 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # Must be wired from parent container (Settings.tmdb_api_key)
     tmdb_api_key = providers.Dependency(default="")
 
-    tmdb_client = providers.Singleton(TmdbClient, api_key=tmdb_api_key)
+    # Wired from parent container (Settings.supported_locales). Drives
+    # which non-English translations the TMDB client overlays during
+    # enrichment — adding a language is a config change, not a code edit.
+    supported_locales = providers.Dependency(default=["en", "pt-BR"])
+
+    tmdb_client = providers.Singleton(
+        TmdbClient,
+        api_key=tmdb_api_key,
+        supported_locales=supported_locales,
+    )
 
     # =========================================================================
     # Use Cases — Enrichment

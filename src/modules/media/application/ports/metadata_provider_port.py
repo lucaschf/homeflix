@@ -104,13 +104,19 @@ class PersonMetadata:
 class LocalizedFields:
     """Localized metadata fields for a specific language.
 
+    Every presentational field a locale can override lives here, so a
+    catalog served in that locale renders fully translated artwork +
+    text. Each maps to a ``get_*(lang)`` accessor on the entity that
+    falls back to the global (English base) value when the locale has
+    no override.
+
     Attributes:
         title: Localized title.
         synopsis: Localized plot overview.
         genres: Localized genre names.
-        logo_url: Localized title-logo URL (transparent PNG). When
-            present, the entity's ``get_logo_path(lang)`` accessor
-            returns this in preference to the global ``logo_path``.
+        logo_url: Localized title-logo URL (transparent PNG).
+        poster_url: Localized poster URL.
+        backdrop_url: Localized backdrop URL.
     """
 
     title: str | None = None
@@ -118,6 +124,8 @@ class LocalizedFields:
     tagline: str | None = None
     genres: list[str] = field(default_factory=list)
     logo_url: str | None = None
+    poster_url: str | None = None
+    backdrop_url: str | None = None
 
 
 @dataclass(frozen=True)

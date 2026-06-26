@@ -165,6 +165,26 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
             return str(loc_logo)
         return self.logo_path.value if self.logo_path else None
 
+    def get_poster_path(self, lang: str = "en") -> str | None:
+        """Get poster URL for the requested language, falling back to default.
+
+        Mirrors ``get_logo_path``: returns the locale's localized poster
+        when present, else the global (English base) ``poster_path``.
+        """
+        loc = self.localized.get(lang, {})
+        loc_poster = loc.get("poster_path")
+        if loc_poster:
+            return str(loc_poster)
+        return self.poster_path.value if self.poster_path else None
+
+    def get_backdrop_path(self, lang: str = "en") -> str | None:
+        """Get backdrop URL for the requested language, falling back to default."""
+        loc = self.localized.get(lang, {})
+        loc_backdrop = loc.get("backdrop_path")
+        if loc_backdrop:
+            return str(loc_backdrop)
+        return self.backdrop_path.value if self.backdrop_path else None
+
     # ── genre helpers ─────────────────────────────────────────────────
 
     def with_genre(self, genre: Genre | str) -> Self:

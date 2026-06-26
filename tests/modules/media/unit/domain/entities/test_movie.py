@@ -652,6 +652,55 @@ class TestMovieLogoLocalization:
         assert movie.get_logo_path("en") is None
 
 
+class TestMoviePosterBackdropLocalization:
+    """Tests for ``Movie.get_poster_path`` / ``get_backdrop_path`` fallback."""
+
+    def _movie(self, **kwargs):
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import (
+            Duration,
+            ImageUrl,
+            Title,
+            Year,
+        )
+
+        defaults: dict[str, object] = {
+            "title": Title("Inception"),
+            "year": Year(2010),
+            "duration": Duration(8880),
+            "poster_path": ImageUrl("https://img.example/en-poster.jpg"),
+            "backdrop_path": ImageUrl("https://img.example/en-backdrop.jpg"),
+            "localized": {
+                "pt-BR": {
+                    "poster_path": "https://img.example/ptbr-poster.jpg",
+                    "backdrop_path": "https://img.example/ptbr-backdrop.jpg",
+                },
+            },
+        }
+        defaults.update(kwargs)
+        return Movie(library_id=_LIBRARY_ID, **defaults)
+
+    def test_returns_localized_artwork_when_lang_has_it(self):
+        movie = self._movie()
+        assert movie.get_poster_path("pt-BR") == "https://img.example/ptbr-poster.jpg"
+        assert movie.get_backdrop_path("pt-BR") == "https://img.example/ptbr-backdrop.jpg"
+
+    def test_falls_back_to_english_when_lang_missing(self):
+        movie = self._movie()
+        assert movie.get_poster_path("es") == "https://img.example/en-poster.jpg"
+        assert movie.get_backdrop_path("es") == "https://img.example/en-backdrop.jpg"
+
+    def test_falls_back_to_english_when_localized_entry_lacks_artwork(self):
+        movie = self._movie(localized={"pt-BR": {"title": "A Origem"}})
+        assert movie.get_poster_path("pt-BR") == "https://img.example/en-poster.jpg"
+        assert movie.get_backdrop_path("pt-BR") == "https://img.example/en-backdrop.jpg"
+
+    def test_returns_none_when_no_artwork_anywhere(self):
+        movie = self._movie(poster_path=None, backdrop_path=None, localized={})
+        assert movie.get_poster_path("en") is None
+        assert movie.get_backdrop_path("en") is None
+
+
 class TestMovieEnrichmentReview:
     """Tests for the enrichment-review flag transition."""
 
