@@ -50,12 +50,15 @@ class WatchlistItemOutput:
     genres: tuple[str, ...] = ()
     resolution: str | None = None
     hdr: bool = False
+    # Watched fraction in [0, 1], or None when there's no progress.
+    progress: float | None = None
 
     @classmethod
     def from_entity(
         cls,
         entity: WatchlistItem,
         summary: MediaSummary,
+        progress: float | None = None,
     ) -> WatchlistItemOutput:
         """Create output DTO from a WatchlistItem entity + media summary."""
         return cls(
@@ -69,6 +72,7 @@ class WatchlistItemOutput:
             genres=summary.genres,
             resolution=summary.resolution,
             hdr=summary.hdr,
+            progress=progress,
         )
 
 

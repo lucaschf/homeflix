@@ -227,6 +227,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         CollectionsContainer,
         session_factory=infrastructure.session_factory,
         media_uow_factory=media.media_unit_of_work_factory,
+        watch_progress_uow_factory=watch_progress.watch_progress_unit_of_work_factory,
     )
 
     # =========================================================================

@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from tests.modules.collections.unit.application.use_cases.conftest import (
     make_media_lookup_mock,
+    make_progress_lookup_mock,
 )
 from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
@@ -58,6 +59,7 @@ class TestGetCustomListItemsUseCase:
         use_case = GetCustomListItemsUseCase(
             uow_factory=mocks.factory,
             media_lookup=media_lookup,
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         result = await use_case.execute(
@@ -80,12 +82,41 @@ class TestGetCustomListItemsUseCase:
         assert result[0].hdr is True
 
     @pytest.mark.asyncio
+    async def test_should_attach_progress_for_movie_items(
+        self, movie_summary: MediaSummaryFactory
+    ) -> None:
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Test", existing_count=0)
+        items = [
+            CustomListItem.create(
+                media_id="mov_abc123def456",
+                media_type=MediaType.MOVIE,
+                position=0,
+            ),
+        ]
+        mocks = make_collections_uow_mock()
+        mocks.custom_lists.find_by_id.return_value = custom_list
+        mocks.custom_lists.list_items.return_value = items
+
+        use_case = GetCustomListItemsUseCase(
+            uow_factory=mocks.factory,
+            media_lookup=make_media_lookup_mock(movie_summary("mov_abc123def456")),
+            progress_lookup=make_progress_lookup_mock({"mov_abc123def456": 0.5}),
+        )
+
+        result = await use_case.execute(
+            GetCustomListItemsInput(profile_id=_PROFILE_ID.value, list_id=str(custom_list.id))
+        )
+
+        assert result[0].progress == 0.5
+
+    @pytest.mark.asyncio
     async def test_should_raise_when_list_not_found(self) -> None:
         mocks = make_collections_uow_mock()
         mocks.custom_lists.find_by_id.return_value = None
         use_case = GetCustomListItemsUseCase(
             uow_factory=mocks.factory,
             media_lookup=AsyncMock(spec=MediaLookupPort),
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
@@ -107,6 +138,7 @@ class TestGetCustomListItemsUseCase:
         use_case = GetCustomListItemsUseCase(
             uow_factory=mocks.factory,
             media_lookup=AsyncMock(spec=MediaLookupPort),
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         result = await use_case.execute(
@@ -135,6 +167,7 @@ class TestGetCustomListItemsUseCase:
         use_case = GetCustomListItemsUseCase(
             uow_factory=mocks.factory,
             media_lookup=make_media_lookup_mock(),
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         result = await use_case.execute(
@@ -177,6 +210,7 @@ class TestGetCustomListItemsUseCase:
         use_case = GetCustomListItemsUseCase(
             uow_factory=mocks.factory,
             media_lookup=media_lookup,
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         result = await use_case.execute(
@@ -211,6 +245,7 @@ class TestGetCustomListItemsUseCase:
         use_case = GetCustomListItemsUseCase(
             uow_factory=mocks.factory,
             media_lookup=media_lookup,
+            progress_lookup=make_progress_lookup_mock(),
         )
 
         await use_case.execute(
