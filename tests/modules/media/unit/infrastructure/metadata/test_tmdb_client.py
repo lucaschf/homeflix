@@ -1031,6 +1031,112 @@ class TestGetSeriesLocalized:
 
 
 @pytest.mark.unit
+class TestLocalizedSupportedLocales:
+    """``get_*_localized`` overlays exactly the configured non-English locales."""
+
+    @staticmethod
+    def _client_with_locales(
+        locales: tuple[str, ...], get_responses: list[MagicMock]
+    ) -> TmdbClient:
+        client = TmdbClient(api_key="test-key", supported_locales=locales)
+        mock_http = MagicMock()
+        empty_logos_tail = itertools.repeat(_build_response(json_data={"logos": []}))
+        mock_http.get = AsyncMock(side_effect=itertools.chain(get_responses, empty_logos_tail))
+        client._client = mock_http
+        return client
+
+    @pytest.mark.asyncio
+    async def test_movie_overlays_every_non_english_locale(self) -> None:
+        client = self._client_with_locales(
+            ("en", "pt-BR", "es-ES"),
+            [
+                _build_response(json_data=_movie_details()),  # English base
+                _build_response(json_data={"title": "A Origem", "overview": "PT"}),  # pt-BR
+                _build_response(json_data={"title": "El Origen", "overview": "ES"}),  # es-ES
+            ],
+        )
+
+        result = await client.get_movie_localized(27205)
+
+        assert result is not None
+        assert set(result.localized) == {"pt-BR", "es-ES"}
+        assert result.localized["pt-BR"].title == "A Origem"
+        assert result.localized["es-ES"].title == "El Origen"
+
+    @pytest.mark.asyncio
+    async def test_movie_localizes_poster_and_backdrop_per_locale(self) -> None:
+        client = self._client_with_locales(
+            ("en", "pt-BR"),
+            [
+                _build_response(json_data=_movie_details()),  # English base
+                _build_response(
+                    json_data={
+                        "title": "A Origem",
+                        "poster_path": "/ptbr-poster.jpg",
+                        "backdrop_path": "/ptbr-backdrop.jpg",
+                    }
+                ),
+            ],
+        )
+
+        result = await client.get_movie_localized(27205)
+
+        assert result is not None
+        # English base keeps its global artwork...
+        assert result.poster_url == "https://image.tmdb.org/t/p/original/poster.jpg"
+        # ...while the pt-BR overlay carries the localized artwork.
+        fields = result.localized["pt-BR"]
+        assert fields.poster_url == "https://image.tmdb.org/t/p/original/ptbr-poster.jpg"
+        assert fields.backdrop_url == "https://image.tmdb.org/t/p/original/ptbr-backdrop.jpg"
+
+    @pytest.mark.asyncio
+    async def test_movie_skips_failed_locale_but_keeps_others(self) -> None:
+        client = self._client_with_locales(
+            ("en", "pt-BR", "es-ES"),
+            [
+                _build_response(json_data=_movie_details()),  # English base
+                _build_response(status_code=404),  # pt-BR fails
+                _build_response(json_data={"title": "El Origen", "overview": "ES"}),  # es-ES
+            ],
+        )
+
+        result = await client.get_movie_localized(27205)
+
+        assert result is not None
+        assert set(result.localized) == {"es-ES"}
+
+    @pytest.mark.asyncio
+    async def test_english_only_config_produces_no_overlays(self) -> None:
+        client = self._client_with_locales(
+            ("en",),
+            [_build_response(json_data=_movie_details())],  # English base only
+        )
+
+        result = await client.get_movie_localized(27205)
+
+        assert result is not None
+        assert result.localized == {}
+
+    @pytest.mark.asyncio
+    async def test_series_overlays_every_non_english_locale(self) -> None:
+        client = self._client_with_locales(
+            ("en", "pt-BR", "es-ES"),
+            [
+                _build_response(json_data=_series_details()),  # series base
+                _build_response(json_data=_season_details()),  # season fetch
+                _build_response(json_data={"name": "BB BR", "overview": "PT"}),  # pt-BR
+                _build_response(json_data={"name": "BB ES", "overview": "ES"}),  # es-ES
+            ],
+        )
+
+        result = await client.get_series_localized(1396)
+
+        assert result is not None
+        assert set(result.localized) == {"pt-BR", "es-ES"}
+        assert result.localized["es-ES"].synopsis == "ES"
+
+
+@pytest.mark.unit
 class TestGetMovieRecommendations:
     """``get_movie_recommendations`` — collection + ML / heuristic merge.
 

@@ -176,8 +176,8 @@ class GetCollectionByTmdbIdUseCase:
 
         if local is not None:
             movie_id = str(local.id)
-            local_poster = local.poster_path.value if local.poster_path else None
-            local_backdrop = local.backdrop_path.value if local.backdrop_path else None
+            local_poster = local.get_poster_path(lang)
+            local_backdrop = local.get_backdrop_path(lang)
             runtime_seconds = local.duration.value
             runtime_formatted = local.duration.format_hms()
             # Prefer locally-managed (often translated) fields when

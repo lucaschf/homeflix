@@ -316,8 +316,8 @@ class ListByGenreUseCase:
                 title=item.get_title(lang),
                 year=item.year.value,
                 synopsis=item.get_synopsis(lang),
-                poster_path=item.poster_path.value if item.poster_path else None,
-                backdrop_path=item.backdrop_path.value if item.backdrop_path else None,
+                poster_path=item.get_poster_path(lang),
+                backdrop_path=item.get_backdrop_path(lang),
                 genres=item.get_genres(lang),
             )
         # Series
@@ -327,8 +327,8 @@ class ListByGenreUseCase:
             title=item.get_title(lang),
             year=item.start_year.value,
             synopsis=item.get_synopsis(lang),
-            poster_path=item.poster_path.value if item.poster_path else None,
-            backdrop_path=item.backdrop_path.value if item.backdrop_path else None,
+            poster_path=item.get_poster_path(lang),
+            backdrop_path=item.get_backdrop_path(lang),
             genres=item.get_genres(lang),
         )
 

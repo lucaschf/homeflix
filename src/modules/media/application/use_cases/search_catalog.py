@@ -122,8 +122,8 @@ class SearchCatalogUseCase:
                 title=entity.get_title(lang),
                 year=entity.year.value,
                 synopsis=entity.get_synopsis(lang),
-                poster_path=entity.poster_path.value if entity.poster_path else None,
-                backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
+                poster_path=entity.get_poster_path(lang),
+                backdrop_path=entity.get_backdrop_path(lang),
                 genres=entity.get_genres(lang),
             )
         # Series
@@ -133,8 +133,8 @@ class SearchCatalogUseCase:
             title=entity.get_title(lang),
             year=entity.start_year.value,
             synopsis=entity.get_synopsis(lang),
-            poster_path=entity.poster_path.value if entity.poster_path else None,
-            backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
+            poster_path=entity.get_poster_path(lang),
+            backdrop_path=entity.get_backdrop_path(lang),
             genres=entity.get_genres(lang),
         )
 
