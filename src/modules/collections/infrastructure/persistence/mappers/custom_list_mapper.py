@@ -28,6 +28,7 @@ class CustomListMapper:
             external_id=str(entity.id),
             profile_id=str(entity.profile_id),
             name=entity.name.value,
+            description=entity.description,
             item_count=entity.item_count,
         )
 
@@ -38,6 +39,7 @@ class CustomListMapper:
             id=ListId(model.external_id),
             profile_id=ProfileId(model.profile_id),
             name=model.name,
+            description=model.description,
             item_count=model.item_count,
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -47,6 +49,7 @@ class CustomListMapper:
     def update_model(model: CustomListModel, entity: CustomList) -> CustomListModel:
         """Update mutable fields. ``profile_id`` is intentionally not touched."""
         model.name = entity.name.value
+        model.description = entity.description
         model.item_count = entity.item_count
         return model
 

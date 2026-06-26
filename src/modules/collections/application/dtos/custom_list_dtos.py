@@ -17,6 +17,7 @@ class CreateCustomListInput:
 
     profile_id: str
     name: str
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class CustomListOutput:
     item_count: int
     created_at: str
     updated_at: str
+    description: str | None = None
 
     @classmethod
     def from_entity(cls, entity: CustomList) -> CustomListOutput:
@@ -38,6 +40,7 @@ class CustomListOutput:
             item_count=entity.item_count,
             created_at=entity.created_at.isoformat(),
             updated_at=entity.updated_at.isoformat(),
+            description=entity.description,
         )
 
 
@@ -48,6 +51,7 @@ class RenameCustomListInput:
     profile_id: str
     list_id: str
     name: str
+    description: str | None = None
 
 
 @dataclass(frozen=True)

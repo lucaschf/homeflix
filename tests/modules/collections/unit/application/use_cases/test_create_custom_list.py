@@ -42,6 +42,40 @@ class TestCreateCustomListUseCase:
         mock_repo.add.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_should_create_with_trimmed_description(self) -> None:
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
+        mock_repo.count.return_value = 0
+        mock_repo.find_by_name.return_value = None
+        mock_repo.add.side_effect = lambda entity: entity  # echo what was built
+        use_case = CreateCustomListUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            CreateCustomListInput(
+                profile_id=_PROFILE_ID.value,
+                name="Horror Marathon",
+                description="  The season's scares  ",
+            )
+        )
+
+        assert result.description == "The season's scares"
+
+    @pytest.mark.asyncio
+    async def test_should_store_blank_description_as_none(self) -> None:
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
+        mock_repo.count.return_value = 0
+        mock_repo.find_by_name.return_value = None
+        mock_repo.add.side_effect = lambda entity: entity
+        use_case = CreateCustomListUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            CreateCustomListInput(profile_id=_PROFILE_ID.value, name="Plain", description="   ")
+        )
+
+        assert result.description is None
+
+    @pytest.mark.asyncio
     async def test_should_raise_when_list_limit_reached(self) -> None:
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists

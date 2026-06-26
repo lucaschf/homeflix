@@ -9,12 +9,14 @@ class CreateCustomListRequest(BaseModel):
     """Request body for creating a custom list."""
 
     name: str = Field(..., min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=500)
 
 
 class RenameCustomListRequest(BaseModel):
-    """Request body for renaming a custom list."""
+    """Request body for editing a custom list (name + description)."""
 
     name: str = Field(..., min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=500)
 
 
 class AddItemToCustomListRequest(BaseModel):

@@ -113,6 +113,7 @@ class CustomList(AggregateRoot[ListId]):
 
     profile_id: ProfileId
     name: ListName
+    description: str | None = Field(default=None, max_length=500)
     item_count: int = 0
 
     @field_validator("name", mode="before")
@@ -128,6 +129,7 @@ class CustomList(AggregateRoot[ListId]):
         name: str | ListName,
         *,
         existing_count: int,
+        description: str | None = None,
     ) -> CustomList:
         """Factory method with automatic ID generation.
 
@@ -142,6 +144,7 @@ class CustomList(AggregateRoot[ListId]):
                 their lists separate.
             name: Display name for the list.
             existing_count: Number of lists the profile already has.
+            description: Optional free-text description.
 
         Returns:
             A new CustomList instance.
@@ -160,6 +163,7 @@ class CustomList(AggregateRoot[ListId]):
             id=ListId.generate(),
             profile_id=profile_id,
             name=name,
+            description=description,
             item_count=0,
         )
 
@@ -173,6 +177,21 @@ class CustomList(AggregateRoot[ListId]):
             A new CustomList instance with updated name.
         """
         return self.with_updates(name=new_name)
+
+    def with_details(self, *, name: str | ListName, description: str | None) -> CustomList:
+        """Create a copy with the edited name and description.
+
+        Both are authoritative — the edit form sends the full state, so
+        passing ``description=None`` clears it.
+
+        Args:
+            name: The new display name.
+            description: The new description, or ``None`` to clear it.
+
+        Returns:
+            A new CustomList instance with both fields updated.
+        """
+        return self.with_updates(name=name, description=description)
 
     def increment_item_count(self) -> CustomList:
         """Increment item count after adding an item.
