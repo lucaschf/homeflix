@@ -1,5 +1,7 @@
 """Mapper between ``CatalogRequest`` entity and ``CatalogRequestModel``."""
 
+import json
+
 from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestId,
@@ -41,6 +43,9 @@ class CatalogRequestMapper:
             tmdb_id=entity.tmdb_id,
             media_type=entity.media_type.value,
             title=entity.title,
+            localized_titles=json.dumps(entity.localized_titles, ensure_ascii=False)
+            if entity.localized_titles
+            else None,
             poster_url=entity.poster_url,
             requester_user_id=entity.requester_user_id,
             collection_tmdb_id=entity.collection_tmdb_id,
@@ -58,6 +63,7 @@ class CatalogRequestMapper:
             tmdb_id=model.tmdb_id,
             media_type=MediaType(model.media_type),
             title=model.title,
+            localized_titles=json.loads(model.localized_titles) if model.localized_titles else {},
             poster_url=model.poster_url,
             requester_user_id=model.requester_user_id,
             collection_tmdb_id=model.collection_tmdb_id,
@@ -85,6 +91,11 @@ class CatalogRequestMapper:
         recipient on legacy rows.
         """
         model.title = entity.title
+        model.localized_titles = (
+            json.dumps(entity.localized_titles, ensure_ascii=False)
+            if entity.localized_titles
+            else None
+        )
         model.poster_url = entity.poster_url
         model.requester_user_id = entity.requester_user_id
         model.collection_tmdb_id = entity.collection_tmdb_id

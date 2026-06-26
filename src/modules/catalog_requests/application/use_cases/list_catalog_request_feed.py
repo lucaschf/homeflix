@@ -24,6 +24,7 @@ class ListCatalogRequestFeedInput:
 
     user_id: str
     collection_tmdb_id: int | None = None
+    lang: str = "en"
 
 
 class ListCatalogRequestFeedUseCase:
@@ -66,7 +67,7 @@ class ListCatalogRequestFeedUseCase:
 
         return [
             CatalogRequestFeedItem(
-                request=CatalogRequestOutput.from_entity(request),
+                request=CatalogRequestOutput.from_entity(request, input_dto.lang),
                 subscriber_count=counts.get(request.id, 0),
                 is_subscribed=request.id in subscribed,
             )

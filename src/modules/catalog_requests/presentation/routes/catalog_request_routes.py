@@ -170,6 +170,7 @@ async def unsubscribe_catalog_notification(
 @inject  # type: ignore[misc]
 async def list_catalog_requests(
     collection_tmdb_id: int | None = Query(default=None, ge=1),
+    lang: str = "en",
     user: UserModel = Depends(current_active_user),
     use_case: ListCatalogRequestFeedUseCase = Depends(
         Provide[ApplicationContainer.catalog_requests.list_catalog_request_feed],
@@ -179,12 +180,14 @@ async def list_catalog_requests(
 
     Each item carries the base request fields plus ``subscriber_count``
     and the caller's ``is_subscribed`` flag (ADR-022). Optionally
-    scoped to a single franchise via ``collection_tmdb_id``.
+    scoped to a single franchise via ``collection_tmdb_id``. ``lang``
+    selects the per-request localized title snapshot.
     """
     items = await use_case.execute(
         ListCatalogRequestFeedInput(
             user_id=user.external_id,
             collection_tmdb_id=collection_tmdb_id,
+            lang=lang,
         ),
     )
     return api_list(

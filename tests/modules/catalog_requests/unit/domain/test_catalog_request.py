@@ -170,3 +170,35 @@ class TestCatalogRequest:
 
         # A later poster never overwrites the first snapshot.
         assert backfilled.reconcile(poster_url="https://img/other.jpg") is None
+
+    def test_get_title_prefers_locale_then_english_then_snapshot(self) -> None:
+        request = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=MediaType.MOVIE,
+            title="Alien (snapshot)",
+            localized_titles={"en": "Alien", "pt-BR": "Alien, o Oitavo Passageiro"},
+        )
+
+        assert request.get_title("pt-BR") == "Alien, o Oitavo Passageiro"
+        assert request.get_title("en") == "Alien"
+        # Unknown locale falls back to the English snapshot.
+        assert request.get_title("es") == "Alien"
+
+    def test_get_title_falls_back_to_raw_snapshot_without_localized(self) -> None:
+        request = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=MediaType.MOVIE,
+            title="Alien",
+        )
+
+        assert request.get_title("pt-BR") == "Alien"
+        assert request.get_title() == "Alien"
+
+    def test_reconcile_backfills_localized_titles_first_owner_wins(self) -> None:
+        without = CatalogRequest.create(tmdb_id=348, media_type=MediaType.MOVIE)
+        backfilled = without.reconcile(localized_titles={"pt-BR": "Alien, o Oitavo Passageiro"})
+
+        assert backfilled is not None
+        assert backfilled.localized_titles == {"pt-BR": "Alien, o Oitavo Passageiro"}
+        # A later snapshot never overwrites the first one.
+        assert backfilled.reconcile(localized_titles={"pt-BR": "Outro"}) is None

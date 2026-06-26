@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
 
+from src.modules.catalog_requests.application.ports import LocalizedTitleProviderPort
 from src.modules.catalog_requests.application.unit_of_work import (
     CatalogRequestsUnitOfWork,
     CatalogRequestsUnitOfWorkFactory,
@@ -11,6 +12,13 @@ from src.modules.catalog_requests.domain.repositories import (
     CatalogRequestRepository,
     CatalogSubscriptionRepository,
 )
+
+
+def make_fake_title_provider(titles: dict[str, str] | None = None) -> AsyncMock:
+    """Build a stub :class:`LocalizedTitleProviderPort` returning ``titles``."""
+    provider = AsyncMock(spec=LocalizedTitleProviderPort)
+    provider.get_titles.return_value = titles or {}
+    return provider
 
 
 @dataclass

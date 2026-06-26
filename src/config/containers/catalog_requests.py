@@ -36,6 +36,11 @@ class CatalogRequestsContainer(containers.DeclarativeContainer):  # type: ignore
     # on the manual "mark as included" action (ADR-022 / ADR-009).
     notification_publisher = providers.Dependency()
 
+    # Cross-BC title provider (Media BC / TMDB) — resolves the
+    # per-language title snapshot at request-creation time. Wired at
+    # the composition root so this BC takes no Media dependency.
+    localized_title_provider = providers.Dependency()
+
     # =========================================================================
     # Unit of Work
     # =========================================================================
@@ -61,11 +66,13 @@ class CatalogRequestsContainer(containers.DeclarativeContainer):  # type: ignore
     request_catalog_inclusion = providers.Factory(
         RequestCatalogInclusionUseCase,
         uow_factory=catalog_requests_unit_of_work_factory,
+        localized_title_provider=localized_title_provider,
     )
 
     subscribe_catalog_notification = providers.Factory(
         SubscribeCatalogNotificationUseCase,
         uow_factory=catalog_requests_unit_of_work_factory,
+        localized_title_provider=localized_title_provider,
     )
 
     unsubscribe_catalog_notification = providers.Factory(

@@ -125,13 +125,21 @@ class CatalogRequestOutput:
     fulfilled_at: str | None
 
     @classmethod
-    def from_entity(cls, entity: CatalogRequest) -> CatalogRequestOutput:
-        """Build the DTO from a domain ``CatalogRequest`` aggregate."""
+    def from_entity(cls, entity: CatalogRequest, lang: str | None = None) -> CatalogRequestOutput:
+        """Build the DTO from a domain ``CatalogRequest`` aggregate.
+
+        Args:
+            entity: The request aggregate to serialize.
+            lang: When given, the title is resolved in that language via
+                the per-language snapshot (``get_title``); when ``None``
+                the raw ``title`` snapshot is returned as-is (the create
+                response echoes back what the client sent).
+        """
         return cls(
             id=str(entity.id),
             tmdb_id=entity.tmdb_id,
             media_type=entity.media_type.value,
-            title=entity.title,
+            title=entity.get_title(lang) if lang is not None else entity.title,
             poster_url=entity.poster_url,
             requester_user_id=entity.requester_user_id,
             collection_tmdb_id=entity.collection_tmdb_id,
