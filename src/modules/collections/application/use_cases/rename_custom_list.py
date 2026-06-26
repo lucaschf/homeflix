@@ -33,7 +33,10 @@ class RenameCustomListUseCase:
                     rule_code="CUSTOM_LIST_NAME_DUPLICATE",
                 )
 
-            updated = custom_list.rename(new_name)
+            updated = custom_list.with_details(
+                name=new_name,
+                description=(input_dto.description or "").strip() or None,
+            )
             saved = await uow.custom_lists.update(updated)
         return CustomListOutput.from_entity(saved)
 

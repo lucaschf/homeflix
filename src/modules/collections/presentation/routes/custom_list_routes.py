@@ -51,7 +51,9 @@ async def create_custom_list(
     ),
 ) -> dict[str, Any]:
     """Create a new custom list."""
-    result = await use_case.execute(CreateCustomListInput(profile_id=profile_id, name=body.name))
+    result = await use_case.execute(
+        CreateCustomListInput(profile_id=profile_id, name=body.name, description=body.description)
+    )
     return api_single("custom_list", asdict(result))
 
 
@@ -80,7 +82,12 @@ async def rename_custom_list(
 ) -> dict[str, Any]:
     """Rename a custom list owned by the caller."""
     result = await use_case.execute(
-        RenameCustomListInput(profile_id=profile_id, list_id=list_id, name=body.name)
+        RenameCustomListInput(
+            profile_id=profile_id,
+            list_id=list_id,
+            name=body.name,
+            description=body.description,
+        )
     )
     return api_single("custom_list", asdict(result))
 

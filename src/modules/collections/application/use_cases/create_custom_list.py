@@ -30,6 +30,7 @@ class CreateCustomListUseCase:
                 profile_id=profile_id,
                 name=input_dto.name,
                 existing_count=current_count,
+                description=(input_dto.description or "").strip() or None,
             )
 
             existing = await uow.custom_lists.find_by_name(input_dto.name.strip(), profile_id)

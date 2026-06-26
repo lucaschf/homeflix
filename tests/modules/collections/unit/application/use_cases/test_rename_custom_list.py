@@ -45,6 +45,28 @@ class TestRenameCustomListUseCase:
         mock_repo.update.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_should_update_name_and_description(self) -> None:
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Old Name", existing_count=0)
+        mocks = make_collections_uow_mock()
+        mock_repo = mocks.custom_lists
+        mock_repo.find_by_id.return_value = custom_list
+        mock_repo.find_by_name.return_value = None
+        mock_repo.update.side_effect = lambda entity: entity  # echo what was built
+        use_case = RenameCustomListUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            RenameCustomListInput(
+                profile_id=_PROFILE_ID.value,
+                list_id=str(custom_list.id),
+                name="New Name",
+                description="  A weekend of scares  ",
+            )
+        )
+
+        assert result.name == "New Name"
+        assert result.description == "A weekend of scares"
+
+    @pytest.mark.asyncio
     async def test_should_raise_when_list_not_found(self) -> None:
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
