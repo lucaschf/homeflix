@@ -137,7 +137,9 @@ class GetSeriesByIdUseCase:
             needs_enrichment_review=series.needs_enrichment_review,
             season_count=series.season_count,
             total_episodes=series.total_episodes,
-            seasons=[self._to_season_output(s, series_id, progress_map) for s in series.seasons],
+            seasons=[
+                self._to_season_output(s, series_id, progress_map, lang) for s in series.seasons
+            ],
             cast=[
                 CastMemberOutput(
                     name=m.name,
@@ -156,6 +158,7 @@ class GetSeriesByIdUseCase:
         season: Season,
         series_id: str,
         progress_map: dict[str, ProgressSummary],
+        lang: str = "en",
     ) -> SeasonOutput:
         """Convert Season entity to output DTO.
 
@@ -163,6 +166,7 @@ class GetSeriesByIdUseCase:
             season: The Season entity to convert.
             series_id: External series ID for composite key lookup.
             progress_map: Map of composite media_id to progress summary.
+            lang: Language code for localized title/synopsis.
 
         Returns:
             SeasonOutput with episode list.
@@ -170,8 +174,8 @@ class GetSeriesByIdUseCase:
         return SeasonOutput(
             id=str(season.id) if season.id else None,
             season_number=season.season_number.value,
-            title=season.title.value if season.title else None,
-            synopsis=season.synopsis,
+            title=season.get_title(lang),
+            synopsis=season.get_synopsis(lang),
             poster_path=season.poster_path.value if season.poster_path else None,
             air_date=season.air_date.value.isoformat() if season.air_date else None,
             episode_count=season.episode_count,
@@ -181,6 +185,7 @@ class GetSeriesByIdUseCase:
                     series_id,
                     season.season_number.value,
                     progress_map,
+                    lang,
                 )
                 for e in season.episodes
             ],
@@ -192,6 +197,7 @@ class GetSeriesByIdUseCase:
         series_id: str,
         season_number: int,
         progress_map: dict[str, ProgressSummary],
+        lang: str = "en",
     ) -> EpisodeOutput:
         """Convert Episode entity to output DTO.
 
@@ -200,6 +206,7 @@ class GetSeriesByIdUseCase:
             series_id: External series ID for composite key lookup.
             season_number: Season number for composite key lookup.
             progress_map: Map of composite media_id to progress summary.
+            lang: Language code for localized title/synopsis.
 
         Returns:
             EpisodeOutput with all fields including progress.
@@ -214,8 +221,8 @@ class GetSeriesByIdUseCase:
         return EpisodeOutput(
             id=str(episode.id) if episode.id else None,
             episode_number=episode.episode_number.value,
-            title=episode.title.value,
-            synopsis=episode.synopsis,
+            title=episode.get_title(lang),
+            synopsis=episode.get_synopsis(lang),
             duration_seconds=episode.duration.value,
             duration_formatted=episode.duration.format_hms(),
             file_path=primary.file_path.value if primary else None,

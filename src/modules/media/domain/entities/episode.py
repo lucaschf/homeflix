@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Any, Self
 
 from pydantic import Field, field_validator
 
@@ -61,6 +61,11 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
     synopsis: str | None = Field(default=None, max_length=10000)
     duration: Duration
 
+    # Per-language title/synopsis overrides, keyed by BCP-47 tag.
+    # ``get_title(lang)`` / ``get_synopsis(lang)`` fall back to the
+    # base (English) fields when a locale has no override.
+    localized: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
     # File variants
     files: list[MediaFile] = Field(default_factory=list)
     thumbnail_path: ImageUrl | None = None
@@ -84,6 +89,18 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
         if v is None:
             return None
         return EpisodeId(v) if isinstance(v, str) else v
+
+    # ── localized accessors ────────────────────────────────────────────
+
+    def get_title(self, lang: str = "en") -> str:
+        """Get title in the requested language, falling back to the base."""
+        loc_title = self.localized.get(lang, {}).get("title")
+        return str(loc_title) if loc_title else self.title.value
+
+    def get_synopsis(self, lang: str = "en") -> str | None:
+        """Get synopsis in the requested language, falling back to the base."""
+        loc_synopsis = self.localized.get(lang, {}).get("synopsis")
+        return str(loc_synopsis) if loc_synopsis else self.synopsis
 
     def with_intro_marker(self, marker: IntroMarker) -> Self:
         """Return a copy with the intro marker set.

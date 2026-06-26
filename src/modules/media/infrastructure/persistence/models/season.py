@@ -62,6 +62,10 @@ class SeasonModel(Base):
     synopsis: Mapped[str | None] = mapped_column(Text, nullable=True)
     poster_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
+    # Per-language title/synopsis overrides as a JSON object
+    # ({lang: {title, synopsis}}). Null when only English is stored.
+    localized: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Metadata
     air_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 

@@ -419,3 +419,44 @@ class TestEpisodeTimestamps:
 
         with pytest.raises(DomainValidationException):
             episode.season_number = 2  # type: ignore[assignment,misc]
+
+
+class TestEpisodeLocalization:
+    """Tests for ``Episode.get_title`` / ``get_synopsis`` per-language fallback."""
+
+    def _episode(self, **kwargs):
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import Duration, SeriesId, Title
+
+        defaults: dict[str, object] = {
+            "series_id": SeriesId.generate(),
+            "season_number": 1,
+            "episode_number": 1,
+            "title": Title("Pilot"),
+            "synopsis": "Walter White begins.",
+            "duration": Duration(2700),
+            "localized": {
+                "pt-BR": {"title": "Piloto", "synopsis": "Walter começa."},
+            },
+        }
+        defaults.update(kwargs)
+        return Episode(**defaults)
+
+    def test_returns_localized_when_lang_has_it(self):
+        ep = self._episode()
+        assert ep.get_title("pt-BR") == "Piloto"
+        assert ep.get_synopsis("pt-BR") == "Walter começa."
+
+    def test_falls_back_to_english_when_lang_missing(self):
+        ep = self._episode()
+        assert ep.get_title("es") == "Pilot"
+        assert ep.get_synopsis("es") == "Walter White begins."
+
+    def test_falls_back_to_english_when_localized_entry_lacks_field(self):
+        ep = self._episode(localized={"pt-BR": {"title": "Piloto"}})
+        assert ep.get_title("pt-BR") == "Piloto"
+        assert ep.get_synopsis("pt-BR") == "Walter White begins."
+
+    def test_synopsis_none_when_no_base_and_no_override(self):
+        ep = self._episode(synopsis=None, localized={})
+        assert ep.get_synopsis("pt-BR") is None

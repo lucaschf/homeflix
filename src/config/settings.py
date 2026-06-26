@@ -5,10 +5,10 @@ Settings are loaded from environment variables and .env file.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Self
+from typing import Annotated, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 _PLACEHOLDER_SECRET_KEY = "CHANGE-ME-IN-PRODUCTION"  # — sentinel literal, not a secret
 
@@ -73,7 +73,11 @@ class Settings(BaseSettings):  # type: ignore[misc]
     # Media
     # =========================================================================
 
-    media_directories: list[str] = Field(
+    # ``NoDecode`` skips pydantic-settings' default JSON decoding of
+    # list fields so the comma-separated ``.env`` value reaches the
+    # ``parse_media_dirs`` validator below instead of failing as
+    # invalid JSON.
+    media_directories: Annotated[list[str], NoDecode] = Field(
         default=[],
         description="Directories to scan for media files",
     )
@@ -166,7 +170,10 @@ class Settings(BaseSettings):  # type: ignore[misc]
     # =========================================================================
 
     default_locale: str = Field(default="en")
-    supported_locales: list[str] = Field(default=["en", "pt-BR"])
+    # ``NoDecode`` lets the ``parse_locales`` validator handle the
+    # comma-separated ``.env`` form (e.g. ``en,pt-BR``); without it
+    # pydantic-settings tries to JSON-decode the value and fails.
+    supported_locales: Annotated[list[str], NoDecode] = Field(default=["en", "pt-BR"])
 
     @field_validator("supported_locales", mode="before")
     @classmethod

@@ -6,16 +6,37 @@ from typing import Literal
 
 
 @dataclass(frozen=True)
+class LocalizedTextFields:
+    """Per-language text overrides for a season or episode.
+
+    Seasons and episodes only ever localize their title and synopsis
+    (no artwork/genres/logo like movies/series), so this is the
+    minimal counterpart to :class:`LocalizedFields`. Each maps to a
+    ``get_*(lang)`` accessor on the entity that falls back to the
+    English base when the locale has no override.
+
+    Attributes:
+        title: Localized title.
+        synopsis: Localized overview.
+    """
+
+    title: str | None = None
+    synopsis: str | None = None
+
+
+@dataclass(frozen=True)
 class EpisodeMetadata:
     """Metadata for a single episode from an external provider.
 
     Attributes:
         season_number: Season number.
         episode_number: Episode number.
-        title: Episode title.
-        synopsis: Episode overview.
+        title: Episode title (English base).
+        synopsis: Episode overview (English base).
         air_date: Original air date (ISO format string).
         duration_seconds: Runtime in seconds.
+        localized: Per-language title/synopsis overrides, keyed by
+            BCP-47 tag. Empty when only English is configured.
     """
 
     season_number: int
@@ -25,6 +46,7 @@ class EpisodeMetadata:
     air_date: str | None = None
     duration_seconds: int | None = None
     still_url: str | None = None
+    localized: dict[str, LocalizedTextFields] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -33,11 +55,13 @@ class SeasonMetadata:
 
     Attributes:
         season_number: Season number.
-        title: Season title.
-        synopsis: Season overview.
+        title: Season title (English base).
+        synopsis: Season overview (English base).
         poster_url: URL to season poster image.
         air_date: First air date (ISO format string).
         episodes: Episode metadata for this season.
+        localized: Per-language title/synopsis overrides, keyed by
+            BCP-47 tag. Empty when only English is configured.
     """
 
     season_number: int
@@ -46,6 +70,7 @@ class SeasonMetadata:
     poster_url: str | None = None
     air_date: str | None = None
     episodes: list[EpisodeMetadata] = field(default_factory=list)
+    localized: dict[str, LocalizedTextFields] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

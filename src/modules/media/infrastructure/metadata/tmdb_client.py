@@ -1,8 +1,9 @@
 """TMDB API client implementing MetadataProvider port."""
 
+import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 
@@ -13,6 +14,7 @@ from src.modules.media.application.ports import (
     CreditPerson,
     EpisodeMetadata,
     LocalizedFields,
+    LocalizedTextFields,
     MediaMetadata,
     MetadataProvider,
     PersonMetadata,
@@ -42,6 +44,17 @@ def _is_english(language: str) -> bool:
     fetch already gave us the English bio (no fallback needed).
     """
     return language.lower().split("-", 1)[0] == "en"
+
+
+def _episode_payload_by_number(
+    season_payload: dict[str, Any], episode_number: int
+) -> dict[str, Any] | None:
+    """Find an episode dict in a season payload by its ``episode_number``."""
+    episodes: list[dict[str, Any]] = season_payload.get("episodes", [])
+    for ep in episodes:
+        if ep.get("episode_number") == episode_number:
+            return ep
+    return None
 
 
 class TmdbClient(MetadataProvider):
@@ -868,15 +881,31 @@ class TmdbClient(MetadataProvider):
         )
 
     async def _fetch_season(self, series_id: int, season_number: int) -> SeasonMetadata | None:
-        """Fetch season details with episode list."""
-        resp = await self._client.get(
-            f"{self._base_url}/tv/{series_id}/season/{season_number}",
-            params=self._params(),
+        """Fetch season details + episodes with per-locale title/synopsis overlays.
+
+        The English payload is the base; each configured non-English
+        locale is fetched **concurrently** (one ``/season/{n}?language=``
+        round-trip per locale) and folded into per-season and
+        per-episode ``localized`` overrides keyed by BCP-47 tag. A
+        locale fetch that fails is skipped — the English base still
+        returns. Seasons themselves are fetched sequentially by the
+        caller; only this locale fan-out is concurrent.
+        """
+        languages: list[str | None] = [None, *self._localized_locales]
+        payloads = await asyncio.gather(
+            *(self._fetch_season_payload(series_id, season_number, lang) for lang in languages)
         )
-        if resp.status_code == 404:
+
+        base = payloads[0]
+        if base is None:
             return None
-        resp.raise_for_status()
-        data = resp.json()
+
+        # locale -> payload, dropping any overlay that failed to load.
+        loc_payloads: dict[str, dict[str, Any]] = {
+            locale: payload
+            for locale, payload in zip(self._localized_locales, payloads[1:], strict=True)
+            if payload is not None
+        }
 
         episodes = [
             EpisodeMetadata(
@@ -887,18 +916,71 @@ class TmdbClient(MetadataProvider):
                 air_date=ep.get("air_date"),
                 duration_seconds=(ep.get("runtime") or 0) * 60,
                 still_url=self._image_url(ep.get("still_path")),
+                localized=self._episode_localized(ep.get("episode_number", 0), loc_payloads),
             )
-            for ep in data.get("episodes", [])
+            for ep in base.get("episodes", [])
         ]
 
         return SeasonMetadata(
             season_number=season_number,
-            title=data.get("name"),
-            synopsis=data.get("overview"),
-            poster_url=self._image_url(data.get("poster_path")),
-            air_date=data.get("air_date"),
+            title=base.get("name"),
+            synopsis=base.get("overview"),
+            poster_url=self._image_url(base.get("poster_path")),
+            air_date=base.get("air_date"),
             episodes=episodes,
+            localized=self._text_localized(loc_payloads),
         )
+
+    async def _fetch_season_payload(
+        self, series_id: int, season_number: int, language: str | None
+    ) -> dict[str, Any] | None:
+        """One ``/season/{n}`` round-trip; ``None`` on 404 or locale-overlay failure.
+
+        ``language=None`` is the English base — a non-404 error there
+        is fatal (raised). For a localized overlay any non-200 simply
+        drops that locale.
+        """
+        resp = await self._client.get(
+            f"{self._base_url}/tv/{series_id}/season/{season_number}",
+            params=self._params(language=language),
+        )
+        if resp.status_code == 404:
+            return None
+        if language is not None and resp.status_code != 200:
+            return None
+        if language is None:
+            resp.raise_for_status()
+        data: dict[str, Any] = resp.json()
+        return data
+
+    @staticmethod
+    def _episode_localized(
+        episode_number: int, loc_payloads: dict[str, dict[str, Any]]
+    ) -> dict[str, LocalizedTextFields]:
+        """Build per-locale title/synopsis overrides for one episode."""
+        localized: dict[str, LocalizedTextFields] = {}
+        for locale, payload in loc_payloads.items():
+            loc_ep = _episode_payload_by_number(payload, episode_number)
+            if loc_ep is None:
+                continue
+            fields = LocalizedTextFields(title=loc_ep.get("name"), synopsis=loc_ep.get("overview"))
+            if fields.title or fields.synopsis:
+                localized[locale] = fields
+        return localized
+
+    @staticmethod
+    def _text_localized(
+        loc_payloads: dict[str, dict[str, Any]],
+    ) -> dict[str, LocalizedTextFields]:
+        """Build per-locale title/synopsis overrides for the season itself."""
+        localized: dict[str, LocalizedTextFields] = {}
+        for locale, payload in loc_payloads.items():
+            fields = LocalizedTextFields(
+                title=payload.get("name"), synopsis=payload.get("overview")
+            )
+            if fields.title or fields.synopsis:
+                localized[locale] = fields
+        return localized
 
     def _parse_cast(self, cast_data: list[dict[str, object]]) -> list[CreditPerson]:
         """Parse TMDB cast data into CreditPerson list (top billed)."""

@@ -87,6 +87,10 @@ class EpisodeModel(Base):
     synopsis: Mapped[str | None] = mapped_column(Text, nullable=True)
     duration: Mapped[int] = mapped_column(Integer, nullable=False)  # seconds
 
+    # Per-language title/synopsis overrides as a JSON object
+    # ({lang: {title, synopsis}}). Null when only English is stored.
+    localized: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # File info (nullable when no primary file variant exists)
     file_path: Mapped[str | None] = mapped_column(
         String(2000),

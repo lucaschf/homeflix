@@ -30,8 +30,8 @@ class MediaLookupAdapter(MediaLookupPort):
         return MovieDisplayInfo(
             media_id=movie_id.value,
             title=movie.get_title(lang),
-            poster_path=movie.poster_path.value if movie.poster_path else None,
-            backdrop_path=movie.backdrop_path.value if movie.backdrop_path else None,
+            poster_path=movie.get_poster_path(lang),
+            backdrop_path=movie.get_backdrop_path(lang),
         )
 
     async def get_series_with_episodes(
@@ -52,7 +52,7 @@ class MediaLookupAdapter(MediaLookupPort):
                     EpisodeInfo(
                         season_number=season.season_number.value,
                         episode_number=episode.episode_number.value,
-                        title=episode.title.value,
+                        title=episode.get_title(lang),
                         duration_seconds=episode.duration.value,
                     )
                 )
@@ -60,8 +60,8 @@ class MediaLookupAdapter(MediaLookupPort):
         return SeriesWithEpisodesInfo(
             series_id=series_id.value,
             title=series.get_title(lang),
-            poster_path=series.poster_path.value if series.poster_path else None,
-            backdrop_path=series.backdrop_path.value if series.backdrop_path else None,
+            poster_path=series.get_poster_path(lang),
+            backdrop_path=series.get_backdrop_path(lang),
             episodes=episodes,
         )
 
