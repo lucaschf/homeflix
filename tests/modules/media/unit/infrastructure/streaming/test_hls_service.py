@@ -247,13 +247,41 @@ class TestHlsServiceIsComplete:
 
     def test_should_return_true_when_endlist_marker_present(self, tmp_path: Path) -> None:
         service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
+        bucket = tmp_path / "abc123"
+        video_dir = bucket / "video"
+        video_dir.mkdir(parents=True)
+        (video_dir / "playlist.m3u8").write_text(
+            "#EXTM3U\n#EXTINF:10,\nsegment_0000.ts\n#EXT-X-ENDLIST\n"
+        )
+        (bucket / "master.m3u8").write_text("#EXTM3U\nvideo/playlist.m3u8\n")
+
+        assert service.is_complete("abc123") is True
+
+    def test_should_return_false_when_master_missing(self, tmp_path: Path) -> None:
+        # Sealed nested playlist but no root master.m3u8: the zombie a
+        # partial LRU rmtree leaves behind. Must be treated as incomplete
+        # so ensure_playlist regenerates instead of 404ing forever.
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         video_dir = tmp_path / "abc123" / "video"
         video_dir.mkdir(parents=True)
         (video_dir / "playlist.m3u8").write_text(
             "#EXTM3U\n#EXTINF:10,\nsegment_0000.ts\n#EXT-X-ENDLIST\n"
         )
 
-        assert service.is_complete("abc123") is True
+        assert service.is_complete("abc123") is False
+
+    def test_should_return_false_when_master_empty(self, tmp_path: Path) -> None:
+        # A torn write can leave a zero-byte master; that is not servable.
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
+        bucket = tmp_path / "abc123"
+        video_dir = bucket / "video"
+        video_dir.mkdir(parents=True)
+        (video_dir / "playlist.m3u8").write_text(
+            "#EXTM3U\n#EXTINF:10,\nsegment_0000.ts\n#EXT-X-ENDLIST\n"
+        )
+        (bucket / "master.m3u8").write_text("")
+
+        assert service.is_complete("abc123") is False
 
     def test_should_return_false_when_endlist_marker_missing(self, tmp_path: Path) -> None:
         service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
@@ -1454,6 +1482,63 @@ class TestEvictLru:
 
         assert evicted == []
 
+    def test_should_not_leave_partial_bucket_behind(self, tmp_path: Path) -> None:
+        # Eviction must be all-or-nothing: a bucket either fully survives
+        # or fully disappears — never a half-deleted zombie.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=1),
+            cache_dir=str(tmp_path),
+        )
+        bucket = tmp_path / "old_hash"
+        (bucket / "video").mkdir(parents=True)
+        (bucket / "master.m3u8").write_text("#EXTM3U\nvideo/playlist.m3u8\n")
+        (bucket / "video" / "segment.ts").write_bytes(b"\x00" * 2_000_000)
+        service._last_access["old_hash"] = 100.0
+
+        evicted = service.evict_lru()
+
+        assert "old_hash" in evicted
+        assert not bucket.exists()
+        # No trash dir left lingering in the live cache path.
+        assert list(tmp_path.glob(".evicting-*")) == []
+
+    def test_should_keep_bucket_intact_when_rename_blocked(self, tmp_path: Path) -> None:
+        # If the atomic rename is blocked (a locked file), the bucket must
+        # stay 100% intact rather than be partially deleted.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=1),
+            cache_dir=str(tmp_path),
+        )
+        bucket = tmp_path / "locked_hash"
+        bucket.mkdir()
+        (bucket / "master.m3u8").write_text("#EXTM3U\nvideo/playlist.m3u8\n")
+        (bucket / "segment.ts").write_bytes(b"\x00" * 2_000_000)
+        service._last_access["locked_hash"] = 100.0
+
+        with patch.object(Path, "rename", side_effect=OSError("locked")):
+            evicted = service.evict_lru()
+
+        assert evicted == []
+        assert bucket.exists()
+        assert (bucket / "master.m3u8").is_file()
+        assert (bucket / "segment.ts").is_file()
+
+    def test_should_clean_leftover_trash_dir(self, tmp_path: Path) -> None:
+        # A leftover .evicting-* dir from a prior blocked cleanup is wiped
+        # on the next sweep and never counted as a real bucket.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=100),
+            cache_dir=str(tmp_path),
+        )
+        trash = tmp_path / ".evicting-stale_hash"
+        trash.mkdir()
+        (trash / "segment.ts").write_bytes(b"\x00" * 1000)
+
+        evicted = service.evict_lru()
+
+        assert evicted == []
+        assert not trash.exists()
+
 
 @pytest.mark.unit
 class TestHasEndlist:
@@ -1610,6 +1695,7 @@ class TestHlsServiceIsCompleteAllPlaylists:
             (bucket / sub / "playlist.m3u8").write_text(
                 "#EXTM3U\n#EXTINF:10,\nseg.ts\n#EXT-X-ENDLIST\n"
             )
+        (bucket / "master.m3u8").write_text("#EXTM3U\nvideo/playlist.m3u8\n")
 
         assert service.is_complete("abc") is True
 
