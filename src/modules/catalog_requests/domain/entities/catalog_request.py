@@ -76,6 +76,11 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     tmdb_id: int
     media_type: MediaType
     title: str | None = None
+    # Per-language title snapshot built once at request creation from
+    # TMDB (``{lang: title}``). ``get_title(lang)`` reads this so the
+    # "Em breve" feed renders in the viewer's language; falls back to
+    # the English snapshot / ``title`` when a locale is missing.
+    localized_titles: dict[str, str] = Field(default_factory=dict)
     poster_url: str | None = None
     requester_user_id: str | None = None
     collection_tmdb_id: int | None = None
@@ -94,6 +99,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         requester_user_id: str | None = None,
         collection_tmdb_id: int | None = None,
         notify_on_arrival: bool = False,
+        localized_titles: dict[str, str] | None = None,
     ) -> CatalogRequest:
         """Factory method with automatic ID generation.
 
@@ -105,6 +111,10 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
                 (older clients, programmatic ingest), the field stays
                 ``None`` and the admin queue falls back to the bare
                 ``tmdb/<id>`` link.
+            localized_titles: Per-language title snapshot ``{lang:
+                title}`` resolved once from TMDB at creation. Empty
+                when TMDB was unreachable; ``get_title`` then falls
+                back to ``title``.
             poster_url: Snapshot of the TMDB poster URL at request
                 time, for the "Em breve" grid. ``None`` when unknown.
             requester_user_id: External id (``usr_xxx``) of the user
@@ -124,6 +134,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
             tmdb_id=tmdb_id,
             media_type=media_type,
             title=title,
+            localized_titles=localized_titles or {},
             poster_url=poster_url,
             requester_user_id=requester_user_id,
             collection_tmdb_id=collection_tmdb_id,
@@ -132,6 +143,15 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
             requested_at=datetime.now(UTC),
             fulfilled_at=None,
         )
+
+    def get_title(self, lang: str = "en") -> str | None:
+        """Title in the requested language, falling back to the snapshot.
+
+        Resolution order: the requested locale's TMDB snapshot, then
+        the English snapshot, then the raw ``title`` the client sent at
+        request time (or ``None`` for legacy/programmatic rows).
+        """
+        return self.localized_titles.get(lang) or self.localized_titles.get("en") or self.title
 
     @property
     def is_fulfilled(self) -> bool:
@@ -172,6 +192,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         poster_url: str | None = None,
         requester_user_id: str | None = None,
         notify: bool = False,
+        localized_titles: dict[str, str] | None = None,
     ) -> CatalogRequest | None:
         """Fold a repeat request's data into this existing one.
 
@@ -194,6 +215,9 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
                 request.
             notify: Whether this entry point wants the arrival
                 notification enabled.
+            localized_titles: Per-language title snapshot to backfill
+                when the existing row has none yet (first-owner-wins,
+                same as ``title``).
 
         Returns:
             A new instance with the merged changes, or ``None`` when the
@@ -203,6 +227,8 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         updates: dict[str, object] = {}
         if self.title is None and title:
             updates["title"] = title
+        if not self.localized_titles and localized_titles:
+            updates["localized_titles"] = localized_titles
         if self.poster_url is None and poster_url:
             updates["poster_url"] = poster_url
         if self.requester_user_id is None and requester_user_id:

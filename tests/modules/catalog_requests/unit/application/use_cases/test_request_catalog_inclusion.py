@@ -12,6 +12,7 @@ from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.shared_kernel.value_objects import MediaType
 from tests.modules.catalog_requests.unit.conftest import (
     make_catalog_requests_uow_mock,
+    make_fake_title_provider,
 )
 
 
@@ -25,7 +26,10 @@ class TestRequestCatalogInclusionUseCase:
         mocks.catalog_requests.find_by_tmdb_id.return_value = None
         # ``add`` returns the persisted aggregate.
         mocks.catalog_requests.add.side_effect = lambda req: req
-        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             CreateCatalogRequestInput(
@@ -50,7 +54,10 @@ class TestRequestCatalogInclusionUseCase:
         )
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
-        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             CreateCatalogRequestInput(
@@ -72,7 +79,10 @@ class TestRequestCatalogInclusionUseCase:
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
         mocks.catalog_requests.update.side_effect = lambda req: req
-        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             CreateCatalogRequestInput(
@@ -90,7 +100,10 @@ class TestRequestCatalogInclusionUseCase:
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = None
         mocks.catalog_requests.add.side_effect = lambda req: req
-        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             CreateCatalogRequestInput(
@@ -114,7 +127,10 @@ class TestRequestCatalogInclusionUseCase:
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
         mocks.catalog_requests.update.side_effect = lambda req: req
-        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             CreateCatalogRequestInput(
@@ -138,7 +154,10 @@ class TestRequestCatalogInclusionUseCase:
         )
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
-        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             CreateCatalogRequestInput(
@@ -155,7 +174,10 @@ class TestRequestCatalogInclusionUseCase:
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = None
         mocks.catalog_requests.add.side_effect = lambda req: req
-        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             CreateCatalogRequestInput(
@@ -179,7 +201,10 @@ class TestRequestCatalogInclusionUseCase:
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
         mocks.catalog_requests.update.side_effect = lambda req: req
-        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             CreateCatalogRequestInput(
@@ -204,7 +229,10 @@ class TestRequestCatalogInclusionUseCase:
         )
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
-        use_case = RequestCatalogInclusionUseCase(uow_factory=mocks.factory)
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             CreateCatalogRequestInput(
@@ -216,3 +244,71 @@ class TestRequestCatalogInclusionUseCase:
 
         assert result.requester_user_id == "usr_alice"
         mocks.catalog_requests.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_populates_localized_titles_on_new_request(self) -> None:
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = None
+        mocks.catalog_requests.add.side_effect = lambda req: req
+        provider = make_fake_title_provider(
+            {"en": "Alien", "pt-BR": "Alien, o Oitavo Passageiro"},
+        )
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=provider,
+        )
+
+        await use_case.execute(
+            CreateCatalogRequestInput(tmdb_id=348, media_type=MediaType.MOVIE),
+        )
+
+        created = mocks.catalog_requests.add.call_args.args[0]
+        assert created.localized_titles == {
+            "en": "Alien",
+            "pt-BR": "Alien, o Oitavo Passageiro",
+        }
+        provider.get_titles.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_backfills_localized_titles_on_legacy_repeat(self) -> None:
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=MediaType.MOVIE,
+            title="Alien",
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        mocks.catalog_requests.update.side_effect = lambda req: req
+        provider = make_fake_title_provider({"pt-BR": "Alien, o Oitavo Passageiro"})
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=provider,
+        )
+
+        await use_case.execute(
+            CreateCatalogRequestInput(tmdb_id=348, media_type=MediaType.MOVIE),
+        )
+
+        updated = mocks.catalog_requests.update.call_args.args[0]
+        assert updated.localized_titles == {"pt-BR": "Alien, o Oitavo Passageiro"}
+
+    @pytest.mark.asyncio
+    async def test_skips_title_fetch_when_already_localized(self) -> None:
+        existing = CatalogRequest.create(
+            tmdb_id=348,
+            media_type=MediaType.MOVIE,
+            localized_titles={"pt-BR": "Alien, o Oitavo Passageiro"},
+        )
+        mocks = make_catalog_requests_uow_mock()
+        mocks.catalog_requests.find_by_tmdb_id.return_value = existing
+        provider = make_fake_title_provider({"pt-BR": "should-not-be-used"})
+        use_case = RequestCatalogInclusionUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=provider,
+        )
+
+        await use_case.execute(
+            CreateCatalogRequestInput(tmdb_id=348, media_type=MediaType.MOVIE),
+        )
+
+        provider.get_titles.assert_not_awaited()

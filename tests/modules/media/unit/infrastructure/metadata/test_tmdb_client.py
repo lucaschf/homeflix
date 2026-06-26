@@ -1,7 +1,7 @@
 """Tests for TmdbClient."""
 
 import itertools
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -12,6 +12,7 @@ from src.modules.media.infrastructure.metadata.tmdb_client import (
     TmdbClient,
     _safe_int,
 )
+from src.shared_kernel.value_objects import MediaType
 
 
 def _build_response(status_code: int = 200, json_data: dict[str, Any] | None = None) -> MagicMock:
@@ -1133,6 +1134,62 @@ class TestLocalizedSupportedLocales:
         assert result is not None
         assert set(result.localized) == {"pt-BR", "es-ES"}
         assert result.localized["es-ES"].synopsis == "ES"
+
+
+@pytest.mark.unit
+class TestGetTranslatedTitles:
+    """``get_translated_titles`` maps TMDB ``/translations`` to supported locales."""
+
+    _PAYLOAD: ClassVar[dict[str, Any]] = {
+        "translations": [
+            {"iso_639_1": "en", "iso_3166_1": "US", "data": {"title": "Alien", "name": "Alien"}},
+            {
+                "iso_639_1": "pt",
+                "iso_3166_1": "BR",
+                "data": {"title": "Alien, o Oitavo Passageiro", "name": "Alien BR"},
+            },
+            {
+                "iso_639_1": "pt",
+                "iso_3166_1": "PT",
+                "data": {"title": "Alien, o 8º Passageiro", "name": "Alien PT"},
+            },
+        ]
+    }
+
+    @pytest.mark.asyncio
+    async def test_movie_maps_supported_locales(self) -> None:
+        client = _make_client(get_responses=_build_response(json_data=self._PAYLOAD))
+
+        titles = await client.get_translated_titles(348, MediaType.MOVIE)
+
+        assert titles == {"en": "Alien", "pt-BR": "Alien, o Oitavo Passageiro"}
+
+    @pytest.mark.asyncio
+    async def test_series_uses_name_key(self) -> None:
+        client = _make_client(get_responses=_build_response(json_data=self._PAYLOAD))
+
+        titles = await client.get_translated_titles(1396, MediaType.SERIES)
+
+        assert titles == {"en": "Alien", "pt-BR": "Alien BR"}
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_on_http_error(self) -> None:
+        client = _make_client(get_responses=_build_response(status_code=500))
+
+        assert await client.get_translated_titles(348, MediaType.MOVIE) == {}
+
+    @pytest.mark.asyncio
+    async def test_omits_locales_without_translation(self) -> None:
+        client = TmdbClient(api_key="test-key", supported_locales=("en", "pt-BR", "es-ES"))
+        mock_http = MagicMock()
+        mock_http.get = AsyncMock(return_value=_build_response(json_data=self._PAYLOAD))
+        client._client = mock_http
+
+        titles = await client.get_translated_titles(348, MediaType.MOVIE)
+
+        # No Spanish entry in the payload → es-ES is omitted.
+        assert "es-ES" not in titles
+        assert set(titles) == {"en", "pt-BR"}
 
 
 @pytest.mark.unit

@@ -3,6 +3,9 @@
 from src.modules.media.infrastructure.acl.library_health_adapter import (
     LibraryHealthAdapter,
 )
+from src.modules.media.infrastructure.acl.localized_title_provider_adapter import (
+    TmdbLocalizedTitleAdapter,
+)
 from src.modules.media.infrastructure.acl.profile_library_access_adapter import (
     ProfileLibraryAccessAdapter,
 )
@@ -14,4 +17,5 @@ __all__ = [
     "LibraryHealthAdapter",
     "ProfileLibraryAccessAdapter",
     "ProgressLookupAdapter",
+    "TmdbLocalizedTitleAdapter",
 ]

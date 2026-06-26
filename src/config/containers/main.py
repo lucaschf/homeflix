@@ -39,7 +39,9 @@ from src.modules.media.infrastructure.acl import (
     LibraryHealthAdapter,
     ProfileLibraryAccessAdapter,
     ProgressLookupAdapter,
+    TmdbLocalizedTitleAdapter,
 )
+from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
 from src.modules.media.infrastructure.scheduling.scheduler_controller import (
     LibraryScanSchedulerController,
 )
@@ -170,6 +172,22 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         session_factory=infrastructure.session_factory,
     )
 
+    # Cross-BC title provider for Catalog Requests: built here (not in
+    # MediaContainer) because Catalog Requests is composed before Media
+    # — wiring it through the Media container would invert the build
+    # order. A dedicated TMDB client keeps this independent of the
+    # Media container's own ``tmdb_client``.
+    _catalog_request_tmdb_client = providers.Singleton(
+        TmdbClient,
+        api_key=config.provided.tmdb_api_key,
+        supported_locales=config.provided.supported_locales,
+    )
+
+    _localized_title_provider_adapter = providers.Singleton(
+        TmdbLocalizedTitleAdapter,
+        tmdb_client=_catalog_request_tmdb_client,
+    )
+
     # Catalog Requests is built before Media so its ACL adapter can be
     # plumbed into the Media container as the ``CatalogRequestLookupPort``
     # implementation. Catalog Requests itself takes no Media dependency,
@@ -178,6 +196,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         CatalogRequestsContainer,
         session_factory=infrastructure.session_factory,
         notification_publisher=notifications.notification_publisher,
+        localized_title_provider=_localized_title_provider_adapter,
     )
 
     media = providers.Container(

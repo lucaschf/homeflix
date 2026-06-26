@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.persistence.base import Base
@@ -47,6 +47,9 @@ class CatalogRequestModel(Base):
     tmdb_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     media_type: Mapped[str] = mapped_column(String(20), nullable=False)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Per-language title snapshot as a JSON object (``{lang: title}``),
+    # resolved from TMDB once at creation. Null on legacy rows.
+    localized_titles: Mapped[str | None] = mapped_column(Text, nullable=True)
     poster_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     requester_user_id: Mapped[str | None] = mapped_column(
         String(50),

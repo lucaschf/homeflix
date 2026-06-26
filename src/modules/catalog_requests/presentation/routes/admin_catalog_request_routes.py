@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Catalog Requests"])
 @router.get("/catalog-requests")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def list_admin_catalog_requests(
+    lang: str = "en",
     _admin: UserModel = Depends(current_admin_user),
     use_case: ListAdminCatalogRequestsUseCase = Depends(
         Provide[ApplicationContainer.catalog_requests.list_admin_catalog_requests],
@@ -36,8 +37,9 @@ async def list_admin_catalog_requests(
     Admin-only queue: each row carries the base request fields
     (including ``source`` + derived ``status``) plus ``subscriber_count``
     (the "Inscritos" column). Admin-gated via ``current_admin_user``.
+    ``lang`` selects the per-request localized title snapshot.
     """
-    items = await use_case.execute()
+    items = await use_case.execute(lang)
     return api_list(
         [{**asdict(item.request), "subscriber_count": item.subscriber_count} for item in items],
     )

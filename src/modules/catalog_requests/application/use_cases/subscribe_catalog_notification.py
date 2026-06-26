@@ -4,9 +4,13 @@ from src.modules.catalog_requests.application.dtos import (
     CatalogRequestOutput,
     SubscribeCatalogNotificationInput,
 )
+from src.modules.catalog_requests.application.ports import LocalizedTitleProviderPort
 from src.modules.catalog_requests.application.unit_of_work import (
     CatalogRequestsUnitOfWork,
     CatalogRequestsUnitOfWorkFactory,
+)
+from src.modules.catalog_requests.application.use_cases._localized_title_helpers import (
+    resolve_localized_titles,
 )
 from src.modules.catalog_requests.domain.entities import (
     CatalogRequest,
@@ -39,14 +43,21 @@ class SubscribeCatalogNotificationUseCase:
         True
     """
 
-    def __init__(self, uow_factory: CatalogRequestsUnitOfWorkFactory) -> None:
+    def __init__(
+        self,
+        uow_factory: CatalogRequestsUnitOfWorkFactory,
+        localized_title_provider: LocalizedTitleProviderPort,
+    ) -> None:
         """Initialize the use case.
 
         Args:
             uow_factory: Factory that opens a fresh catalog-requests
                 Unit of Work.
+            localized_title_provider: Cross-BC port that resolves the
+                per-language TMDB title snapshot at creation time.
         """
         self._uow_factory = uow_factory
+        self._titles = localized_title_provider
 
     async def execute(
         self,
@@ -54,9 +65,27 @@ class SubscribeCatalogNotificationUseCase:
     ) -> CatalogRequestOutput:
         """Execute the use case.
 
+        Like "Solicitar inclusão", the per-language title snapshot is
+        resolved from TMDB **outside** the write transaction when the
+        request is first created (or lacks one), so the DB write never
+        holds a lock open during network I/O.
+
         Returns:
             The persisted request with ``notify_on_arrival=True``.
         """
+        async with self._uow_factory() as uow:
+            existing = await uow.catalog_requests.find_by_tmdb_id(
+                input_dto.tmdb_id,
+                input_dto.media_type,
+            )
+
+        need_titles = existing is None or not existing.localized_titles
+        localized_titles = (
+            await resolve_localized_titles(self._titles, input_dto.tmdb_id, input_dto.media_type)
+            if need_titles
+            else {}
+        )
+
         async with self._uow_factory() as uow:
             existing = await uow.catalog_requests.find_by_tmdb_id(
                 input_dto.tmdb_id,
@@ -70,6 +99,7 @@ class SubscribeCatalogNotificationUseCase:
                     poster_url=input_dto.poster_url,
                     requester_user_id=input_dto.requester_user_id,
                     notify=True,
+                    localized_titles=localized_titles,
                 )
                 request = (
                     existing
@@ -86,6 +116,7 @@ class SubscribeCatalogNotificationUseCase:
                         requester_user_id=input_dto.requester_user_id,
                         collection_tmdb_id=input_dto.collection_tmdb_id,
                         notify_on_arrival=True,
+                        localized_titles=localized_titles,
                     ),
                 )
 

@@ -15,6 +15,7 @@ from src.modules.catalog_requests.domain.entities import (
 from src.shared_kernel.value_objects import MediaType
 from tests.modules.catalog_requests.unit.conftest import (
     make_catalog_requests_uow_mock,
+    make_fake_title_provider,
 )
 
 
@@ -27,7 +28,10 @@ class TestSubscribeCatalogNotificationUseCase:
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = None
         mocks.catalog_requests.add.side_effect = lambda req: req
-        use_case = SubscribeCatalogNotificationUseCase(uow_factory=mocks.factory)
+        use_case = SubscribeCatalogNotificationUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             SubscribeCatalogNotificationInput(
@@ -49,7 +53,10 @@ class TestSubscribeCatalogNotificationUseCase:
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
         mocks.catalog_requests.update.side_effect = lambda req: req
-        use_case = SubscribeCatalogNotificationUseCase(uow_factory=mocks.factory)
+        use_case = SubscribeCatalogNotificationUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             SubscribeCatalogNotificationInput(
@@ -70,7 +77,10 @@ class TestSubscribeCatalogNotificationUseCase:
         )
         mocks = make_catalog_requests_uow_mock()
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
-        use_case = SubscribeCatalogNotificationUseCase(uow_factory=mocks.factory)
+        use_case = SubscribeCatalogNotificationUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         result = await use_case.execute(
             SubscribeCatalogNotificationInput(
@@ -95,7 +105,10 @@ class TestSubscribeCatalogNotificationUseCase:
         mocks.catalog_requests.find_by_tmdb_id.return_value = existing
         mocks.catalog_requests.update.side_effect = lambda req: req
         mocks.catalog_subscriptions.find.return_value = None
-        use_case = SubscribeCatalogNotificationUseCase(uow_factory=mocks.factory)
+        use_case = SubscribeCatalogNotificationUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         await use_case.execute(
             SubscribeCatalogNotificationInput(
@@ -124,7 +137,10 @@ class TestSubscribeCatalogNotificationUseCase:
             existing.id,
             "usr_alice",
         )
-        use_case = SubscribeCatalogNotificationUseCase(uow_factory=mocks.factory)
+        use_case = SubscribeCatalogNotificationUseCase(
+            uow_factory=mocks.factory,
+            localized_title_provider=make_fake_title_provider(),
+        )
 
         await use_case.execute(
             SubscribeCatalogNotificationInput(

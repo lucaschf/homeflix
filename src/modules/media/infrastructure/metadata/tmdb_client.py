@@ -22,6 +22,7 @@ from src.modules.media.application.ports import (
     SeasonMetadata,
 )
 from src.modules.media.domain.value_objects import ContentRating
+from src.shared_kernel.value_objects import MediaType
 
 _MAX_CAST = 15
 
@@ -57,6 +58,35 @@ def _episode_payload_by_number(
     return None
 
 
+def _pick_translation_title(
+    translations: list[dict[str, Any]], locale: str, title_key: str
+) -> str | None:
+    """Pick a title from a TMDB ``/translations`` payload for a BCP-47 locale.
+
+    Prefers an exact language+region match (``pt`` + ``BR`` for
+    ``pt-BR``), then falls back to the first entry sharing the base
+    language. Returns ``None`` when the locale has no usable title.
+    """
+    parts = locale.split("-", 1)
+    lang = parts[0].lower()
+    region = parts[1].upper() if len(parts) > 1 else None
+
+    base: str | None = None
+    for tr in translations:
+        if not isinstance(tr, dict):
+            continue
+        if str(tr.get("iso_639_1", "")).lower() != lang:
+            continue
+        title = (tr.get("data") or {}).get(title_key)
+        if not isinstance(title, str) or not title:
+            continue
+        if region and str(tr.get("iso_3166_1", "")).upper() == region:
+            return title
+        if base is None:
+            base = title
+    return base
+
+
 class TmdbClient(MetadataProvider):
     """The Movie Database (TMDB) API client.
 
@@ -87,6 +117,7 @@ class TmdbClient(MetadataProvider):
         self._api_key = api_key
         self._base_url = base_url
         self._client = httpx.AsyncClient(timeout=30.0)
+        self._supported_locales = list(supported_locales)
         # English is the base metadata, so it never appears as an
         # overlay. Everything else becomes one extra details fetch.
         self._localized_locales = [
@@ -703,6 +734,35 @@ class TmdbClient(MetadataProvider):
                 localized[locale] = fields
 
         return replace(en_meta, localized=localized)
+
+    async def get_translated_titles(self, tmdb_id: int, media_type: MediaType) -> dict[str, str]:
+        """Resolve per-locale titles for the configured supported locales.
+
+        One ``/translations`` round-trip; maps each supported BCP-47 tag
+        to its TMDB-translated title (e.g. ``{"en": ..., "pt-BR": ...}``).
+        Locales with no translation are omitted. Best-effort: returns
+        ``{}`` on any HTTP/parse failure so callers fall back to their
+        own snapshot.
+        """
+        path = "movie" if media_type == MediaType.MOVIE else "tv"
+        title_key = "title" if media_type == MediaType.MOVIE else "name"
+        try:
+            resp = await self._client.get(
+                f"{self._base_url}/{path}/{tmdb_id}/translations",
+                params=self._params(),
+            )
+        except httpx.HTTPError:
+            return {}
+        if resp.status_code != 200:
+            return {}
+
+        translations = resp.json().get("translations", [])
+        titles: dict[str, str] = {}
+        for locale in self._supported_locales:
+            title = _pick_translation_title(translations, locale, title_key)
+            if title:
+                titles[locale] = title
+        return titles
 
     async def _fetch_series_localized_fields(
         self, tmdb_id: int, locale: str

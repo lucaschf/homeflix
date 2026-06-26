@@ -27,8 +27,12 @@ class ListAdminCatalogRequestsUseCase:
         """
         self._uow_factory = uow_factory
 
-    async def execute(self) -> list[AdminCatalogRequestItem]:
-        """Return every pending request annotated with its subscriber count."""
+    async def execute(self, lang: str = "en") -> list[AdminCatalogRequestItem]:
+        """Return every pending request annotated with its subscriber count.
+
+        Args:
+            lang: Language for the per-request localized title snapshot.
+        """
         async with self._uow_factory() as uow:
             pending = await uow.catalog_requests.list_pending(None)
             request_ids = [r.id for r in pending if r.id is not None]
@@ -36,7 +40,7 @@ class ListAdminCatalogRequestsUseCase:
 
         return [
             AdminCatalogRequestItem(
-                request=CatalogRequestOutput.from_entity(request),
+                request=CatalogRequestOutput.from_entity(request, lang),
                 subscriber_count=counts.get(request.id, 0),
             )
             for request in pending
