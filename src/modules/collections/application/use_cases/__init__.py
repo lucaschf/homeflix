@@ -27,6 +27,9 @@ from src.modules.collections.application.use_cases.remove_item_from_custom_list 
 from src.modules.collections.application.use_cases.rename_custom_list import (
     RenameCustomListUseCase,
 )
+from src.modules.collections.application.use_cases.reorder_custom_list_items import (
+    ReorderCustomListItemsUseCase,
+)
 from src.modules.collections.application.use_cases.toggle_watchlist import (
     ToggleWatchlistUseCase,
 )
@@ -41,5 +44,6 @@ __all__ = [
     "ListCustomListsUseCase",
     "RemoveItemFromCustomListUseCase",
     "RenameCustomListUseCase",
+    "ReorderCustomListItemsUseCase",
     "ToggleWatchlistUseCase",
 ]

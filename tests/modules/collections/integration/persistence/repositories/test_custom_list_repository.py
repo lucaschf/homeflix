@@ -393,6 +393,40 @@ class TestSQLAlchemyCustomListRepositoryItems:
             "mov_third0000000",
         ]
 
+    async def test_reorder_items_should_rewrite_positions(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        custom_list = _create_list()
+        await repo.add(custom_list)
+        for i, media_id in enumerate(["mov_first0000000", "mov_second000000", "mov_third0000000"]):
+            await repo.add_item(
+                str(custom_list.id), _create_item(media_id=media_id, position=i), _PROFILE_ID
+            )
+
+        # New manual order: third, first, second.
+        await repo.reorder_items(
+            str(custom_list.id),
+            [
+                CollectionMediaId("mov_third0000000"),
+                CollectionMediaId("mov_first0000000"),
+                CollectionMediaId("mov_second000000"),
+            ],
+            _PROFILE_ID,
+        )
+
+        items = await repo.list_items(str(custom_list.id), _PROFILE_ID)
+        assert [item.media_id.value for item in items] == [
+            "mov_third0000000",
+            "mov_first0000000",
+            "mov_second000000",
+        ]
+
+    async def test_reorder_items_should_noop_for_unknown_list(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        # Should not raise even when the list doesn't resolve.
+        await repo.reorder_items(MISSING_LIST_ID, [SAMPLE_MOVIE_ID], _PROFILE_ID)
+
     async def test_list_items_should_return_empty_when_list_not_found(
         self, db_session: AsyncSession
     ) -> None:

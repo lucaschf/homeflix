@@ -15,6 +15,7 @@ from src.modules.collections.application.dtos import (
     GetCustomListItemsInput,
     RemoveItemFromCustomListInput,
     RenameCustomListInput,
+    ReorderCustomListItemsInput,
 )
 from src.modules.collections.application.use_cases import (
     AddItemToCustomListUseCase,
@@ -24,6 +25,7 @@ from src.modules.collections.application.use_cases import (
     ListCustomListsUseCase,
     RemoveItemFromCustomListUseCase,
     RenameCustomListUseCase,
+    ReorderCustomListItemsUseCase,
 )
 from src.modules.collections.application.use_cases.list_custom_lists import (
     ListCustomListsInput,
@@ -33,6 +35,7 @@ from src.modules.collections.presentation.schemas import (
     AddItemToCustomListRequest,
     CreateCustomListRequest,
     RenameCustomListRequest,
+    ReorderCustomListItemsRequest,
 )
 
 router = APIRouter(prefix="/api/v1/custom-lists", tags=["Custom Lists"])
@@ -147,6 +150,26 @@ async def add_item_to_custom_list(
     return api_single(
         "custom_list",
         {"list_id": list_id, "media_id": body.media_id, "added": True},
+    )
+
+
+@router.patch("/{list_id}/items/order", status_code=204)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def reorder_custom_list_items(
+    list_id: str,
+    body: ReorderCustomListItemsRequest,
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: ReorderCustomListItemsUseCase = Depends(
+        Provide[ApplicationContainer.collections.reorder_custom_list_items],
+    ),
+) -> None:
+    """Persist a manual item order for a custom list owned by the caller."""
+    await use_case.execute(
+        ReorderCustomListItemsInput(
+            profile_id=profile_id,
+            list_id=list_id,
+            media_ids=tuple(body.media_ids),
+        )
     )
 
 

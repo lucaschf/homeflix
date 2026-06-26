@@ -12,6 +12,7 @@ from src.modules.collections.application.use_cases import (
     ListCustomListsUseCase,
     RemoveItemFromCustomListUseCase,
     RenameCustomListUseCase,
+    ReorderCustomListItemsUseCase,
     ToggleWatchlistUseCase,
 )
 from src.modules.collections.infrastructure.acl import MediaLookupAdapter, ProgressLookupAdapter
@@ -113,6 +114,11 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
 
     remove_item_from_custom_list = providers.Factory(
         RemoveItemFromCustomListUseCase,
+        uow_factory=collections_unit_of_work_factory,
+    )
+
+    reorder_custom_list_items = providers.Factory(
+        ReorderCustomListItemsUseCase,
         uow_factory=collections_unit_of_work_factory,
     )
 
