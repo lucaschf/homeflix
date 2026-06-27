@@ -18,9 +18,9 @@ process restart any rows still marked ``running`` get swept to
 
 import logging
 
-from src.modules.library.domain.entities.library import Library
 from src.modules.media.application.dtos.enrichment_dtos import BulkEnrichInput
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput
+from src.modules.media.application.ports.library_lookup_port import LibraryRef
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases.bulk_enrich_metadata import (
     BulkEnrichMetadataUseCase,
@@ -83,18 +83,20 @@ class ScanRunService:
                 ),
             )
 
-    async def run_scan(self, run_id: ScanRunId, library: Library) -> None:
+    async def run_scan(self, run_id: ScanRunId, library: LibraryRef) -> None:
         """Execute the scan and write the terminal row.
 
         Args:
             run_id: External id of the already-opened ``running`` row.
-            library: Pre-loaded library so the runner doesn't re-hit
-                the library UoW from inside the background task.
+            library: Pre-resolved scan inputs (id + paths) projected by
+                the caller, so the runner doesn't re-hit the Library UoW
+                from inside the background task — and the service stays
+                decoupled from the Library aggregate (ADR-009).
         """
         try:
             output = await self._scan.execute(
                 ScanMediaInput(
-                    library_id=str(library.id),
+                    library_id=library.id,
                     directories=list(library.paths),
                 ),
             )

@@ -143,6 +143,12 @@ from src.modules.media.application.use_cases.trigger_bulk_enrich import (
     TriggerBulkEnrichUseCase,
 )
 from src.modules.media.application.use_cases.trigger_scan import TriggerScanUseCase
+from src.modules.media.infrastructure.acl.identity_user_count_adapter import (
+    IdentityUserCountAdapter,
+)
+from src.modules.media.infrastructure.acl.library_lookup_adapter import (
+    LibraryLookupAdapter,
+)
 from src.modules.media.infrastructure.acl.profile_summary_adapter import (
     ProfileSummaryAdapter,
 )
@@ -432,6 +438,18 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         identity_uow_factory=identity_uow_factory,
     )
 
+    # Cross-BC read ports (ADR-009 ACL): the scan flow resolves a
+    # library's paths and the overview reads the users count without
+    # importing the Library / Identity Unit of Work above the adapter.
+    library_lookup = providers.Singleton(
+        LibraryLookupAdapter,
+        library_uow_factory=library_uow_factory,
+    )
+    identity_user_count = providers.Singleton(
+        IdentityUserCountAdapter,
+        identity_uow_factory=identity_uow_factory,
+    )
+
     # Singleton because ``ThumbnailGenerationService`` is stateless apart
     # from the runtime config it reads per call; sharing one instance
     # across the eager fire-and-forget path (``stream_routes``) and the
@@ -640,7 +658,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     trigger_scan = providers.Factory(
         TriggerScanUseCase,
         scan_run_service=scan_run_service,
-        library_uow_factory=library_uow_factory,
+        library_lookup=library_lookup,
     )
 
     trigger_bulk_enrich = providers.Factory(
@@ -711,7 +729,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     get_overview_stats = providers.Factory(
         GetOverviewStatsUseCase,
         media_uow_factory=media_unit_of_work_factory,
-        identity_uow_factory=identity_uow_factory,
+        user_count=identity_user_count,
         list_movies_needing_review=list_movies_needing_review,
         hls_playlist=hls_service,
     )

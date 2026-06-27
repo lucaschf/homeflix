@@ -22,6 +22,7 @@ from src.infrastructure.scheduling.scheduler_service import (
 )
 from src.modules.library.domain.entities.library import Library
 from src.modules.library.domain.value_objects.library_type import LibraryType
+from src.modules.media.application.ports.library_lookup_port import LibraryRef
 from src.modules.media.domain.entities.scan_run import (
     ScanRun,
     ScanRunKind,
@@ -283,4 +284,6 @@ class TestRunScan:
         scan_run_service.run_scan.assert_awaited_once()
         run_args = scan_run_service.run_scan.await_args.args
         assert run_args[0] == run.id
-        assert run_args[1] is lib
+        # The loaded Library is projected to the consumer-owned LibraryRef
+        # (ADR-009) before reaching the scan service — no aggregate leaks.
+        assert run_args[1] == LibraryRef(id=str(lib.id), paths=tuple(lib.paths))

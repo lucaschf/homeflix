@@ -1,12 +1,14 @@
 """GetOverviewStatsUseCase — single aggregator for the admin dashboard."""
 
-from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
 from src.modules.media.application.dtos.overview_stats_dtos import (
     HlsCacheSnapshot,
     LastScanSnapshot,
     OverviewStatsOutput,
 )
 from src.modules.media.application.ports import HlsPlaylistPort
+from src.modules.media.application.ports.identity_user_count_port import (
+    IdentityUserCountPort,
+)
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases.list_movies_needing_review import (
     ListMoviesNeedingReviewUseCase,
@@ -23,21 +25,20 @@ class GetOverviewStatsUseCase:
     five keeps the cards in lockstep — no flicker as individual
     queries resolve — and saves a few request round-trips.
 
-    All reads are non-deleted-only. Cross-BC reads (the users
-    count) go through the identity UoW factory injected at the
-    composition root, same pattern the trigger-scan use case
-    uses to look up a library.
+    All reads are non-deleted-only. The cross-BC users count goes
+    through ``IdentityUserCountPort`` (an ACL adapter), so this use
+    case never imports Identity's Unit of Work (ADR-009).
     """
 
     def __init__(
         self,
         media_uow_factory: MediaUnitOfWorkFactory,
-        identity_uow_factory: IdentityUnitOfWorkFactory,
+        user_count: IdentityUserCountPort,
         list_movies_needing_review: ListMoviesNeedingReviewUseCase,
         hls_playlist: HlsPlaylistPort,
     ) -> None:
         self._media_uow_factory = media_uow_factory
-        self._identity_uow_factory = identity_uow_factory
+        self._user_count = user_count
         self._list_review = list_movies_needing_review
         self._hls = hls_playlist
 
@@ -51,8 +52,7 @@ class GetOverviewStatsUseCase:
                 limit=1,
             )
 
-        async with self._identity_uow_factory() as identity_uow:
-            users_count = await identity_uow.users.count()
+        users_count = await self._user_count.count_users()
 
         review = await self._list_review.execute()
         review_count = len(review.movies)
