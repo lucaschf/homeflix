@@ -17,9 +17,9 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
     _clean_title,
 )
 from src.modules.media.domain.entities import Movie
-from src.modules.media.domain.events import MediaEnrichedEvent
 from src.modules.media.domain.value_objects import ContentRating, TmdbId
 from src.modules.media.domain.value_objects.cast_member import CastMember
+from src.shared_kernel.integration_events import MediaEnrichedEvent
 from tests.modules.media.unit.conftest import MediaUoWMocks, make_media_uow_mock
 
 _LIBRARY_ID = "lib_test12345678"

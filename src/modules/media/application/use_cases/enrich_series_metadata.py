@@ -23,7 +23,6 @@ from src.modules.media.application.use_cases._localized_metadata_helpers import 
     merge_text_localized,
 )
 from src.modules.media.domain.entities import Episode, Season, Series
-from src.modules.media.domain.events import MediaEnrichedEvent
 from src.modules.media.domain.value_objects import (
     AirDate,
     CastMember,
@@ -39,6 +38,7 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
+from src.shared_kernel.integration_events import MediaEnrichedEvent
 from src.shared_kernel.value_objects.media_type import MediaType
 
 

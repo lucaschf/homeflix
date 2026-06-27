@@ -18,10 +18,10 @@ from src.modules.media.domain.entities.media_conflict import (
     MediaConflict,
     ResolutionAction,
 )
-from src.modules.media.domain.events import MovieMergedEvent
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import MovieId
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
+from src.shared_kernel.integration_events import MovieMergedEvent
 from src.shared_kernel.value_objects.media_type import MediaType
 
 if TYPE_CHECKING:

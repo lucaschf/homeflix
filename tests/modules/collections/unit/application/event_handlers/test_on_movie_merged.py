@@ -8,10 +8,8 @@ from src.modules.collections.application.event_handlers.on_movie_merged import (
     OnMovieMergedHandler,
 )
 from src.modules.collections.domain.value_objects import CollectionMediaId
-from src.modules.media.domain.events import (
-    MediaCreatedEvent,
-    MovieMergedEvent,
-)
+from src.modules.media.domain.events import MediaCreatedEvent
+from src.shared_kernel.integration_events import MovieMergedEvent
 from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.media_id import MovieId
 

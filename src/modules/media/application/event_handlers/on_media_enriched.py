@@ -9,7 +9,7 @@ from src.modules.media.application.dtos.conflict_dtos import DetectMovieConflict
 from src.modules.media.application.use_cases.detect_movie_conflicts import (
     DetectMovieConflictsUseCase,
 )
-from src.modules.media.domain.events import MediaEnrichedEvent
+from src.shared_kernel.integration_events import MediaEnrichedEvent
 from src.shared_kernel.value_objects.media_type import MediaType
 
 _logger = logging.getLogger(__name__)

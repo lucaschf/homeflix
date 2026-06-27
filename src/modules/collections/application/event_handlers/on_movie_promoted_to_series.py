@@ -8,7 +8,7 @@ from src.modules.collections.application.unit_of_work import (
     CollectionsUnitOfWorkFactory,
 )
 from src.modules.collections.domain.value_objects import CollectionMediaId
-from src.modules.media.domain.events import MoviePromotedToSeriesEvent
+from src.shared_kernel.integration_events import MoviePromotedToSeriesEvent
 from src.shared_kernel.value_objects import MediaType
 
 _logger = logging.getLogger(__name__)

@@ -281,17 +281,11 @@ async def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     from src.modules.collections.application.event_handlers import (
         OnUserDeletedHandler as CollectionsOnUserDeletedHandler,
     )
-    from src.modules.identity.domain.events import UserDeletedEvent
     from src.modules.media.application.event_handlers import OnMediaCreatedHandler
     from src.modules.media.application.event_handlers import (
         OnMediaEnrichedHandler as MediaOnEnrichedConflictsHandler,
     )
-    from src.modules.media.domain.events import (
-        MediaCreatedEvent,
-        MediaEnrichedEvent,
-        MovieMergedEvent,
-        MoviePromotedToSeriesEvent,
-    )
+    from src.modules.media.domain.events import MediaCreatedEvent
     from src.modules.watch_progress.application.event_handlers import (
         OnMovieMergedHandler as ProgressOnMovieMergedHandler,
     )
@@ -300,6 +294,12 @@ async def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     )
     from src.modules.watch_progress.application.event_handlers import (
         OnUserDeletedHandler as ProgressOnUserDeletedHandler,
+    )
+    from src.shared_kernel.integration_events import (
+        MediaEnrichedEvent,
+        MovieMergedEvent,
+        MoviePromotedToSeriesEvent,
+        UserDeletedEvent,
     )
 
     event_bus = container.infrastructure.event_bus()

@@ -17,8 +17,8 @@ from src.modules.media.domain.entities.media_conflict import (
     MatchReason,
     MediaConflict,
 )
-from src.modules.media.domain.events import MovieMergedEvent
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
+from src.shared_kernel.integration_events import MovieMergedEvent
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
 _CONFLICT_ID = "cnf_xxxxxxxxxxxx"
