@@ -262,33 +262,36 @@ class TmdbClient(MetadataProvider):
         return [_to_series_candidate(r, self._image_url) for r in results[:limit]]
 
     async def get_movie_summary_by_id(self, tmdb_id: int) -> SearchCandidate | None:
-        """Cheap ``/movie/{id}`` fetch shaped as a picker candidate."""
-        try:
-            resp = await self._client.get(
-                f"{self._base_url}/movie/{tmdb_id}",
-                params=self._params(),
-            )
-        except httpx.HTTPError:
+        """Cheap ``/movie/{id}`` fetch shaped as a picker candidate.
+
+        A genuine 404 (the id is not a movie) returns ``None``; any other
+        failure (network, auth, rate limit, 5xx) propagates via
+        ``raise_for_status`` — consistent with the search paths — so a
+        transient outage doesn't masquerade as "not found".
+        """
+        resp = await self._client.get(
+            f"{self._base_url}/movie/{tmdb_id}",
+            params=self._params(),
+        )
+        if resp.status_code == httpx.codes.NOT_FOUND:
             return None
-        if resp.status_code == 404:
-            return None
-        if resp.status_code != 200:
-            return None
+        resp.raise_for_status()
         return _to_movie_candidate(resp.json(), self._image_url)
 
     async def get_series_summary_by_id(self, tmdb_id: int) -> SearchCandidate | None:
-        """Cheap ``/tv/{id}`` fetch shaped as a picker candidate."""
-        try:
-            resp = await self._client.get(
-                f"{self._base_url}/tv/{tmdb_id}",
-                params=self._params(),
-            )
-        except httpx.HTTPError:
+        """Cheap ``/tv/{id}`` fetch shaped as a picker candidate.
+
+        404 (the id is not a series) returns ``None``; any other failure
+        propagates via ``raise_for_status`` instead of collapsing to
+        not-found.
+        """
+        resp = await self._client.get(
+            f"{self._base_url}/tv/{tmdb_id}",
+            params=self._params(),
+        )
+        if resp.status_code == httpx.codes.NOT_FOUND:
             return None
-        if resp.status_code == 404:
-            return None
-        if resp.status_code != 200:
-            return None
+        resp.raise_for_status()
         return _to_series_candidate(resp.json(), self._image_url)
 
     async def find_by_imdb_id(self, imdb_id: str) -> list[SearchCandidate]:

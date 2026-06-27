@@ -323,6 +323,76 @@ class TestParseTrailer:
 
 
 @pytest.mark.unit
+class TestSummaryByIdErrorHandling:
+    """``get_*_summary_by_id`` separates not-found from provider failure.
+
+    A genuine 404 (the id isn't that media kind) returns ``None``; any
+    other failure (HTTP status or transport/connection) raises so a
+    transient outage doesn't masquerade as "no such id".
+    """
+
+    @pytest.mark.asyncio
+    async def test_movie_summary_returns_none_on_404(self) -> None:
+        client = _make_client(get_responses=_build_response(status_code=404))
+
+        assert await client.get_movie_summary_by_id(123) is None
+
+    @pytest.mark.asyncio
+    async def test_series_summary_returns_none_on_404(self) -> None:
+        client = _make_client(get_responses=_build_response(status_code=404))
+
+        assert await client.get_series_summary_by_id(123) is None
+
+    @pytest.mark.asyncio
+    async def test_movie_summary_raises_on_server_error(self) -> None:
+        client = _make_client(get_responses=_build_response(status_code=500))
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.get_movie_summary_by_id(123)
+
+    @pytest.mark.asyncio
+    async def test_series_summary_raises_on_server_error(self) -> None:
+        client = _make_client(get_responses=_build_response(status_code=500))
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.get_series_summary_by_id(123)
+
+    @pytest.mark.asyncio
+    async def test_movie_summary_returns_candidate_on_200(self) -> None:
+        client = _make_client(get_responses=_build_response(json_data=_movie_details()))
+
+        result = await client.get_movie_summary_by_id(27205)
+
+        assert result is not None
+        assert result.tmdb_id == 27205
+
+    @pytest.mark.asyncio
+    async def test_series_summary_returns_candidate_on_200(self) -> None:
+        client = _make_client(get_responses=_build_response(json_data=_series_details()))
+
+        result = await client.get_series_summary_by_id(1396)
+
+        assert result is not None
+        assert result.tmdb_id == 1396
+
+    @pytest.mark.asyncio
+    async def test_movie_summary_propagates_connection_error(self) -> None:
+        client = _make_client()
+        client._client.get = AsyncMock(side_effect=httpx.ConnectError("boom"))
+
+        with pytest.raises(httpx.ConnectError):
+            await client.get_movie_summary_by_id(123)
+
+    @pytest.mark.asyncio
+    async def test_series_summary_propagates_connection_error(self) -> None:
+        client = _make_client()
+        client._client.get = AsyncMock(side_effect=httpx.ConnectError("boom"))
+
+        with pytest.raises(httpx.ConnectError):
+            await client.get_series_summary_by_id(123)
+
+
+@pytest.mark.unit
 class TestParseCast:
     """Tests for _parse_cast."""
 
