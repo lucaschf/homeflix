@@ -469,14 +469,25 @@ class MetadataProvider(ABC):
             tmdb_id: TMDB numeric id.
 
         Returns:
-            ``SearchCandidate`` when the id resolves to a movie;
-            ``None`` on 404 / network failure / malformed payload.
+            ``SearchCandidate`` when the id resolves to a movie, or
+            ``None`` when the id is genuinely not a movie (HTTP 404).
+
+        Raises:
+            httpx.HTTPError: On provider failure (network error, auth,
+                rate limit, 5xx). Callers must distinguish "no such
+                movie" (``None``) from "TMDB unavailable" (raises) — a
+                transient failure must not masquerade as not-found.
         """
         ...
 
     @abstractmethod
     async def get_series_summary_by_id(self, tmdb_id: int) -> "SearchCandidate | None":
-        """Cheap card-level fetch for one TV series by id."""
+        """Cheap card-level fetch for one TV series by id.
+
+        Like :meth:`get_movie_summary_by_id`: ``None`` only on a genuine
+        404 (the id isn't a series); raises ``httpx.HTTPError`` on any
+        provider failure rather than collapsing it to not-found.
+        """
         ...
 
     @abstractmethod
