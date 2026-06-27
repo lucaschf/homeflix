@@ -32,6 +32,7 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-020](./ADR-020-pluggable-intro-detector-frame-hash.md) | Detector de Intro Plugável + Algoritmo por Frame-Hash de Vídeo | ✅ Aceito | 2026-06-15 |
 | [ADR-021](./ADR-021-credits-detector-per-file-visual.md) | Detector de Créditos Per-Arquivo por Sinais Visuais (Borda + Movimento) | ✅ Aceito | 2026-06-19 |
 | [ADR-022](./ADR-022-catalog-requests-subscriptions-fanout.md) | Subscriptions Multi-Usuário + Fanout em Catalog Requests | ✅ Aceito | 2026-06-23 |
+| [ADR-023](./ADR-023-localized-metadata-value-object.md) | Metadados Localizados como Value Object | ✅ Aceito | 2026-06-27 |
 
 ## Como Criar um Novo ADR
 
