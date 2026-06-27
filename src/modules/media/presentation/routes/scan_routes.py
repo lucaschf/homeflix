@@ -8,8 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput
 from src.modules.media.application.ports.library_lookup_port import LibraryLookupPort
 from src.modules.media.application.use_cases.scan_media_directories import (
@@ -24,7 +23,7 @@ router = APIRouter(prefix="/api/v1/scan", tags=["Scan"])
 @inject  # type: ignore[misc]
 async def scan_media(
     body: ScanMediaRequest,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ScanMediaDirectoriesUseCase = Depends(
         Provide[ApplicationContainer.media.scan_media_directories],
     ),

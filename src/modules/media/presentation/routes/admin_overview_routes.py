@@ -8,8 +8,7 @@ from fastapi import APIRouter, Depends
 
 from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.use_cases.get_library_usage import (
     GetLibraryUsageUseCase,
 )
@@ -24,7 +23,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Overview"])
 @router.get("/overview/stats")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def get_admin_overview_stats(
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetOverviewStatsUseCase = Depends(
         Provide[ApplicationContainer.media.get_overview_stats],
     ),
@@ -43,7 +42,7 @@ async def get_admin_overview_stats(
 @router.get("/now-playing")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def get_admin_now_playing(
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetNowPlayingUseCase = Depends(
         Provide[ApplicationContainer.media.get_now_playing],
     ),
@@ -62,7 +61,7 @@ async def get_admin_now_playing(
 @router.get("/library-usage")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def get_admin_library_usage(
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetLibraryUsageUseCase = Depends(
         Provide[ApplicationContainer.media.get_library_usage],
     ),

@@ -1,6 +1,6 @@
 """Admin REST API routes for the TMDB relink / enrichment-review workflow.
 
-All endpoints are gated by ``current_admin_user``. Movies:
+All endpoints are gated by ``authenticated_admin``. Movies:
 
 * ``GET  /admin/movies/needs-review`` — listing of movies whose
   enrichment couldn't find a TMDB match (or were flagged as wrong).
@@ -31,8 +31,7 @@ from fastapi import APIRouter, Depends
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.admin_relink_dtos import (
     FlagMovieEnrichmentReviewInput,
     FlagSeriesEnrichmentReviewInput,
@@ -77,7 +76,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Movie Relink"])
 @router.get("/movies/needs-review")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def list_movies_needing_review(
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListMoviesNeedingReviewUseCase = Depends(
         Provide[ApplicationContainer.media.list_movies_needing_review],
     ),
@@ -91,7 +90,7 @@ async def list_movies_needing_review(
 @inject  # type: ignore[misc]
 async def flag_movie_enrichment(
     movie_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: FlagMovieEnrichmentReviewUseCase = Depends(
         Provide[ApplicationContainer.media.flag_movie_enrichment_review],
     ),
@@ -105,7 +104,7 @@ async def flag_movie_enrichment(
 @inject  # type: ignore[misc]
 async def get_movie_tmdb_suggestions(
     movie_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetMovieTmdbSuggestionsUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_tmdb_suggestions],
     ),
@@ -120,7 +119,7 @@ async def get_movie_tmdb_suggestions(
 async def relink_movie(
     movie_id: str,
     body: RelinkMovieRequest,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: RelinkMovieUseCase = Depends(
         Provide[ApplicationContainer.media.relink_movie],
     ),
@@ -141,7 +140,7 @@ async def relink_movie(
 async def promote_movie_to_series(
     movie_id: str,
     body: PromoteMovieToSeriesRequest,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: PromoteMovieToSeriesUseCase = Depends(
         Provide[ApplicationContainer.media.promote_movie_to_series],
     ),
@@ -156,7 +155,7 @@ async def promote_movie_to_series(
 @router.get("/series/needs-review")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def list_series_needing_review(
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListSeriesNeedingReviewUseCase = Depends(
         Provide[ApplicationContainer.media.list_series_needing_review],
     ),
@@ -170,7 +169,7 @@ async def list_series_needing_review(
 @inject  # type: ignore[misc]
 async def flag_series_enrichment(
     series_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: FlagSeriesEnrichmentReviewUseCase = Depends(
         Provide[ApplicationContainer.media.flag_series_enrichment_review],
     ),
@@ -184,7 +183,7 @@ async def flag_series_enrichment(
 @inject  # type: ignore[misc]
 async def get_series_tmdb_suggestions(
     series_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetSeriesTmdbSuggestionsUseCase = Depends(
         Provide[ApplicationContainer.media.get_series_tmdb_suggestions],
     ),
@@ -199,7 +198,7 @@ async def get_series_tmdb_suggestions(
 async def relink_series(
     series_id: str,
     body: RelinkSeriesRequest,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: RelinkSeriesUseCase = Depends(
         Provide[ApplicationContainer.media.relink_series],
     ),

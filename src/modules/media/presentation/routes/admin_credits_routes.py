@@ -14,8 +14,7 @@ from fastapi import APIRouter, Depends
 
 from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.credits_dtos import (
     ListCreditsStatusInput,
     ResetCreditsDetectionInput,
@@ -43,7 +42,7 @@ async def list_credits_status(
     state: str | None = None,
     limit: int = 50,
     offset: int = 0,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListCreditsStatusUseCase = Depends(
         Provide[ApplicationContainer.media.list_credits_status],
     ),
@@ -70,7 +69,7 @@ async def list_credits_status(
 async def set_credits_marker(
     media_id: str,
     body: SetCreditsRequest,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: SetCreditsMarkerUseCase = Depends(
         Provide[ApplicationContainer.media.set_credits_marker],
     ),
@@ -90,7 +89,7 @@ async def set_credits_marker(
 @inject  # type: ignore[misc]
 async def clear_credits_marker(
     media_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ClearCreditsMarkerUseCase = Depends(
         Provide[ApplicationContainer.media.clear_credits_marker],
     ),
@@ -107,7 +106,7 @@ async def clear_credits_marker(
 @inject  # type: ignore[misc]
 async def reset_credits_detection(
     media_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ResetCreditsDetectionUseCase = Depends(
         Provide[ApplicationContainer.media.reset_credits_detection],
     ),

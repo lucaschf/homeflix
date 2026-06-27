@@ -8,8 +8,7 @@ from fastapi import APIRouter, Depends
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.building_blocks.presentation import Pagination, api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.intro_dtos import (
     ClearEpisodeIntroInput,
     ResetSeasonIntroDetectionInput,
@@ -153,7 +152,7 @@ async def get_series(
 @inject  # type: ignore[misc]
 async def delete_series(
     series_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: DeleteSeriesUseCase = Depends(
         Provide[ApplicationContainer.media.delete_series],
     ),
@@ -219,7 +218,7 @@ async def get_episode_file_variants(
 async def add_episode_file_variant(
     episode_id: str,
     body: AddFileVariantRequest,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: AddFileVariantUseCase = Depends(
         Provide[ApplicationContainer.media.add_file_variant],
     ),
@@ -245,7 +244,7 @@ async def add_episode_file_variant(
 async def remove_episode_file_variant(
     episode_id: str,
     body: RemoveFileVariantRequest,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: RemoveFileVariantUseCase = Depends(
         Provide[ApplicationContainer.media.remove_file_variant],
     ),
@@ -261,7 +260,7 @@ async def remove_episode_file_variant(
 async def set_episode_primary_file(
     episode_id: str,
     body: SetPrimaryFileRequest,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: SetPrimaryFileUseCase = Depends(
         Provide[ApplicationContainer.media.set_primary_file],
     ),
@@ -278,7 +277,7 @@ async def set_episode_primary_file(
 async def set_episode_intro(
     episode_id: str,
     body: SetIntroRequest,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: SetEpisodeIntroUseCase = Depends(
         Provide[ApplicationContainer.media.set_episode_intro],
     ),
@@ -302,7 +301,7 @@ async def set_episode_intro(
 @inject  # type: ignore[misc]
 async def clear_episode_intro(
     episode_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ClearEpisodeIntroUseCase = Depends(
         Provide[ApplicationContainer.media.clear_episode_intro],
     ),
@@ -320,7 +319,7 @@ async def clear_episode_intro(
 @inject  # type: ignore[misc]
 async def reset_season_intro_detection(
     season_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ResetSeasonIntroDetectionUseCase = Depends(
         Provide[ApplicationContainer.media.reset_season_intro_detection],
     ),

@@ -24,8 +24,7 @@ from src.modules.catalog_requests.application.use_cases import (
 from src.modules.catalog_requests.application.use_cases.list_catalog_request_feed import (
     ListCatalogRequestFeedInput,
 )
-from src.modules.identity.infrastructure.auth import current_active_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_user
 from src.shared_kernel.value_objects import MediaType
 
 router = APIRouter(prefix="/api/v1/catalog-requests", tags=["Catalog Requests"])
@@ -76,7 +75,7 @@ class SubscribeNotifyRequest(BaseModel):
 @inject  # type: ignore[misc]
 async def create_catalog_request(
     body: CreateCatalogRequestRequest,
-    user: UserModel = Depends(current_active_user),
+    user: AuthenticatedUser = Depends(authenticated_user),
     use_case: RequestCatalogInclusionUseCase = Depends(
         Provide[ApplicationContainer.catalog_requests.request_catalog_inclusion],
     ),
@@ -109,7 +108,7 @@ async def create_catalog_request(
 async def subscribe_catalog_notification(
     tmdb_id: int,
     body: SubscribeNotifyRequest,
-    user: UserModel = Depends(current_active_user),
+    user: AuthenticatedUser = Depends(authenticated_user),
     use_case: SubscribeCatalogNotificationUseCase = Depends(
         Provide[ApplicationContainer.catalog_requests.subscribe_catalog_notification],
     ),
@@ -139,7 +138,7 @@ async def subscribe_catalog_notification(
 async def unsubscribe_catalog_notification(
     tmdb_id: int,
     media_type: MediaType = Query(...),
-    user: UserModel = Depends(current_active_user),
+    user: AuthenticatedUser = Depends(authenticated_user),
     use_case: UnsubscribeCatalogNotificationUseCase = Depends(
         Provide[ApplicationContainer.catalog_requests.unsubscribe_catalog_notification],
     ),
@@ -171,7 +170,7 @@ async def unsubscribe_catalog_notification(
 async def list_catalog_requests(
     collection_tmdb_id: int | None = Query(default=None, ge=1),
     lang: str = "en",
-    user: UserModel = Depends(current_active_user),
+    user: AuthenticatedUser = Depends(authenticated_user),
     use_case: ListCatalogRequestFeedUseCase = Depends(
         Provide[ApplicationContainer.catalog_requests.list_catalog_request_feed],
     ),

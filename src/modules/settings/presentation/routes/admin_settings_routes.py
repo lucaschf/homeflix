@@ -15,8 +15,7 @@ from fastapi import APIRouter, Depends
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.settings.application.dtos import UpdateSettingInput
 from src.modules.settings.application.use_cases import (
     ListSettingsUseCase,
@@ -39,7 +38,7 @@ router = APIRouter(prefix="/api/v1/admin/settings", tags=["Admin — Settings"])
 @router.get("")
 @inject
 async def list_admin_settings(
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListSettingsUseCase = Depends(
         Provide[ApplicationContainer.settings.list_settings],
     ),
@@ -58,7 +57,7 @@ async def list_admin_settings(
 @inject
 async def update_scheduler_settings(
     body: SchedulerConfig,
-    admin: UserModel = Depends(current_admin_user),
+    admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: UpdateSettingUseCase = Depends(
         Provide[ApplicationContainer.settings.update_setting],
     ),
@@ -78,7 +77,7 @@ async def update_scheduler_settings(
 @inject
 async def update_thumbnail_backfill_settings(
     body: ThumbnailBackfillConfig,
-    admin: UserModel = Depends(current_admin_user),
+    admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: UpdateSettingUseCase = Depends(
         Provide[ApplicationContainer.settings.update_setting],
     ),
@@ -98,7 +97,7 @@ async def update_thumbnail_backfill_settings(
 @inject
 async def update_intro_detection_settings(
     body: IntroDetectionConfig,
-    admin: UserModel = Depends(current_admin_user),
+    admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: UpdateSettingUseCase = Depends(
         Provide[ApplicationContainer.settings.update_setting],
     ),
@@ -118,7 +117,7 @@ async def update_intro_detection_settings(
 @inject
 async def update_credits_detection_settings(
     body: CreditsDetectionConfig,
-    admin: UserModel = Depends(current_admin_user),
+    admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: UpdateSettingUseCase = Depends(
         Provide[ApplicationContainer.settings.update_setting],
     ),
@@ -138,7 +137,7 @@ async def update_credits_detection_settings(
 @inject
 async def update_streaming_settings(
     body: StreamingConfig,
-    admin: UserModel = Depends(current_admin_user),
+    admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: UpdateSettingUseCase = Depends(
         Provide[ApplicationContainer.settings.update_setting],
     ),
@@ -158,7 +157,7 @@ async def update_streaming_settings(
 @inject
 async def update_avatar_settings(
     body: AvatarConfig,
-    admin: UserModel = Depends(current_admin_user),
+    admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: UpdateSettingUseCase = Depends(
         Provide[ApplicationContainer.settings.update_setting],
     ),
@@ -178,7 +177,7 @@ async def update_avatar_settings(
 @inject
 async def update_scan_dedup_settings(
     body: ScanDedupConfig,
-    admin: UserModel = Depends(current_admin_user),
+    admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: UpdateSettingUseCase = Depends(
         Provide[ApplicationContainer.settings.update_setting],
     ),

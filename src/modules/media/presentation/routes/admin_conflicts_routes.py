@@ -19,8 +19,7 @@ from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PA
 from src.building_blocks.presentation import api_list, api_single
 from src.building_blocks.presentation.responses import Pagination
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.conflict_dtos import (
     BulkMarkDistinctInput,
     ListConflictsInput,
@@ -92,7 +91,7 @@ async def list_admin_conflicts(
     source: Literal["manual", "auto"] | None = Query(default=None),
     cursor: str | None = Query(default=None),
     limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListConflictsUseCase = Depends(
         Provide[ApplicationContainer.media.list_conflicts],
     ),
@@ -126,7 +125,7 @@ async def list_admin_conflicts(
 async def resolve_admin_conflict(
     body: ResolveConflictBody,
     conflict_id: str = Path(..., min_length=1, max_length=50),
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ResolveMediaConflictUseCase = Depends(
         Provide[ApplicationContainer.media.resolve_media_conflict],
     ),
@@ -158,7 +157,7 @@ async def resolve_admin_conflict(
 @inject
 async def bulk_mark_distinct_conflicts(
     body: BulkMarkDistinctBody,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: BulkMarkDistinctConflictsUseCase = Depends(
         Provide[ApplicationContainer.media.bulk_mark_distinct_conflicts],
     ),
@@ -180,7 +179,7 @@ async def bulk_mark_distinct_conflicts(
 @router.post("/sweep")
 @inject
 async def sweep_admin_conflicts(
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: SweepMovieConflictsUseCase = Depends(
         Provide[ApplicationContainer.media.sweep_movie_conflicts],
     ),
