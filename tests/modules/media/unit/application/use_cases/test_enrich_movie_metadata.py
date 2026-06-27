@@ -264,7 +264,7 @@ class TestEnrichMovieMetadata:
         assert result.enriched is True
         provider.get_movie_localized.assert_awaited_once_with(27205)
         saved = mocks.movies.save.call_args[0][0]
-        assert "pt-BR" in saved.localized
+        assert "pt-BR" in saved.localized.to_serializable()
 
     @pytest.mark.asyncio
     async def test_should_retry_with_cleaned_title_preserving_year(self) -> None:
@@ -513,9 +513,9 @@ class TestApplyMetadataFields:
         await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         saved = mocks.movies.save.call_args[0][0]
-        assert saved.localized["pt-BR"]["title"] == "A Origem"
-        assert saved.localized["pt-BR"]["synopsis"] == "Sonho dentro do sonho."
-        assert saved.localized["pt-BR"]["genres"] == ["Ficção Científica"]
+        assert saved.localized.to_serializable()["pt-BR"]["title"] == "A Origem"
+        assert saved.localized.to_serializable()["pt-BR"]["synopsis"] == "Sonho dentro do sonho."
+        assert saved.localized.to_serializable()["pt-BR"]["genres"] == ["Ficção Científica"]
 
 
 @pytest.mark.unit

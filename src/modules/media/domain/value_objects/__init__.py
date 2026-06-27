@@ -13,6 +13,11 @@ from src.modules.media.domain.value_objects.hdr_format import HdrFormat
 from src.modules.media.domain.value_objects.imdb_id import ImdbId
 from src.modules.media.domain.value_objects.intro_detection_state import IntroDetectionState
 from src.modules.media.domain.value_objects.intro_marker import IntroMarker, IntroMarkerSource
+from src.modules.media.domain.value_objects.localized_metadata import (
+    LocalizedField,
+    LocalizedFields,
+    LocalizedMetadata,
+)
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
 from src.modules.media.domain.value_objects.media_file import MediaFile
 from src.modules.media.domain.value_objects.resolution import Resolution
@@ -54,6 +59,9 @@ __all__ = [
     "IntroDetectionState",
     "IntroMarker",
     "IntroMarkerSource",
+    "LocalizedField",
+    "LocalizedFields",
+    "LocalizedMetadata",
     "MediaConflictId",
     "MediaFile",
     "MediaId",

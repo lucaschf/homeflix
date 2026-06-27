@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import Self
 
 from pydantic import Field, field_validator
 
@@ -19,6 +19,8 @@ from src.modules.media.domain.value_objects import (
     EpisodeNumber,
     ImageUrl,
     IntroMarker,
+    LocalizedField,
+    LocalizedMetadata,
     MediaFile,
     SeasonNumber,
     SeriesId,
@@ -64,7 +66,7 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
     # Per-language title/synopsis overrides, keyed by BCP-47 tag.
     # ``get_title(lang)`` / ``get_synopsis(lang)`` fall back to the
     # base (English) fields when a locale has no override.
-    localized: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    localized: LocalizedMetadata = Field(default_factory=LocalizedMetadata)
 
     # File variants
     files: list[MediaFile] = Field(default_factory=list)
@@ -94,13 +96,11 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
 
     def get_title(self, lang: str = "en") -> str:
         """Get title in the requested language, falling back to the base."""
-        loc_title = self.localized.get(lang, {}).get("title")
-        return str(loc_title) if loc_title else self.title.value
+        return self.localized.text(LocalizedField.TITLE, lang) or self.title.value
 
     def get_synopsis(self, lang: str = "en") -> str | None:
         """Get synopsis in the requested language, falling back to the base."""
-        loc_synopsis = self.localized.get(lang, {}).get("synopsis")
-        return str(loc_synopsis) if loc_synopsis else self.synopsis
+        return self.localized.text(LocalizedField.SYNOPSIS, lang) or self.synopsis
 
     def with_intro_marker(self, marker: IntroMarker) -> Self:
         """Return a copy with the intro marker set.

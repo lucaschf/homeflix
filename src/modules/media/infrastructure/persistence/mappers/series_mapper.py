@@ -1,7 +1,5 @@
 """Mapper between Series/Season/Episode entities and ORM models."""
 
-import json
-
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
     AirDate,
@@ -27,6 +25,10 @@ from src.modules.media.domain.value_objects import (
     Title,
     TmdbId,
     Year,
+)
+from src.modules.media.infrastructure.persistence.mappers._localized import (
+    dump_localized,
+    load_localized,
 )
 from src.modules.media.infrastructure.persistence.mappers.cast_serialization import (
     deserialize_cast,
@@ -75,9 +77,7 @@ class EpisodeMapper:
             episode_number=entity.episode_number.value,
             title=entity.title.value,
             synopsis=entity.synopsis,
-            localized=json.dumps(entity.localized, ensure_ascii=False)
-            if entity.localized
-            else None,
+            localized=dump_localized(entity.localized),
             duration=entity.duration.value,
             file_path=primary.file_path.value if primary else None,
             file_size=primary.file_size if primary else None,
@@ -132,7 +132,7 @@ class EpisodeMapper:
             episode_number=EpisodeNumber(model.episode_number),
             title=Title(model.title),
             synopsis=model.synopsis,
-            localized=json.loads(model.localized) if model.localized else {},
+            localized=load_localized(model.localized),
             duration=Duration(model.duration),
             files=files,
             thumbnail_path=ImageUrl(model.thumbnail_path) if model.thumbnail_path else None,
@@ -169,9 +169,7 @@ class EpisodeMapper:
         model.episode_number = entity.episode_number.value
         model.title = entity.title.value
         model.synopsis = entity.synopsis
-        model.localized = (
-            json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None
-        )
+        model.localized = dump_localized(entity.localized)
         model.duration = entity.duration.value
         model.file_path = primary.file_path.value if primary else None
         model.file_size = primary.file_size if primary else None
@@ -221,9 +219,7 @@ class SeasonMapper:
             season_number=entity.season_number.value,
             title=entity.title.value if entity.title else None,
             synopsis=entity.synopsis,
-            localized=json.dumps(entity.localized, ensure_ascii=False)
-            if entity.localized
-            else None,
+            localized=dump_localized(entity.localized),
             poster_path=entity.poster_path.value if entity.poster_path else None,
             air_date=entity.air_date.value if entity.air_date else None,
             intro_detection_state=entity.intro_detection_state.value,
@@ -255,7 +251,7 @@ class SeasonMapper:
             season_number=SeasonNumber(model.season_number),
             title=Title(model.title) if model.title else None,
             synopsis=model.synopsis,
-            localized=json.loads(model.localized) if model.localized else {},
+            localized=load_localized(model.localized),
             poster_path=ImageUrl(model.poster_path) if model.poster_path else None,
             air_date=AirDate(model.air_date) if model.air_date else None,
             episodes=episode_list,
@@ -281,9 +277,7 @@ class SeasonMapper:
         model.season_number = entity.season_number.value
         model.title = entity.title.value if entity.title else None
         model.synopsis = entity.synopsis
-        model.localized = (
-            json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None
-        )
+        model.localized = dump_localized(entity.localized)
         model.poster_path = entity.poster_path.value if entity.poster_path else None
         model.air_date = entity.air_date.value if entity.air_date else None
         model.intro_detection_state = entity.intro_detection_state.value
@@ -330,9 +324,7 @@ class SeriesMapper:
             content_rating=entity.content_rating.value if entity.content_rating else None,
             trailer_url=entity.trailer_url,
             cast=serialize_cast(entity.cast),
-            localized=json.dumps(entity.localized, ensure_ascii=False)
-            if entity.localized
-            else None,
+            localized=dump_localized(entity.localized),
             tmdb_id=entity.tmdb_id.value if entity.tmdb_id else None,
             imdb_id=entity.imdb_id.value if entity.imdb_id else None,
             needs_enrichment_review=entity.needs_enrichment_review,
@@ -372,7 +364,7 @@ class SeriesMapper:
             content_rating=ContentRating(model.content_rating) if model.content_rating else None,
             trailer_url=model.trailer_url,
             cast=deserialize_cast(model.cast),
-            localized=json.loads(model.localized) if model.localized else {},
+            localized=load_localized(model.localized),
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
             imdb_id=ImdbId(model.imdb_id) if model.imdb_id else None,
             needs_enrichment_review=bool(model.needs_enrichment_review),
@@ -407,9 +399,7 @@ class SeriesMapper:
         model.content_rating = entity.content_rating.value if entity.content_rating else None
         model.trailer_url = entity.trailer_url
         model.cast = serialize_cast(entity.cast)
-        model.localized = (
-            json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None
-        )
+        model.localized = dump_localized(entity.localized)
         model.tmdb_id = entity.tmdb_id.value if entity.tmdb_id else None
         model.imdb_id = entity.imdb_id.value if entity.imdb_id else None
         model.needs_enrichment_review = entity.needs_enrichment_review

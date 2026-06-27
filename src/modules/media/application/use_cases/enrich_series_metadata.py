@@ -257,7 +257,7 @@ def _apply_series_metadata(
             for p in metadata.cast
         ]
 
-    merge_localized_metadata(updates, series.localized, metadata, force=force)
+    merge_localized_metadata(updates, series.localized.to_serializable(), metadata, force=force)
 
     if updates:
         series = series.with_updates(**updates)
@@ -299,7 +299,9 @@ def _apply_season_metadata(season: Season, meta: SeasonMetadata, *, force: bool 
         parsed = _parse_date(meta.air_date)
         if parsed:
             updates["air_date"] = AirDate(parsed)
-    season_localized = build_localized_text(meta.localized, season.localized, force=force)
+    season_localized = build_localized_text(
+        meta.localized, season.localized.to_serializable(), force=force
+    )
     if season_localized is not None:
         updates["localized"] = season_localized
 
@@ -405,7 +407,9 @@ def _apply_multi_episode_metadata(
         if parsed:
             updates["air_date"] = AirDate(parsed)
 
-    combined_localized = _combine_localized_segments(present, episode.localized, force=force)
+    combined_localized = _combine_localized_segments(
+        present, episode.localized.to_serializable(), force=force
+    )
     if combined_localized is not None:
         updates["localized"] = combined_localized
 

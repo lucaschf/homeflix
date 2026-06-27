@@ -21,6 +21,10 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
+from src.modules.media.infrastructure.persistence.mappers._localized import (
+    dump_localized,
+    load_localized,
+)
 from src.modules.media.infrastructure.persistence.mappers.cast_serialization import (
     deserialize_cast,
     serialize_cast,
@@ -88,9 +92,7 @@ class MovieMapper:
             collection_tmdb_id=entity.collection.tmdb_id if entity.collection else None,
             collection_name=entity.collection.name if entity.collection else None,
             collection_parts_count=entity.collection.parts_count if entity.collection else None,
-            localized=json.dumps(entity.localized, ensure_ascii=False)
-            if entity.localized
-            else None,
+            localized=dump_localized(entity.localized),
             file_path=primary.file_path.value if primary else None,
             file_size=primary.file_size if primary else None,
             resolution=primary.resolution.value if primary else None,
@@ -180,7 +182,7 @@ class MovieMapper:
             content_rating=ContentRating(model.content_rating) if model.content_rating else None,
             trailer_url=model.trailer_url,
             collection=collection,
-            localized=json.loads(model.localized) if model.localized else {},
+            localized=load_localized(model.localized),
             files=files,
             tmdb_id=TmdbId(model.tmdb_id) if model.tmdb_id else None,
             imdb_id=ImdbId(model.imdb_id) if model.imdb_id else None,
@@ -237,9 +239,7 @@ class MovieMapper:
         model.collection_tmdb_id = entity.collection.tmdb_id if entity.collection else None
         model.collection_name = entity.collection.name if entity.collection else None
         model.collection_parts_count = entity.collection.parts_count if entity.collection else None
-        model.localized = (
-            json.dumps(entity.localized, ensure_ascii=False) if entity.localized else None
-        )
+        model.localized = dump_localized(entity.localized)
         model.file_path = primary.file_path.value if primary else None
         model.file_size = primary.file_size if primary else None
         model.resolution = primary.resolution.value if primary else None
