@@ -8,6 +8,19 @@
 
 ---
 
+> 📝 **Nota de revisão (2026-06-27).** O snapshot de "Estrutura Adotada" abaixo é
+> histórico (data do ADR) e mostra só `media`/`library`; o projeto cresceu para
+> **9 módulos** (`media`, `library`, `watch_progress`, `collections`,
+> `catalog_requests`, `identity`, `notifications`, `preferences`, `settings`).
+> Além disso, o Princípio #1 prevê "integration events no shared_kernel": na
+> prática os **domain events vivem em `modules/<bc>/domain/events.py`** e a
+> comunicação cross-BC por evento **já é usada em produção** (event handlers),
+> não "futuramente". O pacote `shared_kernel/integration_events/` existe mas está
+> vazio — materializá-lo é trabalho planejado (ver `docs/audits/06-remediation-plan.md`,
+> Fase 3). O snapshot original é mantido como registro datado.
+
+---
+
 ## Contexto
 
 A estrutura anterior (ADR-003) organizava o código por **camadas técnicas** na raiz (`domain/`, `application/`, `infrastructure/`, `presentation/`), com bounded contexts aninhados dentro de cada camada. Isso significava:
