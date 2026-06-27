@@ -1,5 +1,6 @@
 """Unit tests for LocalFileSystemScanner."""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,22 @@ class TestScanDirectories:
 
         assert len(results) == 2
         assert all(r.media_type == MediaType.MOVIE for r in results)
+
+    def test_should_skip_and_warn_on_missing_root(
+        self,
+        scanner: LocalFileSystemScanner,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # A missing/unmounted root is skipped, but the skip is logged so it
+        # isn't silently indistinguishable from "mounted and empty".
+        missing = FilePath(str(tmp_path / "unmounted_or_deleted"))
+
+        with caplog.at_level(logging.WARNING):
+            results = scanner.scan_directories([missing])
+
+        assert results == []
+        assert "missing or unmounted" in caplog.text
 
     def test_should_filter_unsupported_extensions(
         self, scanner: LocalFileSystemScanner, media_dir: Path

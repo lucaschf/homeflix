@@ -1,10 +1,13 @@
 """Filesystem scanner for discovering media files."""
 
+import logging
 import re
 from pathlib import Path, PurePath
 
 from src.modules.media.application.ports import FileSystemScanner, MediaType, ScannedFile
 from src.shared_kernel.value_objects.file_path import FilePath
+
+_logger = logging.getLogger(__name__)
 
 _SUPPORTED_EXTENSIONS = frozenset({".mp4", ".mkv", ".avi", ".mov", ".wmv"})
 
@@ -158,6 +161,17 @@ class LocalFileSystemScanner(FileSystemScanner):
         for directory in directories:
             dir_path = Path(directory.value)
             if not dir_path.is_dir():
+                # Missing/unmounted root: skip, but log it. A silent skip
+                # looks identical to "root mounted and genuinely empty",
+                # so downstream reconciliation could mistake an unmounted
+                # disk for "all media deleted". The auto-merge path guards
+                # this via LibraryHealthPort; the warning makes the skip
+                # observable for the scan path too.
+                _logger.warning(
+                    "Scan root is missing or unmounted; skipping (its files "
+                    "will appear absent — do not treat as deleted): %s",
+                    directory.value,
+                )
                 continue
 
             for path in dir_path.rglob("*"):
