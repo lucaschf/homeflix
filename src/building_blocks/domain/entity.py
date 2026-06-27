@@ -77,7 +77,25 @@ class DomainEntity(DomainModel, Generic[IdT]):
 class AggregateRoot(DomainEntity[IdT]):
     """Base class for Aggregate Roots.
 
-    Includes domain events collection.
+    Carries a pending domain-event collection: events are queued with
+    :meth:`add_event` and drained with :meth:`pull_events`.
+
+    Domain event hand-off:
+        :meth:`with_updates` **moves** pending events onto the new copy and
+        clears the source (rather than copying). This lets an event queued
+        before a chain of ``with_*`` transforms ride forward onto the final
+        instance — the one that gets persisted and drained — while stopping
+        a superseded copy from re-emitting the same events. So always pull
+        from the final instance of a chain; a discarded intermediate holds
+        nothing. For example, the media scan use case builds a ``Movie``,
+        calls ``add_event`` for a ``MediaCreatedEvent``, then appends file
+        variants via ``with_file`` (each one a ``with_updates``) before
+        calling ``pull_events`` on the result.
+
+        Dispatch is currently manual — use cases pull events and publish
+        them. If events are later collected automatically at
+        ``repository.save`` / Unit-of-Work commit, this move-and-clear
+        contract should be revisited.
     """
 
     _events: list[DomainEvent] = PrivateAttr(default_factory=list)
@@ -87,7 +105,14 @@ class AggregateRoot(DomainEntity[IdT]):
         self._events.append(event)
 
     def pull_events(self) -> list[DomainEvent]:
-        """Retrieve and clear all pending domain events."""
+        """Retrieve and clear all pending domain events.
+
+        Pull from the *final* instance of a transition chain — events
+        added before a ``with_*`` call travel forward onto the returned
+        copy (see :meth:`with_updates`), so the last instance in the
+        chain is the one that holds them. Pulling from an intermediate
+        (now-superseded) instance yields nothing.
+        """
         events = self._events[:]
         self._events.clear()
         return events
@@ -104,10 +129,11 @@ class AggregateRoot(DomainEntity[IdT]):
     def with_updates(self, **kwargs: Any) -> Self:
         """Create a new instance with updates, moving pending events.
 
-        Overrides DomainEntity.with_updates to ensure domain events
-        survive immutable model transitions. Events are moved (not copied)
-        to the new instance — the old instance is cleared to prevent
-        double-dispatch if it is accidentally retained.
+        Overrides :meth:`DomainEntity.with_updates` so pending domain
+        events survive immutable transitions: they are moved onto the new
+        instance and the source is cleared. Pull events from the final
+        instance of a ``with_*`` chain. This move-and-clear is deliberate;
+        see the class docstring ("Domain event hand-off") for the rationale.
         """
         new_instance = super().with_updates(**kwargs)
         new_instance._events = self._events[:]
