@@ -1078,9 +1078,49 @@ class TmdbClient(MetadataProvider):
 
         return directors, writers
 
-    @staticmethod
-    def _parse_content_rating(release_dates: dict[str, object]) -> ContentRating | None:
-        """Extract content rating from TMDB release_dates, preferring BR then US."""
+    def _preferred_rating_countries(self) -> list[str]:
+        """Jurisdiction order for picking a content rating — config-driven.
+
+        Built from the *region* subtag of each ``supported_locales`` entry,
+        in order, with ``US`` appended as the English-base fallback. The
+        region is the trailing 2-letter alpha subtag (``pt-BR`` → ``BR``,
+        ``zh-Hant-TW`` → ``TW``) — parsed by content, not position, so a
+        script subtag (``Hant``) isn't mistaken for a region. For the
+        default ``("en", "pt-BR")`` this is ``["BR", "US"]`` — same
+        precedence as the old hardcoded pair.
+
+        Note: this reuses ``supported_locales`` (a UI/metadata language
+        axis) as a proxy for certification jurisdiction. They correlate but
+        can diverge; if a household ever needs a UI language whose region
+        should not drive ratings, add a dedicated
+        ``content_rating_jurisdictions`` setting rather than overloading
+        this one.
+        """
+        countries: list[str] = []
+        for locale in self._supported_locales:
+            subtags = locale.split("-")[1:]
+            region = next((s.upper() for s in subtags if len(s) == 2 and s.isalpha()), None)
+            if region and region not in countries:
+                countries.append(region)
+        if "US" not in countries:
+            countries.append("US")
+        return countries
+
+    def _select_content_rating(self, ratings_by_country: dict[str, str]) -> ContentRating | None:
+        """Pick the rating for the first preferred jurisdiction that has one."""
+        for country in self._preferred_rating_countries():
+            cert = ratings_by_country.get(country)
+            if cert:
+                return ContentRating(cert)
+        return None
+
+    def _parse_content_rating(self, release_dates: dict[str, object]) -> ContentRating | None:
+        """Extract a movie content rating from TMDB ``release_dates``.
+
+        Builds the full per-country certification map, then selects by the
+        config-driven jurisdiction order (see
+        :meth:`_preferred_rating_countries`).
+        """
         results = release_dates.get("results", [])
         if not isinstance(results, list):
             return None
@@ -1096,8 +1136,7 @@ class TmdbClient(MetadataProvider):
                 if cert and iso not in ratings_by_country:
                     ratings_by_country[iso] = cert
 
-        selected = ratings_by_country.get("BR") or ratings_by_country.get("US")
-        return ContentRating(selected) if selected else None
+        return self._select_content_rating(ratings_by_country)
 
     @staticmethod
     def _parse_trailer(videos: dict[str, object]) -> str | None:
@@ -1137,9 +1176,14 @@ class TmdbClient(MetadataProvider):
 
         return f"https://www.youtube.com/watch?v={best['key']}"
 
-    @staticmethod
-    def _parse_series_content_rating(content_ratings: dict[str, object]) -> ContentRating | None:
-        """Extract content rating from TMDB series content_ratings, preferring BR then US."""
+    def _parse_series_content_rating(
+        self, content_ratings: dict[str, object]
+    ) -> ContentRating | None:
+        """Extract a series content rating from TMDB ``content_ratings``.
+
+        Same config-driven jurisdiction selection as the movie path
+        (:meth:`_preferred_rating_countries`).
+        """
         results = content_ratings.get("results", [])
         if not isinstance(results, list):
             return None
@@ -1153,8 +1197,7 @@ class TmdbClient(MetadataProvider):
             if rating and iso not in ratings_by_country:
                 ratings_by_country[iso] = rating
 
-        selected = ratings_by_country.get("BR") or ratings_by_country.get("US")
-        return ContentRating(selected) if selected else None
+        return self._select_content_rating(ratings_by_country)
 
     def _to_credit_person(self, data: dict[str, object], role_key: str) -> CreditPerson:
         """Convert a TMDB cast/crew dict to a CreditPerson."""

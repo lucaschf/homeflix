@@ -192,7 +192,7 @@ class TestTmdbClientParams:
 
 @pytest.mark.unit
 class TestParseContentRating:
-    """Tests for _parse_content_rating static method."""
+    """Tests for _parse_content_rating (config-driven jurisdiction)."""
 
     def test_should_prefer_br_over_us(self) -> None:
         data: dict[str, Any] = {
@@ -207,7 +207,7 @@ class TestParseContentRating:
                 },
             ],
         }
-        assert TmdbClient._parse_content_rating(data) == ContentRating("14")
+        assert _make_client()._parse_content_rating(data) == ContentRating("14")
 
     def test_should_fallback_to_us(self) -> None:
         data: dict[str, Any] = {
@@ -218,16 +218,16 @@ class TestParseContentRating:
                 },
             ],
         }
-        assert TmdbClient._parse_content_rating(data) == ContentRating("PG-13")
+        assert _make_client()._parse_content_rating(data) == ContentRating("PG-13")
 
     def test_should_return_none_when_empty(self) -> None:
-        assert TmdbClient._parse_content_rating({"results": []}) is None
+        assert _make_client()._parse_content_rating({"results": []}) is None
 
     def test_should_return_none_when_missing_key(self) -> None:
-        assert TmdbClient._parse_content_rating({}) is None
+        assert _make_client()._parse_content_rating({}) is None
 
     def test_should_handle_invalid_results_type(self) -> None:
-        assert TmdbClient._parse_content_rating({"results": "bad"}) is None
+        assert _make_client()._parse_content_rating({"results": "bad"}) is None
 
     def test_should_skip_empty_certifications(self) -> None:
         data: dict[str, Any] = {
@@ -242,12 +242,58 @@ class TestParseContentRating:
                 },
             ],
         }
-        assert TmdbClient._parse_content_rating(data) == ContentRating("R")
+        assert _make_client()._parse_content_rating(data) == ContentRating("R")
+
+    def test_jurisdiction_order_is_config_driven(self) -> None:
+        # A newly supported locale's certification body is respected
+        # without editing the gateway: es-ES → ES wins over the US
+        # fallback (vs the old hardcoded BR-then-US).
+        client = TmdbClient(api_key="test-key", supported_locales=("en", "es-ES"))
+        data: dict[str, Any] = {
+            "results": [
+                {"iso_3166_1": "US", "release_dates": [{"certification": "PG-13"}]},
+                {"iso_3166_1": "ES", "release_dates": [{"certification": "12"}]},
+            ],
+        }
+        assert client._parse_content_rating(data) == ContentRating("12")
+
+    def test_returns_none_when_no_preferred_country_matches(self) -> None:
+        # Default prefs [BR, US]; payload only has FR → nothing selected.
+        data: dict[str, Any] = {
+            "results": [
+                {"iso_3166_1": "FR", "release_dates": [{"certification": "12"}]},
+            ],
+        }
+        assert _make_client()._parse_content_rating(data) is None
+
+    def test_region_parsed_by_content_not_position(self) -> None:
+        # A script subtag (zh-Hant-TW) must not be mistaken for the region:
+        # TW is the region, so a TW certification is selected over US.
+        client = TmdbClient(api_key="test-key", supported_locales=("en", "zh-Hant-TW"))
+        data: dict[str, Any] = {
+            "results": [
+                {"iso_3166_1": "US", "release_dates": [{"certification": "PG-13"}]},
+                {"iso_3166_1": "TW", "release_dates": [{"certification": "0+"}]},
+            ],
+        }
+        assert client._parse_content_rating(data) == ContentRating("0+")
 
 
 @pytest.mark.unit
 class TestParseSeriesContentRating:
     """Tests for _parse_series_content_rating."""
+
+    def test_jurisdiction_order_is_config_driven(self) -> None:
+        # Series selection is config-driven too (parity with movie): a
+        # configured locale's region wins over the US fallback.
+        client = TmdbClient(api_key="test-key", supported_locales=("en", "es-ES"))
+        data: dict[str, Any] = {
+            "results": [
+                {"iso_3166_1": "US", "rating": "TV-14"},
+                {"iso_3166_1": "ES", "rating": "12"},
+            ],
+        }
+        assert client._parse_series_content_rating(data) == ContentRating("12")
 
     def test_should_prefer_br(self) -> None:
         data: dict[str, Any] = {
@@ -256,17 +302,17 @@ class TestParseSeriesContentRating:
                 {"iso_3166_1": "BR", "rating": "18"},
             ],
         }
-        assert TmdbClient._parse_series_content_rating(data) == ContentRating("18")
+        assert _make_client()._parse_series_content_rating(data) == ContentRating("18")
 
     def test_should_fallback_to_us(self) -> None:
         data: dict[str, Any] = {"results": [{"iso_3166_1": "US", "rating": "TV-14"}]}
-        assert TmdbClient._parse_series_content_rating(data) == ContentRating("TV-14")
+        assert _make_client()._parse_series_content_rating(data) == ContentRating("TV-14")
 
     def test_should_return_none_when_empty(self) -> None:
-        assert TmdbClient._parse_series_content_rating({}) is None
+        assert _make_client()._parse_series_content_rating({}) is None
 
     def test_should_handle_invalid_results_type(self) -> None:
-        assert TmdbClient._parse_series_content_rating({"results": "bad"}) is None
+        assert _make_client()._parse_series_content_rating({"results": "bad"}) is None
 
 
 @pytest.mark.unit
