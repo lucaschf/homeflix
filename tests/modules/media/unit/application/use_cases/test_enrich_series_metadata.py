@@ -242,7 +242,7 @@ class TestEnrichSeriesMetadata:
         # localized is replaced, not merged: new pt-BR wins and the
         # stale "es" entry from the wrong match is dropped.
         assert saved.get_title("pt-BR") == "From (Correto)"
-        assert "es" not in saved.localized
+        assert "es" not in saved.localized.to_serializable()
 
     @pytest.mark.asyncio
     async def test_force_clears_stale_end_year_when_new_match_has_none(self) -> None:
@@ -308,7 +308,7 @@ class TestEnrichSeriesMetadata:
         assert saved.backdrop_path.value == "https://img.example/existing-backdrop.jpg"
         # Merge: new lang added, existing lang kept.
         assert saved.get_title("pt-BR") == "From pt"
-        assert saved.localized["es"]["title"] == "Título Existente"
+        assert saved.localized.to_serializable()["es"]["title"] == "Título Existente"
 
     @pytest.mark.asyncio
     async def test_should_enrich_double_episode(self) -> None:
@@ -610,7 +610,7 @@ class TestEnrichSeriesByTmdbId:
         assert result.enriched is True
         provider.get_series_localized.assert_awaited_once_with(1396)
         saved = mocks.series.save.call_args[0][0]
-        assert "pt-BR" in saved.localized
+        assert "pt-BR" in saved.localized.to_serializable()
 
 
 @pytest.mark.unit
@@ -745,8 +745,8 @@ class TestApplySeriesFields:
         await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
         saved = mocks.series.save.call_args[0][0]
-        assert "pt-BR" in saved.localized
-        assert saved.localized["pt-BR"]["synopsis"] == "Drama de crime."
+        assert "pt-BR" in saved.localized.to_serializable()
+        assert saved.localized.to_serializable()["pt-BR"]["synopsis"] == "Drama de crime."
 
     async def test_should_carry_localized_tagline(self) -> None:
         # Regression: the series localized merge used to drop tagline
@@ -774,4 +774,7 @@ class TestApplySeriesFields:
         await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
 
         saved = mocks.series.save.call_args[0][0]
-        assert saved.localized["pt-BR"]["tagline"] == "Toda escolha tem consequências."
+        assert (
+            saved.localized.to_serializable()["pt-BR"]["tagline"]
+            == "Toda escolha tem consequências."
+        )

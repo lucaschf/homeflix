@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime  # noqa: TCH003 — needed at runtime by Pydantic
-from typing import TYPE_CHECKING, Any, ClassVar, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 from pydantic import Field, field_validator
 
@@ -15,6 +15,8 @@ from src.modules.media.domain.value_objects import (
     EpisodeNumber,
     ImageUrl,
     IntroDetectionState,
+    LocalizedField,
+    LocalizedMetadata,
     SeasonId,
     SeasonNumber,
     SeriesId,
@@ -54,7 +56,7 @@ class Season(DomainEntity[SeasonId]):
     # Per-language title/synopsis overrides, keyed by BCP-47 tag.
     # ``get_title(lang)`` / ``get_synopsis(lang)`` fall back to the
     # base (English) fields when a locale has no override.
-    localized: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    localized: LocalizedMetadata = Field(default_factory=LocalizedMetadata)
 
     # Metadata
     air_date: AirDate | None = None
@@ -138,17 +140,14 @@ class Season(DomainEntity[SeasonId]):
 
     def get_title(self, lang: str = "en") -> str | None:
         """Get title in the requested language, falling back to the base."""
-        loc_title = self.localized.get(lang, {}).get("title")
-        if loc_title:
-            return str(loc_title)
+        localized_title = self.localized.text(LocalizedField.TITLE, lang)
+        if localized_title:
+            return localized_title
         return self.title.value if self.title else None
 
     def get_synopsis(self, lang: str = "en") -> str | None:
         """Get synopsis in the requested language, falling back to the base."""
-        loc_synopsis = self.localized.get(lang, {}).get("synopsis")
-        if loc_synopsis:
-            return str(loc_synopsis)
-        return self.synopsis
+        return self.localized.text(LocalizedField.SYNOPSIS, lang) or self.synopsis
 
     # ── intro detection state transitions ─────────────────────────────
 

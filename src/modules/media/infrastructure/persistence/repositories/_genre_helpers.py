@@ -35,7 +35,7 @@ from src.building_blocks.application.pagination import (
     encode_title_cursor,
 )
 from src.modules.media.domain.repositories.movie_repository import GenreRow
-from src.modules.media.domain.value_objects import Genre
+from src.modules.media.domain.value_objects import Genre, LocalizedField
 from src.shared_kernel.value_objects.library_id import LibraryId
 
 TModel = TypeVar("TModel")
@@ -65,7 +65,9 @@ def localized_title_sort_key(model: Any, lang: str) -> Any:
     the FTS5 coupling already in the search path.
     """
     safe_lang = re.sub(r"[^A-Za-z-]", "", lang)
-    localized_title = func.json_extract(model.localized, f'$."{safe_lang}".title')
+    localized_title = func.json_extract(
+        model.localized, f'$."{safe_lang}".{LocalizedField.TITLE.value}'
+    )
     return func.lower(func.coalesce(localized_title, model.title))
 
 
@@ -83,8 +85,8 @@ def localized_title_for(localized_json: str | None, base_title: str, lang: str) 
             data = None
         if isinstance(data, dict):
             block = data.get(lang)
-            if isinstance(block, dict) and block.get("title"):
-                return str(block["title"])
+            if isinstance(block, dict) and block.get(LocalizedField.TITLE.value):
+                return str(block[LocalizedField.TITLE.value])
     return base_title
 
 
@@ -108,7 +110,7 @@ def localized_genres_for(localized_json: str | None, lang: str) -> list[str]:
     lang_block = data.get(lang) if isinstance(data, dict) else None
     if not isinstance(lang_block, dict):
         return []
-    raw = lang_block.get("genres")
+    raw = lang_block.get(LocalizedField.GENRES.value)
     if not isinstance(raw, list):
         return []
     return [str(g) for g in raw]

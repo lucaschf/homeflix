@@ -16,6 +16,8 @@ from src.modules.media.domain.value_objects import (
     Genre,
     ImageUrl,
     ImdbId,
+    LocalizedField,
+    LocalizedMetadata,
     SeasonNumber,
     SeriesId,
     Title,
@@ -75,7 +77,7 @@ class Series(AggregateRoot[SeriesId]):
     cast: list[CastMember] = Field(default_factory=list)
 
     # Localized metadata
-    localized: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    localized: LocalizedMetadata = Field(default_factory=LocalizedMetadata)
 
     # External IDs
     tmdb_id: TmdbId | None = None
@@ -105,21 +107,16 @@ class Series(AggregateRoot[SeriesId]):
 
     def get_title(self, lang: str = "en") -> str:
         """Get title in the requested language, falling back to default."""
-        loc = self.localized.get(lang, {})
-        return str(loc.get("title") or self.title.value)
+        return self.localized.text(LocalizedField.TITLE, lang) or self.title.value
 
     def get_synopsis(self, lang: str = "en") -> str | None:
         """Get synopsis in the requested language, falling back to default."""
-        loc = self.localized.get(lang, {})
-        return str(loc["synopsis"]) if loc.get("synopsis") else self.synopsis
+        return self.localized.text(LocalizedField.SYNOPSIS, lang) or self.synopsis
 
     def get_genres(self, lang: str = "en") -> list[str]:
         """Get genres in the requested language, falling back to default."""
-        loc = self.localized.get(lang, {})
-        loc_genres = loc.get("genres")
-        if loc_genres and isinstance(loc_genres, list):
-            return [str(g) for g in loc_genres]
-        return [g.value for g in self.genres]
+        loc_genres = self.localized.genres(lang)
+        return list(loc_genres) if loc_genres else [g.value for g in self.genres]
 
     def get_logo_path(self, lang: str = "en") -> str | None:
         """Get title-logo URL for the requested language.
@@ -129,11 +126,9 @@ class Series(AggregateRoot[SeriesId]):
         mirroring how ``get_title`` / ``get_synopsis`` behave so the
         UI sees a consistent "best available" graphic per language.
         """
-        loc = self.localized.get(lang, {})
-        loc_logo = loc.get("logo_path")
-        if loc_logo:
-            return str(loc_logo)
-        return self.logo_path.value if self.logo_path else None
+        return self.localized.text(LocalizedField.LOGO_PATH, lang) or (
+            self.logo_path.value if self.logo_path else None
+        )
 
     def get_poster_path(self, lang: str = "en") -> str | None:
         """Get poster URL for the requested language, falling back to default.
@@ -141,19 +136,15 @@ class Series(AggregateRoot[SeriesId]):
         Mirrors ``get_logo_path``: returns the locale's localized poster
         when present, else the global (English base) ``poster_path``.
         """
-        loc = self.localized.get(lang, {})
-        loc_poster = loc.get("poster_path")
-        if loc_poster:
-            return str(loc_poster)
-        return self.poster_path.value if self.poster_path else None
+        return self.localized.text(LocalizedField.POSTER_PATH, lang) or (
+            self.poster_path.value if self.poster_path else None
+        )
 
     def get_backdrop_path(self, lang: str = "en") -> str | None:
         """Get backdrop URL for the requested language, falling back to default."""
-        loc = self.localized.get(lang, {})
-        loc_backdrop = loc.get("backdrop_path")
-        if loc_backdrop:
-            return str(loc_backdrop)
-        return self.backdrop_path.value if self.backdrop_path else None
+        return self.localized.text(LocalizedField.BACKDROP_PATH, lang) or (
+            self.backdrop_path.value if self.backdrop_path else None
+        )
 
     @model_validator(mode="after")
     def validate_year_range(self) -> Series:

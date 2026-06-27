@@ -341,7 +341,7 @@ def _apply_credits(
         updates["content_rating"] = ContentRating(metadata.content_rating)
     if metadata.trailer_url and (force or not movie.trailer_url):
         updates["trailer_url"] = metadata.trailer_url
-    merge_localized_metadata(updates, movie.localized, metadata, force=force)
+    merge_localized_metadata(updates, movie.localized.to_serializable(), metadata, force=force)
 
 
 __all__ = ["EnrichMovieMetadataUseCase"]
