@@ -17,10 +17,7 @@ from src.modules.media.domain.entities.media_conflict import (
     SuggestedAction,
 )
 from src.modules.media.domain.entities.movie import Movie
-from src.modules.media.domain.events import (
-    MediaConflictDetectedEvent,
-    MovieMergedEvent,
-)
+from src.modules.media.domain.events import MediaConflictDetectedEvent
 from src.modules.media.domain.value_objects import (
     Duration,
     FilePath,
@@ -33,6 +30,7 @@ from src.modules.media.domain.value_objects import (
 )
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
 from src.modules.settings.domain.value_objects import ScanDedupConfig
+from src.shared_kernel.integration_events import MovieMergedEvent
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
 

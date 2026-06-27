@@ -14,7 +14,6 @@ from src.modules.media.application.use_cases._localized_metadata_helpers import 
     merge_media_localized,
 )
 from src.modules.media.domain.entities import Movie
-from src.modules.media.domain.events import MediaEnrichedEvent
 from src.modules.media.domain.value_objects import (
     CastMember,
     Collection,
@@ -28,6 +27,7 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
+from src.shared_kernel.integration_events import MediaEnrichedEvent
 from src.shared_kernel.value_objects.media_type import MediaType
 
 _logger = logging.getLogger(__name__)

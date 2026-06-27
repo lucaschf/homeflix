@@ -10,7 +10,7 @@ from src.modules.catalog_requests.application.ports import (
     CatalogArrivalNotification,
     NotificationPublisherPort,
 )
-from src.modules.media.domain.events import MediaEnrichedEvent
+from src.shared_kernel.integration_events import MediaEnrichedEvent
 from src.shared_kernel.value_objects.media_type import MediaType
 
 if TYPE_CHECKING:

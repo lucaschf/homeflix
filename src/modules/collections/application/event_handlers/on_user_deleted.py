@@ -7,7 +7,7 @@ from src.building_blocks.domain.events import DomainEvent
 from src.modules.collections.application.unit_of_work import (
     CollectionsUnitOfWorkFactory,
 )
-from src.modules.identity.domain.events import UserDeletedEvent
+from src.shared_kernel.integration_events import UserDeletedEvent
 
 _logger = logging.getLogger(__name__)
 

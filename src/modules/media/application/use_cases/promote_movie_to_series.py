@@ -18,7 +18,6 @@ from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
 )
 from src.modules.media.domain.entities import Episode, Movie, Season, Series
-from src.modules.media.domain.events import MoviePromotedToSeriesEvent
 from src.modules.media.domain.value_objects import (
     Duration,
     EpisodeId,
@@ -31,6 +30,7 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
+from src.shared_kernel.integration_events import MoviePromotedToSeriesEvent
 
 _logger = logging.getLogger(__name__)
 

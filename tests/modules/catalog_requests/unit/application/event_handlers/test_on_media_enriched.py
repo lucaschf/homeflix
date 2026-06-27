@@ -16,7 +16,8 @@ from src.modules.catalog_requests.domain.entities import (
     CatalogRequest,
     CatalogSubscription,
 )
-from src.modules.media.domain.events import MediaCreatedEvent, MediaEnrichedEvent
+from src.modules.media.domain.events import MediaCreatedEvent
+from src.shared_kernel.integration_events import MediaEnrichedEvent
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 from src.shared_kernel.value_objects.media_type import MediaType
 from tests.modules.catalog_requests.unit.conftest import (

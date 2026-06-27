@@ -26,8 +26,8 @@ from src.modules.media.application.use_cases.promote_movie_to_series import (
     PromoteMovieToSeriesUseCase,
 )
 from src.modules.media.domain.entities import Movie
-from src.modules.media.domain.events import MoviePromotedToSeriesEvent
 from src.modules.media.domain.value_objects import MovieId
+from src.shared_kernel.integration_events import MoviePromotedToSeriesEvent
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
 _LIBRARY_ID = "lib_test12345678"

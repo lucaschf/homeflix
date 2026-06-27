@@ -15,11 +15,9 @@ from src.modules.media.domain.entities.media_conflict import (
     ResolutionAction,
     ResolutionSource,
 )
-from src.modules.media.domain.events import (
-    MediaConflictDetectedEvent,
-    MovieMergedEvent,
-)
+from src.modules.media.domain.events import MediaConflictDetectedEvent
 from src.modules.media.domain.value_objects import MovieId
+from src.shared_kernel.integration_events import MovieMergedEvent
 from src.shared_kernel.value_objects.media_type import MediaType
 
 if TYPE_CHECKING:

@@ -4,10 +4,10 @@ import logging
 
 from src.building_blocks.application.event_bus import EventHandler
 from src.building_blocks.domain.events import DomainEvent
-from src.modules.identity.domain.events import UserDeletedEvent
 from src.modules.watch_progress.application.unit_of_work import (
     WatchProgressUnitOfWorkFactory,
 )
+from src.shared_kernel.integration_events import UserDeletedEvent
 
 _logger = logging.getLogger(__name__)
 

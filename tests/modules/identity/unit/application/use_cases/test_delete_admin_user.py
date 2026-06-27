@@ -22,9 +22,9 @@ from src.modules.identity.domain.errors import (
     CannotDemoteLastAdminError,
     UserNotFoundException,
 )
-from src.modules.identity.domain.events import UserDeletedEvent
 from src.modules.identity.domain.value_objects.email import Email
 from src.modules.identity.domain.value_objects.user_role import UserRole
+from src.shared_kernel.integration_events import UserDeletedEvent
 from src.shared_kernel.value_objects.user_id import UserId
 
 from .conftest import FakeIdentityUnitOfWork, FakeIdentityUnitOfWorkFactory

@@ -4,13 +4,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.modules.media.domain.events import (
-    MediaCreatedEvent,
-    MovieMergedEvent,
-)
+from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.watch_progress.application.event_handlers.on_movie_merged import (
     OnMovieMergedHandler,
 )
+from src.shared_kernel.integration_events import MovieMergedEvent
 from src.shared_kernel.value_objects.media_id import MovieId
 
 
