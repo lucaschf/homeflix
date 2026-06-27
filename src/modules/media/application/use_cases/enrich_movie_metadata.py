@@ -11,7 +11,7 @@ from src.modules.media.application.dtos.enrichment_dtos import (
 from src.modules.media.application.ports import MediaMetadata, MetadataProvider
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._localized_metadata_helpers import (
-    merge_localized_metadata,
+    merge_media_localized,
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.events import MediaEnrichedEvent
@@ -341,7 +341,9 @@ def _apply_credits(
         updates["content_rating"] = ContentRating(metadata.content_rating)
     if metadata.trailer_url and (force or not movie.trailer_url):
         updates["trailer_url"] = metadata.trailer_url
-    merge_localized_metadata(updates, movie.localized.to_serializable(), metadata, force=force)
+    new_localized = merge_media_localized(movie.localized, metadata, force=force)
+    if new_localized is not None:
+        updates["localized"] = new_localized
 
 
 __all__ = ["EnrichMovieMetadataUseCase"]

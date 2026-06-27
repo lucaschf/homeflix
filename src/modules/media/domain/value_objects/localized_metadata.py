@@ -64,6 +64,18 @@ class LocalizedFields(CompoundValueObject):
     poster_path: str | None = None
     backdrop_path: str | None = None
 
+    def is_empty(self) -> bool:
+        """Return ``True`` when no field carries a value."""
+        return not (
+            self.title
+            or self.synopsis
+            or self.tagline
+            or self.genres
+            or self.logo_path
+            or self.poster_path
+            or self.backdrop_path
+        )
+
 
 def _canonical(lang: str) -> str:
     """Return the canonical BCP-47 tag for *lang*, or the raw value.
@@ -139,6 +151,17 @@ class LocalizedMetadata(RootModel[dict[str, LocalizedFields]], ValueObject):
     def is_empty(self) -> bool:
         """Return ``True`` when there are no localized overrides."""
         return not self.root
+
+    def merge(self, other: "LocalizedMetadata") -> "LocalizedMetadata":
+        """Return a copy with *other*'s locales overlaid on this one.
+
+        Locale-level (not field-level) override: a locale present in
+        *other* replaces this object's entry for that locale entirely,
+        while locales only in ``self`` are kept. Mirrors the previous
+        ``{**existing, **provider}`` merge — used by the enrich write
+        path to fold provider overrides over the stored ones.
+        """
+        return LocalizedMetadata({**self.root, **other.root})
 
     def to_serializable(self) -> dict[str, dict[str, Any]]:
         """Serialize to the stored JSON shape (only non-falsy fields).

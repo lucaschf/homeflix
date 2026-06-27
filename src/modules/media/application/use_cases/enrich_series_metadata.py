@@ -19,8 +19,8 @@ from src.modules.media.application.ports import (
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._localized_metadata_helpers import (
-    build_localized_text,
-    merge_localized_metadata,
+    merge_media_localized,
+    merge_text_localized,
 )
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.events import MediaEnrichedEvent
@@ -32,6 +32,8 @@ from src.modules.media.domain.value_objects import (
     Genre,
     ImageUrl,
     ImdbId,
+    LocalizedFields,
+    LocalizedMetadata,
     SeriesId,
     Title,
     TmdbId,
@@ -257,7 +259,9 @@ def _apply_series_metadata(
             for p in metadata.cast
         ]
 
-    merge_localized_metadata(updates, series.localized.to_serializable(), metadata, force=force)
+    new_localized = merge_media_localized(series.localized, metadata, force=force)
+    if new_localized is not None:
+        updates["localized"] = new_localized
 
     if updates:
         series = series.with_updates(**updates)
@@ -299,9 +303,7 @@ def _apply_season_metadata(season: Season, meta: SeasonMetadata, *, force: bool 
         parsed = _parse_date(meta.air_date)
         if parsed:
             updates["air_date"] = AirDate(parsed)
-    season_localized = build_localized_text(
-        meta.localized, season.localized.to_serializable(), force=force
-    )
+    season_localized = merge_text_localized(season.localized, meta.localized, force=force)
     if season_localized is not None:
         updates["localized"] = season_localized
 
@@ -407,9 +409,7 @@ def _apply_multi_episode_metadata(
         if parsed:
             updates["air_date"] = AirDate(parsed)
 
-    combined_localized = _combine_localized_segments(
-        present, episode.localized.to_serializable(), force=force
-    )
+    combined_localized = _combine_localized_segments(present, episode.localized, force=force)
     if combined_localized is not None:
         updates["localized"] = combined_localized
 
@@ -421,33 +421,35 @@ def _apply_multi_episode_metadata(
 
 def _combine_localized_segments(
     present: list[EpisodeMetadata],
-    existing: dict[str, dict[str, Any]],
+    existing: LocalizedMetadata,
     *,
     force: bool,
-) -> dict[str, dict[str, Any]] | None:
+) -> LocalizedMetadata | None:
     """Combine per-locale title/synopsis across a multi-segment file's episodes.
 
     Mirrors the English combine (titles joined with `` / ``, synopses
     with `` ◆ ``) per locale so a translated multi-segment file keeps
-    its localized text. Returns ``None`` when no locale has data.
+    its localized text. Returns ``None`` when no locale has data; otherwise
+    replaces (``force``) or merges the combined overrides over ``existing``.
     """
     locales = {loc for m in present for loc in m.localized}
-    combined: dict[str, dict[str, Any]] = {}
+    by_locale: dict[str, LocalizedFields] = {}
     for loc in locales:
         segments = [m.localized[loc] for m in present if loc in m.localized]
         titles = [s.title for s in segments if s.title]
         synopses = [s.synopsis for s in segments if s.synopsis]
-        entry: dict[str, Any] = {}
-        if titles:
-            entry["title"] = " / ".join(titles)
-        if synopses:
-            entry["synopsis"] = " ◆ ".join(synopses)
-        if entry:
-            combined[loc] = entry
+        fields = LocalizedFields(
+            title=" / ".join(titles) if titles else None,
+            synopsis=" ◆ ".join(synopses) if synopses else None,
+        )
+        if not fields.is_empty():
+            by_locale[loc] = fields
 
-    if not combined:
+    if not by_locale:
         return None
-    return combined if force else {**existing, **combined}
+
+    combined = LocalizedMetadata(by_locale)
+    return combined if force else existing.merge(combined)
 
 
 def _apply_episode_metadata(
@@ -474,9 +476,7 @@ def _apply_episode_metadata(
         updates["duration"] = Duration(meta.duration_seconds)
     if meta.still_url and (force or not episode.thumbnail_path):
         updates["thumbnail_path"] = ImageUrl(meta.still_url)
-    episode_localized = build_localized_text(
-        meta.localized, episode.localized.to_serializable(), force=force
-    )
+    episode_localized = merge_text_localized(episode.localized, meta.localized, force=force)
     if episode_localized is not None:
         updates["localized"] = episode_localized
 
