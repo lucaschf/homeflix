@@ -33,7 +33,9 @@ from src.modules.media.infrastructure.streaming._subprocess import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
+    from src.modules.media.application.ports.runtime_config_ports import (
+        StreamingConfigPort,
+    )
 
 _logger = logging.getLogger(__name__)
 
@@ -104,7 +106,7 @@ class ThumbnailGenerationService:
             restart.
     """
 
-    def __init__(self, runtime_settings: RuntimeSettings) -> None:
+    def __init__(self, runtime_settings: StreamingConfigPort) -> None:
         self._runtime_settings = runtime_settings
 
     def generate(

@@ -29,7 +29,7 @@ from src.modules.identity.application.ports.avatar_storage_port import (
 )
 
 if TYPE_CHECKING:
-    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
+    from src.modules.identity.application.ports.avatar_config_port import AvatarConfigPort
 
 _logger = get_logger()
 
@@ -59,17 +59,17 @@ class LocalAvatarStorage(AvatarStoragePort):
     """Resize uploaded avatars and write WebP files to local disk.
 
     The on-disk directory is locked in on the **first** save/delete
-    using ``avatar.storage_subdir`` from :class:`RuntimeSettings`.
-    Subsequent changes to that field have no effect until the process
-    restarts — admin edits to ``storage_subdir`` would otherwise
-    orphan every avatar already on disk. ``max_size_mb`` and
-    ``size_pixels`` come straight from :class:`RuntimeSettings` per
-    upload so admin edits to those propagate immediately.
+    using ``avatar.storage_subdir`` from the injected
+    :class:`AvatarConfigPort`. Subsequent changes to that field have no
+    effect until the process restarts — admin edits to ``storage_subdir``
+    would otherwise orphan every avatar already on disk. ``max_size_mb``
+    and ``size_pixels`` are read per upload so admin edits to those
+    propagate immediately.
     """
 
     def __init__(
         self,
-        runtime_settings: RuntimeSettings,
+        runtime_settings: AvatarConfigPort,
         *,
         root_directory: str,
     ) -> None:
