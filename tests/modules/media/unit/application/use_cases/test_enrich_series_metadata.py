@@ -10,6 +10,7 @@ from src.modules.media.application.ports import (
     CreditPerson,
     EpisodeMetadata,
     LocalizedFields,
+    LocalizedTextFields,
     MediaMetadata,
     MetadataProvider,
     SeasonMetadata,
@@ -131,6 +132,55 @@ class TestEnrichSeriesMetadata:
         saved = mocks.series.save.call_args[0][0]
         episode = saved.seasons[0].episodes[0]
         assert episode.title.value == "Pilot"
+
+    @pytest.mark.asyncio
+    async def test_non_force_enrich_merges_localized_for_single_episode(self) -> None:
+        """Regression: a single-segment episode whose provider metadata carries
+        localized text must enrich (not crash) on a non-force run.
+
+        The localized merge fed ``episode.localized`` (a LocalizedMetadata VO)
+        into a ``{**existing, ...}`` spread, which raises
+        ``TypeError: 'LocalizedMetadata' object is not a mapping`` — the merge
+        must go through the serializable form instead.
+        """
+        series = _make_series()
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
+
+        metadata = MediaMetadata(
+            title="Breaking Bad",
+            original_title="Breaking Bad",
+            year=2008,
+            tmdb_id=1396,
+            seasons=[
+                SeasonMetadata(
+                    season_number=1,
+                    episodes=[
+                        EpisodeMetadata(
+                            season_number=1,
+                            episode_number=1,
+                            title="Pilot",
+                            localized={
+                                "pt-BR": LocalizedTextFields(
+                                    title="Piloto", synopsis="Walter White começa."
+                                )
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        )
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = metadata
+
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+        # No force — exercises the merge branch that previously crashed.
+        await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        episode = mocks.series.save.call_args[0][0].seasons[0].episodes[0]
+        assert episode.get_title("pt-BR") == "Piloto"
+        assert episode.get_synopsis("pt-BR") == "Walter White começa."
 
     @pytest.mark.asyncio
     async def test_should_skip_already_enriched(self) -> None:

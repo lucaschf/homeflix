@@ -474,7 +474,9 @@ def _apply_episode_metadata(
         updates["duration"] = Duration(meta.duration_seconds)
     if meta.still_url and (force or not episode.thumbnail_path):
         updates["thumbnail_path"] = ImageUrl(meta.still_url)
-    episode_localized = build_localized_text(meta.localized, episode.localized, force=force)
+    episode_localized = build_localized_text(
+        meta.localized, episode.localized.to_serializable(), force=force
+    )
     if episode_localized is not None:
         updates["localized"] = episode_localized
 
