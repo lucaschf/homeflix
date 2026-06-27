@@ -25,10 +25,10 @@ if TYPE_CHECKING:
     from src.modules.media.application.ports.library_health_port import (
         LibraryHealthPort,
     )
+    from src.modules.media.application.ports.runtime_config_ports import ScanDedupConfigPort
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities.movie import Movie
     from src.modules.settings.domain.value_objects import ScanDedupConfig
-    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class DetectMovieConflictsUseCase:
         uow_factory: MediaUnitOfWorkFactory,
         library_health: LibraryHealthPort | None = None,
         event_bus: EventBus | None = None,
-        runtime_settings: RuntimeSettings | None = None,
+        runtime_settings: ScanDedupConfigPort | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._library_health = library_health

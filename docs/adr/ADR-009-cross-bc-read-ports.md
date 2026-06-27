@@ -157,8 +157,28 @@ class WatchProgressContainer(containers.DeclarativeContainer):
     )
 ```
 
+## Variante aceita: Protocol port (sem adapter) para config injetada do provider
+
+Quando o consumidor recebe **diretamente** uma instância do provider via
+composition root (não um repositório por-sessão), o par ABC + adapter não cabe:
+uma ABC forçaria o provider a herdar a port do consumidor — acoplamento
+provider→consumidor, ferindo a regra #4. Nesses casos é aceitável uma **port
+como `typing.Protocol`** (tipagem estrutural) que descreve só os getters que o
+consumidor chama; o provider a satisfaz estruturalmente, sem adapter e sem saber
+quem o consome.
+
+Trade-off explícito (alinhamento **parcial** à regra #1): os tipos de retorno
+podem ser os **value objects de domínio do provider** (contratos publicados
+estáveis, importados sob `TYPE_CHECKING`) em vez de DTOs próprios + adapter
+tradutor — aceitável para **leitura de config read-only** (VOs imutáveis,
+não-agregado), onde DTO+adapter por bucket seria boilerplate desproporcional. O
+ganho central — sair da fachada concreta de **infra** de outro BC — é mantido.
+Exemplo: `media/application/ports/runtime_config_ports.py` e
+`identity/application/ports/avatar_config_port.py` lendo `RuntimeSettings`.
+
 ## Histórico de Revisões
 
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-04-18 | Lucas Cristovam | Criação inicial (Fase 1 da refatoração Clean Architecture) |
+| 2026-06-27 | Lucas Cristovam | Variante "Protocol port (sem adapter)" para config injetada do provider |

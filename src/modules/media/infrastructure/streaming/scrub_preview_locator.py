@@ -15,7 +15,7 @@ from src.modules.media.infrastructure.streaming.thumbnail_service import (
 )
 
 if TYPE_CHECKING:
-    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
+    from src.modules.media.application.ports.runtime_config_ports import ThumbnailConfigPort
 
 
 class FilesystemScrubPreviewLocator(ScrubPreviewLocatorPort):
@@ -27,7 +27,7 @@ class FilesystemScrubPreviewLocator(ScrubPreviewLocatorPort):
     for both the VTT and its sprite.
     """
 
-    def __init__(self, runtime_settings: RuntimeSettings) -> None:
+    def __init__(self, runtime_settings: ThumbnailConfigPort) -> None:
         self._runtime_settings = runtime_settings
 
     async def locate(self, source_file_path: str) -> str | None:

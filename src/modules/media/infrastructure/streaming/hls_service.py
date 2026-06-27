@@ -65,7 +65,7 @@ from src.modules.media.infrastructure.streaming._subprocess import (
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
 
 if TYPE_CHECKING:
-    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
+    from src.modules.media.application.ports.runtime_config_ports import StreamingConfigPort
     from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 _logger = logging.getLogger(__name__)
@@ -179,7 +179,7 @@ class HlsService(HlsPlaylistPort):
 
     def __init__(
         self,
-        runtime_settings: RuntimeSettings,
+        runtime_settings: StreamingConfigPort,
         cache_dir: str = "./hls_cache",
         probe_service: MediaProbeService | None = None,
         idle_timeout: float = _DEFAULT_IDLE_TIMEOUT,

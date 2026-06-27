@@ -29,7 +29,7 @@ from src.modules.media.infrastructure.streaming._subprocess import (
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
+    from src.modules.media.application.ports.runtime_config_ports import StreamingConfigPort
 
 _logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class AudioExtractor:
 
     def __init__(
         self,
-        runtime_settings: RuntimeSettings,
+        runtime_settings: StreamingConfigPort,
         *,
         timeout_seconds: int = _DEFAULT_TIMEOUT_SECONDS,
         sample_rate: int = _DEFAULT_SAMPLE_RATE,
