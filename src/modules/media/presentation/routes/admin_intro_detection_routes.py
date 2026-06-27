@@ -8,8 +8,7 @@ from fastapi import APIRouter, Depends
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.intro_detection_run_dtos import (
     GetIntroDetectionRunInput,
     ListIntroDetectionRunsInput,
@@ -31,7 +30,7 @@ async def list_intro_detection_runs(
     series_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListIntroDetectionRunsUseCase = Depends(
         Provide[ApplicationContainer.media.list_intro_detection_runs],
     ),
@@ -52,7 +51,7 @@ async def list_intro_detection_runs(
 @inject  # type: ignore[misc]
 async def get_intro_detection_run(
     run_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetIntroDetectionRunUseCase = Depends(
         Provide[ApplicationContainer.media.get_intro_detection_run],
     ),

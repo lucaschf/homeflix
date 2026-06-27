@@ -22,8 +22,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.config.containers import ApplicationContainer
 from src.infrastructure.scheduling import ThumbnailBackfillJob
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput
 from src.modules.media.application.dtos.series_dtos import (
     EpisodeOutput,
@@ -385,7 +384,7 @@ async def episode_scrub_preview_sprite(
 @inject  # type: ignore[misc]
 async def clear_movie_hls_cache(
     movie_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     profile_id: str = Depends(resolve_profile_id),
     movie_uc: GetMovieByIdUseCase = Depends(
         Provide[ApplicationContainer.media.get_movie_by_id],

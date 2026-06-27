@@ -7,8 +7,7 @@ from fastapi import APIRouter, Depends
 
 from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.use_cases.clear_hls_cache_global import (
     ClearHlsCacheGlobalUseCase,
 )
@@ -22,7 +21,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Admin — System"])
 @router.get("/hls-cache")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def get_hls_cache_stats(
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetHlsCacheStatsUseCase = Depends(
         Provide[ApplicationContainer.media.get_hls_cache_stats],
     ),
@@ -49,7 +48,7 @@ async def get_hls_cache_stats(
 @router.delete("/hls-cache", status_code=204)  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def clear_hls_cache_global(
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ClearHlsCacheGlobalUseCase = Depends(
         Provide[ApplicationContainer.media.clear_hls_cache_global],
     ),

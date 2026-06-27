@@ -18,8 +18,7 @@ from fastapi import APIRouter, Depends, Query
 
 from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_active_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_user
 from src.modules.media.application.dtos.tmdb_lookup_dtos import SearchTmdbTitlesInput
 from src.modules.media.application.use_cases.search_tmdb_titles import (
     SearchTmdbTitlesUseCase,
@@ -38,7 +37,7 @@ router = APIRouter(prefix="/api/v1/catalog", tags=["Catalog Lookup"])
 async def lookup_catalog_title(
     q: str = Query(..., min_length=1, max_length=_MAX_QUERY_LEN),
     limit: int = Query(default=_DEFAULT_LIMIT, ge=_MIN_LIMIT, le=_MAX_LIMIT),
-    _user: UserModel = Depends(current_active_user),
+    _user: AuthenticatedUser = Depends(authenticated_user),
     use_case: SearchTmdbTitlesUseCase = Depends(
         Provide[ApplicationContainer.media.search_tmdb_titles],
     ),

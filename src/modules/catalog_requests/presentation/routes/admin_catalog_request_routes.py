@@ -17,8 +17,7 @@ from src.modules.catalog_requests.application.use_cases import (
     IncludeCatalogRequestUseCase,
     ListAdminCatalogRequestsUseCase,
 )
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Catalog Requests"])
 
@@ -27,7 +26,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Catalog Requests"])
 @inject  # type: ignore[misc]
 async def list_admin_catalog_requests(
     lang: str = "en",
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListAdminCatalogRequestsUseCase = Depends(
         Provide[ApplicationContainer.catalog_requests.list_admin_catalog_requests],
     ),
@@ -36,7 +35,7 @@ async def list_admin_catalog_requests(
 
     Admin-only queue: each row carries the base request fields
     (including ``source`` + derived ``status``) plus ``subscriber_count``
-    (the "Inscritos" column). Admin-gated via ``current_admin_user``.
+    (the "Inscritos" column). Admin-gated via ``authenticated_admin``.
     ``lang`` selects the per-request localized title snapshot.
     """
     items = await use_case.execute(lang)
@@ -49,7 +48,7 @@ async def list_admin_catalog_requests(
 @inject  # type: ignore[misc]
 async def include_catalog_request(
     request_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: IncludeCatalogRequestUseCase = Depends(
         Provide[ApplicationContainer.catalog_requests.include_catalog_request],
     ),
@@ -70,7 +69,7 @@ async def include_catalog_request(
 @inject  # type: ignore[misc]
 async def dismiss_catalog_request(
     request_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: DismissCatalogRequestUseCase = Depends(
         Provide[ApplicationContainer.catalog_requests.dismiss_catalog_request],
     ),

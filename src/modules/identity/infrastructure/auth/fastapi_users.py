@@ -18,6 +18,7 @@ from fastapi_users import FastAPIUsers
 
 from src.building_blocks.application.errors import ForbiddenOperationException
 from src.modules.identity.domain.value_objects.user_role import UserRole
+from src.modules.identity.infrastructure.auth.authenticated_user import AuthenticatedUser
 from src.modules.identity.infrastructure.auth.backend import auth_backend
 from src.modules.identity.infrastructure.auth.dependencies import get_user_manager
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
@@ -56,4 +57,41 @@ async def current_admin_user(
     return user
 
 
-__all__ = ["current_active_user", "current_admin_user", "fastapi_users"]
+def _to_authenticated(user: UserModel) -> AuthenticatedUser:
+    """Project the Identity ``UserModel`` to the published contract."""
+    return AuthenticatedUser(
+        external_id=user.external_id,
+        is_admin=user.role == UserRole.ADMIN.value,
+    )
+
+
+async def authenticated_user(
+    user: UserModel = Depends(current_active_user),
+) -> AuthenticatedUser:
+    """Active caller as the ORM-free :class:`AuthenticatedUser`.
+
+    The cross-BC counterpart of ``current_active_user`` — routes in other
+    bounded contexts depend on this so they never import Identity's
+    ``UserModel`` (ADR-009). Same cookie/active validation underneath.
+    """
+    return _to_authenticated(user)
+
+
+async def authenticated_admin(
+    user: UserModel = Depends(current_admin_user),
+) -> AuthenticatedUser:
+    """Admin caller as :class:`AuthenticatedUser`.
+
+    Composes on ``current_admin_user`` (which already enforces the admin
+    role + 403), returning the published contract instead of the ORM.
+    """
+    return _to_authenticated(user)
+
+
+__all__ = [
+    "authenticated_admin",
+    "authenticated_user",
+    "current_active_user",
+    "current_admin_user",
+    "fastapi_users",
+]

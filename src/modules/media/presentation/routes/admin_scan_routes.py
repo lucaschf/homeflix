@@ -9,8 +9,7 @@ from pydantic import BaseModel
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.scan_run_dtos import (
     GetScanRunInput,
     ListScanRunsInput,
@@ -50,7 +49,7 @@ async def list_admin_scans(
     library_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListScanRunsUseCase = Depends(
         Provide[ApplicationContainer.media.list_scan_runs],
     ),
@@ -78,7 +77,7 @@ async def list_admin_scans(
 @inject  # type: ignore[misc]
 async def get_admin_scan(
     run_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetScanRunUseCase = Depends(
         Provide[ApplicationContainer.media.get_scan_run],
     ),
@@ -92,7 +91,7 @@ async def get_admin_scan(
 @inject  # type: ignore[misc]
 async def trigger_admin_scan(
     body: TriggerScanRequest,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: TriggerScanUseCase = Depends(
         Provide[ApplicationContainer.media.trigger_scan],
     ),
@@ -119,7 +118,7 @@ async def trigger_admin_scan(
 @inject  # type: ignore[misc]
 async def trigger_admin_bulk_enrich(
     body: TriggerBulkEnrichRequest,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: TriggerBulkEnrichUseCase = Depends(
         Provide[ApplicationContainer.media.trigger_bulk_enrich],
     ),

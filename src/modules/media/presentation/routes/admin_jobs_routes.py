@@ -8,8 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_admin_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.job_dtos import ListJobRunsInput, TriggerJobInput
 from src.modules.media.application.use_cases.list_job_runs import ListJobRunsUseCase
 from src.modules.media.application.use_cases.list_jobs import ListJobsUseCase
@@ -24,7 +23,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Jobs"])
 @router.get("/jobs")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def list_admin_jobs(
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListJobsUseCase = Depends(Provide[ApplicationContainer.list_jobs]),
 ) -> dict[str, Any]:
     """Overview of every background job: live schedule + last run + running-now.
@@ -43,7 +42,7 @@ async def list_admin_job_runs(
     job_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListJobRunsUseCase = Depends(
         Provide[ApplicationContainer.media.list_job_runs],
     ),
@@ -59,7 +58,7 @@ async def list_admin_job_runs(
 @inject  # type: ignore[misc]
 async def trigger_admin_job(
     job_id: str,
-    _admin: UserModel = Depends(current_admin_user),
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: TriggerJobUseCase = Depends(
         Provide[ApplicationContainer.trigger_job],
     ),

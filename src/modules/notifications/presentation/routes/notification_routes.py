@@ -8,8 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import current_active_user
-from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_user
 from src.modules.notifications.application.dtos import (
     ListUserNotificationsInput,
     MarkAllNotificationsReadInput,
@@ -27,7 +26,7 @@ router = APIRouter(prefix="/api/v1/notifications", tags=["Notifications"])
 @router.get("")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def list_user_notifications(
-    user: UserModel = Depends(current_active_user),
+    user: AuthenticatedUser = Depends(authenticated_user),
     unread_only: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=200),
     use_case: ListUserNotificationsUseCase = Depends(
@@ -60,7 +59,7 @@ async def list_user_notifications(
 @inject  # type: ignore[misc]
 async def mark_notification_read(
     notification_id: str,
-    user: UserModel = Depends(current_active_user),
+    user: AuthenticatedUser = Depends(authenticated_user),
     use_case: MarkNotificationReadUseCase = Depends(
         Provide[ApplicationContainer.notifications.mark_notification_read],
     ),
@@ -85,7 +84,7 @@ async def mark_notification_read(
 @router.post("/read-all")  # type: ignore[misc]
 @inject  # type: ignore[misc]
 async def mark_all_notifications_read(
-    user: UserModel = Depends(current_active_user),
+    user: AuthenticatedUser = Depends(authenticated_user),
     use_case: MarkAllNotificationsReadUseCase = Depends(
         Provide[ApplicationContainer.notifications.mark_all_notifications_read],
     ),
