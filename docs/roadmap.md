@@ -111,7 +111,7 @@ patterns are explicitly excluded.
   `POST /api/v1/admin/conflicts/sweep` endpoint runs the same pass
   on demand. Settings toggle + "Run sweep now" button in
   homeflix-web. ADR-015 closed.
-- 112 REST API endpoints across 9 bounded contexts, 2 660+ tests.
+- ~132 REST API endpoints across 9 bounded contexts, ~2 940 tests (live count: `grep -rE '@router\.(get|post|put|patch|delete)' src/ | wc -l`).
 
 ---
 

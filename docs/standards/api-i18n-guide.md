@@ -2,6 +2,17 @@
 
 Guia completo para implementar internacionalização em APIs REST, cobrindo mensagens de erro, validação, formatos de data/número e boas práticas.
 
+> ⚠️ **Status no HomeFlix: design de referência, NÃO o modelo adotado.** Este
+> guia descreve i18n por **catálogos de mensagem JSON** + negociação via header
+> `Accept-Language`/`Content-Language`. O HomeFlix **não** implementa isso: a
+> localização é por **dado de domínio enriquecido do TMDB** — campos localizados
+> por entidade (`entity.get_title(lang)` em `movie`/`series`/`season`/`episode`),
+> com `lang` vindo de **query param** e os locales suportados definidos em
+> `settings.supported_locales` (config-driven, default `["en", "pt-BR"]`). Não
+> existe diretório `locales/`, catálogo JSON, nem parsing de `Accept-Language`.
+> Use as seções abaixo apenas como referência conceitual para mensagens de
+> erro/validação caso esse caminho seja adotado no futuro.
+
 ---
 
 ## Visão Geral

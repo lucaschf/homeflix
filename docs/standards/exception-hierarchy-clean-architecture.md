@@ -125,7 +125,7 @@ CoreException
 │       ├── DatabaseConnectionException
 │       └── DataIntegrityException
 │
-└── PresentationException
+└── PresentationException          # 🚧 NÃO IMPLEMENTADO (aspiracional — ver seção abaixo)
     ├── InvalidRequestFormatException
     ├── UnsupportedMediaTypeException
     ├── NotAcceptableException
@@ -865,6 +865,15 @@ class DataIntegrityException(RepositoryException):
 ```
 
 ### Apresentação (PresentationException)
+
+> 🚧 **Status: NÃO IMPLEMENTADO (aspiracional).** A hierarquia
+> `PresentationException` descrita nesta seção (e na árvore acima:
+> `InvalidRequestFormatException`, `UnsupportedMediaTypeException`,
+> `NotAcceptableException` etc.) **não existe no código** — `grep -rn
+> PresentationException src/` retorna zero. `building_blocks` define apenas
+> `CoreException`, `DomainException`, `ApplicationException` e
+> `InfrastructureException`. Trate o conteúdo abaixo como design proposto; não
+> tente levantar essas classes hoje.
 
 > **Observação importante**: A camada de apresentação (API REST) geralmente não precisa de exceções próprias porque ela é o **ponto de entrada** - ela recebe erros das outras camadas e os transforma em respostas HTTP. Porém, existem cenários onde exceções específicas da API fazem sentido.
 

@@ -68,6 +68,14 @@ Padrão de design para APIs RESTful otimizado para **cache HTTP**, **performance
 }
 ```
 
+> ⚠️ **Divergência implementação ↔ standard (vigente).** A implementação atual
+> (`src/building_blocks/presentation/responses.py:api_list`) **aninha** a
+> paginação em `metadata.pagination`, e não no top-level mostrado acima:
+> `{"type": "list", "data": [...], "metadata": {"pagination": {...}}}`. A
+> colocação top-level deste documento permanece como alvo de um major futuro;
+> até lá, clientes devem ler `resp.metadata.pagination`. O próprio `responses.py`
+> documenta esse desvio.
+
 ### Coleção com Filtros Aplicados
 
 ```json
