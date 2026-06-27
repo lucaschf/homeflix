@@ -36,13 +36,10 @@ def _media_uow_factory(
     return MagicMock(return_value=uow)
 
 
-def _identity_uow_factory(users_count: int) -> MagicMock:
-    uow = AsyncMock()
-    uow.__aenter__.return_value = uow
-    uow.__aexit__.return_value = None
-    uow.users = AsyncMock()
-    uow.users.count.return_value = users_count
-    return MagicMock(return_value=uow)
+def _user_count_port(users_count: int) -> MagicMock:
+    port = MagicMock()
+    port.count_users = AsyncMock(return_value=users_count)
+    return port
 
 
 pytestmark = pytest.mark.unit
@@ -74,7 +71,7 @@ class TestGetOverviewStatsUseCase:
                 series_count=7,
                 last_scan=last_scan,
             ),
-            identity_uow_factory=_identity_uow_factory(users_count=4),
+            user_count=_user_count_port(users_count=4),
             list_movies_needing_review=review_uc,
             hls_playlist=hls,
         ).execute()
@@ -105,7 +102,7 @@ class TestGetOverviewStatsUseCase:
                 series_count=0,
                 last_scan=None,
             ),
-            identity_uow_factory=_identity_uow_factory(users_count=1),
+            user_count=_user_count_port(users_count=1),
             list_movies_needing_review=review_uc,
             hls_playlist=hls,
         ).execute()

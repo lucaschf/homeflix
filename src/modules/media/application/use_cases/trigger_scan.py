@@ -3,17 +3,16 @@
 import asyncio
 import logging
 
-from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
 from src.modules.media.application.dtos.scan_run_dtos import (
     ScanRunOutput,
     TriggerScanInput,
 )
+from src.modules.media.application.ports.library_lookup_port import LibraryLookupPort
 from src.modules.media.application.services.scan_run_service import ScanRunService
 from src.modules.media.application.use_cases._to_scan_run_output import (
     scan_run_to_output,
 )
 from src.modules.media.domain.entities.scan_run import ScanRunTrigger
-from src.shared_kernel.value_objects.library_id import LibraryId
 
 _logger = logging.getLogger(__name__)
 
@@ -39,21 +38,20 @@ class TriggerScanUseCase:
     def __init__(
         self,
         scan_run_service: ScanRunService,
-        library_uow_factory: LibraryUnitOfWorkFactory,
+        library_lookup: LibraryLookupPort,
     ) -> None:
         self._service = scan_run_service
-        self._library_uow_factory = library_uow_factory
+        self._library_lookup = library_lookup
 
     async def execute(self, input_dto: TriggerScanInput) -> ScanRunOutput:
         """Validate the library, open the row, schedule the work."""
-        async with self._library_uow_factory() as luow:
-            library = await luow.libraries.find_by_id(LibraryId(input_dto.library_id))
+        library = await self._library_lookup.find(input_dto.library_id)
         if library is None:
             raise LibraryNotFoundForScanError(input_dto.library_id)
 
         trigger = ScanRunTrigger(input_dto.trigger)
         run = await self._service.open_scan(
-            library_id=str(library.id),
+            library_id=library.id,
             trigger=trigger,
         )
 
@@ -73,7 +71,7 @@ class TriggerScanUseCase:
         return scan_run_to_output(run)
 
 
-def _log_task_failure(task: asyncio.Task) -> None:
+def _log_task_failure(task: asyncio.Task[None]) -> None:
     """Surface unexpected task crashes in the logs.
 
     Normal failure paths inside ``ScanRunService.run_scan`` write

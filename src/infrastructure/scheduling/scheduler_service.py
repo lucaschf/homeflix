@@ -19,6 +19,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.config.logging import get_logger
+from src.modules.media.application.ports.library_lookup_port import LibraryRef
 from src.modules.media.domain.entities.scan_run import ScanRunTrigger
 from src.shared_kernel.value_objects.library_id import LibraryId
 
@@ -286,7 +287,10 @@ class LibraryScanScheduler:
             )
             return
 
-        await self._scan_run_service.run_scan(run.id, library)
+        await self._scan_run_service.run_scan(
+            run.id,
+            LibraryRef(id=str(library.id), paths=tuple(library.paths)),
+        )
         await self._mark_library_scanned(library_id)
 
     async def _load_library(self, library_id: str) -> Library | None:
