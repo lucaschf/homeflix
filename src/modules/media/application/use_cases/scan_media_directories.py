@@ -177,11 +177,12 @@ class ScanMediaDirectoriesUseCase:
         ``None`` when the duration could not be read.
         """
         probed = await self._probe(scanned.file_path.value)
-        resolution = scanned.resolution or (probed.resolution if probed else None) or "Unknown"
+        resolution_name = scanned.resolution or (probed.resolution if probed else None)
+        resolution = Resolution(resolution_name) if resolution_name else Resolution.unknown()
         media_file = MediaFile(
             file_path=scanned.file_path,
             file_size=scanned.file_size,
-            resolution=Resolution(resolution),
+            resolution=resolution,
             audio_tracks=list(probed.audio_tracks) if probed else [],
             subtitle_tracks=list(probed.all_subtitles) if probed else [],
             is_primary=is_primary,
@@ -200,7 +201,7 @@ class ScanMediaDirectoriesUseCase:
         resolution or non-empty track lists. Returns ``None`` when no
         change is needed.
         """
-        needs_resolution = current.resolution.name == "Unknown"
+        needs_resolution = current.resolution.is_unknown()
         needs_audio = not current.audio_tracks
         needs_subtitles = not current.subtitle_tracks
         if not needs_resolution and not needs_audio and not needs_subtitles:

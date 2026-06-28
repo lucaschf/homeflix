@@ -33,6 +33,10 @@ from src.modules.media.domain.entities.scan_run import (
     ScanRunKind,
     ScanRunTrigger,
 )
+from src.modules.media.domain.value_objects.scan_counters import (
+    EnrichCounters,
+    ScanCounters,
+)
 from src.modules.media.domain.value_objects.scan_run_id import ScanRunId
 
 _logger = logging.getLogger(__name__)
@@ -100,13 +104,13 @@ class ScanRunService:
                     directories=list(library.paths),
                 ),
             )
-            summary = {
-                "movies_created": output.movies_created,
-                "movies_updated": output.movies_updated,
-                "episodes_created": output.episodes_created,
-                "episodes_updated": output.episodes_updated,
-            }
-            await self._finalize_succeeded(run_id, summary, output.errors)
+            counters = ScanCounters(
+                movies_created=output.movies_created,
+                movies_updated=output.movies_updated,
+                episodes_created=output.episodes_created,
+                episodes_updated=output.episodes_updated,
+            )
+            await self._finalize_succeeded(run_id, counters, output.errors)
         except Exception as exc:
             _logger.exception("Scan run %s crashed for library %s", run_id, library.id)
             await self._finalize_failed(run_id, str(exc))
@@ -115,12 +119,12 @@ class ScanRunService:
         """Execute the bulk enrich and write the terminal row."""
         try:
             output = await self._bulk_enrich.execute(BulkEnrichInput(force=force))
-            summary = {
-                "movies_enriched": output.movies_enriched,
-                "series_enriched": output.series_enriched,
-                "skipped": output.skipped,
-            }
-            await self._finalize_succeeded(run_id, summary, output.errors)
+            counters = EnrichCounters(
+                movies_enriched=output.movies_enriched,
+                series_enriched=output.series_enriched,
+                skipped=output.skipped,
+            )
+            await self._finalize_succeeded(run_id, counters, output.errors)
         except Exception as exc:
             _logger.exception("Bulk enrich run %s crashed", run_id)
             await self._finalize_failed(run_id, str(exc))
@@ -128,7 +132,7 @@ class ScanRunService:
     async def _finalize_succeeded(
         self,
         run_id: ScanRunId,
-        summary: dict[str, int],
+        counters: ScanCounters | EnrichCounters,
         errors: list[str],
     ) -> None:
         async with self._media_uow_factory() as uow:
@@ -136,7 +140,7 @@ class ScanRunService:
             if run is None:  # pragma: no cover — defensive, deleted mid-run
                 _logger.warning("scan_run %s disappeared before finalize", run_id)
                 return
-            await uow.scan_runs.save(run.succeed(summary, errors))
+            await uow.scan_runs.save(run.succeed(counters, errors))
 
     async def _finalize_failed(self, run_id: ScanRunId, error_message: str) -> None:
         async with self._media_uow_factory() as uow:

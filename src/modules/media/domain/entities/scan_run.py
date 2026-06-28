@@ -9,6 +9,10 @@ from typing import Any, Self
 from pydantic import Field
 
 from src.building_blocks.domain import AggregateRoot
+from src.modules.media.domain.value_objects.scan_counters import (
+    EnrichCounters,
+    ScanCounters,
+)
 from src.modules.media.domain.value_objects.scan_run_id import ScanRunId
 
 
@@ -65,10 +69,11 @@ class ScanRun(AggregateRoot[ScanRunId]):
         finished_at: ``None`` while ``running``; set on terminal
             transitions.
         status: Current lifecycle state.
-        summary: Per-kind counter dict. For scans:
-            ``movies_created`` / ``movies_updated`` /
-            ``episodes_created`` / ``episodes_updated``.
-            For enrich: ``enriched`` / ``skipped`` / ``failed``.
+        summary: Per-kind counter dict, serialized from the typed
+            ``ScanCounters`` (scan) or ``EnrichCounters`` (enrich) value
+            object — see those VOs for the canonical key set. Kept as a
+            plain dict on the aggregate so the history row stays
+            kind-agnostic (one JSON column, no wide table).
         errors: First N error messages emitted during the run.
             Truncated to ``_MAX_ERRORS_RETAINED`` so a degenerate
             scan can't bloat the row.
@@ -102,26 +107,64 @@ class ScanRun(AggregateRoot[ScanRunId]):
             status=ScanRunStatus.RUNNING,
         )
 
-    def succeed(self, summary: dict[str, Any], errors: list[str]) -> Self:
-        """Return a copy stamped with ``succeeded`` + the final counters."""
+    def _require_counters_match_kind(
+        self,
+        counters: ScanCounters | EnrichCounters,
+    ) -> None:
+        """Enforce that the counters VO matches this run's ``kind``.
+
+        Keeps the kind↔summary-shape invariant in the domain instead of
+        relying on the caller to pair them correctly.
+        """
+        expected = ScanCounters if self.kind is ScanRunKind.SCAN else EnrichCounters
+        if not isinstance(counters, expected):
+            raise ValueError(
+                f"{type(counters).__name__} cannot summarize a "
+                f"{self.kind.value} run; expected {expected.__name__}",
+            )
+
+    def succeed(
+        self,
+        counters: ScanCounters | EnrichCounters,
+        errors: list[str],
+    ) -> Self:
+        """Return a copy stamped with ``succeeded`` + the final counters.
+
+        The typed ``counters`` carry the canonical per-kind key set; they
+        are serialized into the kind-agnostic ``summary`` column.
+
+        Raises:
+            ValueError: If ``counters`` does not match this run's ``kind``.
+        """
+        self._require_counters_match_kind(counters)
         return self.with_updates(
             status=ScanRunStatus.SUCCEEDED,
             finished_at=datetime.now(UTC),
-            summary=summary,
+            summary=counters.to_summary(),
             errors=list(errors[:_MAX_ERRORS_RETAINED]),
         )
 
-    def fail(self, error_message: str, summary: dict[str, Any] | None = None) -> Self:
+    def fail(
+        self,
+        error_message: str,
+        counters: ScanCounters | EnrichCounters | None = None,
+    ) -> Self:
         """Return a copy stamped with ``failed`` + the error message.
 
         Used when the runner itself raised (vs. completing with a
-        bag of per-file errors). ``summary`` may carry partial
-        counters if some work succeeded before the crash.
+        bag of per-file errors). ``counters`` may carry partial
+        counts if some work succeeded before the crash; when omitted,
+        any counters already recorded are kept.
+
+        Raises:
+            ValueError: If ``counters`` is given and does not match ``kind``.
         """
+        if counters is not None:
+            self._require_counters_match_kind(counters)
         return self.with_updates(
             status=ScanRunStatus.FAILED,
             finished_at=datetime.now(UTC),
-            summary=summary or self.summary,
+            summary=counters.to_summary() if counters is not None else self.summary,
             errors=[error_message],
         )
 

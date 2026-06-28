@@ -9,6 +9,7 @@ from src.modules.media.domain.entities.scan_run import (
     ScanRunStatus,
     ScanRunTrigger,
 )
+from src.modules.media.domain.value_objects.scan_counters import ScanCounters
 from src.modules.media.infrastructure.persistence.repositories.scan_run_repository import (
     SqlAlchemyScanRunRepository,
 )
@@ -40,13 +41,18 @@ class TestSaveAndFind:
         repo = SqlAlchemyScanRunRepository(db_session)
         opened = await repo.save(_new_scan())
 
-        finalized = opened.succeed({"movies_created": 5}, ["err1"])
+        finalized = opened.succeed(ScanCounters(movies_created=5), ["err1"])
         await repo.save(finalized)
         again = await repo.find_by_id(opened.id)  # type: ignore[arg-type]
 
         assert again is not None
         assert again.status == ScanRunStatus.SUCCEEDED
-        assert again.summary == {"movies_created": 5}
+        assert again.summary == {
+            "movies_created": 5,
+            "movies_updated": 0,
+            "episodes_created": 0,
+            "episodes_updated": 0,
+        }
         assert again.errors == ["err1"]
         assert again.finished_at is not None
 
@@ -103,7 +109,7 @@ class TestListByStatus:
     async def test_should_return_only_matching_status(self, db_session: AsyncSession) -> None:
         repo = SqlAlchemyScanRunRepository(db_session)
         opened = await repo.save(_new_scan())
-        await repo.save(opened.succeed({}, []))
+        await repo.save(opened.succeed(ScanCounters(), []))
         await repo.save(_new_scan())  # second row stays running
 
         running = await repo.list_by_status(ScanRunStatus.RUNNING)

@@ -23,6 +23,10 @@ from src.modules.media.domain.value_objects.media_conflict_id import MediaConfli
 from src.modules.media.domain.value_objects.media_file import MediaFile
 from src.modules.media.domain.value_objects.merge_policy import MergePolicy
 from src.modules.media.domain.value_objects.resolution import Resolution
+from src.modules.media.domain.value_objects.scan_counters import (
+    EnrichCounters,
+    ScanCounters,
+)
 from src.modules.media.domain.value_objects.scan_run_id import ScanRunId
 from src.modules.media.domain.value_objects.season_number import SeasonNumber
 from src.modules.media.domain.value_objects.title import Title
@@ -52,6 +56,7 @@ __all__ = [
     "CreditsMarker",
     "CreditsMarkerSource",
     "Duration",
+    "EnrichCounters",
     "EpisodeId",
     "EpisodeNumber",
     "FilePath",
@@ -71,6 +76,7 @@ __all__ = [
     "MergePolicy",
     "MovieId",
     "Resolution",
+    "ScanCounters",
     "ScanRunId",
     "SeasonId",
     "SeasonNumber",
