@@ -22,6 +22,7 @@ from src.modules.media.domain.value_objects import (
     Genre,
     ImageUrl,
     ImdbId,
+    MergePolicy,
     MovieId,
     Title,
     TmdbId,
@@ -97,7 +98,9 @@ class EnrichMovieMetadataUseCase:
                 if localized_meta is not None:
                     metadata = localized_meta
 
-            movie = _apply_movie_metadata(movie, metadata, force=input_dto.force)
+            movie = _apply_movie_metadata(
+                movie, metadata, policy=MergePolicy.from_force(input_dto.force)
+            )
             if movie.needs_enrichment_review:
                 movie = movie.with_updates(needs_enrichment_review=False)
             await uow.movies.save(movie)
@@ -237,14 +240,14 @@ def _apply_movie_metadata(
     movie: Movie,
     metadata: MediaMetadata,
     *,
-    force: bool = False,
+    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
 ) -> Movie:
     """Apply metadata fields to a movie entity.
 
     Each field has a "fill if empty" guard by default so re-enrichment
     doesn't clobber user customizations (a synopsis the user edited,
-    a poster they picked manually, etc.). When ``force=True`` every
-    guard is bypassed and TMDB's payload wins — used by the bulk
+    a poster they picked manually, etc.). Under ``MergePolicy.OVERWRITE``
+    every guard is bypassed and TMDB's payload wins — used by the bulk
     enrich's "force update" toggle to backfill new fields (like the
     cast member ``tmdb_id``) on rows that were already enriched.
     """
@@ -252,9 +255,9 @@ def _apply_movie_metadata(
 
     if metadata.title:
         updates["title"] = Title(metadata.title)
-    if metadata.synopsis and (force or not movie.synopsis):
+    if metadata.synopsis and policy.should_write(movie.synopsis):
         updates["synopsis"] = metadata.synopsis
-    _apply_franchise_metadata(updates, movie, metadata, force=force)
+    _apply_franchise_metadata(updates, movie, metadata, policy=policy)
     if metadata.tmdb_id:
         updates["tmdb_id"] = TmdbId(metadata.tmdb_id)
     if metadata.imdb_id:
@@ -263,21 +266,21 @@ def _apply_movie_metadata(
         updates["original_title"] = Title(metadata.original_title)
     # Duration is the file's real (probed) length — the scanner stamps it.
     # TMDB's nominal runtime is only a fallback when the probe failed
-    # (duration still 0); never overwrite a real duration, even on force.
+    # (duration still 0); never overwrite a real duration, even on OVERWRITE.
     if metadata.duration_seconds and movie.duration.value == 0:
         updates["duration"] = Duration(metadata.duration_seconds)
     if metadata.year:
         updates["year"] = Year(metadata.year)
-    if metadata.genres and (force or not movie.genres):
+    if metadata.genres and policy.should_write(movie.genres):
         updates["genres"] = [Genre(g) for g in metadata.genres]
-    if metadata.poster_url and (force or not movie.poster_path):
+    if metadata.poster_url and policy.should_write(movie.poster_path):
         updates["poster_path"] = ImageUrl(metadata.poster_url)
-    if metadata.backdrop_url and (force or not movie.backdrop_path):
+    if metadata.backdrop_url and policy.should_write(movie.backdrop_path):
         updates["backdrop_path"] = ImageUrl(metadata.backdrop_url)
-    if metadata.logo_url and (force or not movie.logo_path):
+    if metadata.logo_url and policy.should_write(movie.logo_path):
         updates["logo_path"] = ImageUrl(metadata.logo_url)
 
-    _apply_credits(updates, movie, metadata, force=force)
+    _apply_credits(updates, movie, metadata, policy=policy)
 
     if updates:
         movie = movie.with_updates(**updates)
@@ -290,7 +293,7 @@ def _apply_franchise_metadata(
     movie: Movie,
     metadata: MediaMetadata,
     *,
-    force: bool = False,
+    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
 ) -> None:
     """Apply tagline + collection (franchise) metadata.
 
@@ -299,9 +302,9 @@ def _apply_franchise_metadata(
     user-edited tagline or a manually-cleared collection. Extracted
     out so the parent function stays under ``PLR0912``'s branch cap.
     """
-    if metadata.tagline and (force or not movie.tagline):
+    if metadata.tagline and policy.should_write(movie.tagline):
         updates["tagline"] = metadata.tagline
-    if metadata.collection and (force or not movie.collection):
+    if metadata.collection and policy.should_write(movie.collection):
         updates["collection"] = Collection(
             tmdb_id=metadata.collection.tmdb_id,
             name=metadata.collection.name,
@@ -314,16 +317,16 @@ def _apply_credits(
     movie: Movie,
     metadata: MediaMetadata,
     *,
-    force: bool = False,
+    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
 ) -> None:
     """Apply cast/director/writer credits.
 
-    Each field defaults to a "fill if empty" guard; ``force=True``
+    Each field defaults to a "fill if empty" guard; ``MergePolicy.OVERWRITE``
     bypasses the guard so a refresh repopulates credits from TMDB.
     The motivating use case is backfilling ``tmdb_id`` on cast
     members that were already saved before the id was captured.
     """
-    if metadata.cast and (force or not movie.cast):
+    if metadata.cast and policy.should_write(movie.cast):
         updates["cast"] = [
             CastMember(
                 name=p.name,
@@ -333,15 +336,15 @@ def _apply_credits(
             )
             for p in metadata.cast
         ]
-    if metadata.directors and (force or not movie.directors):
+    if metadata.directors and policy.should_write(movie.directors):
         updates["directors"] = [p.name for p in metadata.directors]
-    if metadata.writers and (force or not movie.writers):
+    if metadata.writers and policy.should_write(movie.writers):
         updates["writers"] = [p.name for p in metadata.writers]
-    if metadata.content_rating and (force or not movie.content_rating):
+    if metadata.content_rating and policy.should_write(movie.content_rating):
         updates["content_rating"] = ContentRating(metadata.content_rating)
-    if metadata.trailer_url and (force or not movie.trailer_url):
+    if metadata.trailer_url and policy.should_write(movie.trailer_url):
         updates["trailer_url"] = metadata.trailer_url
-    new_localized = merge_media_localized(movie.localized, metadata, force=force)
+    new_localized = merge_media_localized(movie.localized, metadata, policy=policy)
     if new_localized is not None:
         updates["localized"] = new_localized
 
