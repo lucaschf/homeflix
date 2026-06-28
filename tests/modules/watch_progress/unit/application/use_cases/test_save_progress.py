@@ -113,3 +113,25 @@ class TestSaveProgressUseCase:
 
         assert result.audio_track == 2
         assert result.subtitle_track == 1
+
+    @pytest.mark.asyncio
+    async def test_subtitles_off_round_trips_through_the_use_case(self):
+        # The -1 = off sentinel must survive the full wire→VO→entity→wire path.
+        mocks = make_watch_progress_uow_mock()
+        mock_repo = mocks.progress
+        mock_repo.find_by_media_id.return_value = None
+        mock_repo.save.side_effect = lambda p: p
+        use_case = SaveProgressUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            SaveProgressInput(
+                profile_id=_PROFILE_ID.value,
+                media_id="mov_abc123def456",
+                media_type="movie",
+                position_seconds=100,
+                duration_seconds=7200,
+                subtitle_track=-1,
+            )
+        )
+
+        assert result.subtitle_track == -1

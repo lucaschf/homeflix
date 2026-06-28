@@ -5,7 +5,11 @@ from datetime import UTC, datetime
 import pytest
 
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.value_objects import ProgressId, WatchableMediaType
+from src.modules.watch_progress.domain.value_objects import (
+    ProgressId,
+    SubtitlePreference,
+    WatchableMediaType,
+)
 from src.modules.watch_progress.infrastructure.persistence.mappers import (
     WatchProgressMapper,
 )
@@ -74,13 +78,28 @@ class TestWatchProgressMapperToModel:
             position_seconds=100,
             duration_seconds=7200,
             audio_track=1,
-            subtitle_track=2,
+            subtitle_track=SubtitlePreference.track(2),
         )
 
         model = WatchProgressMapper.to_model(progress)
 
         assert model.audio_track == 1
-        assert model.subtitle_track == 2
+        assert model.subtitle_track == 2  # wire encoding stays an int
+
+    def test_should_encode_subtitles_off_as_negative_one(self) -> None:
+        progress = WatchProgress(
+            id=ProgressId.generate(),
+            profile_id=_PROFILE_ID,
+            media_id="mov_abc123def456",
+            media_type=WatchableMediaType.MOVIE,
+            position_seconds=100,
+            duration_seconds=7200,
+            subtitle_track=SubtitlePreference.off(),
+        )
+
+        model = WatchProgressMapper.to_model(progress)
+
+        assert model.subtitle_track == -1
 
     def test_should_preserve_completed_status(self) -> None:
         now = datetime.now(UTC)
@@ -133,7 +152,29 @@ class TestWatchProgressMapperToEntity:
         assert entity.position_seconds == 900
         assert entity.status == "in_progress"
         assert entity.audio_track == 0
-        assert entity.subtitle_track == 1
+        assert entity.subtitle_track == SubtitlePreference.track(1)
+
+    def test_should_decode_negative_one_as_subtitles_off(self) -> None:
+        now = datetime.now(UTC)
+        model = WatchProgressModel(
+            external_id=str(ProgressId.generate()),
+            profile_id=str(_PROFILE_ID),
+            media_id="mov_abc123def456",
+            media_type="movie",
+            position_seconds=100,
+            duration_seconds=7200,
+            status="in_progress",
+            subtitle_track=-1,
+            last_watched_at=now,
+            completed_at=None,
+        )
+        model.created_at = now
+        model.updated_at = now
+
+        entity = WatchProgressMapper.to_entity(model)
+
+        assert entity.subtitle_track is not None
+        assert entity.subtitle_track.is_off
 
     def test_round_trip_should_preserve_fields(self) -> None:
         progress_id = ProgressId.generate()
@@ -182,7 +223,7 @@ class TestWatchProgressMapperUpdateModel:
             duration_seconds=7200,
             status="completed",
             audio_track=1,
-            subtitle_track=2,
+            subtitle_track=SubtitlePreference.track(2),
             last_watched_at=later,
             completed_at=later,
         )

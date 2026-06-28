@@ -3,6 +3,7 @@
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.value_objects import (
     ProgressId,
+    SubtitlePreference,
     WatchableMediaId,
     WatchableMediaType,
     WatchStatus,
@@ -41,7 +42,7 @@ class WatchProgressMapper:
             duration_seconds=entity.duration_seconds,
             status=entity.status,
             audio_track=entity.audio_track,
-            subtitle_track=entity.subtitle_track,
+            subtitle_track=SubtitlePreference.to_wire(entity.subtitle_track),
             last_watched_at=entity.last_watched_at,
             completed_at=entity.completed_at,
         )
@@ -58,7 +59,7 @@ class WatchProgressMapper:
             duration_seconds=model.duration_seconds,
             status=WatchStatus(model.status),
             audio_track=model.audio_track,
-            subtitle_track=model.subtitle_track,
+            subtitle_track=SubtitlePreference.from_wire(model.subtitle_track),
             last_watched_at=model.last_watched_at,
             completed_at=model.completed_at,
             created_at=model.created_at,
@@ -77,7 +78,7 @@ class WatchProgressMapper:
         model.duration_seconds = entity.duration_seconds
         model.status = entity.status
         model.audio_track = entity.audio_track
-        model.subtitle_track = entity.subtitle_track
+        model.subtitle_track = SubtitlePreference.to_wire(entity.subtitle_track)
         model.last_watched_at = entity.last_watched_at
         model.completed_at = entity.completed_at
         return model

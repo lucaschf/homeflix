@@ -28,7 +28,8 @@ class WatchProgressModel(Base):
         duration_seconds: Total duration of the media.
         status: Watch status ("in_progress" or "completed").
         audio_track: Selected audio track index.
-        subtitle_track: Selected subtitle track index (-1 = off).
+        subtitle_track: Subtitle preference encoded as an int — see
+            ``SubtitlePreference.to_wire`` (``-1`` = off, ``>= 0`` = track).
         last_watched_at: Timestamp of last position update.
         completed_at: Timestamp when marked as completed.
     """

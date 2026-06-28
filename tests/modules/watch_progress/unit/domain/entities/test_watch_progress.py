@@ -1,7 +1,10 @@
 """Tests for WatchProgress entity."""
 
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.value_objects import WatchableMediaType
+from src.modules.watch_progress.domain.value_objects import (
+    SubtitlePreference,
+    WatchableMediaType,
+)
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _PROFILE_ID = ProfileId("prf_test12345678")
@@ -14,7 +17,7 @@ def _create_progress(
     position_seconds: int = 100,
     duration_seconds: int = 7200,
     audio_track: int | None = None,
-    subtitle_track: int | None = None,
+    subtitle_track: SubtitlePreference | None = None,
 ) -> WatchProgress:
     return WatchProgress.create(
         profile_id=_PROFILE_ID,
@@ -77,8 +80,14 @@ class TestWatchProgress:
 
     def test_update_position_saves_subtitle_track(self):
         progress = _create_progress()
-        updated = progress.update_position(200, subtitle_track=1)
-        assert updated.subtitle_track == 1
+        updated = progress.update_position(200, subtitle_track=SubtitlePreference.track(1))
+        assert updated.subtitle_track == SubtitlePreference.track(1)
+
+    def test_update_position_saves_subtitles_off(self):
+        progress = _create_progress()
+        updated = progress.update_position(200, subtitle_track=SubtitlePreference.off())
+        assert updated.subtitle_track is not None
+        assert updated.subtitle_track.is_off
 
     def test_is_completed_property(self):
         progress = _create_progress()

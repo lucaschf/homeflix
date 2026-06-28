@@ -10,6 +10,7 @@ from pydantic import Field, model_validator
 from src.building_blocks.domain import AggregateRoot
 from src.modules.watch_progress.domain.value_objects import (
     ProgressId,
+    SubtitlePreference,
     WatchableMediaId,
     WatchableMediaType,
     WatchStatus,
@@ -62,7 +63,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
 
     # Track preferences
     audio_track: int | None = None
-    subtitle_track: int | None = None
+    subtitle_track: SubtitlePreference | None = None
 
     # Timestamps
     last_watched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -99,7 +100,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
         position_seconds: int,
         duration_seconds: int | None = None,
         audio_track: int | None = None,
-        subtitle_track: int | None = None,
+        subtitle_track: SubtitlePreference | None = None,
     ) -> Self:
         """Return a copy with updated position and track preferences.
 
@@ -108,8 +109,10 @@ class WatchProgress(AggregateRoot[ProgressId]):
         Args:
             position_seconds: Current playback position in seconds.
             duration_seconds: Updated total duration (corrects stale values).
-            audio_track: Selected audio track index.
-            subtitle_track: Selected subtitle track index (-1 = off).
+            audio_track: Selected audio track index, or ``None`` to leave
+                the current preference unchanged.
+            subtitle_track: New subtitle preference, or ``None`` to leave
+                the current preference unchanged.
 
         Returns:
             New WatchProgress with updated fields.
@@ -145,7 +148,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
         position_seconds: int,
         duration_seconds: int,
         audio_track: int | None = None,
-        subtitle_track: int | None = None,
+        subtitle_track: SubtitlePreference | None = None,
     ) -> WatchProgress:
         """Factory method with automatic ID generation.
 
@@ -159,7 +162,8 @@ class WatchProgress(AggregateRoot[ProgressId]):
             position_seconds: Current playback position in seconds.
             duration_seconds: Total duration of the media in seconds.
             audio_track: Selected audio track index.
-            subtitle_track: Selected subtitle track index.
+            subtitle_track: Subtitle preference (off or a track), or
+                ``None`` when no preference was recorded.
 
         Returns:
             A new WatchProgress instance.
