@@ -3,7 +3,7 @@
 
 import pytest
 
-from src.building_blocks.application.pagination import PaginatedResult, Pagination
+from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.application.dtos import (
     ListSeriesInput,
     ListSeriesOutput,

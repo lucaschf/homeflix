@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from datetime import datetime
 
-from src.building_blocks.application.pagination import PaginatedResult
+from src.building_blocks.domain.pagination import PaginatedResult
 from src.modules.media.domain.entities.episode import Episode
 from src.modules.media.domain.entities.season import Season
 from src.modules.media.domain.entities.series import Series

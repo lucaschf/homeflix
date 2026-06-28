@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from src.building_blocks.application.pagination import PaginatedResult
+from src.building_blocks.domain.pagination import PaginatedResult
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.value_objects import (
     CreditsDetectionState,

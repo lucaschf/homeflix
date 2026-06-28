@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 
-from src.building_blocks.application.pagination import PaginatedResult
+from src.building_blocks.domain.pagination import PaginatedResult
 from src.modules.media.domain.entities.media_conflict import (
     MediaConflict,
     ResolutionSource,

@@ -7,11 +7,10 @@ from typing import TypeVar
 
 from src.building_blocks.application.pagination import (
     DualCursorValue,
-    PaginatedResult,
-    Pagination,
     decode_dual_cursor,
     encode_dual_cursor,
 )
+from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.application.dtos.catalog_dtos import (
     CatalogItemOutput,
     ListByGenreInput,

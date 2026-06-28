@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.building_blocks.application.pagination import PaginatedResult, Pagination
 from src.building_blocks.domain.errors import DomainValidationException
+from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.application.dtos.conflict_dtos import ListConflictsInput
 from src.modules.media.application.use_cases.list_conflicts import ListConflictsUseCase
 from src.modules.media.domain.entities.media_conflict import (

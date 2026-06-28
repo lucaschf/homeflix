@@ -9,8 +9,6 @@ from src.building_blocks.application.pagination import (
     MAX_PAGE_SIZE,
     CursorValue,
     DualCursorValue,
-    PaginatedResult,
-    Pagination,
     TitleCursorValue,
     decode_cursor,
     decode_dual_cursor,
@@ -19,6 +17,7 @@ from src.building_blocks.application.pagination import (
     encode_dual_cursor,
     encode_title_cursor,
 )
+from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 
 
 @pytest.mark.unit
