@@ -136,6 +136,65 @@ def _find_series_name(file_path: str) -> str:
     return "Unknown Series"
 
 
+def _scanned_file(path: Path) -> ScannedFile | None:
+    """Build a ``ScannedFile`` from *path*, or ``None`` if it isn't media.
+
+    A dangling media-named symlink is logged and skipped (returns ``None``).
+
+    Args:
+        path: A filesystem entry yielded while walking a scan root.
+
+    Returns:
+        The parsed ``ScannedFile``, or ``None`` for directories, non-media
+        files, and broken media symlinks.
+
+    Raises:
+        OSError: If the entry is unreadable (vanished mid-scan, flaky mount,
+            permission error). The caller skips it without aborting the scan.
+    """
+    if not path.is_file():
+        # A dangling symlink to unmounted storage resolves to not-a-file and
+        # would be lost silently; surface it when it looks like media by name.
+        if path.is_symlink() and path.suffix.lower() in _SUPPORTED_EXTENSIONS:
+            _logger.warning(
+                "Skipping broken media symlink (target missing or unmounted): %s",
+                path,
+            )
+        return None
+
+    if path.suffix.lower() not in _SUPPORTED_EXTENSIONS:
+        return None
+
+    full_path = str(path)
+    file_size = path.stat().st_size
+    resolution = _extract_resolution(path.name)
+    episode_info = _detect_episode(full_path)
+
+    if episode_info:
+        series_name, season_num, episode_num = episode_info
+        return ScannedFile(
+            file_path=FilePath(full_path),
+            file_size=file_size,
+            media_type=MediaType.EPISODE,
+            title=series_name,
+            resolution=resolution,
+            series_name=series_name,
+            season_number=season_num,
+            episode_number=episode_num,
+            episode_title=_extract_episode_title(path.name),
+        )
+
+    year = _extract_year(path.name)
+    return ScannedFile(
+        file_path=FilePath(full_path),
+        file_size=file_size,
+        media_type=MediaType.MOVIE,
+        title=_extract_title(path.name, year),
+        year=year,
+        resolution=resolution,
+    )
+
+
 class LocalFileSystemScanner(FileSystemScanner):
     """Scan local directories for media files.
 
@@ -157,6 +216,7 @@ class LocalFileSystemScanner(FileSystemScanner):
             List of discovered media files with parsed metadata.
         """
         results: list[ScannedFile] = []
+        io_error_skips = 0
 
         for directory in directories:
             dir_path = Path(directory.value)
@@ -174,47 +234,47 @@ class LocalFileSystemScanner(FileSystemScanner):
                 )
                 continue
 
-            for path in dir_path.rglob("*"):
-                if not path.is_file():
+            walker = dir_path.rglob("*")
+            while True:
+                try:
+                    path = next(walker)
+                except StopIteration:
+                    break
+                except OSError as exc:
+                    # A directory became unreadable mid-walk. rglob's generator
+                    # can't resume after raising, so the rest of THIS root is
+                    # abandoned — but other roots still scan, instead of the
+                    # whole multi-root scan aborting.
+                    io_error_skips += 1
+                    _logger.warning("Scan walk aborted under %s: %s", dir_path, exc)
+                    break
+
+                try:
+                    scanned = _scanned_file(path)
+                except OSError as exc:
+                    # An unreadable entry (permission/IO error, or a file that
+                    # vanished between the is_file check and stat) must not abort
+                    # the whole multi-root scan — skip just this one. (A plain
+                    # ENOENT is absorbed by is_file() and skipped silently as a
+                    # non-file, which is fine.)
+                    io_error_skips += 1
+                    _logger.warning("Skipping unreadable scan entry %s: %s", path, exc)
                     continue
 
-                if path.suffix.lower() not in _SUPPORTED_EXTENSIONS:
-                    continue
+                if scanned is not None:
+                    results.append(scanned)
 
-                full_path = str(path)
-                file_size = path.stat().st_size
-                resolution = _extract_resolution(path.name)
-                episode_info = _detect_episode(full_path)
-
-                if episode_info:
-                    series_name, season_num, episode_num = episode_info
-                    ep_title = _extract_episode_title(path.name)
-                    results.append(
-                        ScannedFile(
-                            file_path=FilePath(full_path),
-                            file_size=file_size,
-                            media_type=MediaType.EPISODE,
-                            title=series_name,
-                            resolution=resolution,
-                            series_name=series_name,
-                            season_number=season_num,
-                            episode_number=episode_num,
-                            episode_title=ep_title,
-                        ),
-                    )
-                else:
-                    year = _extract_year(path.name)
-                    title = _extract_title(path.name, year)
-                    results.append(
-                        ScannedFile(
-                            file_path=FilePath(full_path),
-                            file_size=file_size,
-                            media_type=MediaType.MOVIE,
-                            title=title,
-                            year=year,
-                            resolution=resolution,
-                        ),
-                    )
+        if io_error_skips:
+            # One greppable line summarising a lossy scan, so a partially-flaky
+            # mount (root readable but N entries failing) is distinguishable
+            # from a genuinely empty/deleted catalog, not just N scattered
+            # warnings. Downstream must not treat the absent files as deleted.
+            _logger.error(
+                "Scan finished with %d entr%s skipped due to IO errors; results "
+                "may be incomplete — do not treat missing files as deleted.",
+                io_error_skips,
+                "y" if io_error_skips == 1 else "ies",
+            )
 
         return results
 

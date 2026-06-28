@@ -61,6 +61,91 @@ class TestScanDirectories:
         assert results == []
         assert "missing or unmounted" in caplog.text
 
+    def test_should_skip_entry_that_errors_mid_scan_without_aborting(
+        self,
+        scanner: LocalFileSystemScanner,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # A file that becomes unreadable mid-scan (TOCTOU / flaky mount) must
+        # not abort the whole scan — the other files are still discovered.
+        _create_file(tmp_path, "Good.2020.mkv")
+        _create_file(tmp_path, "Bad.2021.mkv")
+        real_stat = Path.stat
+
+        def flaky_stat(self: Path, *args: object, **kwargs: object) -> object:
+            if self.name == "Bad.2021.mkv":
+                # Errno-less so is_file() re-raises it (a plain ENOENT would be
+                # absorbed by pathlib and skipped silently as a non-file).
+                raise OSError("vanished mid-scan")
+            return real_stat(self, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(Path, "stat", flaky_stat)
+
+        with caplog.at_level(logging.WARNING):
+            results = scanner.scan_directories([FilePath(str(tmp_path))])
+
+        assert {r.title for r in results} == {"Good"}
+        assert "unreadable scan entry" in caplog.text
+        # A lossy scan is summarised once so it's greppable, not just N warnings.
+        assert "may be incomplete" in caplog.text
+
+    def test_should_continue_other_roots_when_a_walk_errors(
+        self,
+        scanner: LocalFileSystemScanner,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # A directory going unreadable mid-walk must abort only that root, not
+        # the whole multi-root scan.
+        root_a = tmp_path / "a"
+        root_a.mkdir()
+        root_b = tmp_path / "b"
+        root_b.mkdir()
+        _create_file(root_b, "FromRootB.2021.mkv")
+        real_rglob = Path.rglob
+
+        def flaky_rglob(self: Path, pattern: str, *args: object, **kwargs: object) -> object:
+            if self.name == "a":
+
+                def _raises_on_walk() -> object:
+                    raise OSError("directory vanished mid-walk")
+                    yield  # pragma: no cover - only makes this a generator
+
+                return _raises_on_walk()
+            return real_rglob(self, pattern, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(Path, "rglob", flaky_rglob)
+
+        with caplog.at_level(logging.WARNING):
+            results = scanner.scan_directories(
+                [FilePath(str(root_a)), FilePath(str(root_b))]
+            )
+
+        assert {r.title for r in results} == {"FromRootB"}
+        assert "walk aborted" in caplog.text
+        assert "may be incomplete" in caplog.text
+
+    def test_should_skip_and_warn_on_broken_media_symlink(
+        self,
+        scanner: LocalFileSystemScanner,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # A dangling symlink to unmounted storage looks like media by name but
+        # resolves to not-a-file; it's excluded but the skip is logged.
+        _create_file(tmp_path, "Real.2020.mkv")
+        broken = tmp_path / "Broken.2021.mkv"
+        broken.symlink_to(tmp_path / "nonexistent_target.mkv")
+
+        with caplog.at_level(logging.WARNING):
+            results = scanner.scan_directories([FilePath(str(tmp_path))])
+
+        assert {r.title for r in results} == {"Real"}
+        assert "broken media symlink" in caplog.text
+
     def test_should_filter_unsupported_extensions(
         self, scanner: LocalFileSystemScanner, media_dir: Path
     ) -> None:
