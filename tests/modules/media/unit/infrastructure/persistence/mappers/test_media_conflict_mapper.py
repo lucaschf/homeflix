@@ -40,10 +40,12 @@ def _model(
 class TestMediaConflictMapperToEntity:
     """``to_entity`` hydrates the aggregate from a row."""
 
-    def test_candidate_types_become_media_type_enum(self) -> None:
+    def test_candidates_compose_id_and_type(self) -> None:
         entity = MediaConflictMapper.to_entity(_model())
 
+        assert entity.candidate_a.id == "mov_aaaaaaaaaaaa"
         assert entity.candidate_a.type is MediaType.MOVIE
+        assert entity.candidate_b.id == "mov_bbbbbbbbbbbb"
         assert entity.candidate_b.type is MediaType.MOVIE
 
     def test_unknown_candidate_type_fails_loudly(self) -> None:
@@ -55,19 +57,21 @@ class TestMediaConflictMapperToEntity:
 
 
 class TestMediaConflictMapperRoundTrip:
-    """Entity → model → entity preserves the typed discriminator."""
+    """Entity → model → entity preserves each candidate's id and type."""
 
-    def test_round_trip_preserves_candidate_types(self) -> None:
+    def test_round_trip_preserves_candidates(self) -> None:
         entity = MediaConflictMapper.to_entity(_model())
         model = MediaConflictMapper.to_model(entity)
 
-        # to_model writes the raw enum value back to the String column...
+        # to_model decomposes the VO back onto the flat columns...
+        assert model.candidate_a_id == "mov_aaaaaaaaaaaa"
         assert model.candidate_a_type == "movie"
+        assert model.candidate_b_id == "mov_bbbbbbbbbbbb"
         assert model.candidate_b_type == "movie"
 
-        # ...and reading it back yields the typed enum again.
+        # ...and reading it back recomposes the same VO.
         model.created_at = _NOW
         model.updated_at = _NOW
         rehydrated = MediaConflictMapper.to_entity(model)
-        assert rehydrated.candidate_a.type is MediaType.MOVIE
-        assert rehydrated.candidate_b.type is MediaType.MOVIE
+        assert rehydrated.candidate_a == entity.candidate_a
+        assert rehydrated.candidate_b == entity.candidate_b
