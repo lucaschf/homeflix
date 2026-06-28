@@ -33,6 +33,7 @@ from src.modules.media.domain.value_objects import (
     ImdbId,
     LocalizedFields,
     LocalizedMetadata,
+    MergePolicy,
     SeriesId,
     Title,
     TmdbId,
@@ -104,7 +105,9 @@ class EnrichSeriesMetadataUseCase:
                 if localized_meta is not None:
                     metadata = localized_meta
 
-            series = _apply_series_metadata(series, metadata, force=input_dto.force)
+            series = _apply_series_metadata(
+                series, metadata, policy=MergePolicy.from_force(input_dto.force)
+            )
             if series.needs_enrichment_review:
                 series = series.with_updates(needs_enrichment_review=False)
             await uow.series.save(series)
@@ -170,20 +173,21 @@ def _set_if_missing(
     entity: Series,
     field_map: dict[str, tuple[str, Callable[[Any], Any] | None]],
     *,
-    force: bool = False,
+    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
 ) -> None:
-    """Set fields in updates, respecting the fill-if-empty guard.
+    """Set fields in updates, respecting the merge policy.
 
-    A field is written when metadata has a value and either ``force``
-    is set or the entity field is empty. The fill-if-empty guard
-    protects user edits on a routine re-enrichment; ``force`` (a relink
-    / forced refresh) bypasses it so metadata from the newly-picked
-    match overwrites stale values left by a wrong match.
+    A field is written when metadata has a value and ``policy.should_write``
+    allows it (always under ``OVERWRITE``; only when the entity field is
+    empty under ``FILL_IF_EMPTY``). The fill-if-empty guard protects user
+    edits on a routine re-enrichment; ``OVERWRITE`` (a relink / forced
+    refresh) bypasses it so metadata from the newly-picked match overwrites
+    stale values left by a wrong match.
     """
     for meta_attr, (entity_attr, converter) in field_map.items():
         meta_val = getattr(metadata, meta_attr, None)
         entity_val = getattr(entity, entity_attr, None)
-        if meta_val and (force or not entity_val):
+        if meta_val and policy.should_write(entity_val):
             updates[entity_attr] = converter(meta_val) if converter is not None else meta_val
 
 
@@ -191,15 +195,15 @@ def _apply_series_metadata(
     series: Series,
     metadata: MediaMetadata,
     *,
-    force: bool = False,
+    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
 ) -> Series:
     """Apply metadata fields to a series entity.
 
     Each "don't-overwrite" field has a fill-if-empty guard by default so
-    a routine re-enrichment doesn't clobber user edits. When ``force``
-    is set (a relink, where the existing data belongs to a wrong match)
-    every guard is bypassed and the provider payload wins — including a
-    full replace of the ``localized`` overrides and the base title.
+    a routine re-enrichment doesn't clobber user edits. Under
+    ``MergePolicy.OVERWRITE`` (a relink, where the existing data belongs to
+    a wrong match) every guard is bypassed and the provider payload wins —
+    including a full replace of the ``localized`` overrides and the base title.
     """
     updates: dict[str, object] = {}
 
@@ -214,7 +218,7 @@ def _apply_series_metadata(
         updates["start_year"] = Year(metadata.year)
     if metadata.end_year:
         updates["end_year"] = Year(metadata.end_year)
-    elif force:
+    elif policy.overwrites:
         # On a relink the new match may be ongoing (no end_year) while a
         # stale end_year lingers from the wrong match. Left in place it
         # can fall before the new start_year and trip the
@@ -223,10 +227,10 @@ def _apply_series_metadata(
     # The base title normally stays scanner-derived, but on a forced
     # refresh it may belong to a wrong match — overwrite it so the
     # canonical title tracks the newly-picked TMDB entry.
-    if metadata.title and force:
+    if metadata.title and policy.overwrites:
         updates["title"] = Title(metadata.title)
 
-    # Don't-overwrite fields (only set if empty, unless ``force``)
+    # Don't-overwrite fields (only set if empty, unless ``OVERWRITE``)
     _set_if_missing(
         updates,
         metadata,
@@ -240,7 +244,7 @@ def _apply_series_metadata(
             "content_rating": ("content_rating", ContentRating),
             "trailer_url": ("trailer_url", None),
         },
-        force=force,
+        policy=policy,
     )
 
     # Cast: same fill-if-empty rule as the rest of the don't-overwrite
@@ -248,7 +252,7 @@ def _apply_series_metadata(
     # provider DTO uses a different field name (``cast`` ↔ ``cast``)
     # AND a per-element converter from ``CreditPerson`` to the
     # domain ``CastMember`` VO.
-    if metadata.cast and (force or not series.cast):
+    if metadata.cast and policy.should_write(series.cast):
         updates["cast"] = [
             CastMember(
                 name=p.name,
@@ -259,7 +263,7 @@ def _apply_series_metadata(
             for p in metadata.cast
         ]
 
-    new_localized = merge_media_localized(series.localized, metadata, force=force)
+    new_localized = merge_media_localized(series.localized, metadata, policy=policy)
     if new_localized is not None:
         updates["localized"] = new_localized
 
@@ -268,7 +272,7 @@ def _apply_series_metadata(
 
     # Enrich seasons and episodes
     if metadata.seasons:
-        series = _enrich_seasons(series, metadata.seasons, force=force)
+        series = _enrich_seasons(series, metadata.seasons, policy=policy)
 
     return series
 
@@ -277,7 +281,7 @@ def _enrich_seasons(
     series: Series,
     season_metas: list[SeasonMetadata],
     *,
-    force: bool = False,
+    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
 ) -> Series:
     """Enrich existing seasons with metadata."""
     meta_by_num = {s.season_number: s for s in season_metas}  # int keys from API
@@ -285,25 +289,27 @@ def _enrich_seasons(
     new_seasons = []
     for season in series.seasons:
         meta = meta_by_num.get(season.season_number.value)
-        enriched = _apply_season_metadata(season, meta, force=force) if meta else season
+        enriched = _apply_season_metadata(season, meta, policy=policy) if meta else season
         new_seasons.append(enriched)
 
     return series.with_updates(seasons=new_seasons)
 
 
-def _apply_season_metadata(season: Season, meta: SeasonMetadata, *, force: bool = False) -> Season:
+def _apply_season_metadata(
+    season: Season, meta: SeasonMetadata, *, policy: MergePolicy = MergePolicy.FILL_IF_EMPTY
+) -> Season:
     """Apply metadata to a season and its episodes."""
     updates: dict[str, object] = {}
 
-    if meta.title and (force or not season.title):
+    if meta.title and policy.should_write(season.title):
         updates["title"] = Title(meta.title)
-    if meta.synopsis and (force or not season.synopsis):
+    if meta.synopsis and policy.should_write(season.synopsis):
         updates["synopsis"] = meta.synopsis
-    if meta.air_date and (force or not season.air_date):
+    if meta.air_date and policy.should_write(season.air_date):
         parsed = _parse_date(meta.air_date)
         if parsed:
             updates["air_date"] = AirDate(parsed)
-    season_localized = merge_text_localized(season.localized, meta.localized, force=force)
+    season_localized = merge_text_localized(season.localized, meta.localized, policy=policy)
     if season_localized is not None:
         updates["localized"] = season_localized
 
@@ -320,11 +326,11 @@ def _apply_season_metadata(season: Season, meta: SeasonMetadata, *, force: bool 
             segment_count = _detect_multi_episode(ep.title.value)
             if segment_count > 1:
                 enriched_ep = _apply_multi_episode_metadata(
-                    ep, ep_by_num, segment_count, tmdb_start=tmdb_idx, force=force
+                    ep, ep_by_num, segment_count, tmdb_start=tmdb_idx, policy=policy
                 )
             else:
                 ep_meta = ep_by_num.get(tmdb_idx)
-                enriched_ep = _apply_episode_metadata(ep, ep_meta, force=force) if ep_meta else ep
+                enriched_ep = _apply_episode_metadata(ep, ep_meta, policy=policy) if ep_meta else ep
             new_episodes.append(enriched_ep)
             tmdb_idx += segment_count
         season = season.with_updates(episodes=new_episodes)
@@ -355,7 +361,7 @@ def _apply_multi_episode_metadata(
     segment_count: int,
     tmdb_start: int | None = None,
     *,
-    force: bool = False,
+    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
 ) -> Episode:
     """Apply combined metadata from multiple TMDB episodes to a multi-segment file.
 
@@ -367,8 +373,8 @@ def _apply_multi_episode_metadata(
         ep_by_num: TMDB episodes keyed by episode number.
         segment_count: Number of TMDB episodes in this file.
         tmdb_start: Starting TMDB episode number (if None, uses episode.episode_number).
-        force: When ``True`` (a relink) the fill-if-empty guards are
-            bypassed so a wrong match's episode data is replaced.
+        policy: ``OVERWRITE`` (a relink) bypasses the fill-if-empty guards
+            so a wrong match's episode data is replaced.
     """
     start = tmdb_start if tmdb_start is not None else episode.episode_number.value
     metas = [ep_by_num.get(start + i) for i in range(segment_count)]
@@ -382,34 +388,34 @@ def _apply_multi_episode_metadata(
     # Concatenate titles from all segments (only if local title is from
     # scanner, or on a forced refresh where the stored title may be wrong)
     titles = [m.title for m in present if m.title]
-    if titles and (force or " / " not in episode.title.value):
+    if titles and (policy.overwrites or " / " not in episode.title.value):
         updates["title"] = Title(" / ".join(titles))
 
     # Synopsis: combine with separator
     synopses = [m.synopsis for m in present if m.synopsis]
-    if synopses and (force or not episode.synopsis):
+    if synopses and policy.should_write(episode.synopsis):
         updates["synopsis"] = " ◆ ".join(synopses)
 
     # Sum durations from all segments. Only a fallback — the scanner
     # stamps the file's real probed duration; never overwrite it (even on
-    # force) with TMDB's nominal runtime.
+    # OVERWRITE) with TMDB's nominal runtime.
     total_duration = sum(m.duration_seconds or 0 for m in present)
     if total_duration and episode.duration.value == 0:
         updates["duration"] = Duration(total_duration)
 
     # Thumbnail: first available
     first_still = next((m.still_url for m in present if m.still_url), None)
-    if first_still and (force or not episode.thumbnail_path):
+    if first_still and policy.should_write(episode.thumbnail_path):
         updates["thumbnail_path"] = ImageUrl(first_still)
 
     # Air date: first available
     first_date = next((m.air_date for m in present if m.air_date), None)
-    if first_date and (force or not episode.air_date):
+    if first_date and policy.should_write(episode.air_date):
         parsed = _parse_date(first_date)
         if parsed:
             updates["air_date"] = AirDate(parsed)
 
-    combined_localized = _combine_localized_segments(present, episode.localized, force=force)
+    combined_localized = _combine_localized_segments(present, episode.localized, policy=policy)
     if combined_localized is not None:
         updates["localized"] = combined_localized
 
@@ -423,14 +429,14 @@ def _combine_localized_segments(
     present: list[EpisodeMetadata],
     existing: LocalizedMetadata,
     *,
-    force: bool,
+    policy: MergePolicy,
 ) -> LocalizedMetadata | None:
     """Combine per-locale title/synopsis across a multi-segment file's episodes.
 
     Mirrors the English combine (titles joined with `` / ``, synopses
     with `` ◆ ``) per locale so a translated multi-segment file keeps
     its localized text. Returns ``None`` when no locale has data; otherwise
-    replaces (``force``) or merges the combined overrides over ``existing``.
+    replaces (``OVERWRITE``) or merges the combined overrides over ``existing``.
     """
     locales = {loc for m in present for loc in m.localized}
     by_locale: dict[str, LocalizedFields] = {}
@@ -449,34 +455,36 @@ def _combine_localized_segments(
         return None
 
     combined = LocalizedMetadata(by_locale)
-    return combined if force else existing.merge(combined)
+    return combined if policy.overwrites else existing.merge(combined)
 
 
 def _apply_episode_metadata(
-    episode: Episode, meta: EpisodeMetadata, *, force: bool = False
+    episode: Episode, meta: EpisodeMetadata, *, policy: MergePolicy = MergePolicy.FILL_IF_EMPTY
 ) -> Episode:
     """Apply metadata from a single TMDB episode.
 
     Each field is fill-if-empty by default (and the title only replaces
-    a generic scanner ``Episode N`` placeholder). ``force`` (a relink)
-    bypasses both guards so a wrong match's episode data is replaced.
+    a generic scanner ``Episode N`` placeholder). ``MergePolicy.OVERWRITE``
+    (a relink) bypasses both guards so a wrong match's episode data is replaced.
     """
     updates: dict[str, object] = {}
 
-    if meta.title and (force or episode.title.value.startswith("Episode ")):
+    if meta.title and (
+        policy.overwrites or episode.title.value.startswith("Episode ")
+    ):
         updates["title"] = Title(meta.title)
-    if meta.synopsis and (force or not episode.synopsis):
+    if meta.synopsis and policy.should_write(episode.synopsis):
         updates["synopsis"] = meta.synopsis
-    if meta.air_date and (force or not episode.air_date):
+    if meta.air_date and policy.should_write(episode.air_date):
         parsed = _parse_date(meta.air_date)
         if parsed:
             updates["air_date"] = AirDate(parsed)
     # Fallback only — real duration comes from the file probe at scan time.
     if meta.duration_seconds and episode.duration.value == 0:
         updates["duration"] = Duration(meta.duration_seconds)
-    if meta.still_url and (force or not episode.thumbnail_path):
+    if meta.still_url and policy.should_write(episode.thumbnail_path):
         updates["thumbnail_path"] = ImageUrl(meta.still_url)
-    episode_localized = merge_text_localized(episode.localized, meta.localized, force=force)
+    episode_localized = merge_text_localized(episode.localized, meta.localized, policy=policy)
     if episode_localized is not None:
         updates["localized"] = episode_localized
 
