@@ -80,13 +80,12 @@ class SetEpisodeIntroUseCase:
             if episode is None:
                 raise ResourceNotFoundException.for_resource("Episode", input_dto.episode_id)
 
-            # Trigger the duration-bound check on the entity. The
-            # returned instance is discarded — persistence goes through
-            # the direct-update path so the parent Series aggregate
-            # stays untouched.
-            episode.with_intro_marker(marker)
+            # Persist from the validated copy (episode.intro) so the write
+            # depends on with_intro_marker having run — validation and write
+            # are one path, not two. Direct column update (Series untouched).
+            episode = episode.with_intro_marker(marker)
 
-            await uow.series.update_episode_intro(episode_id, marker)
+            await uow.series.update_episode_intro(episode_id, episode.intro)
             series_id = episode.series_id
 
         if self._event_bus is not None:

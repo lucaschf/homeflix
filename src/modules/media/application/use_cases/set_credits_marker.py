@@ -64,12 +64,14 @@ class SetCreditsMarkerUseCase:
             if entity is None:
                 raise ResourceNotFoundException.for_resource("CreditableMedia", input_dto.media_id)
 
-            # Enforce the duration-bound invariant on the entity; the
-            # returned copy is discarded — persistence uses the direct
-            # column update so the parent aggregate stays untouched.
-            entity.with_credits_marker(marker)
+            # Persist from the validated copy (entity.credits) so the write
+            # depends on with_credits_marker having run — validation and write
+            # are one path, not two. Direct column update (aggregate untouched).
+            entity = entity.with_credits_marker(marker)
 
-            await update_creditable_credits(uow, media_id, marker, CreditsDetectionState.COMPLETED)
+            await update_creditable_credits(
+                uow, media_id, entity.credits, CreditsDetectionState.COMPLETED
+            )
 
         return credits_marker_to_output(marker)
 
