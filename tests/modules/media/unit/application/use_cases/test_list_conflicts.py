@@ -14,6 +14,7 @@ from src.modules.media.domain.entities.media_conflict import (
 )
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.value_objects import (
+    ConflictCandidate,
     Duration,
     MediaFile,
     MovieId,
@@ -36,11 +37,9 @@ def _conflict(
     b_type: str = "movie",
 ) -> MediaConflict:
     detected = MediaConflict.detect(
-        candidate_a_id=a_id,
-        candidate_a_type=a_type,
+        candidate_a=ConflictCandidate(id=a_id, type=a_type),
         candidate_a_runtime_minutes=120.0,
-        candidate_b_id=b_id,
-        candidate_b_type=b_type,
+        candidate_b=ConflictCandidate(id=b_id, type=b_type),
         candidate_b_runtime_minutes=120.0,
         match_reason=MatchReason.TMDB_ID,
     )

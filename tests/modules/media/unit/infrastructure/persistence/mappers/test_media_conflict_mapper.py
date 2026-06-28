@@ -43,8 +43,8 @@ class TestMediaConflictMapperToEntity:
     def test_candidate_types_become_media_type_enum(self) -> None:
         entity = MediaConflictMapper.to_entity(_model())
 
-        assert entity.candidate_a_type is MediaType.MOVIE
-        assert entity.candidate_b_type is MediaType.MOVIE
+        assert entity.candidate_a.type is MediaType.MOVIE
+        assert entity.candidate_b.type is MediaType.MOVIE
 
     def test_unknown_candidate_type_fails_loudly(self) -> None:
         # ADR-016: a corrupted persisted discriminator must surface as an
@@ -69,5 +69,5 @@ class TestMediaConflictMapperRoundTrip:
         model.created_at = _NOW
         model.updated_at = _NOW
         rehydrated = MediaConflictMapper.to_entity(model)
-        assert rehydrated.candidate_a_type is MediaType.MOVIE
-        assert rehydrated.candidate_b_type is MediaType.MOVIE
+        assert rehydrated.candidate_a.type is MediaType.MOVIE
+        assert rehydrated.candidate_b.type is MediaType.MOVIE

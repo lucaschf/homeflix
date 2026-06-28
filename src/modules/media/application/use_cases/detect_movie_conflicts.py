@@ -16,7 +16,7 @@ from src.modules.media.domain.entities.media_conflict import (
     ResolutionSource,
 )
 from src.modules.media.domain.events import MediaConflictDetectedEvent
-from src.modules.media.domain.value_objects import MovieId
+from src.modules.media.domain.value_objects import ConflictCandidate, MovieId
 from src.shared_kernel.integration_events import MovieMergedEvent
 from src.shared_kernel.value_objects.media_type import MediaType
 
@@ -225,11 +225,9 @@ class DetectMovieConflictsUseCase:
     ) -> tuple[MediaConflict, MediaConflictDetectedEvent]:
         """Persist a pending conflict for the pair and build its event."""
         conflict = MediaConflict.detect(
-            candidate_a_id=self_id,
-            candidate_a_type=MediaType.MOVIE,
+            candidate_a=ConflictCandidate(id=self_id, type=MediaType.MOVIE),
             candidate_a_runtime_minutes=self_runtime,
-            candidate_b_id=str(other.id),
-            candidate_b_type=MediaType.MOVIE,
+            candidate_b=ConflictCandidate(id=str(other.id), type=MediaType.MOVIE),
             candidate_b_runtime_minutes=_runtime_minutes(other),
             match_reason=match_reason,
             abs_threshold_minutes=abs_threshold,
@@ -238,8 +236,8 @@ class DetectMovieConflictsUseCase:
         persisted = await uow.media_conflicts.save(conflict)  # type: ignore[attr-defined]
         event = MediaConflictDetectedEvent(
             conflict_id=str(persisted.id),
-            candidate_a_id=MovieId(persisted.candidate_a_id),
-            candidate_b_id=MovieId(persisted.candidate_b_id),
+            candidate_a_id=MovieId(persisted.candidate_a.id),
+            candidate_b_id=MovieId(persisted.candidate_b.id),
             match_reason=persisted.match_reason.value,
             suggested_action=persisted.suggested_action.value,
         )
@@ -297,11 +295,9 @@ class DetectMovieConflictsUseCase:
         # module — the caller passes the live UoW from the same
         # ``async with`` block above.
         conflict = MediaConflict.detect(
-            candidate_a_id=str(self_movie.id),
-            candidate_a_type=MediaType.MOVIE,
+            candidate_a=ConflictCandidate(id=str(self_movie.id), type=MediaType.MOVIE),
             candidate_a_runtime_minutes=self_runtime,
-            candidate_b_id=str(orphan.id),
-            candidate_b_type=MediaType.MOVIE,
+            candidate_b=ConflictCandidate(id=str(orphan.id), type=MediaType.MOVIE),
             candidate_b_runtime_minutes=_runtime_minutes(orphan),
             match_reason=MatchReason.TMDB_ID,
         )

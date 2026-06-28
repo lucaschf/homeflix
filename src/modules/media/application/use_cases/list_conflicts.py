@@ -22,7 +22,7 @@ from src.shared_kernel.value_objects.media_type import MediaType
 if TYPE_CHECKING:
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities.movie import Movie
-    from src.modules.media.domain.value_objects import MediaFile
+    from src.modules.media.domain.value_objects import ConflictCandidate, MediaFile
 
 _VALID_STATES = ("pending", "resolved")
 _VALID_SOURCES = ("manual", "auto")
@@ -115,14 +115,11 @@ def _collect_movie_ids(conflicts: list[MediaConflict]) -> list[MovieId]:
     seen: set[str] = set()
     out: list[MovieId] = []
     for c in conflicts:
-        for candidate_id, candidate_type in (
-            (c.candidate_a_id, c.candidate_a_type),
-            (c.candidate_b_id, c.candidate_b_type),
-        ):
-            if candidate_type is not MediaType.MOVIE or candidate_id in seen:
+        for candidate in (c.candidate_a, c.candidate_b):
+            if candidate.type is not MediaType.MOVIE or candidate.id in seen:
                 continue
-            seen.add(candidate_id)
-            out.append(MovieId(candidate_id))
+            seen.add(candidate.id)
+            out.append(MovieId(candidate.id))
     return out
 
 
@@ -133,16 +130,8 @@ def _build_summary(
     """Project a ``MediaConflict`` + looked-up candidate movies into the DTO."""
     return ConflictSummary(
         conflict_id=str(conflict.id),
-        candidate_a=_build_candidate(
-            conflict.candidate_a_id,
-            conflict.candidate_a_type,
-            movies_by_id,
-        ),
-        candidate_b=_build_candidate(
-            conflict.candidate_b_id,
-            conflict.candidate_b_type,
-            movies_by_id,
-        ),
+        candidate_a=_build_candidate(conflict.candidate_a, movies_by_id),
+        candidate_b=_build_candidate(conflict.candidate_b, movies_by_id),
         match_reason=conflict.match_reason.value,
         runtime_delta_minutes=conflict.runtime_delta_minutes,
         suggested_action=conflict.suggested_action.value,
@@ -157,24 +146,23 @@ def _build_summary(
 
 
 def _build_candidate(
-    media_id: str,
-    media_type: MediaType,
+    candidate: ConflictCandidate,
     movies_by_id: dict[str, Movie],
 ) -> ConflictCandidateSummary:
     """Hydrate one side of the pair with the looked-up movie (when present)."""
-    if media_type is MediaType.MOVIE:
-        movie = movies_by_id.get(media_id)
+    if candidate.type is MediaType.MOVIE:
+        movie = movies_by_id.get(candidate.id)
         if movie is not None:
             return ConflictCandidateSummary(
-                media_id=media_id,
-                media_type=media_type,
+                media_id=candidate.id,
+                media_type=candidate.type,
                 title=movie.title.value,
                 year=movie.year.value,
                 files=[_build_file(f) for f in movie.files],
             )
     return ConflictCandidateSummary(
-        media_id=media_id,
-        media_type=media_type,
+        media_id=candidate.id,
+        media_type=candidate.type,
         title=None,
         year=None,
         files=[],

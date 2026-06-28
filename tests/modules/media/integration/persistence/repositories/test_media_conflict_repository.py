@@ -9,6 +9,7 @@ from src.modules.media.domain.entities.media_conflict import (
     ResolutionAction,
     ResolutionSource,
 )
+from src.modules.media.domain.value_objects import ConflictCandidate
 from src.modules.media.infrastructure.persistence.repositories.media_conflict_repository import (
     SqlAlchemyMediaConflictRepository,
 )
@@ -20,11 +21,9 @@ def _new_conflict(
     b_id: str = "mov_bbbbbbbbbbbb",
 ) -> MediaConflict:
     return MediaConflict.detect(
-        candidate_a_id=a_id,
-        candidate_a_type="movie",
+        candidate_a=ConflictCandidate(id=a_id, type="movie"),
         candidate_a_runtime_minutes=120.0,
-        candidate_b_id=b_id,
-        candidate_b_type="movie",
+        candidate_b=ConflictCandidate(id=b_id, type="movie"),
         candidate_b_runtime_minutes=125.0,
         match_reason=MatchReason.TMDB_ID,
     )
@@ -88,12 +87,12 @@ class TestFindBlockingPair:
         repo = SqlAlchemyMediaConflictRepository(db_session)
         saved = await repo.save(_new_conflict())
         await repo.save(
-            saved.resolve(ResolutionAction.MERGE_REPLACE, winner_id=saved.candidate_a_id)
+            saved.resolve(ResolutionAction.MERGE_REPLACE, winner_id=saved.candidate_a.id)
         )
 
         result = await repo.find_blocking_pair(
-            saved.candidate_a_id,
-            saved.candidate_b_id,
+            saved.candidate_a.id,
+            saved.candidate_b.id,
         )
 
         assert result is None
@@ -109,8 +108,8 @@ class TestFindBlockingPair:
         resolved = await repo.save(saved.resolve(ResolutionAction.MARK_DISTINCT))
 
         result = await repo.find_blocking_pair(
-            saved.candidate_a_id,
-            saved.candidate_b_id,
+            saved.candidate_a.id,
+            saved.candidate_b.id,
         )
 
         assert result is not None
@@ -138,7 +137,7 @@ class TestListPending:
         await repo.save(
             resolved.resolve(
                 ResolutionAction.MERGE_KEEP_BOTH,
-                winner_id=resolved.candidate_a_id,
+                winner_id=resolved.candidate_a.id,
             ),
         )
 
@@ -206,7 +205,7 @@ class TestListResolved:
         auto_resolved = await repo.save(
             auto.resolve(
                 ResolutionAction.MERGE_REPLACE,
-                winner_id=auto.candidate_a_id,
+                winner_id=auto.candidate_a.id,
                 source=ResolutionSource.AUTO,
             ),
         )
@@ -227,7 +226,7 @@ class TestListResolved:
         await repo.save(
             auto.resolve(
                 ResolutionAction.MERGE_REPLACE,
-                winner_id=auto.candidate_a_id,
+                winner_id=auto.candidate_a.id,
                 source=ResolutionSource.AUTO,
             ),
         )

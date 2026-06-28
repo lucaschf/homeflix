@@ -14,10 +14,10 @@ from src.building_blocks.domain.errors import (
     DomainValidationException,
 )
 from src.modules.media.domain.rule_codes import MediaRuleCodes
-from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
-from src.shared_kernel.value_objects.media_type import (
-    MediaType,  # noqa: TCH001 — runtime for Pydantic
+from src.modules.media.domain.value_objects.conflict_candidate import (
+    ConflictCandidate,  # noqa: TCH001 — runtime for Pydantic
 )
+from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
 
 
 class MatchReason(str, Enum):
@@ -75,10 +75,10 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
 
     Attributes:
         id: External id (``cnf_xxx``).
-        candidate_a_id: External id of one side (e.g. ``mov_xxx``).
-        candidate_a_type: ``"movie"`` (Phase 1) or ``"series"`` (later).
-        candidate_b_id: External id of the other side.
-        candidate_b_type: Same contract as ``candidate_a_type``.
+        candidate_a: One side of the pair — its external id (e.g.
+            ``mov_xxx``) and media-type discriminator (``"movie"`` in
+            Phase 1, ``"series"`` in a later phase).
+        candidate_b: The other side, same contract as ``candidate_a``.
         match_reason: Which identity rule fired.
         runtime_delta_minutes: Absolute difference between the two
             sides' runtimes, in minutes. ``None`` when one or both
@@ -108,10 +108,8 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
 
     id: MediaConflictId | None = Field(default=None)
 
-    candidate_a_id: str
-    candidate_a_type: MediaType
-    candidate_b_id: str
-    candidate_b_type: MediaType
+    candidate_a: ConflictCandidate
+    candidate_b: ConflictCandidate
 
     match_reason: MatchReason
     runtime_delta_minutes: float | None = None
@@ -125,8 +123,8 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
     @model_validator(mode="after")
     def _validate_candidates_distinct(self) -> Self:
         """Reject self-collisions (programmer error in the detector)."""
-        if self.candidate_a_id == self.candidate_b_id:
-            raise ValueError("candidate_a_id and candidate_b_id must differ")
+        if self.candidate_a.id == self.candidate_b.id:
+            raise ValueError("candidate_a and candidate_b must have different ids")
         return self
 
     @model_validator(mode="after")
@@ -153,7 +151,7 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
                 raise ValueError(
                     "winner_id is required for MERGE_KEEP_BOTH / MERGE_REPLACE resolutions",
                 )
-            if self.winner_id not in {self.candidate_a_id, self.candidate_b_id}:
+            if self.winner_id not in {self.candidate_a.id, self.candidate_b.id}:
                 raise ValueError("winner_id must be one of the conflict's candidates")
         elif self.winner_id is not None:
             raise ValueError("winner_id must be None for pending or MARK_DISTINCT rows")
@@ -181,11 +179,9 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
     def detect(
         cls,
         *,
-        candidate_a_id: str,
-        candidate_a_type: MediaType,
+        candidate_a: ConflictCandidate,
         candidate_a_runtime_minutes: float | None,
-        candidate_b_id: str,
-        candidate_b_type: MediaType,
+        candidate_b: ConflictCandidate,
         candidate_b_runtime_minutes: float | None,
         match_reason: MatchReason,
         abs_threshold_minutes: float | None = None,
@@ -198,12 +194,10 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
         runtime-delta heuristic.
 
         Args:
-            candidate_a_id: External id of one side (e.g. ``mov_xxx``).
-            candidate_a_type: ``"movie"`` (Phase 1) or ``"series"``.
+            candidate_a: One side of the pair (external id + media type).
             candidate_a_runtime_minutes: Runtime of side A, in minutes,
                 or ``None`` when unknown.
-            candidate_b_id: External id of the other side.
-            candidate_b_type: Same contract as ``candidate_a_type``.
+            candidate_b: The other side, same contract as ``candidate_a``.
             candidate_b_runtime_minutes: Runtime of side B, in minutes,
                 or ``None`` when unknown.
             match_reason: Which identity rule fired the collision.
@@ -232,10 +226,8 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
             relative_threshold=relative_threshold,
         )
         return cls(
-            candidate_a_id=candidate_a_id,
-            candidate_a_type=candidate_a_type,
-            candidate_b_id=candidate_b_id,
-            candidate_b_type=candidate_b_type,
+            candidate_a=candidate_a,
+            candidate_b=candidate_b,
             match_reason=match_reason,
             runtime_delta_minutes=delta,
             suggested_action=action,
@@ -352,7 +344,7 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
                     message_code=MediaRuleCodes.MEDIA_CONFLICT_WINNER_REQUIRED,
                     object_type="MediaConflict",
                 )
-            if winner_id not in {self.candidate_a_id, self.candidate_b_id}:
+            if winner_id not in {self.candidate_a.id, self.candidate_b.id}:
                 raise DomainValidationException(
                     message="winner_id must be one of the conflict's candidates",
                     message_code=MediaRuleCodes.MEDIA_CONFLICT_WINNER_NOT_IN_PAIR,
@@ -384,7 +376,7 @@ class MediaConflict(AggregateRoot[MediaConflictId]):
         """For MERGE resolutions, the id of the soft-deleted side."""
         if self.winner_id is None:
             return None
-        return self.candidate_b_id if self.winner_id == self.candidate_a_id else self.candidate_a_id
+        return self.candidate_b.id if self.winner_id == self.candidate_a.id else self.candidate_a.id
 
 
 def _compute_runtime_delta(a: float | None, b: float | None) -> float | None:

@@ -19,6 +19,7 @@ from src.modules.media.domain.entities.media_conflict import (
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.events import MediaConflictDetectedEvent
 from src.modules.media.domain.value_objects import (
+    ConflictCandidate,
     Duration,
     FilePath,
     MediaFile,
@@ -165,11 +166,9 @@ class TestDetectMovieConflictsUseCase:
         mocks.movies.find_all_by_tmdb_id.return_value = [self_movie, other]
 
         existing = MediaConflict.detect(
-            candidate_a_id="mov_mnopqrstuvwx",
-            candidate_a_type="movie",
+            candidate_a=ConflictCandidate(id="mov_mnopqrstuvwx", type="movie"),
             candidate_a_runtime_minutes=120.0,
-            candidate_b_id="mov_abcdefghijkl",
-            candidate_b_type="movie",
+            candidate_b=ConflictCandidate(id="mov_abcdefghijkl", type="movie"),
             candidate_b_runtime_minutes=120.0,
             match_reason=MatchReason.TMDB_ID,
         )

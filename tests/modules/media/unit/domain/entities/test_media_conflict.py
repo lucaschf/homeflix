@@ -16,6 +16,7 @@ from src.modules.media.domain.entities.media_conflict import (
     SuggestedAction,
 )
 from src.modules.media.domain.rule_codes import MediaRuleCodes
+from src.modules.media.domain.value_objects import ConflictCandidate
 
 _A = "mov_aaaaaaaaaaaa"
 _B = "mov_bbbbbbbbbbbb"
@@ -28,11 +29,9 @@ def _detect(
     match_reason: MatchReason = MatchReason.TMDB_ID,
 ) -> MediaConflict:
     return MediaConflict.detect(
-        candidate_a_id=_A,
-        candidate_a_type="movie",
+        candidate_a=ConflictCandidate(id=_A, type="movie"),
         candidate_a_runtime_minutes=runtime_a,
-        candidate_b_id=_B,
-        candidate_b_type="movie",
+        candidate_b=ConflictCandidate(id=_B, type="movie"),
         candidate_b_runtime_minutes=runtime_b,
         match_reason=match_reason,
     )
@@ -81,22 +80,18 @@ class TestTunableThresholds:
     def test_stricter_thresholds_flag_a_default_likely_same_pair(self) -> None:
         # 5 min / 4.2% delta — LIKELY_SAME under the defaults.
         baseline = MediaConflict.detect(
-            candidate_a_id=_A,
-            candidate_a_type="movie",
+            candidate_a=ConflictCandidate(id=_A, type="movie"),
             candidate_a_runtime_minutes=120.0,
-            candidate_b_id=_B,
-            candidate_b_type="movie",
+            candidate_b=ConflictCandidate(id=_B, type="movie"),
             candidate_b_runtime_minutes=125.0,
             match_reason=MatchReason.TMDB_ID,
         )
         assert baseline.suggested_action is SuggestedAction.LIKELY_SAME_RELEASE
 
         stricter = MediaConflict.detect(
-            candidate_a_id=_A,
-            candidate_a_type="movie",
+            candidate_a=ConflictCandidate(id=_A, type="movie"),
             candidate_a_runtime_minutes=120.0,
-            candidate_b_id=_B,
-            candidate_b_type="movie",
+            candidate_b=ConflictCandidate(id=_B, type="movie"),
             candidate_b_runtime_minutes=125.0,
             match_reason=MatchReason.TMDB_ID,
             abs_threshold_minutes=2.0,
@@ -106,11 +101,9 @@ class TestTunableThresholds:
 
     def test_looser_thresholds_absorb_a_default_different_edit_pair(self) -> None:
         looser = MediaConflict.detect(
-            candidate_a_id=_A,
-            candidate_a_type="movie",
+            candidate_a=ConflictCandidate(id=_A, type="movie"),
             candidate_a_runtime_minutes=138.0,
-            candidate_b_id=_B,
-            candidate_b_type="movie",
+            candidate_b=ConflictCandidate(id=_B, type="movie"),
             candidate_b_runtime_minutes=192.0,
             match_reason=MatchReason.TMDB_ID,
             abs_threshold_minutes=60.0,
@@ -120,11 +113,9 @@ class TestTunableThresholds:
 
     def test_none_thresholds_fall_back_to_class_defaults(self) -> None:
         explicit = MediaConflict.detect(
-            candidate_a_id=_A,
-            candidate_a_type="movie",
+            candidate_a=ConflictCandidate(id=_A, type="movie"),
             candidate_a_runtime_minutes=138.0,
-            candidate_b_id=_B,
-            candidate_b_type="movie",
+            candidate_b=ConflictCandidate(id=_B, type="movie"),
             candidate_b_runtime_minutes=192.0,
             match_reason=MatchReason.TMDB_ID,
             abs_threshold_minutes=None,
@@ -139,11 +130,9 @@ class TestInvariants:
     def test_self_collision_is_rejected(self) -> None:
         with pytest.raises(DomainValidationException):
             MediaConflict.detect(
-                candidate_a_id=_A,
-                candidate_a_type="movie",
+                candidate_a=ConflictCandidate(id=_A, type="movie"),
                 candidate_a_runtime_minutes=120.0,
-                candidate_b_id=_A,
-                candidate_b_type="movie",
+                candidate_b=ConflictCandidate(id=_A, type="movie"),
                 candidate_b_runtime_minutes=120.0,
                 match_reason=MatchReason.TMDB_ID,
             )
@@ -151,10 +140,8 @@ class TestInvariants:
     def test_negative_runtime_delta_is_rejected(self) -> None:
         with pytest.raises(DomainValidationException):
             MediaConflict(
-                candidate_a_id=_A,
-                candidate_a_type="movie",
-                candidate_b_id=_B,
-                candidate_b_type="movie",
+                candidate_a=ConflictCandidate(id=_A, type="movie"),
+                candidate_b=ConflictCandidate(id=_B, type="movie"),
                 match_reason=MatchReason.TMDB_ID,
                 runtime_delta_minutes=-1.0,
                 suggested_action=SuggestedAction.LIKELY_SAME_RELEASE,
@@ -164,10 +151,8 @@ class TestInvariants:
         # ``resolved_at`` without ``resolution`` is inconsistent.
         with pytest.raises(DomainValidationException):
             MediaConflict(
-                candidate_a_id=_A,
-                candidate_a_type="movie",
-                candidate_b_id=_B,
-                candidate_b_type="movie",
+                candidate_a=ConflictCandidate(id=_A, type="movie"),
+                candidate_b=ConflictCandidate(id=_B, type="movie"),
                 match_reason=MatchReason.TMDB_ID,
                 runtime_delta_minutes=0.0,
                 suggested_action=SuggestedAction.LIKELY_SAME_RELEASE,
@@ -260,10 +245,8 @@ class TestResolutionSourceInvariants:
         # Directly constructing a pending row with a source set is invalid.
         with pytest.raises(DomainValidationException):
             MediaConflict(
-                candidate_a_id=_A,
-                candidate_a_type="movie",
-                candidate_b_id=_B,
-                candidate_b_type="movie",
+                candidate_a=ConflictCandidate(id=_A, type="movie"),
+                candidate_b=ConflictCandidate(id=_B, type="movie"),
                 match_reason=MatchReason.TMDB_ID,
                 runtime_delta_minutes=0.0,
                 suggested_action=SuggestedAction.LIKELY_SAME_RELEASE,
