@@ -504,15 +504,23 @@ class TmdbClient(MetadataProvider):
     async def _fetch_movie_localized_fields(
         self, tmdb_id: int, locale: str
     ) -> LocalizedFields | None:
-        """Fetch one locale's translated movie fields, or ``None`` on failure."""
-        resp = await self._get(
-            f"/movie/{tmdb_id}",
-            params=self._params(
-                language=locale,
-                append_to_response="images",
-                include_image_language=f"{locale},en,null",
-            ),
-        )
+        """Fetch one locale's translated movie fields, or ``None`` on failure.
+
+        An overlay is best-effort: any provider failure (non-200 status
+        or a wrapped transport ``GatewayException``) drops just this
+        locale so the English base still returns.
+        """
+        try:
+            resp = await self._get(
+                f"/movie/{tmdb_id}",
+                params=self._params(
+                    language=locale,
+                    append_to_response="images",
+                    include_image_language=f"{locale},en,null",
+                ),
+            )
+        except GatewayException:
+            return None
         if resp.status_code != 200:
             return None
 
@@ -903,15 +911,23 @@ class TmdbClient(MetadataProvider):
     async def _fetch_series_localized_fields(
         self, tmdb_id: int, locale: str
     ) -> LocalizedFields | None:
-        """Fetch one locale's translated series fields, or ``None`` on failure."""
-        resp = await self._get(
-            f"/tv/{tmdb_id}",
-            params=self._params(
-                language=locale,
-                append_to_response="images",
-                include_image_language=f"{locale},en,null",
-            ),
-        )
+        """Fetch one locale's translated series fields, or ``None`` on failure.
+
+        An overlay is best-effort: any provider failure (non-200 status
+        or a wrapped transport ``GatewayException``) drops just this
+        locale so the English base still returns.
+        """
+        try:
+            resp = await self._get(
+                f"/tv/{tmdb_id}",
+                params=self._params(
+                    language=locale,
+                    append_to_response="images",
+                    include_image_language=f"{locale},en,null",
+                ),
+            )
+        except GatewayException:
+            return None
         if resp.status_code != 200:
             return None
 
@@ -1133,13 +1149,20 @@ class TmdbClient(MetadataProvider):
         """One ``/season/{n}`` round-trip; ``None`` on 404 or locale-overlay failure.
 
         ``language=None`` is the English base — a non-404 error there
-        is fatal (raised). For a localized overlay any non-200 simply
-        drops that locale.
+        is fatal (raised). For a localized overlay any failure (non-200
+        status or a wrapped transport ``GatewayException``) simply drops
+        that locale, so a flaky overlay never aborts the concurrent
+        season fan-out.
         """
-        resp = await self._get(
-            f"/tv/{series_id}/season/{season_number}",
-            params=self._params(language=language),
-        )
+        try:
+            resp = await self._get(
+                f"/tv/{series_id}/season/{season_number}",
+                params=self._params(language=language),
+            )
+        except GatewayException:
+            if language is None:
+                raise
+            return None
         if resp.status_code == 404:
             return None
         if language is not None and resp.status_code != 200:

@@ -543,6 +543,28 @@ class TestGatewayErrorTranslation:
         assert await client.get_person(287) is None
         assert await client.get_movie_recommendations(1) == []
 
+    @pytest.mark.asyncio
+    async def test_localized_overlay_skips_on_transport_error(self) -> None:
+        client = _make_client()
+        client._client.get = AsyncMock(side_effect=httpx.ConnectError("down"))
+
+        # A localized overlay is best-effort — a wrapped transport error
+        # drops just that locale rather than aborting enrichment.
+        assert await client._fetch_movie_localized_fields(1, "pt-BR") is None
+        assert await client._fetch_series_localized_fields(1, "pt-BR") is None
+
+    @pytest.mark.asyncio
+    async def test_season_overlay_skips_but_base_propagates_on_transport_error(self) -> None:
+        client = _make_client()
+        client._client.get = AsyncMock(side_effect=httpx.ConnectError("down"))
+
+        # An overlay locale failing is dropped (the concurrent fan-out
+        # must not abort)...
+        assert await client._fetch_season_payload(1, 1, "pt-BR") is None
+        # ...but the English base failing is fatal and propagates.
+        with pytest.raises(GatewayUnavailableException):
+            await client._fetch_season_payload(1, 1, None)
+
 
 @pytest.mark.unit
 class TestParseCast:
