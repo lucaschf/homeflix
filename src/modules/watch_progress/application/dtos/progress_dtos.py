@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from src.modules.watch_progress.domain.value_objects import SubtitlePreference
+
 if TYPE_CHECKING:
     from src.modules.watch_progress.domain.entities import WatchProgress
 
@@ -22,7 +24,8 @@ class SaveProgressInput:
         position_seconds: Current playback position in seconds.
         duration_seconds: Total duration of the media in seconds.
         audio_track: Selected audio track index.
-        subtitle_track: Selected subtitle track index (-1 = off).
+        subtitle_track: Subtitle preference in wire form — see
+            ``SubtitlePreference.from_wire`` (``-1`` = off, ``>= 0`` = track).
     """
 
     profile_id: str
@@ -67,7 +70,7 @@ class ProgressOutput:
             percentage=progress.percentage,
             status=progress.status,
             audio_track=progress.audio_track,
-            subtitle_track=progress.subtitle_track,
+            subtitle_track=SubtitlePreference.to_wire(progress.subtitle_track),
             last_watched_at=progress.last_watched_at.isoformat(),
         )
 

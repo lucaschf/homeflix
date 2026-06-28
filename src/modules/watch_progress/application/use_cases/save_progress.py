@@ -6,6 +6,7 @@ from src.modules.watch_progress.application.unit_of_work import (
 )
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.value_objects import (
+    SubtitlePreference,
     WatchableMediaId,
     WatchableMediaType,
 )
@@ -22,6 +23,7 @@ class SaveProgressUseCase:
         """Persist progress for the caller's profile."""
         profile_id = ProfileId(input_dto.profile_id)
         media_id = WatchableMediaId(input_dto.media_id)
+        subtitle_track = SubtitlePreference.from_wire(input_dto.subtitle_track)
         async with self._uow_factory() as uow:
             existing = await uow.progress.find_by_media_id(media_id, profile_id)
 
@@ -30,7 +32,7 @@ class SaveProgressUseCase:
                     position_seconds=input_dto.position_seconds,
                     duration_seconds=input_dto.duration_seconds,
                     audio_track=input_dto.audio_track,
-                    subtitle_track=input_dto.subtitle_track,
+                    subtitle_track=subtitle_track,
                 )
             else:
                 progress = WatchProgress.create(
@@ -40,7 +42,7 @@ class SaveProgressUseCase:
                     position_seconds=input_dto.position_seconds,
                     duration_seconds=input_dto.duration_seconds,
                     audio_track=input_dto.audio_track,
-                    subtitle_track=input_dto.subtitle_track,
+                    subtitle_track=subtitle_track,
                 )
 
             saved = await uow.progress.save(progress)
