@@ -107,6 +107,12 @@ class TestResolutionFactoryMethods:
 
         assert resolution.value == "Unknown"
 
+    def test_is_unknown_distinguishes_the_sentinel(self):
+        from src.modules.media.domain.value_objects import Resolution
+
+        assert Resolution.unknown().is_unknown() is True
+        assert Resolution("1080p").is_unknown() is False
+
     def test_from_name_should_create_resolution(self):
         from src.modules.media.domain.value_objects import Resolution
 

@@ -17,10 +17,11 @@ class ScanRunModel(Base):
     columns: ``kind`` (``scan`` | ``enrich``) tells *what* ran;
     ``trigger`` (``manual`` | ``scheduled``) tells *who* started it.
 
-    The per-kind counters live inside ``summary`` (JSON) — scans
-    track movies/episodes created+updated, enrich tracks
-    enriched/skipped/failed. Keeping them in JSON avoids a wide
-    column with mostly-null counters for whichever kind didn't run.
+    The per-kind counters live inside ``summary`` (JSON), serialized
+    from the typed ``ScanCounters`` / ``EnrichCounters`` value objects
+    (movies/episodes created+updated for scans; movies/series enriched +
+    skipped for enrich). Keeping them in JSON avoids a wide column with
+    mostly-null counters for whichever kind didn't run.
 
     Attributes:
         kind: ``scan`` or ``enrich``.

@@ -21,6 +21,9 @@ class _ResolutionSpec(NamedTuple):
     height: int
 
 
+# Single source for the "resolution undetermined" sentinel name.
+_UNKNOWN_NAME = "Unknown"
+
 _RESOLUTION_MAP: dict[str, _ResolutionSpec] = {
     "360p": _ResolutionSpec(640, 360),
     "480p": _ResolutionSpec(854, 480),
@@ -28,7 +31,7 @@ _RESOLUTION_MAP: dict[str, _ResolutionSpec] = {
     "1080p": _ResolutionSpec(1920, 1080),
     "2K": _ResolutionSpec(2560, 1440),
     "4K": _ResolutionSpec(3840, 2160),
-    "Unknown": _ResolutionSpec(0, 0),
+    _UNKNOWN_NAME: _ResolutionSpec(0, 0),
 }
 
 # Resolution categories
@@ -65,6 +68,7 @@ class Resolution(CompoundValueObject):
     """
 
     VALID_NAMES: ClassVar[frozenset[str]] = frozenset(_RESOLUTION_MAP.keys())
+    UNKNOWN_NAME: ClassVar[str] = _UNKNOWN_NAME
 
     width: int = Field(ge=0)
     height: int = Field(ge=0)
@@ -139,7 +143,15 @@ class Resolution(CompoundValueObject):
         Returns:
             A Resolution instance with value "Unknown".
         """
-        return cls("Unknown")
+        return cls(cls.UNKNOWN_NAME)
+
+    def is_unknown(self) -> bool:
+        """Whether the resolution is the undetermined sentinel.
+
+        Returns:
+            True when this is the "Unknown" placeholder (0x0).
+        """
+        return self.name == self.UNKNOWN_NAME
 
     # -- backward-compat property ------------------------------------------
 
