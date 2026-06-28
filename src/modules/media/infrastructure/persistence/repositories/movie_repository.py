@@ -8,13 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.building_blocks.application.pagination import (
-    PaginatedResult,
-    Pagination,
     decode_cursor,
     decode_title_cursor,
     encode_cursor,
     encode_title_cursor,
 )
+from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
 from src.modules.media.domain.repositories.movie_repository import CreditsStatusRow, GenreRow

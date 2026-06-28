@@ -4,11 +4,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.building_blocks.application.pagination import (
-    PaginatedResult,
-    Pagination,
     decode_cursor,
     encode_cursor,
 )
+from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.domain.entities.media_conflict import (
     MediaConflict,
     ResolutionAction,

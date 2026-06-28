@@ -29,11 +29,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.strategy_options import _AbstractLoad
 
 from src.building_blocks.application.pagination import (
-    PaginatedResult,
-    Pagination,
     decode_title_cursor,
     encode_title_cursor,
 )
+from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.domain.repositories.movie_repository import GenreRow
 from src.modules.media.domain.value_objects import Genre, LocalizedField
 from src.shared_kernel.value_objects.library_id import LibraryId

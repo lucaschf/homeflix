@@ -3,11 +3,8 @@
 
 import pytest
 
-from src.building_blocks.application.pagination import (
-    PaginatedResult,
-    Pagination,
-    decode_dual_cursor,
-)
+from src.building_blocks.application.pagination import decode_dual_cursor
+from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.application.dtos.catalog_dtos import (
     CatalogItemOutput,
     ListByGenreInput,

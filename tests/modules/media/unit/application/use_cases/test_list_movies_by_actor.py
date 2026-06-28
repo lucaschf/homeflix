@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.building_blocks.application.pagination import PaginatedResult, Pagination
+from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.application.use_cases.list_movies_by_actor import (
     ListMoviesByActorInput,
     ListMoviesByActorOutput,
