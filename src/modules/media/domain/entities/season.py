@@ -91,6 +91,24 @@ class Season(DomainEntity[SeasonId]):
         """
         return len(self.episodes)
 
+    def _ensure_owns(self, episode: Episode) -> None:
+        """Validate the episode belongs to this season.
+
+        Raises:
+            BusinessRuleViolationException: If episode series_id or
+                season_number doesn't match this season.
+        """
+        if episode.series_id != self.series_id:
+            raise BusinessRuleViolationException(
+                message="Episode series_id must match Season series_id",
+                rule_code=MediaRuleCodes.EPISODE_SERIES_MISMATCH,
+            )
+        if episode.season_number != self.season_number:
+            raise BusinessRuleViolationException(
+                message="Episode season_number must match Season",
+                rule_code=MediaRuleCodes.EPISODE_SEASON_MISMATCH,
+            )
+
     def with_episode(self, episode: Episode) -> Self:
         """Return a copy with the episode added.
 
@@ -103,19 +121,41 @@ class Season(DomainEntity[SeasonId]):
         Raises:
             BusinessRuleViolationException: If episode series_id or season_number doesn't match.
         """
-        if episode.series_id != self.series_id:
-            raise BusinessRuleViolationException(
-                message="Episode series_id must match Season series_id",
-                rule_code=MediaRuleCodes.EPISODE_SERIES_MISMATCH,
-            )
-        if episode.season_number != self.season_number:
-            raise BusinessRuleViolationException(
-                message="Episode season_number must match Season",
-                rule_code=MediaRuleCodes.EPISODE_SEASON_MISMATCH,
-            )
+        self._ensure_owns(episode)
         if episode in self.episodes:
             return self
         return self.with_updates(episodes=[*self.episodes, episode])
+
+    def with_episode_upserted(self, episode: Episode) -> Self:
+        """Return a copy with the episode added or replaced by its number.
+
+        Unlike :meth:`with_episode` (a no-op when the episode is already
+        present), this replaces any existing episode that shares the same
+        ``episode_number`` — the scanner uses it to refresh an episode in
+        place while keeping the "one episode per number" invariant owned
+        by the season. Always returns a new instance (it never short-circuits
+        to ``self``), since the replacement may carry refreshed content under
+        the same number.
+
+        Args:
+            episode: The episode to upsert.
+
+        Returns:
+            A new Season with the episode inserted or replaced.
+
+        Raises:
+            BusinessRuleViolationException: If episode series_id or
+                season_number doesn't match this season.
+        """
+        self._ensure_owns(episode)
+        episodes = list(self.episodes)
+        for idx, existing in enumerate(episodes):
+            if existing.episode_number == episode.episode_number:
+                episodes[idx] = episode
+                break
+        else:
+            episodes.append(episode)
+        return self.with_updates(episodes=episodes)
 
     def get_episode(self, episode_number: EpisodeNumber | int) -> Episode | None:
         """Find an episode by its number.

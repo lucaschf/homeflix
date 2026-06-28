@@ -214,6 +214,18 @@ class Series(AggregateRoot[SeriesId]):
             return self
         return self.with_updates(needs_enrichment_review=True)
 
+    def _ensure_owns(self, season: Season) -> None:
+        """Validate the season belongs to this series.
+
+        Raises:
+            BusinessRuleViolationException: If season series_id doesn't match.
+        """
+        if season.series_id != self.id:
+            raise BusinessRuleViolationException(
+                message="Season series_id must match Series id",
+                rule_code=MediaRuleCodes.SEASON_SERIES_MISMATCH,
+            )
+
     def with_season(self, season: Season) -> Self:
         """Return a copy with the season added.
 
@@ -226,14 +238,41 @@ class Series(AggregateRoot[SeriesId]):
         Raises:
             BusinessRuleViolationException: If season series_id doesn't match.
         """
-        if season.series_id != self.id:
-            raise BusinessRuleViolationException(
-                message="Season series_id must match Series id",
-                rule_code=MediaRuleCodes.SEASON_SERIES_MISMATCH,
-            )
+        self._ensure_owns(season)
         if season in self.seasons:
             return self
         return self.with_updates(seasons=[*self.seasons, season])
+
+    def with_season_upserted(self, season: Season) -> Self:
+        """Return a copy with the season added or replaced by its number.
+
+        Unlike :meth:`with_season` (a no-op when the season is already
+        present), this replaces any existing season that shares the same
+        ``season_number`` — the scanner uses it to fold a refreshed season
+        back into the series while keeping the "one season per number"
+        invariant owned by the series. Always returns a new instance (it
+        never short-circuits to ``self``), since the replacement may carry
+        a refreshed season under the same number.
+
+        Args:
+            season: The season to upsert.
+
+        Returns:
+            A new Series with the season inserted or replaced.
+
+        Raises:
+            BusinessRuleViolationException: If season series_id doesn't
+                match this series.
+        """
+        self._ensure_owns(season)
+        seasons = list(self.seasons)
+        for idx, existing in enumerate(seasons):
+            if existing.season_number == season.season_number:
+                seasons[idx] = season
+                break
+        else:
+            seasons.append(season)
+        return self.with_updates(seasons=seasons)
 
     def get_season(self, season_number: SeasonNumber | int) -> Season | None:
         """Find a season by its number.
