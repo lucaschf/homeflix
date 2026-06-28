@@ -8,6 +8,13 @@ from tests.modules.library.unit.conftest import make_library_uow_mock
 from src.modules.library.application.dtos.library_dtos import CreateLibraryInput
 from src.modules.library.application.ports import MediaCountQueryPort
 from src.modules.library.application.use_cases.create_library import CreateLibraryUseCase
+from src.modules.library.domain.value_objects.library_settings import LibrarySettings
+from src.modules.library.domain.value_objects.metadata_provider import (
+    MetadataProvider,
+    MetadataProviderConfig,
+)
+from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
+from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 def _configure_uow_mocks() -> "tuple[CreateLibraryUseCase, object, object]":
@@ -58,11 +65,11 @@ class TestCreateLibraryUseCase:
                 library_type="series",
                 paths=["/media/anime"],
                 language="ja",
-                settings={
-                    "preferred_audio_language": "ja",
-                    "preferred_subtitle_language": "en",
-                    "subtitle_mode": "always",
-                },
+                settings=LibrarySettings(
+                    preferred_audio_language=LanguageCode("ja"),
+                    preferred_subtitle_language=LanguageCode("en"),
+                    subtitle_mode=SubtitleMode.ALWAYS,
+                ),
             )
         )
 
@@ -80,8 +87,10 @@ class TestCreateLibraryUseCase:
                 library_type="movies",
                 paths=["/media/movies"],
                 metadata_providers=[
-                    {"provider": "tmdb", "priority": 1},
-                    {"provider": "omdb", "priority": 2, "enabled": False},
+                    MetadataProviderConfig(provider=MetadataProvider.TMDB, priority=1),
+                    MetadataProviderConfig(
+                        provider=MetadataProvider.OMDB, priority=2, enabled=False
+                    ),
                 ],
             )
         )

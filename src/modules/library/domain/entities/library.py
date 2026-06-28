@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 from src.building_blocks.domain.entity import AggregateRoot
 from src.modules.library.domain.rule_codes import LibraryRuleCodes
+from src.modules.library.domain.value_objects.cron_expression import CronExpression
 from src.modules.library.domain.value_objects.library_name import LibraryName
 from src.modules.library.domain.value_objects.library_settings import LibrarySettings
 from src.modules.library.domain.value_objects.library_type import LibraryType
@@ -63,10 +64,7 @@ class Library(AggregateRoot[LibraryId]):
     metadata_providers: list[MetadataProviderConfig] = Field(default_factory=list)
 
     # Scan configuration
-    scan_schedule: str | None = Field(
-        default=None,
-        pattern=r"^(\S+\s+){4}\S+$",
-    )
+    scan_schedule: CronExpression | None = Field(default=None)
     last_scan_at: datetime | None = None
 
     # Settings
@@ -101,6 +99,14 @@ class Library(AggregateRoot[LibraryId]):
     def convert_language(cls, v: str | LanguageCode) -> LanguageCode:
         """Convert string to LanguageCode if needed."""
         return LanguageCode(v) if isinstance(v, str) else v
+
+    @field_validator("scan_schedule", mode="before")
+    @classmethod
+    def convert_scan_schedule(cls, v: str | CronExpression | None) -> CronExpression | None:
+        """Convert a cron string to a validated CronExpression if needed."""
+        if v is None:
+            return None
+        return CronExpression(v) if isinstance(v, str) else v
 
     @model_validator(mode="after")
     def validate_library(self) -> Library:
