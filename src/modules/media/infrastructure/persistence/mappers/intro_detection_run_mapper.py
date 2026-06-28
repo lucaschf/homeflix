@@ -1,7 +1,5 @@
 """Mapper between IntroDetectionRun aggregate and its ORM model."""
 
-from dataclasses import asdict
-
 from src.modules.media.domain.entities.intro_detection_run import (
     EpisodeDetectionResult,
     IntroDetectionRun,
@@ -68,7 +66,7 @@ class IntroDetectionRunMapper:
             detected_count=entity.detected_count,
             persisted_count=entity.persisted_count,
             min_confidence=entity.min_confidence,
-            episode_results=[asdict(result) for result in entity.episode_results],
+            episode_results=[result.model_dump() for result in entity.episode_results],
             error=entity.error,
             started_at=entity.started_at,
             finished_at=entity.finished_at,

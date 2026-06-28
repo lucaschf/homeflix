@@ -8,20 +8,18 @@ records are never mutated after the season is processed.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from pydantic import Field
 
-from src.building_blocks.domain import AggregateRoot
+from src.building_blocks.domain import AggregateRoot, CompoundValueObject
 from src.modules.media.domain.value_objects.intro_detection_run_id import IntroDetectionRunId
 from src.modules.media.domain.value_objects.intro_detection_state import (
     IntroDetectionState,  # noqa: TCH001 — runtime field type (pydantic resolves it)
 )
 
 
-@dataclass(frozen=True)
-class EpisodeDetectionResult:
+class EpisodeDetectionResult(CompoundValueObject):
     """One episode's detection outcome within a run.
 
     Attributes:
@@ -29,7 +27,9 @@ class EpisodeDetectionResult:
         episode_number: Episode number within the season.
         start_seconds: Detected intro start.
         end_seconds: Detected intro end.
-        confidence: Detector confidence in ``[0.0, 1.0]``.
+        confidence: Detector confidence in ``[0.0, 1.0]`` — the same range
+            the IntroMarker/CreditsMarker VOs enforce, so a stray detector
+            value can't be recorded in the append-only audit log.
         persisted: Whether the marker was saved. ``False`` means the
             confidence fell below the configured ``min_confidence`` and
             the detection was dropped — the common "detected but nothing
@@ -40,7 +40,7 @@ class EpisodeDetectionResult:
     episode_number: int
     start_seconds: float
     end_seconds: float
-    confidence: float
+    confidence: float = Field(ge=0.0, le=1.0)
     persisted: bool
 
 
@@ -82,7 +82,7 @@ class IntroDetectionRun(AggregateRoot[IntroDetectionRunId]):
     analyzed_count: int = 0
     detected_count: int = 0
     persisted_count: int = 0
-    min_confidence: float = 0.0
+    min_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     episode_results: list[EpisodeDetectionResult] = Field(default_factory=list)
     error: str | None = None
     started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
