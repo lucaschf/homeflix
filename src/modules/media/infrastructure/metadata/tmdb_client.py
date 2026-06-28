@@ -7,6 +7,13 @@ from typing import Any, Literal
 
 import httpx
 
+from src.building_blocks.infrastructure.errors import (
+    GatewayBadResponseException,
+    GatewayException,
+    GatewayRateLimitException,
+    GatewayTimeoutException,
+    GatewayUnavailableException,
+)
 from src.modules.media.application.ports import (
     CollectionDetailMetadata,
     CollectionMetadata,
@@ -26,6 +33,8 @@ from src.shared_kernel.value_objects import MediaType
 
 _MAX_CAST = 15
 
+_GATEWAY_NAME = "TMDB"
+
 
 def _safe_int(value: object, default: int) -> int:
     """Safely convert a value to int, returning default on failure."""
@@ -33,6 +42,24 @@ def _safe_int(value: object, default: int) -> int:
         return int(str(value))
     except (ValueError, TypeError):
         return default
+
+
+def _parse_retry_after(value: str | None) -> int | None:
+    """Parse a ``Retry-After`` header (delta-seconds) into an int.
+
+    TMDB sends the delay as an integer number of seconds. Returns
+    ``None`` when the header is absent or not a plain integer so the
+    caller can fall back to the exception's default — the HTTP-date
+    form of ``Retry-After`` is not emitted by TMDB and is treated as
+    "unknown" rather than parsed.
+    """
+    if value is None:
+        return None
+    try:
+        seconds = int(value.strip())
+    except (ValueError, AttributeError):
+        return None
+    return seconds if seconds >= 0 else None
 
 
 _TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/original"
@@ -134,6 +161,112 @@ class TmdbClient(MetadataProvider):
     def _image_url(self, path: str | None) -> str | None:
         return f"{_TMDB_IMAGE_BASE}{path}" if path else None
 
+    async def _get(
+        self,
+        path: str,
+        params: dict[str, str | int],
+    ) -> httpx.Response:
+        """Perform a GET against TMDB, translating transport failures.
+
+        Wraps httpx transport-level errors (timeouts, connection / DNS
+        failures) into the matching :class:`GatewayException` subtype so
+        this ACL never leaks a raw ``httpx`` error past the boundary —
+        the global handler can then surface ``503`` / ``504`` instead of
+        a generic ``500`` ("the provider is down" is not "our server
+        crashed").
+
+        HTTP *status* errors are deliberately NOT raised here: the
+        response is returned as-is so a caller can inspect the status
+        (e.g. tell a genuine ``404`` apart from a provider outage) before
+        deciding whether to call :meth:`_raise_for_status`.
+
+        Args:
+            path: Request path relative to the API base (e.g.
+                ``"/movie/123"``).
+            params: Query parameters, already including the api key.
+
+        Returns:
+            The raw ``httpx.Response``, regardless of status code.
+
+        Raises:
+            GatewayTimeoutException: The request timed out.
+            GatewayUnavailableException: TMDB could not be reached
+                (connection refused, DNS failure, protocol error).
+        """
+        try:
+            return await self._client.get(f"{self._base_url}{path}", params=params)
+        except httpx.TimeoutException as exc:
+            raise GatewayTimeoutException(
+                message="TMDB request timed out",
+                gateway_name=_GATEWAY_NAME,
+                internal_message=f"{type(exc).__name__}: {exc}",
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise GatewayUnavailableException(
+                message="TMDB is unavailable",
+                gateway_name=_GATEWAY_NAME,
+                internal_message=f"{type(exc).__name__}: {exc}",
+            ) from exc
+
+    @staticmethod
+    def _raise_for_status(resp: httpx.Response) -> None:
+        """Translate a non-2xx TMDB response into a ``GatewayException``.
+
+        Maps the provider's HTTP status onto the gateway subtype whose
+        ``code`` the registry resolves to the right client-facing status
+        (``429`` / ``502`` / ``503`` / ``504``), so a provider problem is
+        never reported to the caller as a generic ``500``. A ``4xx`` other
+        than rate-limiting means *our* request or credentials were at
+        fault (it is not a provider outage), so it maps to the base
+        ``GatewayException`` (``500``). Callers that treat a ``404``
+        specially must check ``resp.status_code`` before calling this.
+
+        Raises:
+            GatewayRateLimitException: HTTP 429.
+            GatewayTimeoutException: HTTP 504.
+            GatewayUnavailableException: HTTP 503 or any other 5xx.
+            GatewayBadResponseException: HTTP 502.
+            GatewayException: Any other non-2xx (4xx) response.
+        """
+        status = resp.status_code
+        if status < httpx.codes.BAD_REQUEST:
+            return
+
+        internal = f"HTTP {status} from {resp.request.url}"
+
+        if status == httpx.codes.TOO_MANY_REQUESTS:
+            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
+            raise GatewayRateLimitException(
+                message="TMDB rate limit exceeded",
+                gateway_name=_GATEWAY_NAME,
+                retry_after_seconds=retry_after if retry_after is not None else 60,
+                internal_message=internal,
+            )
+        if status == httpx.codes.GATEWAY_TIMEOUT:
+            raise GatewayTimeoutException(
+                message="TMDB timed out upstream",
+                gateway_name=_GATEWAY_NAME,
+                internal_message=internal,
+            )
+        if status == httpx.codes.BAD_GATEWAY:
+            raise GatewayBadResponseException(
+                message="TMDB returned a bad-gateway response",
+                gateway_name=_GATEWAY_NAME,
+                internal_message=internal,
+            )
+        if status >= httpx.codes.INTERNAL_SERVER_ERROR:
+            # 503 and every other 5xx — the provider is having problems.
+            raise GatewayUnavailableException(
+                message="TMDB is unavailable",
+                gateway_name=_GATEWAY_NAME,
+                internal_message=internal,
+            )
+        raise GatewayException(
+            message="TMDB request failed",
+            gateway_name=_GATEWAY_NAME,
+            internal_message=internal,
+        )
+
     @staticmethod
     def _logo_rank(logo: dict[str, object], target: str, target_base: str) -> int:
         """Score a TMDB logo entry for language preference (lower = better).
@@ -189,11 +322,11 @@ class TmdbClient(MetadataProvider):
         no result matches the requested year; the caller's retry layer
         will re-search without the year hint.
         """
-        resp = await self._client.get(
-            f"{self._base_url}/search/movie",
+        resp = await self._get(
+            "/search/movie",
             params=self._params(query=title, year=year),
         )
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         results = resp.json().get("results", [])
 
         best = self._pick_year_match(results, year, "release_date")
@@ -213,11 +346,11 @@ class TmdbClient(MetadataProvider):
         revival). Returns ``None`` when no result matches the requested
         year.
         """
-        resp = await self._client.get(
-            f"{self._base_url}/search/tv",
+        resp = await self._get(
+            "/search/tv",
             params=self._params(query=title, first_air_date_year=year),
         )
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         results = resp.json().get("results", [])
 
         best = self._pick_year_match(results, year, "first_air_date")
@@ -238,11 +371,11 @@ class TmdbClient(MetadataProvider):
         contract — picker-mode, no year post-filter, TMDB's own
         popularity ranking preserved.
         """
-        resp = await self._client.get(
-            f"{self._base_url}/search/movie",
+        resp = await self._get(
+            "/search/movie",
             params=self._params(query=title, year=year),
         )
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         results = resp.json().get("results", [])
         return [_to_movie_candidate(r, self._image_url) for r in results[:limit]]
 
@@ -253,11 +386,11 @@ class TmdbClient(MetadataProvider):
         limit: int = 5,
     ) -> list[SearchCandidate]:
         """Return the top ``limit`` raw TV search hits."""
-        resp = await self._client.get(
-            f"{self._base_url}/search/tv",
+        resp = await self._get(
+            "/search/tv",
             params=self._params(query=title, first_air_date_year=year),
         )
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         results = resp.json().get("results", [])
         return [_to_series_candidate(r, self._image_url) for r in results[:limit]]
 
@@ -269,13 +402,13 @@ class TmdbClient(MetadataProvider):
         ``raise_for_status`` — consistent with the search paths — so a
         transient outage doesn't masquerade as "not found".
         """
-        resp = await self._client.get(
-            f"{self._base_url}/movie/{tmdb_id}",
+        resp = await self._get(
+            f"/movie/{tmdb_id}",
             params=self._params(),
         )
         if resp.status_code == httpx.codes.NOT_FOUND:
             return None
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return _to_movie_candidate(resp.json(), self._image_url)
 
     async def get_series_summary_by_id(self, tmdb_id: int) -> SearchCandidate | None:
@@ -285,13 +418,13 @@ class TmdbClient(MetadataProvider):
         propagates via ``raise_for_status`` instead of collapsing to
         not-found.
         """
-        resp = await self._client.get(
-            f"{self._base_url}/tv/{tmdb_id}",
+        resp = await self._get(
+            f"/tv/{tmdb_id}",
             params=self._params(),
         )
         if resp.status_code == httpx.codes.NOT_FOUND:
             return None
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return _to_series_candidate(resp.json(), self._image_url)
 
     async def find_by_imdb_id(self, imdb_id: str) -> list[SearchCandidate]:
@@ -304,11 +437,11 @@ class TmdbClient(MetadataProvider):
         user pastes ``tt`` from a movie page; tests can stable-sort
         on ``media_type`` afterwards if they need a stricter order.
         """
-        resp = await self._client.get(
-            f"{self._base_url}/find/{imdb_id}",
+        resp = await self._get(
+            f"/find/{imdb_id}",
             params=self._params(external_source="imdb_id"),
         )
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         payload = resp.json()
         movies = [_to_movie_candidate(r, self._image_url) for r in payload.get("movie_results", [])]
         series = [_to_series_candidate(r, self._image_url) for r in payload.get("tv_results", [])]
@@ -371,15 +504,23 @@ class TmdbClient(MetadataProvider):
     async def _fetch_movie_localized_fields(
         self, tmdb_id: int, locale: str
     ) -> LocalizedFields | None:
-        """Fetch one locale's translated movie fields, or ``None`` on failure."""
-        resp = await self._client.get(
-            f"{self._base_url}/movie/{tmdb_id}",
-            params=self._params(
-                language=locale,
-                append_to_response="images",
-                include_image_language=f"{locale},en,null",
-            ),
-        )
+        """Fetch one locale's translated movie fields, or ``None`` on failure.
+
+        An overlay is best-effort: any provider failure (non-200 status
+        or a wrapped transport ``GatewayException``) drops just this
+        locale so the English base still returns.
+        """
+        try:
+            resp = await self._get(
+                f"/movie/{tmdb_id}",
+                params=self._params(
+                    language=locale,
+                    append_to_response="images",
+                    include_image_language=f"{locale},en,null",
+                ),
+            )
+        except GatewayException:
+            return None
         if resp.status_code != 200:
             return None
 
@@ -418,11 +559,11 @@ class TmdbClient(MetadataProvider):
         than 500.
         """
         try:
-            resp = await self._client.get(
-                f"{self._base_url}/collection/{tmdb_id}",
+            resp = await self._get(
+                f"/collection/{tmdb_id}",
                 params=self._params(language=language),
             )
-        except httpx.HTTPError:
+        except GatewayException:
             return None
         if resp.status_code != 200:
             return None
@@ -578,11 +719,11 @@ class TmdbClient(MetadataProvider):
         step fails — collection lookup is best-effort polish.
         """
         try:
-            resp = await self._client.get(
-                f"{self._base_url}/movie/{tmdb_id}",
+            resp = await self._get(
+                f"/movie/{tmdb_id}",
                 params=self._params(),
             )
-        except httpx.HTTPError:
+        except GatewayException:
             return []
         if resp.status_code != 200:
             return []
@@ -595,11 +736,11 @@ class TmdbClient(MetadataProvider):
             return []
 
         try:
-            resp = await self._client.get(
-                f"{self._base_url}/collection/{coll_id}",
+            resp = await self._get(
+                f"/collection/{coll_id}",
                 params=self._params(),
             )
-        except httpx.HTTPError:
+        except GatewayException:
             return []
         if resp.status_code != 200:
             return []
@@ -629,11 +770,11 @@ class TmdbClient(MetadataProvider):
         on results we'd discard.
         """
         try:
-            resp = await self._client.get(
-                f"{self._base_url}/{media_type}/{tmdb_id}/{endpoint}",
+            resp = await self._get(
+                f"/{media_type}/{tmdb_id}/{endpoint}",
                 params=self._params(),
             )
-        except httpx.HTTPError:
+        except GatewayException:
             return []
         if resp.status_code != 200:
             return []
@@ -681,11 +822,11 @@ class TmdbClient(MetadataProvider):
     async def _fetch_person(self, tmdb_id: int, language: str) -> PersonMetadata | None:
         """Single ``/person/{id}`` round-trip in ``language``."""
         try:
-            resp = await self._client.get(
-                f"{self._base_url}/person/{tmdb_id}",
+            resp = await self._get(
+                f"/person/{tmdb_id}",
                 params=self._params(language=language),
             )
-        except httpx.HTTPError:
+        except GatewayException:
             return None
         if resp.status_code != 200:
             return None
@@ -750,11 +891,11 @@ class TmdbClient(MetadataProvider):
         path = "movie" if media_type == MediaType.MOVIE else "tv"
         title_key = "title" if media_type == MediaType.MOVIE else "name"
         try:
-            resp = await self._client.get(
-                f"{self._base_url}/{path}/{tmdb_id}/translations",
+            resp = await self._get(
+                f"/{path}/{tmdb_id}/translations",
                 params=self._params(),
             )
-        except httpx.HTTPError:
+        except GatewayException:
             return {}
         if resp.status_code != 200:
             return {}
@@ -770,15 +911,23 @@ class TmdbClient(MetadataProvider):
     async def _fetch_series_localized_fields(
         self, tmdb_id: int, locale: str
     ) -> LocalizedFields | None:
-        """Fetch one locale's translated series fields, or ``None`` on failure."""
-        resp = await self._client.get(
-            f"{self._base_url}/tv/{tmdb_id}",
-            params=self._params(
-                language=locale,
-                append_to_response="images",
-                include_image_language=f"{locale},en,null",
-            ),
-        )
+        """Fetch one locale's translated series fields, or ``None`` on failure.
+
+        An overlay is best-effort: any provider failure (non-200 status
+        or a wrapped transport ``GatewayException``) drops just this
+        locale so the English base still returns.
+        """
+        try:
+            resp = await self._get(
+                f"/tv/{tmdb_id}",
+                params=self._params(
+                    language=locale,
+                    append_to_response="images",
+                    include_image_language=f"{locale},en,null",
+                ),
+            )
+        except GatewayException:
+            return None
         if resp.status_code != 200:
             return None
 
@@ -803,8 +952,8 @@ class TmdbClient(MetadataProvider):
         in the same round-trip — saves a separate HTTP call per
         details fetch.
         """
-        resp = await self._client.get(
-            f"{self._base_url}/movie/{tmdb_id}",
+        resp = await self._get(
+            f"/movie/{tmdb_id}",
             params=self._params(
                 append_to_response="credits,release_dates,videos,images",
                 language=language,
@@ -813,7 +962,7 @@ class TmdbClient(MetadataProvider):
         )
         if resp.status_code == 404:
             return None
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         data = resp.json()
 
         year = None
@@ -867,11 +1016,11 @@ class TmdbClient(MetadataProvider):
             return None
 
         try:
-            resp = await self._client.get(
-                f"{self._base_url}/collection/{coll_id}",
+            resp = await self._get(
+                f"/collection/{coll_id}",
                 params=self._params(),
             )
-        except httpx.HTTPError:
+        except GatewayException:
             return None
         if resp.status_code != 200:
             return None
@@ -886,8 +1035,8 @@ class TmdbClient(MetadataProvider):
         language is English since the bulk of the series-details flow
         is English-first (the localized variant overrides on top).
         """
-        resp = await self._client.get(
-            f"{self._base_url}/tv/{tmdb_id}",
+        resp = await self._get(
+            f"/tv/{tmdb_id}",
             params=self._params(
                 append_to_response="external_ids,content_ratings,videos,images,credits",
                 include_image_language="en,null",
@@ -895,7 +1044,7 @@ class TmdbClient(MetadataProvider):
         )
         if resp.status_code == 404:
             return None
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         data = resp.json()
 
         # Top-billed cast comes back nested under ``credits.cast`` thanks
@@ -1000,19 +1149,26 @@ class TmdbClient(MetadataProvider):
         """One ``/season/{n}`` round-trip; ``None`` on 404 or locale-overlay failure.
 
         ``language=None`` is the English base — a non-404 error there
-        is fatal (raised). For a localized overlay any non-200 simply
-        drops that locale.
+        is fatal (raised). For a localized overlay any failure (non-200
+        status or a wrapped transport ``GatewayException``) simply drops
+        that locale, so a flaky overlay never aborts the concurrent
+        season fan-out.
         """
-        resp = await self._client.get(
-            f"{self._base_url}/tv/{series_id}/season/{season_number}",
-            params=self._params(language=language),
-        )
+        try:
+            resp = await self._get(
+                f"/tv/{series_id}/season/{season_number}",
+                params=self._params(language=language),
+            )
+        except GatewayException:
+            if language is None:
+                raise
+            return None
         if resp.status_code == 404:
             return None
         if language is not None and resp.status_code != 200:
             return None
         if language is None:
-            resp.raise_for_status()
+            self._raise_for_status(resp)
         data: dict[str, Any] = resp.json()
         return data
 
