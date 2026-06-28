@@ -20,7 +20,6 @@ from src.modules.watch_progress.domain.value_objects.watchable_media_id import (
     WatchableMediaId,
 )
 from src.shared_kernel.value_objects.episode_composite_id import EpisodeCompositeId
-from src.shared_kernel.value_objects.media_id import SeriesId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 if TYPE_CHECKING:
@@ -35,6 +34,7 @@ if TYPE_CHECKING:
         WatchProgressUnitOfWorkFactory,
     )
     from src.modules.watch_progress.domain.entities import WatchProgress
+    from src.shared_kernel.value_objects.media_id import SeriesId
 
 _logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class GetContinueWatchingUseCase:
         """Execute the use case for the caller's profile."""
         profile_id = ProfileId(input_dto.profile_id)
         items: list[ContinueWatchingItem] = []
-        seen_series: set[str] = set()
+        seen_series: set[SeriesId] = set()
 
         async with self._uow_factory() as uow:
             progress_list = await uow.progress.list_recently_watched(
@@ -99,7 +99,7 @@ class GetContinueWatchingUseCase:
                     seen_series.add(parsed.series_id)
                     item = await self._resolve_series_episode(
                         uow,
-                        SeriesId(parsed.series_id),
+                        parsed.series_id,
                         input_dto.lang,
                         profile_id,
                     )
@@ -149,7 +149,7 @@ class GetContinueWatchingUseCase:
         media_ids = [
             WatchableMediaId(
                 EpisodeCompositeId.build(
-                    series_id.value,
+                    series_id,
                     ep.season_number,
                     ep.episode_number,
                 ).media_id

@@ -86,10 +86,9 @@ class GetSeriesByIdUseCase:
         if series is None:
             raise ResourceNotFoundException.for_resource("Series", input_dto.series_id)
 
-        series_id_str = str(series.id)
         composite_ids = [
             EpisodeCompositeId.build(
-                series_id_str, s.season_number.value, ep.episode_number.value
+                series_id, s.season_number.value, ep.episode_number.value
             ).media_id
             for s in series.seasons
             for ep in s.episodes
@@ -99,11 +98,12 @@ class GetSeriesByIdUseCase:
             profile_id=input_dto.profile_id,
         )
 
-        return self._to_output(series, input_dto.lang, progress_map)
+        return self._to_output(series, series_id, input_dto.lang, progress_map)
 
     def _to_output(
         self,
         series: Series,
+        series_id: SeriesId,
         lang: str,
         progress_map: dict[str, ProgressSummary],
     ) -> SeriesOutput:
@@ -111,15 +111,15 @@ class GetSeriesByIdUseCase:
 
         Args:
             series: The Series entity to convert.
+            series_id: Typed external series ID for composite key lookup.
             lang: Language code for localized fields.
             progress_map: Map of composite media_id to progress summary.
 
         Returns:
             SeriesOutput with all fields and nested seasons/episodes.
         """
-        series_id = str(series.id)
         return SeriesOutput(
-            id=series_id,
+            id=str(series_id),
             title=series.get_title(lang),
             original_title=series.original_title.value if series.original_title else None,
             start_year=series.start_year.value,
@@ -156,7 +156,7 @@ class GetSeriesByIdUseCase:
     @staticmethod
     def _to_season_output(
         season: Season,
-        series_id: str,
+        series_id: SeriesId,
         progress_map: dict[str, ProgressSummary],
         lang: str = "en",
     ) -> SeasonOutput:
@@ -164,7 +164,7 @@ class GetSeriesByIdUseCase:
 
         Args:
             season: The Season entity to convert.
-            series_id: External series ID for composite key lookup.
+            series_id: Typed external series ID for composite key lookup.
             progress_map: Map of composite media_id to progress summary.
             lang: Language code for localized title/synopsis.
 
@@ -194,7 +194,7 @@ class GetSeriesByIdUseCase:
     @staticmethod
     def _to_episode_output(
         episode: Episode,
-        series_id: str,
+        series_id: SeriesId,
         season_number: int,
         progress_map: dict[str, ProgressSummary],
         lang: str = "en",
@@ -203,7 +203,7 @@ class GetSeriesByIdUseCase:
 
         Args:
             episode: The Episode entity to convert.
-            series_id: External series ID for composite key lookup.
+            series_id: Typed external series ID for composite key lookup.
             season_number: Season number for composite key lookup.
             progress_map: Map of composite media_id to progress summary.
             lang: Language code for localized title/synopsis.
