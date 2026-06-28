@@ -222,7 +222,7 @@ class LibraryScanScheduler:
             if not library.scan_schedule or library.id is None:
                 continue
             library_id = str(library.id)
-            desired[_job_id_for(library_id)] = (library_id, library.scan_schedule)
+            desired[_job_id_for(library_id)] = (library_id, library.scan_schedule.value)
 
         existing = {
             job.id for job in self._scheduler.get_jobs() if job.id.startswith(_LIBRARY_JOB_PREFIX)

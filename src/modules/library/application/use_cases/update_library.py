@@ -11,13 +11,8 @@ from src.modules.library.application.ports import MediaCountQueryPort
 from src.modules.library.application.unit_of_work import LibraryUnitOfWorkFactory
 from src.modules.library.application.use_cases._counts import resolve_counts
 from src.modules.library.application.use_cases._to_output import library_to_output
-from src.modules.library.application.use_cases.create_library import _build_settings
 from src.modules.library.domain.value_objects.library_name import LibraryName
 from src.modules.library.domain.value_objects.library_type import LibraryType
-from src.modules.library.domain.value_objects.metadata_provider import (
-    MetadataProvider,
-    MetadataProviderConfig,
-)
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.library_id import LibraryId
@@ -69,18 +64,11 @@ class UpdateLibraryUseCase:
             if input_dto.language is not None:
                 updates["language"] = LanguageCode(input_dto.language)
             if input_dto.metadata_providers is not None:
-                updates["metadata_providers"] = [
-                    MetadataProviderConfig(
-                        provider=MetadataProvider(p["provider"]),
-                        priority=p.get("priority", 1),
-                        enabled=p.get("enabled", True),
-                    )
-                    for p in input_dto.metadata_providers
-                ]
+                updates["metadata_providers"] = input_dto.metadata_providers
             if input_dto.scan_schedule is not None:
                 updates["scan_schedule"] = input_dto.scan_schedule
             if input_dto.settings is not None:
-                updates["settings"] = _build_settings(input_dto.settings)
+                updates["settings"] = input_dto.settings
 
             updated = entity.with_updates(**updates)
             saved = await uow.libraries.save(updated)

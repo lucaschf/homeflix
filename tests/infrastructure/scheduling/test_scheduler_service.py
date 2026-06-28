@@ -191,12 +191,25 @@ class TestReconcile:
         assert "existing" not in fake.jobs[job_id]
 
     @pytest.mark.asyncio
-    async def test_skips_invalid_cron_without_crashing(
-        self, scheduler: LibraryScanScheduler, library_repo: AsyncMock
+    async def test_skips_cron_rejected_by_parser_without_crashing(
+        self,
+        scheduler: LibraryScanScheduler,
+        library_repo: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # Passes the entity-level regex but fails real cron parsing.
-        lib = _make_library("A", "99 99 * * *")
+        # Defense-in-depth: invalid crons are now rejected at the domain
+        # boundary (CronExpression), but a schedule the underlying parser
+        # still rejects must be skipped, not crash reconciliation.
+        lib = _make_library("A", "0 0 * * *")
         library_repo.find_all.return_value = [lib]
+
+        def _raise(*_args: object, **_kwargs: object) -> None:
+            raise ValueError("bad cron")
+
+        monkeypatch.setattr(
+            "src.infrastructure.scheduling.scheduler_service.CronTrigger.from_crontab",
+            _raise,
+        )
 
         await scheduler._reconcile()  # must not raise
 

@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.modules.library.domain.value_objects.library_settings import LibrarySettings
+    from src.modules.library.domain.value_objects.metadata_provider import (
+        MetadataProviderConfig,
+    )
 
 # ── Shared output shapes ─────────────────────────────────────────
 
@@ -57,9 +63,9 @@ class CreateLibraryInput:
     library_type: str
     paths: list[str]
     language: str = "en"
-    metadata_providers: list[dict[str, Any]] = field(default_factory=list)
+    metadata_providers: list[MetadataProviderConfig] = field(default_factory=list)
     scan_schedule: str | None = None
-    settings: dict[str, Any] | None = None
+    settings: LibrarySettings | None = None
 
 
 # ── Update ────────────────────────────────────────────────────────
@@ -78,9 +84,9 @@ class UpdateLibraryInput:
     library_type: str | None = None
     paths: list[str] | None = None
     language: str | None = None
-    metadata_providers: list[dict[str, Any]] | None = None
+    metadata_providers: list[MetadataProviderConfig] | None = None
     scan_schedule: str | None = None
-    settings: dict[str, Any] | None = None
+    settings: LibrarySettings | None = None
 
 
 # ── Delete ────────────────────────────────────────────────────────

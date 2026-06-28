@@ -44,9 +44,9 @@ async def create_library(
             library_type=body.library_type,
             paths=body.paths,
             language=body.language,
-            metadata_providers=[p.model_dump() for p in body.metadata_providers],
+            metadata_providers=[p.to_config() for p in body.metadata_providers],
             scan_schedule=body.scan_schedule,
-            settings=body.settings.model_dump() if body.settings else None,
+            settings=body.settings.to_settings() if body.settings else None,
         )
     )
     return api_single("library", asdict(result))
@@ -96,12 +96,12 @@ async def update_library(
             paths=body.paths,
             language=body.language,
             metadata_providers=(
-                [p.model_dump() for p in body.metadata_providers]
+                [p.to_config() for p in body.metadata_providers]
                 if body.metadata_providers is not None
                 else None
             ),
             scan_schedule=body.scan_schedule,
-            settings=body.settings.model_dump() if body.settings else None,
+            settings=body.settings.to_settings() if body.settings else None,
         )
     )
     return api_single("library", asdict(result))

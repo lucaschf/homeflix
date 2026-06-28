@@ -37,7 +37,7 @@ def library_to_output(
             )
             for p in entity.metadata_providers
         ],
-        scan_schedule=entity.scan_schedule,
+        scan_schedule=entity.scan_schedule.value if entity.scan_schedule else None,
         last_scan_at=entity.last_scan_at.isoformat() if entity.last_scan_at else None,
         movie_count=movie_count,
         series_count=series_count,

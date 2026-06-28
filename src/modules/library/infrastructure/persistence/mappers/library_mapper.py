@@ -4,7 +4,10 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from src.building_blocks.domain.errors import DomainValidationException
+from src.config.logging import get_logger
 from src.modules.library.domain.entities.library import Library
+from src.modules.library.domain.value_objects.cron_expression import CronExpression
 from src.modules.library.domain.value_objects.library_name import LibraryName
 from src.modules.library.domain.value_objects.library_settings import LibrarySettings
 from src.modules.library.domain.value_objects.library_type import LibraryType
@@ -17,6 +20,26 @@ from src.modules.library.infrastructure.persistence.models.library_model import 
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.library_id import LibraryId
+
+_logger = get_logger()
+
+
+def _safe_cron(raw: str | None) -> CronExpression | None:
+    """Coerce a persisted cron string, degrading invalid values to None.
+
+    The write path (API/use cases) rejects invalid crons via
+    ``CronExpression``, but a row persisted before that invariant existed
+    (or hand-edited) must not make a whole ``find_all`` blow up. A bad
+    value is logged and dropped to ``None`` — equivalent to the legacy
+    behaviour where the scheduler simply skipped an unparseable cron.
+    """
+    if not raw:
+        return None
+    try:
+        return CronExpression(raw)
+    except DomainValidationException:
+        _logger.warning("Dropping invalid persisted scan_schedule", scan_schedule=raw)
+        return None
 
 
 def _ensure_utc(value: datetime | None) -> datetime | None:
@@ -73,7 +96,7 @@ class LibraryMapper:
                 ],
                 ensure_ascii=False,
             ),
-            scan_schedule=entity.scan_schedule,
+            scan_schedule=entity.scan_schedule.value if entity.scan_schedule else None,
             last_scan_at=entity.last_scan_at,
             settings=json.dumps(
                 {
@@ -120,7 +143,7 @@ class LibraryMapper:
                 )
                 for p in providers_raw
             ],
-            scan_schedule=model.scan_schedule,
+            scan_schedule=_safe_cron(model.scan_schedule),
             last_scan_at=_ensure_utc(model.last_scan_at),
             settings=LibrarySettings(
                 preferred_audio_language=LanguageCode(
