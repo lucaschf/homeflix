@@ -7,19 +7,32 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
+from src.building_blocks.infrastructure.errors import (
+    GatewayBadResponseException,
+    GatewayException,
+    GatewayRateLimitException,
+    GatewayTimeoutException,
+    GatewayUnavailableException,
+)
 from src.modules.media.domain.value_objects import ContentRating
 from src.modules.media.infrastructure.metadata.tmdb_client import (
     TmdbClient,
+    _parse_retry_after,
     _safe_int,
 )
 from src.shared_kernel.value_objects import MediaType
 
 
-def _build_response(status_code: int = 200, json_data: dict[str, Any] | None = None) -> MagicMock:
+def _build_response(
+    status_code: int = 200,
+    json_data: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+) -> MagicMock:
     """Build a mocked httpx Response."""
     response = MagicMock(spec=httpx.Response)
     response.status_code = status_code
     response.json.return_value = json_data or {}
+    response.headers = headers or {}
     response.raise_for_status = MagicMock()
     if status_code >= 400:
         response.raise_for_status.side_effect = httpx.HTTPStatusError(
@@ -393,14 +406,14 @@ class TestSummaryByIdErrorHandling:
     async def test_movie_summary_raises_on_server_error(self) -> None:
         client = _make_client(get_responses=_build_response(status_code=500))
 
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(GatewayUnavailableException):
             await client.get_movie_summary_by_id(123)
 
     @pytest.mark.asyncio
     async def test_series_summary_raises_on_server_error(self) -> None:
         client = _make_client(get_responses=_build_response(status_code=500))
 
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(GatewayUnavailableException):
             await client.get_series_summary_by_id(123)
 
     @pytest.mark.asyncio
@@ -426,7 +439,7 @@ class TestSummaryByIdErrorHandling:
         client = _make_client()
         client._client.get = AsyncMock(side_effect=httpx.ConnectError("boom"))
 
-        with pytest.raises(httpx.ConnectError):
+        with pytest.raises(GatewayUnavailableException):
             await client.get_movie_summary_by_id(123)
 
     @pytest.mark.asyncio
@@ -434,8 +447,101 @@ class TestSummaryByIdErrorHandling:
         client = _make_client()
         client._client.get = AsyncMock(side_effect=httpx.ConnectError("boom"))
 
-        with pytest.raises(httpx.ConnectError):
+        with pytest.raises(GatewayUnavailableException):
             await client.get_series_summary_by_id(123)
+
+
+@pytest.mark.unit
+class TestParseRetryAfter:
+    """``_parse_retry_after`` reads the delta-seconds form, ignores the rest."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("30", 30),
+            ("0", 0),
+            ("  12 ", 12),
+            (None, None),
+            ("abc", None),
+            ("-5", None),
+            ("Wed, 21 Oct 2025 07:28:00 GMT", None),
+        ],
+    )
+    def test_parse(self, value: str | None, expected: int | None) -> None:
+        assert _parse_retry_after(value) == expected
+
+
+@pytest.mark.unit
+class TestGatewayErrorTranslation:
+    """The TMDB ACL wraps every provider failure as a GatewayException subtype.
+
+    Card A: a provider outage must surface as 429/502/503/504 — never a
+    generic 500 — and transport errors must not leak raw ``httpx`` types
+    past the adapter boundary.
+    """
+
+    @pytest.mark.asyncio
+    async def test_timeout_becomes_gateway_timeout(self) -> None:
+        client = _make_client()
+        client._client.get = AsyncMock(side_effect=httpx.ReadTimeout("slow"))
+
+        with pytest.raises(GatewayTimeoutException):
+            await client.get_movie_summary_by_id(1)
+
+    @pytest.mark.asyncio
+    async def test_connect_error_becomes_gateway_unavailable(self) -> None:
+        client = _make_client()
+        client._client.get = AsyncMock(side_effect=httpx.ConnectError("down"))
+
+        with pytest.raises(GatewayUnavailableException):
+            await client.get_movie_summary_by_id(1)
+
+    @pytest.mark.parametrize(
+        ("status", "expected"),
+        [
+            (429, GatewayRateLimitException),
+            (503, GatewayUnavailableException),
+            (504, GatewayTimeoutException),
+            (502, GatewayBadResponseException),
+            (500, GatewayUnavailableException),
+            (401, GatewayException),
+            (400, GatewayException),
+        ],
+    )
+    def test_status_maps_to_subtype(self, status: int, expected: type[GatewayException]) -> None:
+        with pytest.raises(GatewayException) as exc_info:
+            TmdbClient._raise_for_status(_build_response(status_code=status))
+        # Exact type — base GatewayException for 4xx, never a subtype.
+        assert type(exc_info.value) is expected
+
+    def test_success_status_does_not_raise(self) -> None:
+        TmdbClient._raise_for_status(_build_response(status_code=200))
+
+    def test_rate_limit_reads_retry_after_header(self) -> None:
+        resp = _build_response(status_code=429, headers={"Retry-After": "42"})
+
+        with pytest.raises(GatewayRateLimitException) as exc_info:
+            TmdbClient._raise_for_status(resp)
+
+        assert exc_info.value.retry_after_seconds == 42
+
+    def test_rate_limit_defaults_retry_after_when_header_missing(self) -> None:
+        with pytest.raises(GatewayRateLimitException) as exc_info:
+            TmdbClient._raise_for_status(_build_response(status_code=429))
+
+        assert exc_info.value.retry_after_seconds == 60
+
+    @pytest.mark.asyncio
+    async def test_best_effort_methods_still_degrade_on_gateway_error(self) -> None:
+        client = _make_client()
+        client._client.get = AsyncMock(side_effect=httpx.ConnectError("down"))
+
+        # These paths intentionally swallow provider failures so the UI
+        # degrades gracefully — the wrapped GatewayException must still be
+        # caught, not propagate.
+        assert await client.get_collection(10) is None
+        assert await client.get_person(287) is None
+        assert await client.get_movie_recommendations(1) == []
 
 
 @pytest.mark.unit
