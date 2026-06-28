@@ -20,6 +20,7 @@ from src.modules.media.application.unit_of_work import (
     MediaUnitOfWork,
     MediaUnitOfWorkFactory,
 )
+from src.modules.media.application.use_cases._variant_group import VariantGroup
 from src.modules.media.domain.entities import Episode, Movie, Season, Series
 from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.value_objects import (
@@ -246,66 +247,60 @@ class ScanMediaDirectoriesUseCase:
         groups = self._variant_detector.group_variants(file_paths)
         by_path = {f.file_path.value: f for f in files}
 
-        for _base_name, paths in groups.items():
+        for base_name, paths in groups.items():
+            group = VariantGroup.of(by_path[path] for path in paths)
             try:
-                c, u = await self._process_movie_group(paths, by_path, library_id=library_id)
+                c, u = await self._process_movie_group(group, library_id=library_id)
                 created += c
                 updated += u
             except Exception:
                 # Log the full exception (it may carry SQL / driver detail)
                 # but keep the user-facing message free of infrastructure.
-                _logger.exception("Failed to process movie file group: %s", paths)
-                errors.append(f"Failed to process movie: {_base_name}")
+                _logger.exception("Failed to process movie file group: %s", group.paths)
+                errors.append(f"Failed to process movie: {base_name}")
 
         return created, updated, errors
 
     async def _process_movie_group(
         self,
-        paths: list[str],
-        by_path: dict[str, ScannedFile],
+        group: VariantGroup,
         *,
         library_id: str,
     ) -> tuple[int, int]:
         """Process a single group of movie file variants in its own UoW."""
         async with self._uow_factory() as uow:
-            existing = await self._find_existing_movie(uow, paths, by_path)
+            existing = await self._find_existing_movie(uow, group)
             if existing:
-                created, updated, events = await self._update_movie(uow, existing, paths, by_path)
-            elif await self._path_owned_by_series(uow, paths, by_path):
+                created, updated, events = await self._update_movie(uow, existing, group)
+            elif await self._path_owned_by_series(uow, group):
                 # A path already registered to a series episode (e.g. a
                 # movie that was promoted to a series) must not be
                 # re-registered as a movie — that would duplicate the file
                 # and collide on the unique file_path. Skip it.
-                _logger.info("Skipping movie create; path belongs to a series episode: %s", paths)
+                _logger.info(
+                    "Skipping movie create; path belongs to a series episode: %s", group.paths
+                )
                 return 0, 0
             else:
                 created, updated, events = await self._create_movie(
-                    uow, paths, by_path, library_id=library_id
+                    uow, group, library_id=library_id
                 )
         await self._dispatch_events(events)
         return created, updated
 
     @staticmethod
-    async def _path_owned_by_series(
-        uow: MediaUnitOfWork,
-        paths: list[str],
-        by_path: dict[str, ScannedFile],
-    ) -> bool:
-        """Return True if any path is already an episode of some series."""
-        for path in paths:
-            if await uow.series.find_by_file_path(by_path[path].file_path):
+    async def _path_owned_by_series(uow: MediaUnitOfWork, group: VariantGroup) -> bool:
+        """Return True if any variant is already an episode of some series."""
+        for scanned in group:
+            if await uow.series.find_by_file_path(scanned.file_path):
                 return True
         return False
 
     @staticmethod
-    async def _find_existing_movie(
-        uow: MediaUnitOfWork,
-        paths: list[str],
-        by_path: dict[str, ScannedFile],
-    ) -> Movie | None:
-        """Find an existing movie matching any of the given file paths."""
-        for path in paths:
-            movie = await uow.movies.find_by_file_path(by_path[path].file_path)
+    async def _find_existing_movie(uow: MediaUnitOfWork, group: VariantGroup) -> Movie | None:
+        """Find an existing movie matching any of the group's file paths."""
+        for scanned in group:
+            movie = await uow.movies.find_by_file_path(scanned.file_path)
             if movie:
                 return movie
         return None
@@ -314,15 +309,14 @@ class ScanMediaDirectoriesUseCase:
         self,
         uow: MediaUnitOfWork,
         movie: Movie,
-        paths: list[str],
-        by_path: dict[str, ScannedFile],
+        group: VariantGroup,
     ) -> tuple[int, int, list[DomainEvent]]:
         """Add new file variants and refresh existing ones from a fresh scan."""
         files = list(movie.files)
         changed = False
 
-        for path in paths:
-            scanned = by_path[path]
+        for scanned in group:
+            path = scanned.file_path.value
             existing_idx = next(
                 (i for i, f in enumerate(files) if f.file_path.value == path),
                 None,
@@ -355,13 +349,12 @@ class ScanMediaDirectoriesUseCase:
     async def _create_movie(
         self,
         uow: MediaUnitOfWork,
-        paths: list[str],
-        by_path: dict[str, ScannedFile],
+        group: VariantGroup,
         *,
         library_id: str,
     ) -> tuple[int, int, list[DomainEvent]]:
         """Create a new movie from a group of file variants."""
-        first = by_path[paths[0]]
+        first = group.primary
         primary_file, duration = await self._build_new_media_file(first, is_primary=True)
         movie_id = MovieId.generate()
         movie = Movie(
@@ -374,8 +367,8 @@ class ScanMediaDirectoriesUseCase:
             scrub_preview_path=await self._locate_scrub_preview(first.file_path.value),
         )
         movie.add_event(MediaCreatedEvent(media_id=movie_id, media_type=CatalogMediaType.MOVIE))
-        for path in paths[1:]:
-            variant_file, _ = await self._build_new_media_file(by_path[path], is_primary=False)
+        for scanned in group.additional:
+            variant_file, _ = await self._build_new_media_file(scanned, is_primary=False)
             movie = movie.with_file(variant_file)
         events = movie.pull_events()
         await uow.movies.save(movie)
@@ -482,8 +475,8 @@ class ScanMediaDirectoriesUseCase:
             episode = await self._create_episode(series, season_num, episode_num, ep_files)
             created, updated = 1, 0
 
-        season = _upsert_episode_in_season(season, episode)
-        series = _upsert_season_in_series(series, season)
+        season = season.with_episode_upserted(episode)
+        series = series.with_season_upserted(season)
 
         return series, created, updated
 
@@ -550,30 +543,6 @@ class ScanMediaDirectoriesUseCase:
             episode = episode.with_updates(**updates)
             return episode, True
         return episode, False
-
-
-def _upsert_episode_in_season(season: Season, episode: Episode) -> Season:
-    """Replace or append an episode in a season's episode list."""
-    episodes = list(season.episodes)
-    for idx, existing in enumerate(episodes):
-        if existing.episode_number == episode.episode_number:
-            episodes[idx] = episode
-            break
-    else:
-        episodes.append(episode)
-    return season.with_updates(episodes=episodes)
-
-
-def _upsert_season_in_series(series: Series, season: Season) -> Series:
-    """Replace or append a season in a series' season list."""
-    seasons = list(series.seasons)
-    for idx, existing in enumerate(seasons):
-        if existing.season_number == season.season_number:
-            seasons[idx] = season
-            break
-    else:
-        seasons.append(season)
-    return series.with_updates(seasons=seasons)
 
 
 def _current_year() -> int:

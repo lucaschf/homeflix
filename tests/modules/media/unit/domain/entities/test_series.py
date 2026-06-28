@@ -119,6 +119,42 @@ class TestSeriesSeasonManagement:
         with pytest.raises(BusinessRuleViolationException, match="series_id"):
             series.with_season(season)
 
+    def test_upsert_should_append_a_new_season(self):
+        from src.modules.media.domain.entities import Season, Series
+        from src.modules.media.domain.value_objects import SeasonId
+
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
+        season = Season(id=SeasonId.generate(), series_id=series.id, season_number=1)
+
+        series = series.with_season_upserted(season)
+
+        assert series.season_count == 1
+
+    def test_upsert_should_replace_existing_season_with_same_number(self):
+        from src.modules.media.domain.entities import Season, Series
+        from src.modules.media.domain.value_objects import SeasonId
+
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
+        original = Season(id=SeasonId.generate(), series_id=series.id, season_number=1)
+        series = series.with_season(original)
+
+        replacement = Season(id=SeasonId.generate(), series_id=series.id, season_number=1)
+        series = series.with_season_upserted(replacement)
+
+        assert series.season_count == 1
+        assert series.seasons[0].id == replacement.id
+        assert series.seasons[0].id != original.id
+
+    def test_upsert_should_reject_season_with_wrong_series_id(self):
+        from src.modules.media.domain.entities import Season, Series
+        from src.modules.media.domain.value_objects import SeasonId, SeriesId
+
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
+        season = Season(id=SeasonId.generate(), series_id=SeriesId.generate(), season_number=1)
+
+        with pytest.raises(BusinessRuleViolationException, match="series_id"):
+            series.with_season_upserted(season)
+
     def test_should_get_season_by_number(self):
         from src.modules.media.domain.entities import Season, Series
         from src.modules.media.domain.value_objects import SeasonId

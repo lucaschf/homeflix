@@ -225,6 +225,70 @@ class TestSeasonEpisodeManagement:
         with pytest.raises(BusinessRuleViolationException, match="season_number"):
             season.with_episode(episode)
 
+    def test_upsert_should_append_a_new_episode(self):
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
+
+        series_id = SeriesId.generate()
+        season = Season(series_id=series_id, season_number=1)
+
+        season = season.with_episode_upserted(
+            _make_episode(series_id, season_number=1, episode_number=1)
+        )
+
+        assert season.episode_count == 1
+
+    def test_upsert_should_replace_existing_episode_with_same_number(self):
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
+
+        series_id = SeriesId.generate()
+        original = _make_episode(series_id, season_number=1, episode_number=1)
+        season = Season(series_id=series_id, season_number=1).with_episode(original)
+
+        replacement = _make_episode(series_id, season_number=1, episode_number=1)
+        season = season.with_episode_upserted(replacement)
+
+        assert season.episode_count == 1
+        assert season.episodes[0].id == replacement.id
+        assert season.episodes[0].id != original.id
+
+    def test_upsert_should_preserve_order_when_replacing(self):
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
+
+        series_id = SeriesId.generate()
+        season = Season(series_id=series_id, season_number=1)
+        for n in (1, 2, 3):
+            season = season.with_episode(
+                _make_episode(series_id, season_number=1, episode_number=n)
+            )
+
+        replacement = _make_episode(series_id, season_number=1, episode_number=2)
+        season = season.with_episode_upserted(replacement)
+
+        assert [ep.episode_number.value for ep in season.episodes] == [1, 2, 3]
+        assert season.episodes[1].id == replacement.id
+
+    def test_upsert_should_reject_episode_with_wrong_series_id(self):
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
+
+        season = Season(series_id=SeriesId.generate(), season_number=1)
+
+        with pytest.raises(BusinessRuleViolationException, match="series_id"):
+            season.with_episode_upserted(_make_episode(SeriesId.generate(), season_number=1))
+
+    def test_upsert_should_reject_episode_with_wrong_season_number(self):
+        from src.modules.media.domain.entities import Season
+        from src.modules.media.domain.value_objects import SeriesId
+
+        series_id = SeriesId.generate()
+        season = Season(series_id=series_id, season_number=1)
+
+        with pytest.raises(BusinessRuleViolationException, match="season_number"):
+            season.with_episode_upserted(_make_episode(series_id, season_number=2))
+
     def test_should_get_episode_by_number(self):
         from src.modules.media.domain.entities import Season
         from src.modules.media.domain.value_objects import SeriesId
