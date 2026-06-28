@@ -9,7 +9,7 @@ from pydantic import model_validator
 from src.building_blocks.domain.errors import DomainValidationException
 from src.building_blocks.domain.value_objects import StringValueObject
 from src.shared_kernel.value_objects.episode_composite_id import EpisodeCompositeId
-from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
+from src.shared_kernel.value_objects.media_id import MovieId
 
 
 class WatchableMediaId(StringValueObject):
@@ -53,15 +53,13 @@ class WatchableMediaId(StringValueObject):
                 ) from exc
             return value
 
-        parsed = EpisodeCompositeId.parse(value)
+        try:
+            parsed = EpisodeCompositeId.parse(value)
+        except DomainValidationException as exc:
+            raise ValueError(
+                f"Malformed composite episode id: '{value}' [{cls._RULE_CODE}]"
+            ) from exc
         if parsed is not None:
-            try:
-                SeriesId(parsed.series_id)
-            except DomainValidationException as exc:
-                raise ValueError(
-                    f"Invalid series id inside composite episode id: '{value}' "
-                    f"[{cls._RULE_CODE}]"
-                ) from exc
             return value
 
         raise ValueError(

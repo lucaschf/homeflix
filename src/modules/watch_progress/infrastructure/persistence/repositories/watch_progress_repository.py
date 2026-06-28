@@ -15,6 +15,7 @@ from src.modules.watch_progress.infrastructure.persistence.mappers import (
 from src.modules.watch_progress.infrastructure.persistence.models import (
     WatchProgressModel,
 )
+from src.shared_kernel.value_objects.episode_composite_id import EpisodeCompositeId
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
@@ -184,7 +185,7 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
         profile_id: ProfileId,
     ) -> int:
         """Soft-delete every episode-progress row for this series in the profile."""
-        prefix = f"epi_{series_id.value}_"
+        prefix = EpisodeCompositeId.media_id_prefix_for(series_id)
         stmt = select(WatchProgressModel).where(
             WatchProgressModel.profile_id == str(profile_id),
             WatchProgressModel.media_id.startswith(prefix),

@@ -4,7 +4,7 @@ import pytest
 
 from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.watch_progress.domain.value_objects import WatchableMediaId
-from src.shared_kernel.value_objects.media_id import MovieId
+from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 
 
 class TestWatchableMediaIdMovie:
@@ -39,7 +39,7 @@ class TestWatchableMediaIdEpisode:
     def test_as_episode_parses_components(self):
         parsed = WatchableMediaId("epi_ser_3yL8nQsT9mK5_3_2").as_episode()
 
-        assert parsed.series_id == "ser_3yL8nQsT9mK5"
+        assert parsed.series_id == SeriesId("ser_3yL8nQsT9mK5")
         assert parsed.season_number == 3
         assert parsed.episode_number == 2
 
