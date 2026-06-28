@@ -3,6 +3,7 @@
 from src.modules.media.domain.value_objects.air_date import AirDate
 from src.modules.media.domain.value_objects.cast_member import CastMember
 from src.modules.media.domain.value_objects.collection import Collection
+from src.modules.media.domain.value_objects.conflict_candidate import ConflictCandidate
 from src.modules.media.domain.value_objects.content_rating import ContentRating
 from src.modules.media.domain.value_objects.credits_detection_state import CreditsDetectionState
 from src.modules.media.domain.value_objects.credits_marker import CreditsMarker, CreditsMarkerSource
@@ -45,6 +46,7 @@ __all__ = [
     "AudioTrack",
     "CastMember",
     "Collection",
+    "ConflictCandidate",
     "ContentRating",
     "CreditsDetectionState",
     "CreditsMarker",

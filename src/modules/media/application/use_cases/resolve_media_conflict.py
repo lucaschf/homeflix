@@ -170,8 +170,8 @@ class ResolveMediaConflictUseCase:
 def _ensure_movie_pair(conflict: MediaConflict) -> None:
     """Reject cross-type conflicts the use case is not equipped to handle."""
     if (
-        conflict.candidate_a_type is not MediaType.MOVIE
-        or conflict.candidate_b_type is not MediaType.MOVIE
+        conflict.candidate_a.type is not MediaType.MOVIE
+        or conflict.candidate_b.type is not MediaType.MOVIE
     ):
         raise DomainValidationException(
             message="ResolveMediaConflictUseCase only handles movie-vs-movie conflicts",

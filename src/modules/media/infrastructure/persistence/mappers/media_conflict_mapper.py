@@ -7,6 +7,7 @@ from src.modules.media.domain.entities.media_conflict import (
     ResolutionSource,
     SuggestedAction,
 )
+from src.modules.media.domain.value_objects.conflict_candidate import ConflictCandidate
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
 from src.modules.media.infrastructure.persistence.models.media_conflict import (
     MediaConflictModel,
@@ -22,10 +23,14 @@ class MediaConflictMapper:
         """Hydrate the aggregate from a row, preserving timestamps."""
         return MediaConflict(
             id=MediaConflictId(model.external_id),
-            candidate_a_id=model.candidate_a_id,
-            candidate_a_type=MediaType(model.candidate_a_type),
-            candidate_b_id=model.candidate_b_id,
-            candidate_b_type=MediaType(model.candidate_b_type),
+            candidate_a=ConflictCandidate(
+                id=model.candidate_a_id,
+                type=MediaType(model.candidate_a_type),
+            ),
+            candidate_b=ConflictCandidate(
+                id=model.candidate_b_id,
+                type=MediaType(model.candidate_b_type),
+            ),
             match_reason=MatchReason(model.match_reason),
             runtime_delta_minutes=model.runtime_delta_minutes,
             suggested_action=SuggestedAction(model.suggested_action),
@@ -48,10 +53,10 @@ class MediaConflictMapper:
             raise ValueError("MediaConflict must have an id before mapping to model")
         return MediaConflictModel(
             external_id=str(entity.id),
-            candidate_a_id=entity.candidate_a_id,
-            candidate_a_type=entity.candidate_a_type.value,
-            candidate_b_id=entity.candidate_b_id,
-            candidate_b_type=entity.candidate_b_type.value,
+            candidate_a_id=entity.candidate_a.id,
+            candidate_a_type=entity.candidate_a.type.value,
+            candidate_b_id=entity.candidate_b.id,
+            candidate_b_type=entity.candidate_b.type.value,
             match_reason=entity.match_reason.value,
             runtime_delta_minutes=entity.runtime_delta_minutes,
             suggested_action=entity.suggested_action.value,
@@ -66,10 +71,10 @@ class MediaConflictMapper:
     @staticmethod
     def update_model(model: MediaConflictModel, entity: MediaConflict) -> None:
         """Copy mutable fields from the entity onto an existing row."""
-        model.candidate_a_id = entity.candidate_a_id
-        model.candidate_a_type = entity.candidate_a_type.value
-        model.candidate_b_id = entity.candidate_b_id
-        model.candidate_b_type = entity.candidate_b_type.value
+        model.candidate_a_id = entity.candidate_a.id
+        model.candidate_a_type = entity.candidate_a.type.value
+        model.candidate_b_id = entity.candidate_b.id
+        model.candidate_b_type = entity.candidate_b.type.value
         model.match_reason = entity.match_reason.value
         model.runtime_delta_minutes = entity.runtime_delta_minutes
         model.suggested_action = entity.suggested_action.value

@@ -17,6 +17,7 @@ from src.modules.media.domain.entities.media_conflict import (
     MatchReason,
     MediaConflict,
 )
+from src.modules.media.domain.value_objects import ConflictCandidate
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
 from src.shared_kernel.integration_events import MovieMergedEvent
 from tests.modules.media.unit.conftest import make_media_uow_mock
@@ -32,11 +33,9 @@ def _pending(
     b_id: str = _LOSER,
 ) -> MediaConflict:
     base = MediaConflict.detect(
-        candidate_a_id=a_id,
-        candidate_a_type="movie",
+        candidate_a=ConflictCandidate(id=a_id, type="movie"),
         candidate_a_runtime_minutes=120.0,
-        candidate_b_id=b_id,
-        candidate_b_type="movie",
+        candidate_b=ConflictCandidate(id=b_id, type="movie"),
         candidate_b_runtime_minutes=125.0,
         match_reason=MatchReason.TMDB_ID,
     )

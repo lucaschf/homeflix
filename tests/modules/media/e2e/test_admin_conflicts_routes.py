@@ -12,6 +12,7 @@ from src.modules.media.domain.entities.media_conflict import (
     MediaConflict,
 )
 from src.modules.media.domain.value_objects import (
+    ConflictCandidate,
     Duration,
     FilePath,
     MediaFile,
@@ -59,11 +60,9 @@ async def _seed_conflict(
     async with session_factory() as session:
         repo = SqlAlchemyMediaConflictRepository(session)
         conflict = MediaConflict.detect(
-            candidate_a_id=a_id,
-            candidate_a_type="movie",
+            candidate_a=ConflictCandidate(id=a_id, type="movie"),
             candidate_a_runtime_minutes=120.0,
-            candidate_b_id=b_id,
-            candidate_b_type="movie",
+            candidate_b=ConflictCandidate(id=b_id, type="movie"),
             candidate_b_runtime_minutes=130.0,
             match_reason=MatchReason.TMDB_ID,
         )

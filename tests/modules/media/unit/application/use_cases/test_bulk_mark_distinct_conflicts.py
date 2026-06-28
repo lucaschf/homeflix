@@ -11,17 +11,16 @@ from src.modules.media.domain.entities.media_conflict import (
     MediaConflict,
     ResolutionAction,
 )
+from src.modules.media.domain.value_objects import ConflictCandidate
 from src.modules.media.domain.value_objects.media_conflict_id import MediaConflictId
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
 
 def _pending(conflict_id: str) -> MediaConflict:
     detected = MediaConflict.detect(
-        candidate_a_id="mov_aaaaaaaaaaaa",
-        candidate_a_type="movie",
+        candidate_a=ConflictCandidate(id="mov_aaaaaaaaaaaa", type="movie"),
         candidate_a_runtime_minutes=120.0,
-        candidate_b_id="mov_bbbbbbbbbbbb",
-        candidate_b_type="movie",
+        candidate_b=ConflictCandidate(id="mov_bbbbbbbbbbbb", type="movie"),
         candidate_b_runtime_minutes=120.0,
         match_reason=MatchReason.TMDB_ID,
     )
