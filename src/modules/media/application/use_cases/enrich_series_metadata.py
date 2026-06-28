@@ -469,9 +469,7 @@ def _apply_episode_metadata(
     """
     updates: dict[str, object] = {}
 
-    if meta.title and (
-        policy.overwrites or episode.title.value.startswith("Episode ")
-    ):
+    if meta.title and (policy.overwrites or episode.title.value.startswith("Episode ")):
         updates["title"] = Title(meta.title)
     if meta.synopsis and policy.should_write(episode.synopsis):
         updates["synopsis"] = meta.synopsis
