@@ -120,9 +120,7 @@ class TestScanDirectories:
         monkeypatch.setattr(Path, "rglob", flaky_rglob)
 
         with caplog.at_level(logging.WARNING):
-            results = scanner.scan_directories(
-                [FilePath(str(root_a)), FilePath(str(root_b))]
-            )
+            results = scanner.scan_directories([FilePath(str(root_a)), FilePath(str(root_b))])
 
         assert {r.title for r in results} == {"FromRootB"}
         assert "walk aborted" in caplog.text
