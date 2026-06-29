@@ -14,6 +14,7 @@ from src.modules.media.domain.services.track_naming import (
     audio_version_labels,
     subtitle_version_labels,
 )
+from src.modules.media.domain.services.track_selector import TrackSelector
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -96,6 +97,11 @@ def serialize_tracks(probe: ProbeResult) -> TrackListOutput:
     audio_versions = audio_version_labels(probe.audio_tracks)
     text_subs = [t for t in probe.all_subtitles if t.is_text_based]
     sub_versions = subtitle_version_labels(text_subs)
+    # The probe reports ``is_default`` truthfully (container-declared only),
+    # so pick the player's default audio here via the ADR-005 selector. With
+    # no library preference available at this boundary it falls back to the
+    # container default, else the first track — keeping exactly one default.
+    default_audio = TrackSelector().select_audio(probe.audio_tracks)
     return TrackListOutput(
         audio_tracks=[
             {
@@ -106,7 +112,7 @@ def serialize_tracks(probe: ProbeResult) -> TrackListOutput:
                 "channel_layout": t.channel_layout,
                 "title": t.title,
                 "version": _version_dict(audio_versions.get(t.index)),
-                "is_default": t.is_default,
+                "is_default": t is default_audio,
             }
             for t in probe.audio_tracks
         ],

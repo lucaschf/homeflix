@@ -62,6 +62,73 @@ class TestGetFileTracksUseCase:
         hls.probe_tracks.assert_called_once_with("/m.mkv")
 
     @pytest.mark.asyncio
+    async def test_marks_first_audio_default_when_container_declares_none(self) -> None:
+        # Probe now reports truthfully (no fabricated default); the selector
+        # must still hand the player exactly one default audio (the first).
+        hls = MagicMock(spec=HlsPlaylistPort)
+        hls.probe_tracks.return_value = ProbeResult(
+            audio_tracks=[
+                AudioTrack(index=0, language=LanguageCode("en"), codec="aac", channels=2),
+                AudioTrack(index=1, language=LanguageCode("pt"), codec="ac3", channels=6),
+            ],
+            subtitle_tracks=[],
+        )
+        use_case = GetFileTracksUseCase(hls=hls)
+
+        output = await use_case.execute(GetFileTracksInput(file_path="/m.mkv"))
+
+        defaults = [t for t in output.audio_tracks if t["is_default"]]
+        assert len(defaults) == 1
+        assert defaults[0]["index"] == 0
+
+    @pytest.mark.asyncio
+    async def test_preserves_container_declared_default_audio(self) -> None:
+        hls = MagicMock(spec=HlsPlaylistPort)
+        hls.probe_tracks.return_value = ProbeResult(
+            audio_tracks=[
+                AudioTrack(index=0, language=LanguageCode("en"), codec="aac", channels=2),
+                AudioTrack(
+                    index=1,
+                    language=LanguageCode("pt"),
+                    codec="ac3",
+                    channels=6,
+                    is_default=True,
+                ),
+            ],
+            subtitle_tracks=[],
+        )
+        use_case = GetFileTracksUseCase(hls=hls)
+
+        output = await use_case.execute(GetFileTracksInput(file_path="/m.mkv"))
+
+        defaults = [t for t in output.audio_tracks if t["is_default"]]
+        assert len(defaults) == 1
+        assert defaults[0]["index"] == 1
+
+    @pytest.mark.asyncio
+    async def test_preserves_container_declared_default_subtitle(self) -> None:
+        # The change is audio-only: a container-declared subtitle default
+        # passes through serialize_tracks untouched.
+        hls = MagicMock(spec=HlsPlaylistPort)
+        hls.probe_tracks.return_value = ProbeResult(
+            audio_tracks=[_audio()],
+            subtitle_tracks=[
+                SubtitleTrack(
+                    index=0,
+                    language=LanguageCode("en"),
+                    format="srt",
+                    is_default=True,
+                    is_external=False,
+                ),
+            ],
+        )
+        use_case = GetFileTracksUseCase(hls=hls)
+
+        output = await use_case.execute(GetFileTracksInput(file_path="/m.mkv"))
+
+        assert output.subtitle_tracks[0]["is_default"] is True
+
+    @pytest.mark.asyncio
     async def test_should_drop_image_based_subtitles(self) -> None:
         hls = MagicMock(spec=HlsPlaylistPort)
         hls.probe_tracks.return_value = ProbeResult(
