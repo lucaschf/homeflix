@@ -1,9 +1,7 @@
 """Use case for enriching a series with external metadata."""
 
 import logging
-from collections.abc import Callable
 from datetime import date
-from typing import Any
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.building_blocks.application.event_bus import EventBus
@@ -22,6 +20,7 @@ from src.modules.media.application.use_cases._localized_metadata_helpers import 
     merge_media_localized,
     merge_text_localized,
 )
+from src.modules.media.application.use_cases._metadata_field_merge import set_if_missing
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
     AirDate,
@@ -167,30 +166,6 @@ class EnrichSeriesMetadataUseCase:
         return None, None
 
 
-def _set_if_missing(
-    updates: dict[str, object],
-    metadata: MediaMetadata,
-    entity: Series,
-    field_map: dict[str, tuple[str, Callable[[Any], Any] | None]],
-    *,
-    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
-) -> None:
-    """Set fields in updates, respecting the merge policy.
-
-    A field is written when metadata has a value and ``policy.should_write``
-    allows it (always under ``OVERWRITE``; only when the entity field is
-    empty under ``FILL_IF_EMPTY``). The fill-if-empty guard protects user
-    edits on a routine re-enrichment; ``OVERWRITE`` (a relink / forced
-    refresh) bypasses it so metadata from the newly-picked match overwrites
-    stale values left by a wrong match.
-    """
-    for meta_attr, (entity_attr, converter) in field_map.items():
-        meta_val = getattr(metadata, meta_attr, None)
-        entity_val = getattr(entity, entity_attr, None)
-        if meta_val and policy.should_write(entity_val):
-            updates[entity_attr] = converter(meta_val) if converter is not None else meta_val
-
-
 def _apply_series_metadata(
     series: Series,
     metadata: MediaMetadata,
@@ -231,7 +206,7 @@ def _apply_series_metadata(
         updates["title"] = Title(metadata.title)
 
     # Don't-overwrite fields (only set if empty, unless ``OVERWRITE``)
-    _set_if_missing(
+    set_if_missing(
         updates,
         metadata,
         series,
@@ -248,10 +223,8 @@ def _apply_series_metadata(
     )
 
     # Cast: same fill-if-empty rule as the rest of the don't-overwrite
-    # block, but built outside ``_set_if_missing`` because the
-    # provider DTO uses a different field name (``cast`` ↔ ``cast``)
-    # AND a per-element converter from ``CreditPerson`` to the
-    # domain ``CastMember`` VO.
+    # block, but kept explicit (outside ``set_if_missing``) for the
+    # per-element ``CreditPerson`` → ``CastMember`` conversion.
     if metadata.cast and policy.should_write(series.cast):
         updates["cast"] = [
             CastMember(

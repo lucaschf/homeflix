@@ -8,11 +8,16 @@ from src.modules.media.application.dtos.enrichment_dtos import (
     EnrichMediaInput,
     EnrichMediaOutput,
 )
-from src.modules.media.application.ports import MediaMetadata, MetadataProvider
+from src.modules.media.application.ports import (
+    CollectionMetadata,
+    MediaMetadata,
+    MetadataProvider,
+)
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._localized_metadata_helpers import (
     merge_media_localized,
 )
+from src.modules.media.application.use_cases._metadata_field_merge import set_if_missing
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
     CastMember,
@@ -253,79 +258,48 @@ def _apply_movie_metadata(
     """
     updates: dict[str, object] = {}
 
+    # Always-overwrite fields — written whenever the provider has them
+    # (no fill-if-empty guard). The base title tracks the picked TMDB
+    # entry on every enrich (unlike series, where it is scanner-derived).
     if metadata.title:
         updates["title"] = Title(metadata.title)
-    if metadata.synopsis and policy.should_write(movie.synopsis):
-        updates["synopsis"] = metadata.synopsis
-    _apply_franchise_metadata(updates, movie, metadata, policy=policy)
     if metadata.tmdb_id:
         updates["tmdb_id"] = TmdbId(metadata.tmdb_id)
     if metadata.imdb_id:
         updates["imdb_id"] = ImdbId(metadata.imdb_id)
     if metadata.original_title:
         updates["original_title"] = Title(metadata.original_title)
+    if metadata.year:
+        updates["year"] = Year(metadata.year)
     # Duration is the file's real (probed) length — the scanner stamps it.
     # TMDB's nominal runtime is only a fallback when the probe failed
     # (duration still 0); never overwrite a real duration, even on OVERWRITE.
     if metadata.duration_seconds and movie.duration.value == 0:
         updates["duration"] = Duration(metadata.duration_seconds)
-    if metadata.year:
-        updates["year"] = Year(metadata.year)
-    if metadata.genres and policy.should_write(movie.genres):
-        updates["genres"] = [Genre(g) for g in metadata.genres]
-    if metadata.poster_url and policy.should_write(movie.poster_path):
-        updates["poster_path"] = ImageUrl(metadata.poster_url)
-    if metadata.backdrop_url and policy.should_write(movie.backdrop_path):
-        updates["backdrop_path"] = ImageUrl(metadata.backdrop_url)
-    if metadata.logo_url and policy.should_write(movie.logo_path):
-        updates["logo_path"] = ImageUrl(metadata.logo_url)
 
-    _apply_credits(updates, movie, metadata, policy=policy)
+    # Don't-overwrite fields (fill-if-empty unless ``OVERWRITE``), table-driven.
+    set_if_missing(
+        updates,
+        metadata,
+        movie,
+        {
+            "synopsis": ("synopsis", None),
+            "genres": ("genres", lambda v: [Genre(g) for g in v]),
+            "poster_url": ("poster_path", ImageUrl),
+            "backdrop_url": ("backdrop_path", ImageUrl),
+            "logo_url": ("logo_path", ImageUrl),
+            "tagline": ("tagline", None),
+            "collection": ("collection", _to_collection),
+            "directors": ("directors", lambda v: [p.name for p in v]),
+            "writers": ("writers", lambda v: [p.name for p in v]),
+            "content_rating": ("content_rating", ContentRating),
+            "trailer_url": ("trailer_url", None),
+        },
+        policy=policy,
+    )
 
-    if updates:
-        movie = movie.with_updates(**updates)
-
-    return movie
-
-
-def _apply_franchise_metadata(
-    updates: dict[str, object],
-    movie: Movie,
-    metadata: MediaMetadata,
-    *,
-    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
-) -> None:
-    """Apply tagline + collection (franchise) metadata.
-
-    Both fields follow the same "fill if empty" guard as the rest of
-    ``_apply_movie_metadata`` so re-enrichment doesn't clobber a
-    user-edited tagline or a manually-cleared collection. Extracted
-    out so the parent function stays under ``PLR0912``'s branch cap.
-    """
-    if metadata.tagline and policy.should_write(movie.tagline):
-        updates["tagline"] = metadata.tagline
-    if metadata.collection and policy.should_write(movie.collection):
-        updates["collection"] = Collection(
-            tmdb_id=metadata.collection.tmdb_id,
-            name=metadata.collection.name,
-            parts_count=metadata.collection.parts_count,
-        )
-
-
-def _apply_credits(
-    updates: dict[str, object],
-    movie: Movie,
-    metadata: MediaMetadata,
-    *,
-    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
-) -> None:
-    """Apply cast/director/writer credits.
-
-    Each field defaults to a "fill if empty" guard; ``MergePolicy.OVERWRITE``
-    bypasses the guard so a refresh repopulates credits from TMDB.
-    The motivating use case is backfilling ``tmdb_id`` on cast
-    members that were already saved before the id was captured.
-    """
+    # Cast: same fill-if-empty rule, kept explicit for the per-element
+    # CreditPerson → CastMember conversion (mirrors the series enrich).
     if metadata.cast and policy.should_write(movie.cast):
         updates["cast"] = [
             CastMember(
@@ -336,17 +310,24 @@ def _apply_credits(
             )
             for p in metadata.cast
         ]
-    if metadata.directors and policy.should_write(movie.directors):
-        updates["directors"] = [p.name for p in metadata.directors]
-    if metadata.writers and policy.should_write(movie.writers):
-        updates["writers"] = [p.name for p in metadata.writers]
-    if metadata.content_rating and policy.should_write(movie.content_rating):
-        updates["content_rating"] = ContentRating(metadata.content_rating)
-    if metadata.trailer_url and policy.should_write(movie.trailer_url):
-        updates["trailer_url"] = metadata.trailer_url
+
     new_localized = merge_media_localized(movie.localized, metadata, policy=policy)
     if new_localized is not None:
         updates["localized"] = new_localized
+
+    if updates:
+        movie = movie.with_updates(**updates)
+
+    return movie
+
+
+def _to_collection(collection: CollectionMetadata) -> Collection:
+    """Convert the provider's collection DTO into the domain VO."""
+    return Collection(
+        tmdb_id=collection.tmdb_id,
+        name=collection.name,
+        parts_count=collection.parts_count,
+    )
 
 
 __all__ = ["EnrichMovieMetadataUseCase"]

@@ -7,6 +7,7 @@ import pytest
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.enrichment_dtos import EnrichMediaInput
 from src.modules.media.application.ports import (
+    CollectionMetadata,
     CreditPerson,
     LocalizedFields,
     MediaMetadata,
@@ -320,8 +321,8 @@ class TestEnrichMovieMetadataForce:
 
     Motivating use case: backfill ``tmdb_id`` on cast members of
     movies enriched before the id was captured. Without the force
-    bypass on ``_apply_credits`` the cast field stays untouched and
-    the actor page never gets bio links.
+    bypass the cast field stays untouched and the actor page never
+    gets bio links.
     """
 
     @pytest.mark.asyncio
@@ -516,6 +517,44 @@ class TestApplyMetadataFields:
         assert saved.localized.to_serializable()["pt-BR"]["title"] == "A Origem"
         assert saved.localized.to_serializable()["pt-BR"]["synopsis"] == "Sonho dentro do sonho."
         assert saved.localized.to_serializable()["pt-BR"]["genres"] == ["Ficção Científica"]
+
+    @pytest.mark.asyncio
+    async def test_should_apply_tagline_and_collection_when_missing(self) -> None:
+        movie = _make_movie()
+        metadata = MediaMetadata(
+            title="Inception",
+            tmdb_id=27205,
+            tagline="Your mind is the scene of the crime.",
+            collection=CollectionMetadata(tmdb_id=8091, name="Alien Collection", parts_count=6),
+        )
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = metadata
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        saved = mocks.movies.save.call_args[0][0]
+        assert saved.tagline == "Your mind is the scene of the crime."
+        # Exercises the _to_collection converter (CollectionMetadata → Collection VO).
+        assert saved.collection.tmdb_id == 8091
+        assert saved.collection.name == "Alien Collection"
+        assert saved.collection.parts_count == 6
+
+    @pytest.mark.asyncio
+    async def test_should_not_overwrite_existing_field_when_not_forced(self) -> None:
+        # A table-driven field must keep a user value on a routine re-enrich
+        # (fill-if-empty skip path) — guards the entity_attr in each map tuple.
+        movie = _make_movie().with_updates(tagline="user-edited tagline")
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = MediaMetadata(
+            title="Inception", tmdb_id=27205, tagline="TMDB tagline"
+        )
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        saved = mocks.movies.save.call_args[0][0]
+        assert saved.tagline == "user-edited tagline"
 
 
 @pytest.mark.unit
