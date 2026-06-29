@@ -268,6 +268,33 @@ class TmdbClient(MetadataProvider):
         )
 
     @staticmethod
+    def _json(resp: httpx.Response) -> Any:
+        """Parse a TMDB response body as JSON, wrapping malformed payloads.
+
+        TMDB occasionally returns a non-JSON body — an HTML error page,
+        a truncated/empty payload — alongside a ``2xx`` status.
+        ``httpx.Response.json`` raises ``ValueError``
+        (``json.JSONDecodeError``) for those, which would otherwise leak
+        past this ACL and surface as a generic ``500``. Translating it to
+        :class:`GatewayBadResponseException` lets the global handler report
+        ``502`` ("the provider sent us garbage", not "our server crashed")
+        and lets best-effort callers that already catch ``GatewayException``
+        degrade gracefully — the same way they treat a wrapped transport
+        failure.
+
+        Raises:
+            GatewayBadResponseException: The response body is not valid JSON.
+        """
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise GatewayBadResponseException(
+                message="TMDB returned a malformed response",
+                gateway_name=_GATEWAY_NAME,
+                internal_message=f"{type(exc).__name__}: {exc}",
+            ) from exc
+
+    @staticmethod
     def _logo_rank(logo: dict[str, object], target: str, target_base: str) -> int:
         """Score a TMDB logo entry for language preference (lower = better).
 
@@ -327,7 +354,7 @@ class TmdbClient(MetadataProvider):
             params=self._params(query=title, year=year),
         )
         self._raise_for_status(resp)
-        results = resp.json().get("results", [])
+        results = self._json(resp).get("results", [])
 
         best = self._pick_year_match(results, year, "release_date")
         if best is None:
@@ -351,7 +378,7 @@ class TmdbClient(MetadataProvider):
             params=self._params(query=title, first_air_date_year=year),
         )
         self._raise_for_status(resp)
-        results = resp.json().get("results", [])
+        results = self._json(resp).get("results", [])
 
         best = self._pick_year_match(results, year, "first_air_date")
         if best is None:
@@ -376,7 +403,7 @@ class TmdbClient(MetadataProvider):
             params=self._params(query=title, year=year),
         )
         self._raise_for_status(resp)
-        results = resp.json().get("results", [])
+        results = self._json(resp).get("results", [])
         return [_to_movie_candidate(r, self._image_url) for r in results[:limit]]
 
     async def find_series_candidates(
@@ -391,7 +418,7 @@ class TmdbClient(MetadataProvider):
             params=self._params(query=title, first_air_date_year=year),
         )
         self._raise_for_status(resp)
-        results = resp.json().get("results", [])
+        results = self._json(resp).get("results", [])
         return [_to_series_candidate(r, self._image_url) for r in results[:limit]]
 
     async def get_movie_summary_by_id(self, tmdb_id: int) -> SearchCandidate | None:
@@ -409,7 +436,7 @@ class TmdbClient(MetadataProvider):
         if resp.status_code == httpx.codes.NOT_FOUND:
             return None
         self._raise_for_status(resp)
-        return _to_movie_candidate(resp.json(), self._image_url)
+        return _to_movie_candidate(self._json(resp), self._image_url)
 
     async def get_series_summary_by_id(self, tmdb_id: int) -> SearchCandidate | None:
         """Cheap ``/tv/{id}`` fetch shaped as a picker candidate.
@@ -425,7 +452,7 @@ class TmdbClient(MetadataProvider):
         if resp.status_code == httpx.codes.NOT_FOUND:
             return None
         self._raise_for_status(resp)
-        return _to_series_candidate(resp.json(), self._image_url)
+        return _to_series_candidate(self._json(resp), self._image_url)
 
     async def find_by_imdb_id(self, imdb_id: str) -> list[SearchCandidate]:
         """Resolve an IMDb id via ``/find`` and return movie + TV hits.
@@ -442,7 +469,7 @@ class TmdbClient(MetadataProvider):
             params=self._params(external_source="imdb_id"),
         )
         self._raise_for_status(resp)
-        payload = resp.json()
+        payload = self._json(resp)
         movies = [_to_movie_candidate(r, self._image_url) for r in payload.get("movie_results", [])]
         series = [_to_series_candidate(r, self._image_url) for r in payload.get("tv_results", [])]
         return [*movies, *series]
@@ -519,12 +546,12 @@ class TmdbClient(MetadataProvider):
                     include_image_language=f"{locale},en,null",
                 ),
             )
+            if resp.status_code != 200:
+                return None
+            data = self._json(resp)
         except GatewayException:
             return None
-        if resp.status_code != 200:
-            return None
 
-        data = resp.json()
         return LocalizedFields(
             title=data.get("title"),
             synopsis=data.get("overview"),
@@ -563,11 +590,11 @@ class TmdbClient(MetadataProvider):
                 f"/collection/{tmdb_id}",
                 params=self._params(language=language),
             )
+            if resp.status_code != 200:
+                return None
+            data = self._json(resp)
         except GatewayException:
             return None
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
         if not isinstance(data, dict):
             return None
 
@@ -723,12 +750,11 @@ class TmdbClient(MetadataProvider):
                 f"/movie/{tmdb_id}",
                 params=self._params(),
             )
+            if resp.status_code != 200:
+                return []
+            coll = self._json(resp).get("belongs_to_collection")
         except GatewayException:
             return []
-        if resp.status_code != 200:
-            return []
-
-        coll = resp.json().get("belongs_to_collection")
         if not isinstance(coll, dict):
             return []
         coll_id = coll.get("id")
@@ -740,12 +766,11 @@ class TmdbClient(MetadataProvider):
                 f"/collection/{coll_id}",
                 params=self._params(),
             )
+            if resp.status_code != 200:
+                return []
+            parts = self._json(resp).get("parts") or []
         except GatewayException:
             return []
-        if resp.status_code != 200:
-            return []
-
-        parts = resp.json().get("parts") or []
         ids: list[int] = []
         for part in parts:
             if not isinstance(part, dict):
@@ -774,11 +799,11 @@ class TmdbClient(MetadataProvider):
                 f"/{media_type}/{tmdb_id}/{endpoint}",
                 params=self._params(),
             )
+            if resp.status_code != 200:
+                return []
+            results = self._json(resp).get("results") or []
         except GatewayException:
             return []
-        if resp.status_code != 200:
-            return []
-        results = resp.json().get("results") or []
         ids: list[int] = []
         for item in results:
             raw = item.get("id") if isinstance(item, dict) else None
@@ -826,11 +851,11 @@ class TmdbClient(MetadataProvider):
                 f"/person/{tmdb_id}",
                 params=self._params(language=language),
             )
+            if resp.status_code != 200:
+                return None
+            data = self._json(resp)
         except GatewayException:
             return None
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
         if not isinstance(data, dict):
             return None
         # ``id`` and ``name`` are required for the UI to render
@@ -895,12 +920,11 @@ class TmdbClient(MetadataProvider):
                 f"/{path}/{tmdb_id}/translations",
                 params=self._params(),
             )
+            if resp.status_code != 200:
+                return {}
+            translations = self._json(resp).get("translations", [])
         except GatewayException:
             return {}
-        if resp.status_code != 200:
-            return {}
-
-        translations = resp.json().get("translations", [])
         titles: dict[str, str] = {}
         for locale in self._supported_locales:
             title = _pick_translation_title(translations, locale, title_key)
@@ -926,12 +950,12 @@ class TmdbClient(MetadataProvider):
                     include_image_language=f"{locale},en,null",
                 ),
             )
+            if resp.status_code != 200:
+                return None
+            data = self._json(resp)
         except GatewayException:
             return None
-        if resp.status_code != 200:
-            return None
 
-        data = resp.json()
         return LocalizedFields(
             title=data.get("name"),
             synopsis=data.get("overview"),
@@ -963,7 +987,7 @@ class TmdbClient(MetadataProvider):
         if resp.status_code == 404:
             return None
         self._raise_for_status(resp)
-        data = resp.json()
+        data = self._json(resp)
 
         year = None
         if data.get("release_date"):
@@ -1020,11 +1044,11 @@ class TmdbClient(MetadataProvider):
                 f"/collection/{coll_id}",
                 params=self._params(),
             )
+            if resp.status_code != 200:
+                return None
+            parts = self._json(resp).get("parts") or []
         except GatewayException:
             return None
-        if resp.status_code != 200:
-            return None
-        parts = resp.json().get("parts") or []
         return CollectionMetadata(tmdb_id=coll_id, name=name, parts_count=len(parts))
 
     async def _fetch_series_details(self, tmdb_id: int) -> MediaMetadata | None:
@@ -1045,7 +1069,7 @@ class TmdbClient(MetadataProvider):
         if resp.status_code == 404:
             return None
         self._raise_for_status(resp)
-        data = resp.json()
+        data = self._json(resp)
 
         # Top-billed cast comes back nested under ``credits.cast`` thanks
         # to the ``credits`` append above. Reuse the same parser the
@@ -1159,17 +1183,17 @@ class TmdbClient(MetadataProvider):
                 f"/tv/{series_id}/season/{season_number}",
                 params=self._params(language=language),
             )
+            if resp.status_code == 404:
+                return None
+            if language is not None and resp.status_code != 200:
+                return None
+            if language is None:
+                self._raise_for_status(resp)
+            data: dict[str, Any] = self._json(resp)
         except GatewayException:
             if language is None:
                 raise
             return None
-        if resp.status_code == 404:
-            return None
-        if language is not None and resp.status_code != 200:
-            return None
-        if language is None:
-            self._raise_for_status(resp)
-        data: dict[str, Any] = resp.json()
         return data
 
     @staticmethod
