@@ -1,6 +1,7 @@
 """Tests for TmdbClient."""
 
 import itertools
+import json
 from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock
 
@@ -38,6 +39,21 @@ def _build_response(
         response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "error", request=MagicMock(), response=response
         )
+    return response
+
+
+def _malformed_response(status_code: int = 200) -> MagicMock:
+    """Build a 2xx-ish response whose body is not valid JSON.
+
+    Mirrors a TMDB hiccup that returns an HTML error page / truncated
+    payload with a success status — ``httpx.Response.json`` raises
+    ``json.JSONDecodeError`` (a ``ValueError`` subclass) for those.
+    """
+    response = MagicMock(spec=httpx.Response)
+    response.status_code = status_code
+    response.json.side_effect = json.JSONDecodeError("Expecting value", "<!DOCTYPE", 0)
+    response.headers = {}
+    response.raise_for_status = MagicMock()
     return response
 
 
@@ -564,6 +580,68 @@ class TestGatewayErrorTranslation:
         # ...but the English base failing is fatal and propagates.
         with pytest.raises(GatewayUnavailableException):
             await client._fetch_season_payload(1, 1, None)
+
+    def test_json_helper_wraps_malformed_body(self) -> None:
+        # A 2xx with a non-JSON body must not leak ValueError past the
+        # ACL — it becomes a GatewayBadResponseException (502), not a 500.
+        with pytest.raises(GatewayBadResponseException):
+            TmdbClient._json(_malformed_response())
+
+    @pytest.mark.asyncio
+    async def test_load_bearing_path_raises_bad_response_on_malformed_json(self) -> None:
+        client = _make_client(get_responses=_malformed_response())
+
+        with pytest.raises(GatewayBadResponseException):
+            await client.get_movie_summary_by_id(1)
+
+    @pytest.mark.asyncio
+    async def test_best_effort_methods_degrade_on_malformed_json(self) -> None:
+        client = _make_client()
+        client._client.get = AsyncMock(return_value=_malformed_response())
+
+        # Malformed JSON is just another "provider misbehaved" signal —
+        # best-effort paths swallow it the same way they swallow a
+        # transport error, rather than 502-ing the whole request.
+        assert await client.get_collection(10) is None
+        assert await client.get_person(287) is None
+        assert await client.get_movie_recommendations(1) == []
+        assert await client._fetch_movie_localized_fields(1, "pt-BR") is None
+        assert await client._fetch_series_localized_fields(1, "pt-BR") is None
+        assert await client.get_translated_titles(1, MediaType.MOVIE) == {}
+
+    @pytest.mark.asyncio
+    async def test_season_overlay_skips_but_base_raises_on_malformed_json(self) -> None:
+        client = _make_client()
+        client._client.get = AsyncMock(return_value=_malformed_response())
+
+        # Overlay locale degrades; the English base 502s like any other
+        # bad provider response.
+        assert await client._fetch_season_payload(1, 1, "pt-BR") is None
+        with pytest.raises(GatewayBadResponseException):
+            await client._fetch_season_payload(1, 1, None)
+
+    @pytest.mark.asyncio
+    async def test_collection_metadata_degrades_on_malformed_json(self) -> None:
+        client = _make_client()
+        client._client.get = AsyncMock(return_value=_malformed_response())
+
+        # belongs_to_collection is valid, but the /collection polish fetch
+        # returns garbage — movie enrichment must not break over it.
+        assert await client._fetch_collection_metadata({"id": 10, "name": "Saw Collection"}) is None
+
+    @pytest.mark.asyncio
+    async def test_collection_movie_ids_degrades_on_malformed_second_fetch(self) -> None:
+        # First /movie fetch is valid (carries belongs_to_collection); the
+        # follow-up /collection fetch returns malformed JSON. The second
+        # _json site degrades to [] rather than 502-ing recommendations.
+        client = _make_client(
+            get_responses=[
+                _build_response(json_data={"belongs_to_collection": {"id": 99}}),
+                _malformed_response(),
+            ]
+        )
+
+        assert await client._fetch_collection_movie_ids(1) == []
 
 
 @pytest.mark.unit

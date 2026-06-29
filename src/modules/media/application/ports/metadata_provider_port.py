@@ -474,11 +474,12 @@ class MetadataProvider(ABC):
 
         Raises:
             GatewayException: On provider failure (network error, auth,
-                rate limit, 5xx), wrapped in the subtype matching the
-                cause so the API surfaces 429/502/503/504 instead of a
-                generic 500. Callers must distinguish "no such movie"
-                (``None``) from "TMDB unavailable" (raises) — a
-                transient failure must not masquerade as not-found.
+                rate limit, 5xx, or a malformed/non-JSON 2xx body),
+                wrapped in the subtype matching the cause so the API
+                surfaces 429/502/503/504 instead of a generic 500.
+                Callers must distinguish "no such movie" (``None``) from
+                "TMDB unavailable" (raises) — a transient failure must
+                not masquerade as not-found.
         """
         ...
 
@@ -509,7 +510,15 @@ class MetadataProvider(ABC):
         Returns:
             All candidates matched by the id, in arbitrary order
             (caller stable-sorts). Empty list when the provider has
-            no match for the id or the call fails.
+            no match for the id.
+
+        Raises:
+            GatewayException: On provider failure — network error, auth,
+                rate limit, 5xx, or a malformed/non-JSON 2xx body —
+                wrapped in the subtype matching the cause so the API
+                surfaces 429/502/503/504 instead of a generic 500. This
+                is a load-bearing lookup, so a transient failure raises
+                rather than collapsing to an (ambiguous) empty list.
         """
         ...
 
