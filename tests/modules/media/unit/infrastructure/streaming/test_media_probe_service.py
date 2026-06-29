@@ -141,7 +141,7 @@ class TestParseAudioTracks:
         assert tracks[1].codec == "ac3"
         assert tracks[1].channels == 6
 
-    def test_should_ensure_default_track_when_none_marked(self) -> None:
+    def test_should_not_fabricate_default_when_none_marked(self) -> None:
         streams = [
             _ffprobe_stream(codec_name="aac", language="en", default=False),
             _ffprobe_stream(codec_name="ac3", language="pt", default=False),
@@ -149,9 +149,9 @@ class TestParseAudioTracks:
 
         tracks = MediaProbeService._parse_audio_tracks(streams)
 
-        # First track should be forced to default
-        assert tracks[0].is_default is True
-        assert tracks[1].is_default is False
+        # The probe reports truthfully — no fabricated default. Choosing a
+        # default when the container declares none is the TrackSelector's job.
+        assert all(t.is_default is False for t in tracks)
 
     def test_should_parse_bitrate(self) -> None:
         streams = [_ffprobe_stream(codec_name="aac", bit_rate="192000")]

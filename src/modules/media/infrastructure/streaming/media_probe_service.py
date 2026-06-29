@@ -400,10 +400,10 @@ class MediaProbeService(MediaProbePort):
             )
             audio_index += 1
 
-        # Ensure at least one track is default
-        if tracks and not any(t.is_default for t in tracks):
-            tracks[0] = tracks[0].with_updates(is_default=True)
-
+        # Report tracks truthfully: ``is_default`` reflects only what the
+        # container declared. Choosing a default when none is declared is
+        # the TrackSelector's job (ADR-005), applied at read time — see
+        # ``serialize_tracks``.
         return tracks
 
     @staticmethod

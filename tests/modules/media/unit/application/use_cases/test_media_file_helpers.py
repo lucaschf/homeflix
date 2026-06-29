@@ -114,6 +114,25 @@ class TestToMediaFileOutputTracks:
         assert s1.is_forced is False
         assert s1.is_external is True
 
+    def test_marks_first_audio_default_when_container_declares_none(self) -> None:
+        # New scans persist truthful is_default (possibly all-False); the
+        # output still reports exactly one default audio via the selector.
+        media_file = MediaFile(
+            file_path=FilePath("/movies/movie.mkv"),
+            file_size=1_000,
+            resolution=Resolution("1080p"),
+            is_primary=True,
+            audio_tracks=[
+                AudioTrack(index=0, language=LanguageCode("en"), codec="aac", channels=2),
+                AudioTrack(index=1, language=LanguageCode("pt"), codec="ac3", channels=6),
+            ],
+        )
+        output = to_media_file_output(media_file)
+
+        defaults = [a for a in output.audio_tracks if a.is_default]
+        assert len(defaults) == 1
+        assert defaults[0].index == 0
+
     def test_should_return_empty_tracks_when_none_present(self) -> None:
         media_file = MediaFile(
             file_path=FilePath("/movies/movie.mkv"),
