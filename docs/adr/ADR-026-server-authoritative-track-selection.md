@@ -39,6 +39,8 @@ Nós tornaremos o **servidor a autoridade única** da escolha de faixa default, 
 
 5. **Cliente fica mínimo (mas não-zero).** O front deixa de **decidir** (`findTrackByLang` / `pickPreferredSubtitleId` saem) e passa a **aplicar** o default que o servidor entregou + permitir override ao vivo + lembrar a escolha por-título. É o split thin-client correto (servidor decide o quê; cliente aplica e permite trocar).
 
+6. **Legendas forçadas — flag no servidor, rótulo no cliente, seleção no servidor.** O `is_forced` (de `ffprobe disposition.forced`) é um *fato* que o servidor apura e **continua expondo no `/tracks`** (e no `FORCED=` do manifesto). Dividindo por concern: (a) **rotular** a faixa forçada no menu ("Forçada"/"Forced") é apresentação → fica no **cliente**, lendo o `is_forced` que o `/tracks` já entrega (hoje o front tem o dado mas não o surfa — gap a corrigir no front); (b) **auto-selecionar** a forçada no modo `subtitle_mode=FORCED_ONLY` é regra → vai pro **servidor** no `select_subtitle` (mesma autoridade do item 4), substituindo a detecção frágil atual via `hls.subtitleTracks[].forced` (cast `as unknown`). Forçada que seja PGS/imagem segue descartada (limitação HLS WebVTT, ver backlog de legenda de imagem) — só dá pra rotular/selecionar forçada de **texto**.
+
 Esta decisão **emenda o ADR-005**: a localização da preferência de reprodução muda de por-library para por-usuário (Preferences BC), e a autoridade de seleção passa a ser explicitamente o servidor (manifesto + `/tracks`), não o cliente.
 
 ## Consequências
