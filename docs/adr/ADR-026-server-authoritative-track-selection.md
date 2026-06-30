@@ -109,8 +109,10 @@ Deixar back e front como estão.
 # media/application/ports/profile_playback_preference_port.py (cross-BC read, ADR-009)
 class ProfilePlaybackPreferencePort(ABC):
     @abstractmethod
-    async def for_profile(self, profile_id: str) -> PlaybackPreference | None: ...
-    # PlaybackPreference: audio_language, subtitle_language, subtitle_mode (consumer-owned DTO)
+    async def for_profile(self, profile_id: str) -> PlaybackPreference: ...
+    # PlaybackPreference: audio_language, subtitle_language, subtitle_mode (consumer-owned DTO).
+    # Defaults applied on absent row (mirrors GetPreferences), so the server resolves the
+    # same default the client would apply — never an empty result.
 
 # Resolução única, consumida por /tracks E pelo manifesto HLS:
 #   TrackSelector.select_audio(tracks, pref.audio_language)
