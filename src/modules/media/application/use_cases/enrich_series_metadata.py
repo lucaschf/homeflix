@@ -17,25 +17,22 @@ from src.modules.media.application.ports import (
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._localized_metadata_helpers import (
-    merge_media_localized,
     merge_text_localized,
 )
-from src.modules.media.application.use_cases._metadata_field_merge import set_if_missing
+from src.modules.media.application.use_cases._metadata_field_merge import (
+    COMMON_FILL_IF_EMPTY,
+    reconcile_common_fields,
+)
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
     AirDate,
-    CastMember,
-    ContentRating,
     Duration,
-    Genre,
     ImageUrl,
-    ImdbId,
     LocalizedFields,
     LocalizedMetadata,
     MergePolicy,
     SeriesId,
     Title,
-    TmdbId,
     Year,
 )
 from src.shared_kernel.integration_events import MediaEnrichedEvent
@@ -179,16 +176,18 @@ def _apply_series_metadata(
     ``MergePolicy.OVERWRITE`` (a relink, where the existing data belongs to
     a wrong match) every guard is bypassed and the provider payload wins —
     including a full replace of the ``localized`` overrides and the base title.
-    """
-    updates: dict[str, object] = {}
 
-    # Always-overwrite fields
-    if metadata.tmdb_id:
-        updates["tmdb_id"] = TmdbId(metadata.tmdb_id)
-    if metadata.imdb_id:
-        updates["imdb_id"] = ImdbId(metadata.imdb_id)
-    if metadata.original_title:
-        updates["original_title"] = Title(metadata.original_title)
+    The provider ids, the fill-if-empty fields shared with movies, the cast,
+    and the localized overlay are reconciled by
+    :func:`reconcile_common_fields`; only the series-specific always-overwrite
+    rules (scanner-derived title, ``start_year``/``end_year`` with its
+    invariant-clearing) live here.
+    """
+    updates = reconcile_common_fields(
+        series, metadata, policy=policy, fill_if_empty=COMMON_FILL_IF_EMPTY
+    )
+
+    # Series-specific always-overwrite fields.
     if metadata.year:
         updates["start_year"] = Year(metadata.year)
     if metadata.end_year:
@@ -204,41 +203,6 @@ def _apply_series_metadata(
     # canonical title tracks the newly-picked TMDB entry.
     if metadata.title and policy.overwrites:
         updates["title"] = Title(metadata.title)
-
-    # Don't-overwrite fields (only set if empty, unless ``OVERWRITE``)
-    set_if_missing(
-        updates,
-        metadata,
-        series,
-        {
-            "synopsis": ("synopsis", None),
-            "genres": ("genres", lambda v: [Genre(g) for g in v]),
-            "poster_url": ("poster_path", ImageUrl),
-            "backdrop_url": ("backdrop_path", ImageUrl),
-            "logo_url": ("logo_path", ImageUrl),
-            "content_rating": ("content_rating", ContentRating),
-            "trailer_url": ("trailer_url", None),
-        },
-        policy=policy,
-    )
-
-    # Cast: same fill-if-empty rule as the rest of the don't-overwrite
-    # block, but kept explicit (outside ``set_if_missing``) for the
-    # per-element ``CreditPerson`` → ``CastMember`` conversion.
-    if metadata.cast and policy.should_write(series.cast):
-        updates["cast"] = [
-            CastMember(
-                name=p.name,
-                profile_path=p.profile_url,
-                role=p.role,
-                tmdb_id=p.tmdb_id,
-            )
-            for p in metadata.cast
-        ]
-
-    new_localized = merge_media_localized(series.localized, metadata, policy=policy)
-    if new_localized is not None:
-        updates["localized"] = new_localized
 
     if updates:
         series = series.with_updates(**updates)
