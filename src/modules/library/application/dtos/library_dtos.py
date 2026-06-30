@@ -25,11 +25,12 @@ class MetadataProviderOutput:
 
 @dataclass(frozen=True)
 class LibrarySettingsOutput:
-    """Flattened playback / scan settings for one library."""
+    """Flattened scan settings for one library.
 
-    preferred_audio_language: str
-    preferred_subtitle_language: str | None
-    subtitle_mode: str
+    Playback preferences live in the Preferences BC (per-user), not here
+    (ADR-026).
+    """
+
     generate_thumbnails: bool
     detect_intros: bool
     auto_refresh_metadata: bool

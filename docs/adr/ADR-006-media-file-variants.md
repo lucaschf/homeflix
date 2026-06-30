@@ -5,6 +5,12 @@
 **Deciders:** Lucas
 **Technical Story:** Suportar múltiplas versões de um mesmo filme/episódio (720p, 1080p, 4K)
 
+> **Nota (ADR-026, 2026-06-30):** o trecho ilustrativo de `LibrarySettings` mais
+> abaixo ainda lista campos de preferência de reprodução (`preferred_audio_language`,
+> `preferred_subtitle_language`, `subtitle_mode`/`SubtitleMode`). Esses campos foram
+> **removidos** de `LibrarySettings` — passaram a ser por-usuário no Preferences BC
+> (ADR-026, que emenda o ADR-005). O sketch é registro point-in-time; ver ADR-026.
+
 ---
 
 ## Contexto

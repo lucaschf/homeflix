@@ -27,9 +27,6 @@ _VALID_LIBRARY_BODY = {
     "metadata_providers": [{"provider": "tmdb", "priority": 1, "enabled": True}],
     "scan_schedule": None,
     "settings": {
-        "preferred_audio_language": "en",
-        "preferred_subtitle_language": "en",
-        "subtitle_mode": "none",
         "generate_thumbnails": True,
         "detect_intros": True,
         "auto_refresh_metadata": True,
