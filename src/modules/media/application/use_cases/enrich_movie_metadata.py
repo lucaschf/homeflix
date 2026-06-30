@@ -14,23 +14,17 @@ from src.modules.media.application.ports import (
     MetadataProvider,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
-from src.modules.media.application.use_cases._localized_metadata_helpers import (
-    merge_media_localized,
+from src.modules.media.application.use_cases._metadata_field_merge import (
+    COMMON_FILL_IF_EMPTY,
+    reconcile_common_fields,
 )
-from src.modules.media.application.use_cases._metadata_field_merge import set_if_missing
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
-    CastMember,
     Collection,
-    ContentRating,
     Duration,
-    Genre,
-    ImageUrl,
-    ImdbId,
     MergePolicy,
     MovieId,
     Title,
-    TmdbId,
     Year,
 )
 from src.shared_kernel.integration_events import MediaEnrichedEvent
@@ -255,20 +249,31 @@ def _apply_movie_metadata(
     every guard is bypassed and TMDB's payload wins — used by the bulk
     enrich's "force update" toggle to backfill new fields (like the
     cast member ``tmdb_id``) on rows that were already enriched.
-    """
-    updates: dict[str, object] = {}
 
-    # Always-overwrite fields — written whenever the provider has them
-    # (no fill-if-empty guard). The base title tracks the picked TMDB
-    # entry on every enrich (unlike series, where it is scanner-derived).
+    The provider ids, the fill-if-empty fields shared with series, the
+    cast, and the localized overlay are reconciled by
+    :func:`reconcile_common_fields`; only the movie-specific always-overwrite
+    rules (base title, year, the probed-duration guard) and the movie-only
+    fill-if-empty fields (tagline / collection / directors / writers) live here.
+    """
+    updates = reconcile_common_fields(
+        movie,
+        metadata,
+        policy=policy,
+        fill_if_empty={
+            **COMMON_FILL_IF_EMPTY,
+            "tagline": ("tagline", None),
+            "collection": ("collection", _to_collection),
+            "directors": ("directors", lambda v: [p.name for p in v]),
+            "writers": ("writers", lambda v: [p.name for p in v]),
+        },
+    )
+
+    # Movie-specific always-overwrite fields — written whenever the provider
+    # has them (no fill-if-empty guard). The base title tracks the picked
+    # TMDB entry on every enrich (unlike series, where it is scanner-derived).
     if metadata.title:
         updates["title"] = Title(metadata.title)
-    if metadata.tmdb_id:
-        updates["tmdb_id"] = TmdbId(metadata.tmdb_id)
-    if metadata.imdb_id:
-        updates["imdb_id"] = ImdbId(metadata.imdb_id)
-    if metadata.original_title:
-        updates["original_title"] = Title(metadata.original_title)
     if metadata.year:
         updates["year"] = Year(metadata.year)
     # Duration is the file's real (probed) length — the scanner stamps it.
@@ -276,44 +281,6 @@ def _apply_movie_metadata(
     # (duration still 0); never overwrite a real duration, even on OVERWRITE.
     if metadata.duration_seconds and movie.duration.value == 0:
         updates["duration"] = Duration(metadata.duration_seconds)
-
-    # Don't-overwrite fields (fill-if-empty unless ``OVERWRITE``), table-driven.
-    set_if_missing(
-        updates,
-        metadata,
-        movie,
-        {
-            "synopsis": ("synopsis", None),
-            "genres": ("genres", lambda v: [Genre(g) for g in v]),
-            "poster_url": ("poster_path", ImageUrl),
-            "backdrop_url": ("backdrop_path", ImageUrl),
-            "logo_url": ("logo_path", ImageUrl),
-            "tagline": ("tagline", None),
-            "collection": ("collection", _to_collection),
-            "directors": ("directors", lambda v: [p.name for p in v]),
-            "writers": ("writers", lambda v: [p.name for p in v]),
-            "content_rating": ("content_rating", ContentRating),
-            "trailer_url": ("trailer_url", None),
-        },
-        policy=policy,
-    )
-
-    # Cast: same fill-if-empty rule, kept explicit for the per-element
-    # CreditPerson → CastMember conversion (mirrors the series enrich).
-    if metadata.cast and policy.should_write(movie.cast):
-        updates["cast"] = [
-            CastMember(
-                name=p.name,
-                profile_path=p.profile_url,
-                role=p.role,
-                tmdb_id=p.tmdb_id,
-            )
-            for p in metadata.cast
-        ]
-
-    new_localized = merge_media_localized(movie.localized, metadata, policy=policy)
-    if new_localized is not None:
-        updates["localized"] = new_localized
 
     if updates:
         movie = movie.with_updates(**updates)

@@ -101,6 +101,61 @@ class TestEnrichMovieMetadata:
         assert result.enriched is True
 
     @pytest.mark.asyncio
+    async def test_writes_provider_duration_when_probe_left_it_zero(self) -> None:
+        # The scanner stamps the real probed duration; when it failed
+        # (duration still 0) TMDB's nominal runtime is the fallback.
+        movie = _make_movie()  # duration=0
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = _make_metadata()  # duration_seconds=8880
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        saved = mocks.movies.save.call_args.args[0]
+        assert saved.duration.value == 8880
+
+    @pytest.mark.asyncio
+    async def test_never_overwrites_a_real_probed_duration_even_on_force(self) -> None:
+        # A real probed duration is truth — TMDB's nominal runtime must
+        # never clobber it, even under the OVERWRITE (force) policy.
+        movie = Movie.create(
+            library_id=_LIBRARY_ID,
+            title="Inception",
+            year=2010,
+            duration=7200,
+            file_path="/movies/inception.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = _make_metadata()  # duration_seconds=8880
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id), force=True))
+
+        saved = mocks.movies.save.call_args.args[0]
+        assert saved.duration.value == 7200
+
+    @pytest.mark.asyncio
+    async def test_base_title_and_year_track_the_provider_entry(self) -> None:
+        # Unlike series (scanner-derived title), a movie's base title/year
+        # always track the picked TMDB entry — no fill-if-empty guard.
+        movie = _make_movie()  # title="Inception", year=2010
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = MediaMetadata(
+            title="Inception Reborn",
+            year=2011,
+            tmdb_id=27205,
+        )
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        saved = mocks.movies.save.call_args.args[0]
+        assert saved.title.value == "Inception Reborn"
+        assert saved.year.value == 2011
+
+    @pytest.mark.asyncio
     async def test_should_use_fallback_when_primary_fails(self) -> None:
         movie = _make_movie()
         mocks = make_media_uow_mock()
