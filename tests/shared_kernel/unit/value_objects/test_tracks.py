@@ -5,7 +5,7 @@ import pytest
 from src.building_blocks.domain.errors import DomainValidationException
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
-from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
+from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleFormat, SubtitleTrack
 
 
 class TestAudioTrackCreation:
@@ -221,3 +221,49 @@ class TestSubtitleTrackProperties:
             )
             assert track.is_image_based is True, f"Expected {fmt} to be image-based"
             assert track.is_text_based is False
+
+    def test_unknown_format_round_trips_and_classifies_as_neither(self):
+        # An exotic ffprobe codec must survive verbatim (no enum coercion)
+        # and count as neither text nor image.
+        track = SubtitleTrack(
+            index=0,
+            language=LanguageCode("en"),
+            format="dvb_subtitle",
+        )
+        assert track.format == "dvb_subtitle"
+        assert track.is_text_based is False
+        assert track.is_image_based is False
+
+
+class TestSubtitleFormat:
+    """Tests for the SubtitleFormat canonical vocabulary."""
+
+    def test_classify_is_case_insensitive(self):
+        assert SubtitleFormat.classify("SRT") is SubtitleFormat.SRT
+        assert SubtitleFormat.classify("Ass") is SubtitleFormat.ASS
+
+    def test_classify_returns_none_for_unknown(self):
+        assert SubtitleFormat.classify("dvb_subtitle") is None
+        assert SubtitleFormat.classify("") is None
+
+    def test_text_and_image_sets_are_disjoint_and_complete(self):
+        text = SubtitleFormat.text_formats()
+        image = SubtitleFormat.image_formats()
+        assert text.isdisjoint(image)
+        assert text | image == set(SubtitleFormat)
+
+    @pytest.mark.parametrize("fmt", list(SubtitleFormat))
+    def test_is_text_and_is_image_are_exact_complements_per_member(self, fmt: SubtitleFormat):
+        assert fmt.is_text is (fmt in SubtitleFormat.text_formats())
+        assert fmt.is_image is (fmt in SubtitleFormat.image_formats())
+        # Every member is exactly one of the two — never both, never neither.
+        assert fmt.is_text != fmt.is_image
+
+    def test_subtitle_track_sets_derive_from_the_enum(self):
+        # The VO classification stays single-sourced from SubtitleFormat...
+        assert {f.value for f in SubtitleFormat.text_formats()} == SubtitleTrack.TEXT_FORMATS
+        assert {f.value for f in SubtitleFormat.image_formats()} == SubtitleTrack.IMAGE_FORMATS
+        # ...and matches the exact vocabulary, so enum + derivation can't
+        # drift together unnoticed.
+        assert {"srt", "ass", "ssa", "vtt", "sub"} == SubtitleTrack.TEXT_FORMATS
+        assert {"pgs", "sup", "vobsub", "idx"} == SubtitleTrack.IMAGE_FORMATS

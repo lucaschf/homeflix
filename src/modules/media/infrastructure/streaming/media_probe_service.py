@@ -18,7 +18,7 @@ from src.modules.media.application.ports.media_probe_port import MediaProbePort,
 from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
-from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
+from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleFormat, SubtitleTrack
 
 _logger = logging.getLogger(__name__)
 
@@ -51,18 +51,20 @@ _RESOLUTION_THRESHOLDS: list[tuple[int, str]] = [
     (500, "360p"),
 ]
 
-# ffprobe codec_name → SubtitleTrack format
-_SUBTITLE_CODEC_MAP: dict[str, str] = {
-    "subrip": "srt",
-    "srt": "srt",
-    "ass": "ass",
-    "ssa": "ass",
-    "webvtt": "vtt",
-    "mov_text": "srt",
-    "hdmv_pgs_subtitle": "pgs",
-    "pgssub": "pgs",
-    "dvd_subtitle": "vobsub",
-    "dvdsub": "vobsub",
+# ffprobe codec_name → canonical SubtitleFormat. An unmapped codec falls
+# through to its raw codec_name (see _parse_subtitle_tracks) so exotic
+# formats round-trip verbatim.
+_SUBTITLE_CODEC_MAP: dict[str, SubtitleFormat] = {
+    "subrip": SubtitleFormat.SRT,
+    "srt": SubtitleFormat.SRT,
+    "ass": SubtitleFormat.ASS,
+    "ssa": SubtitleFormat.ASS,
+    "webvtt": SubtitleFormat.VTT,
+    "mov_text": SubtitleFormat.SRT,
+    "hdmv_pgs_subtitle": SubtitleFormat.PGS,
+    "pgssub": SubtitleFormat.PGS,
+    "dvd_subtitle": SubtitleFormat.VOBSUB,
+    "dvdsub": SubtitleFormat.VOBSUB,
 }
 
 # External subtitle file extensions
@@ -419,7 +421,8 @@ class MediaProbeService(MediaProbePort):
             tags = stream.get("tags", {})
 
             codec_name = stream.get("codec_name", "unknown").lower()
-            fmt = _SUBTITLE_CODEC_MAP.get(codec_name, codec_name)
+            mapped = _SUBTITLE_CODEC_MAP.get(codec_name)
+            fmt = mapped.value if mapped is not None else codec_name
             lang = MediaProbeService._extract_language(stream)
             title = tags.get("title", tags.get("TITLE"))
 
