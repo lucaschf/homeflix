@@ -251,7 +251,7 @@ async def movie_tracks(
     """Get available audio and subtitle tracks for a movie."""
     movie = await movie_uc.execute(GetMovieByIdInput(profile_id=profile_id, movie_id=movie_id))
     file_path = _require_file(movie.file_path)
-    tracks = await tracks_uc.execute(GetFileTracksInput(file_path=file_path))
+    tracks = await tracks_uc.execute(GetFileTracksInput(file_path=file_path, profile_id=profile_id))
     return asdict(tracks)
 
 
@@ -274,7 +274,7 @@ async def episode_tracks(
         series_uc, profile_id, series_id, season_number, episode_number
     )
     file_path = _require_file(file_path)
-    tracks = await tracks_uc.execute(GetFileTracksInput(file_path=file_path))
+    tracks = await tracks_uc.execute(GetFileTracksInput(file_path=file_path, profile_id=profile_id))
     return asdict(tracks)
 
 

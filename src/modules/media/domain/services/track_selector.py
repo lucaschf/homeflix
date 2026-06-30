@@ -39,9 +39,9 @@ class TrackSelector:
 
         Args:
             tracks: The file's audio tracks, in container order.
-            preferred_language: The library's preferred audio language, or
-                ``None`` when no preference is available (e.g. at a
-                library-agnostic boundary).
+            preferred_language: The viewing profile's preferred audio
+                language (ADR-026), or ``None`` when no preference is
+                available (e.g. at a profile-agnostic boundary).
 
         Returns:
             The selected track, or ``None`` when there are no audio tracks.

@@ -48,6 +48,9 @@ from src.modules.media.infrastructure.scheduling.scheduler_controller import (
 from src.modules.media.infrastructure.scheduling.scheduler_inspector import (
     LibraryScanSchedulerInspector,
 )
+from src.modules.preferences.infrastructure.persistence.sqlalchemy_unit_of_work import (
+    SqlAlchemyPreferencesUnitOfWorkFactory,
+)
 from src.modules.settings.domain.value_objects import IntroDetectionAlgorithm
 from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyWatchProgressUnitOfWorkFactory,
@@ -130,6 +133,14 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         session_factory=infrastructure.session_factory,
     )
 
+    # Preferences UoW factory built at the composition root so Media can
+    # read a profile's playback preference (ADR-026 — default audio at
+    # /tracks) without forward-referencing the Preferences container.
+    _preferences_uow_factory_for_media = providers.Singleton(
+        SqlAlchemyPreferencesUnitOfWorkFactory,
+        session_factory=infrastructure.session_factory,
+    )
+
     # ADR-015 Phase 3: the auto-merge detector needs to ask "is
     # this file accessible?" and "is the library root mounted?"
     # before silently absorbing an orphan candidate. The adapter
@@ -209,6 +220,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         library_uow_factory=_library_uow_factory_for_media,
         library_health=_library_health_adapter,
         identity_uow_factory=_identity_uow_factory_for_profile_library_access,
+        preferences_uow_factory=_preferences_uow_factory_for_media,
         tmdb_api_key=config.provided.tmdb_api_key,
         supported_locales=config.provided.supported_locales,
         hls_cache_directory=config.provided.hls_cache_directory,

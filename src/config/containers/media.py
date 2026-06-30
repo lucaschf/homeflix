@@ -149,6 +149,9 @@ from src.modules.media.infrastructure.acl.identity_user_count_adapter import (
 from src.modules.media.infrastructure.acl.library_lookup_adapter import (
     LibraryLookupAdapter,
 )
+from src.modules.media.infrastructure.acl.profile_playback_preference_adapter import (
+    ProfilePlaybackPreferenceAdapter,
+)
 from src.modules.media.infrastructure.acl.profile_summary_adapter import (
     ProfileSummaryAdapter,
 )
@@ -230,6 +233,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # ``library_uow_factory`` above: a read-only cross-BC count
     # for admin dashboard aggregation, not domain coupling.
     identity_uow_factory = providers.Dependency()
+
+    # Wired at the composition root — ADR-026: the /tracks use case reads
+    # the viewing profile's preferred audio language from the Preferences BC
+    # to pick the default audio track at read time.
+    preferences_uow_factory = providers.Dependency()
 
     # Must be wired from parent container (Settings.hls_cache_directory).
     # Only the filesystem path remains in ``.env``; ``ffmpeg_threads``
@@ -449,6 +457,10 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         IdentityUserCountAdapter,
         identity_uow_factory=identity_uow_factory,
     )
+    playback_preference = providers.Singleton(
+        ProfilePlaybackPreferenceAdapter,
+        preferences_uow_factory=preferences_uow_factory,
+    )
 
     # Singleton because ``ThumbnailGenerationService`` is stateless apart
     # from the runtime config it reads per call; sharing one instance
@@ -538,6 +550,7 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     get_file_tracks = providers.Factory(
         GetFileTracksUseCase,
         hls=hls_service,
+        playback_preference=playback_preference,
     )
 
     clear_hls_cache = providers.Factory(

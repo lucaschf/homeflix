@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from src.modules.media.application.ports.media_probe_port import ProbeResult
+    from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 @dataclass(frozen=True)
@@ -85,7 +86,10 @@ def _version_dict(version: TrackVersion | None) -> dict[str, str] | None:
     return {"kind": version.kind, "value": version.value}
 
 
-def serialize_tracks(probe: ProbeResult) -> TrackListOutput:
+def serialize_tracks(
+    probe: ProbeResult,
+    preferred_audio_language: LanguageCode | None = None,
+) -> TrackListOutput:
     """Project a ``ProbeResult`` into the flat track DTO.
 
     Each track carries a structured ``version`` differentiating it from
@@ -93,15 +97,22 @@ def serialize_tracks(probe: ProbeResult) -> TrackListOutput:
     ordinal), or ``None`` when the language alone is unambiguous. The
     raw ``title`` is kept for reference; the player should prefer the
     language + ``version`` and localize them.
+
+    Args:
+        probe: The probed track list for the file.
+        preferred_audio_language: The viewer profile's preferred audio
+            language (ADR-026, resolved server-side from the Preferences
+            BC), or ``None`` when unavailable — then the default audio
+            falls back to the container-declared default, else the first.
     """
     audio_versions = audio_version_labels(probe.audio_tracks)
     text_subs = [t for t in probe.all_subtitles if t.is_text_based]
     sub_versions = subtitle_version_labels(text_subs)
     # The probe reports ``is_default`` truthfully (container-declared only),
-    # so pick the player's default audio here via the ADR-005 selector. With
-    # no library preference available at this boundary it falls back to the
-    # container default, else the first track — keeping exactly one default.
-    default_audio = TrackSelector().select_audio(probe.audio_tracks)
+    # so pick the player's default audio here via the ADR-005 selector: a
+    # track in the profile's preferred language wins (most channels), else
+    # the container default, else the first — keeping exactly one default.
+    default_audio = TrackSelector().select_audio(probe.audio_tracks, preferred_audio_language)
     return TrackListOutput(
         audio_tracks=[
             {
