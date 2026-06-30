@@ -15,7 +15,6 @@ from src.modules.library.domain.value_objects.metadata_provider import (
     MetadataProvider,
     MetadataProviderConfig,
 )
-from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
 from src.modules.library.infrastructure.persistence.models.library_model import LibraryModel
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
@@ -100,13 +99,6 @@ class LibraryMapper:
             last_scan_at=entity.last_scan_at,
             settings=json.dumps(
                 {
-                    "preferred_audio_language": entity.settings.preferred_audio_language.value,
-                    "preferred_subtitle_language": (
-                        entity.settings.preferred_subtitle_language.value
-                        if entity.settings.preferred_subtitle_language
-                        else None
-                    ),
-                    "subtitle_mode": entity.settings.subtitle_mode.value,
                     "generate_thumbnails": entity.settings.generate_thumbnails,
                     "detect_intros": entity.settings.detect_intros,
                     "auto_refresh_metadata": entity.settings.auto_refresh_metadata,
@@ -146,17 +138,6 @@ class LibraryMapper:
             scan_schedule=_safe_cron(model.scan_schedule),
             last_scan_at=_ensure_utc(model.last_scan_at),
             settings=LibrarySettings(
-                preferred_audio_language=LanguageCode(
-                    settings_raw.get("preferred_audio_language", "en"),
-                ),
-                preferred_subtitle_language=(
-                    LanguageCode(settings_raw["preferred_subtitle_language"])
-                    if settings_raw.get("preferred_subtitle_language")
-                    else None
-                ),
-                subtitle_mode=SubtitleMode(
-                    settings_raw.get("subtitle_mode", SubtitleMode.FOREIGN_AUDIO_ONLY.value),
-                ),
                 generate_thumbnails=settings_raw.get("generate_thumbnails", True),
                 detect_intros=settings_raw.get("detect_intros", False),
                 auto_refresh_metadata=settings_raw.get("auto_refresh_metadata", False),

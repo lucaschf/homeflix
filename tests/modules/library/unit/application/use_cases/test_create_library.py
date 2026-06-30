@@ -13,8 +13,6 @@ from src.modules.library.domain.value_objects.metadata_provider import (
     MetadataProvider,
     MetadataProviderConfig,
 )
-from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
-from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 def _configure_uow_mocks() -> "tuple[CreateLibraryUseCase, object, object]":
@@ -66,16 +64,14 @@ class TestCreateLibraryUseCase:
                 paths=["/media/anime"],
                 language="ja",
                 settings=LibrarySettings(
-                    preferred_audio_language=LanguageCode("ja"),
-                    preferred_subtitle_language=LanguageCode("en"),
-                    subtitle_mode=SubtitleMode.ALWAYS,
+                    generate_thumbnails=False,
+                    detect_intros=True,
                 ),
             )
         )
 
-        assert result.settings.preferred_audio_language == "ja"
-        assert result.settings.preferred_subtitle_language == "en"
-        assert result.settings.subtitle_mode == "always"
+        assert result.settings.generate_thumbnails is False
+        assert result.settings.detect_intros is True
 
     @pytest.mark.asyncio
     async def test_should_pass_metadata_providers(self) -> None:

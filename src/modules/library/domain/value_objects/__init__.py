@@ -7,7 +7,6 @@ from src.modules.library.domain.value_objects.metadata_provider import (
     MetadataProvider,
     MetadataProviderConfig,
 )
-from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.library_id import LibraryId
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
@@ -21,6 +20,5 @@ __all__ = [
     "LibraryType",
     "MetadataProvider",
     "MetadataProviderConfig",
-    "SubtitleMode",
     "SubtitleTrack",
 ]

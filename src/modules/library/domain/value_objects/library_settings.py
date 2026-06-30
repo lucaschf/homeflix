@@ -1,37 +1,27 @@
 """Library settings value object."""
 
 from src.building_blocks.domain.value_objects import CompoundValueObject
-from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
-from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 class LibrarySettings(CompoundValueObject):
-    """Configuration settings for a library's behavior.
+    """Configuration settings for a library's scan behavior and feature toggles.
 
-    Controls playback preferences, scan behavior, and feature toggles
-    for a specific library.
+    Playback preferences (audio/subtitle language and subtitle mode) are
+    *not* here: per ADR-026 they are per-user in the Preferences BC, not
+    per-library. This value object holds only library-scoped scan/processing
+    toggles.
 
     Attributes:
-        preferred_audio_language: Default audio track language.
-        preferred_subtitle_language: Default subtitle language, or None to disable.
-        subtitle_mode: When to enable subtitles by default.
         generate_thumbnails: Whether to generate video thumbnails during scan.
         detect_intros: Whether to detect intro timestamps for skip feature.
         auto_refresh_metadata: Whether to periodically refresh metadata.
 
     Example:
-        >>> settings = LibrarySettings(
-        ...     preferred_audio_language=LanguageCode("ja"),
-        ...     preferred_subtitle_language=LanguageCode("en"),
-        ...     subtitle_mode=SubtitleMode.ALWAYS,
-        ... )
-        >>> settings.subtitle_mode
-        <SubtitleMode.ALWAYS: 'always'>
+        >>> settings = LibrarySettings(detect_intros=True)
+        >>> settings.generate_thumbnails
+        True
     """
 
-    preferred_audio_language: LanguageCode = LanguageCode("en")
-    preferred_subtitle_language: LanguageCode | None = None
-    subtitle_mode: SubtitleMode = SubtitleMode.FOREIGN_AUDIO_ONLY
     generate_thumbnails: bool = True
     detect_intros: bool = False
     auto_refresh_metadata: bool = False
@@ -41,8 +31,8 @@ class LibrarySettings(CompoundValueObject):
         """Create settings with sensible defaults.
 
         Returns:
-            LibrarySettings with English audio, no subtitles by default,
-            and thumbnail generation enabled.
+            LibrarySettings with thumbnail generation enabled and the
+            other scan toggles off.
         """
         return cls()
 

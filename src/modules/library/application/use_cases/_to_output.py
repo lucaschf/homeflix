@@ -42,13 +42,6 @@ def library_to_output(
         movie_count=movie_count,
         series_count=series_count,
         settings=LibrarySettingsOutput(
-            preferred_audio_language=entity.settings.preferred_audio_language.value,
-            preferred_subtitle_language=(
-                entity.settings.preferred_subtitle_language.value
-                if entity.settings.preferred_subtitle_language
-                else None
-            ),
-            subtitle_mode=entity.settings.subtitle_mode.value,
             generate_thumbnails=entity.settings.generate_thumbnails,
             detect_intros=entity.settings.detect_intros,
             auto_refresh_metadata=entity.settings.auto_refresh_metadata,

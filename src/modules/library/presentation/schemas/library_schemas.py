@@ -7,8 +7,6 @@ from src.modules.library.domain.value_objects.metadata_provider import (
     MetadataProvider,
     MetadataProviderConfig,
 )
-from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
-from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 class MetadataProviderSchema(BaseModel):
@@ -28,11 +26,12 @@ class MetadataProviderSchema(BaseModel):
 
 
 class LibrarySettingsSchema(BaseModel):
-    """Playback / scan settings for a library."""
+    """Scan settings for a library.
 
-    preferred_audio_language: str = "en"
-    preferred_subtitle_language: str | None = None
-    subtitle_mode: str = "foreign"
+    Playback preferences (audio/subtitle language, subtitle mode) are
+    per-user in the Preferences BC, not per-library (ADR-026).
+    """
+
     generate_thumbnails: bool = True
     detect_intros: bool = False
     auto_refresh_metadata: bool = False
@@ -40,13 +39,6 @@ class LibrarySettingsSchema(BaseModel):
     def to_settings(self) -> LibrarySettings:
         """Convert the request shape into the domain value object."""
         return LibrarySettings(
-            preferred_audio_language=LanguageCode(self.preferred_audio_language),
-            preferred_subtitle_language=(
-                LanguageCode(self.preferred_subtitle_language)
-                if self.preferred_subtitle_language
-                else None
-            ),
-            subtitle_mode=SubtitleMode(self.subtitle_mode),
             generate_thumbnails=self.generate_thumbnails,
             detect_intros=self.detect_intros,
             auto_refresh_metadata=self.auto_refresh_metadata,

@@ -212,7 +212,7 @@ class TestLibraryFactoryCreate:
             paths=["/media"],
         )
 
-        assert library.settings.preferred_audio_language.value == "en"
+        assert library.settings.generate_thumbnails is True
 
 
 class TestLibraryImmutability:

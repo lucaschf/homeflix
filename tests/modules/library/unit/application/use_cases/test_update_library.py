@@ -16,8 +16,6 @@ from src.modules.library.domain.value_objects.metadata_provider import (
     MetadataProvider,
     MetadataProviderConfig,
 )
-from src.modules.library.domain.value_objects.subtitle_mode import SubtitleMode
-from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 def _existing_library() -> Library:
@@ -86,8 +84,8 @@ class TestUpdateLibraryUseCase:
                     MetadataProviderConfig(provider=MetadataProvider.OMDB, priority=1),
                 ],
                 settings=LibrarySettings(
-                    preferred_audio_language=LanguageCode("ja"),
-                    subtitle_mode=SubtitleMode.ALWAYS,
+                    generate_thumbnails=False,
+                    detect_intros=True,
                 ),
                 scan_schedule="0 4 * * *",
             )
@@ -95,8 +93,8 @@ class TestUpdateLibraryUseCase:
 
         assert len(result.metadata_providers) == 1
         assert result.metadata_providers[0].provider == "omdb"
-        assert result.settings.preferred_audio_language == "ja"
-        assert result.settings.subtitle_mode == "always"
+        assert result.settings.generate_thumbnails is False
+        assert result.settings.detect_intros is True
         assert result.scan_schedule == "0 4 * * *"
 
     @pytest.mark.asyncio
