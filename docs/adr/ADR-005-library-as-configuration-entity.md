@@ -1,9 +1,17 @@
 # ADR-005: Library como Entidade de Configuração
 
-**Status:** Aceito
+**Status:** Aceito (emendado pelo ADR-026)
 **Data:** 2026-02-03
 **Deciders:** Lucas
 **Technical Story:** Alinhar arquitetura do HomeFlix com padrões da indústria (Jellyfin, Plex)
+
+> **Emenda (ADR-026, 2026-06-30):** as *preferências de reprodução* (idioma de
+> áudio/legenda, modo de legenda) saem de `LibrarySettings` (por-library) e
+> passam a viver no Preferences BC (por-usuário); a autoridade de seleção de
+> faixa default passa a ser o **servidor** (manifesto HLS + `/tracks`
+> concordando), não o cliente. O `TrackSelector` segue sendo a regra de
+> domínio, agora alimentado pela preferência por-usuário. Os demais aspectos
+> deste ADR (Library como config de scan/provedores, VOs de faixa) permanecem.
 
 ---
 
