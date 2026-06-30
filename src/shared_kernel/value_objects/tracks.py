@@ -1,5 +1,6 @@
 """Audio and subtitle track value objects."""
 
+from enum import StrEnum
 from typing import ClassVar
 
 from pydantic import Field, model_validator
@@ -15,6 +16,85 @@ CHANNEL_LAYOUTS: dict[int, str] = {
     6: "5.1",
     8: "7.1",
 }
+
+
+class SubtitleFormat(StrEnum):
+    """Canonical subtitle formats, with text-vs-image classification.
+
+    Single source of truth for the subtitle-format vocabulary: which
+    formats HomeFlix recognizes and which are text-based (stylable /
+    searchable) versus image-based (bitmap). ``SubtitleTrack.format``
+    deliberately stays a plain ``str`` rather than this enum so that an
+    exotic ffprobe codec (DVB, EIA-608, …) round-trips verbatim through
+    persistence instead of being forced into the enum and lost;
+    classification of an unrecognized value falls through as "neither
+    text nor image" (see :meth:`classify`).
+
+    Example:
+        >>> SubtitleFormat.classify("SRT").is_text
+        True
+        >>> SubtitleFormat.classify("dvb_subtitle") is None
+        True
+    """
+
+    SRT = "srt"
+    ASS = "ass"
+    SSA = "ssa"
+    VTT = "vtt"
+    SUB = "sub"
+    PGS = "pgs"
+    SUP = "sup"
+    VOBSUB = "vobsub"
+    IDX = "idx"
+
+    @classmethod
+    def text_formats(cls) -> frozenset["SubtitleFormat"]:
+        """Text-based formats: can be styled, searched, or burned as text."""
+        return _TEXT_SUBTITLE_FORMATS
+
+    @classmethod
+    def image_formats(cls) -> frozenset["SubtitleFormat"]:
+        """Image-based (bitmap) formats: must be rendered as pictures."""
+        return _IMAGE_SUBTITLE_FORMATS
+
+    @classmethod
+    def classify(cls, value: str) -> "SubtitleFormat | None":
+        """Return the canonical format for a raw value, or ``None`` if unknown.
+
+        Case-insensitive. ``None`` for any value outside the recognized
+        vocabulary (e.g. an unmapped ffprobe codec name), so callers treat
+        it as neither text nor image rather than raising.
+        """
+        try:
+            return cls(value.lower())
+        except ValueError:
+            return None
+
+    @property
+    def is_text(self) -> bool:
+        """Whether this format is text-based."""
+        return self in _TEXT_SUBTITLE_FORMATS
+
+    @property
+    def is_image(self) -> bool:
+        """Whether this format is image-based (bitmap)."""
+        return self in _IMAGE_SUBTITLE_FORMATS
+
+
+# Built once (not per call): the canonical text/image partitions of
+# SubtitleFormat. SubtitleTrack derives its string frozensets from these.
+_TEXT_SUBTITLE_FORMATS: frozenset[SubtitleFormat] = frozenset(
+    {
+        SubtitleFormat.SRT,
+        SubtitleFormat.ASS,
+        SubtitleFormat.SSA,
+        SubtitleFormat.VTT,
+        SubtitleFormat.SUB,
+    }
+)
+_IMAGE_SUBTITLE_FORMATS: frozenset[SubtitleFormat] = frozenset(
+    {SubtitleFormat.PGS, SubtitleFormat.SUP, SubtitleFormat.VOBSUB, SubtitleFormat.IDX}
+)
 
 
 class AudioTrack(CompoundValueObject):
@@ -87,7 +167,10 @@ class SubtitleTrack(CompoundValueObject):
     Attributes:
         index: Track index (0-based, unique across embedded + external).
         language: ISO 639-1 language code.
-        format: Subtitle format (srt, ass, vtt, pgs, sup).
+        format: Subtitle format as a raw string (srt, ass, vtt, pgs, sup,
+            …). Kept as ``str`` (not :class:`SubtitleFormat`) so an exotic
+            ffprobe codec round-trips verbatim; use
+            :meth:`SubtitleFormat.classify` to classify it.
         title: Descriptive title.
         is_default: Whether marked as default.
         is_forced: Whether this is a forced subtitle track (signs only).
@@ -111,8 +194,13 @@ class SubtitleTrack(CompoundValueObject):
         ... )
     """
 
-    TEXT_FORMATS: ClassVar[frozenset[str]] = frozenset({"srt", "ass", "ssa", "vtt", "sub"})
-    IMAGE_FORMATS: ClassVar[frozenset[str]] = frozenset({"pgs", "sup", "vobsub", "idx"})
+    # Derived from SubtitleFormat so the format vocabulary lives in one place.
+    TEXT_FORMATS: ClassVar[frozenset[str]] = frozenset(
+        f.value for f in SubtitleFormat.text_formats()
+    )
+    IMAGE_FORMATS: ClassVar[frozenset[str]] = frozenset(
+        f.value for f in SubtitleFormat.image_formats()
+    )
 
     index: int = Field(ge=0)
     language: LanguageCode
@@ -156,4 +244,4 @@ class SubtitleTrack(CompoundValueObject):
         return self.format.lower() in self.IMAGE_FORMATS
 
 
-__all__ = ["AudioTrack", "SubtitleTrack"]
+__all__ = ["AudioTrack", "SubtitleFormat", "SubtitleTrack"]
