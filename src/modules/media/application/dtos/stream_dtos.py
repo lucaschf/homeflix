@@ -21,7 +21,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from src.modules.media.application.ports.media_probe_port import ProbeResult
-    from src.shared_kernel.value_objects.language_code import LanguageCode
+    from src.modules.media.application.ports.profile_playback_preference_port import (
+        PlaybackPreference,
+    )
 
 
 @dataclass(frozen=True)
@@ -88,7 +90,7 @@ def _version_dict(version: TrackVersion | None) -> dict[str, str] | None:
 
 def serialize_tracks(
     probe: ProbeResult,
-    preferred_audio_language: LanguageCode | None = None,
+    preference: PlaybackPreference | None = None,
 ) -> TrackListOutput:
     """Project a ``ProbeResult`` into the flat track DTO.
 
@@ -100,19 +102,35 @@ def serialize_tracks(
 
     Args:
         probe: The probed track list for the file.
-        preferred_audio_language: The viewer profile's preferred audio
-            language (ADR-026, resolved server-side from the Preferences
-            BC), or ``None`` when unavailable — then the default audio
-            falls back to the container-declared default, else the first.
+        preference: The viewer profile's playback preference (ADR-026,
+            resolved server-side from the Preferences BC), or ``None`` when
+            unavailable. When present, the audio and subtitle defaults are
+            server-resolved via :class:`TrackSelector`; when ``None`` the
+            audio default falls back to the container default (else first)
+            and each subtitle keeps its container-declared ``is_default``.
     """
     audio_versions = audio_version_labels(probe.audio_tracks)
     text_subs = [t for t in probe.all_subtitles if t.is_text_based]
     sub_versions = subtitle_version_labels(text_subs)
-    # The probe reports ``is_default`` truthfully (container-declared only),
-    # so pick the player's default audio here via the ADR-005 selector: a
-    # track in the profile's preferred language wins (most channels), else
-    # the container default, else the first — keeping exactly one default.
-    default_audio = TrackSelector().select_audio(probe.audio_tracks, preferred_audio_language)
+    # The probe reports ``is_default`` truthfully (container-declared only);
+    # the ADR-005/026 selector resolves the player's defaults from the
+    # profile preference (exactly one default audio, and at most one subtitle).
+    selector = TrackSelector()
+    default_audio = selector.select_audio(
+        probe.audio_tracks, preference.audio_language if preference else None
+    )
+    # ``preference is not None`` (not the ``resolve_subtitle`` flag) so mypy
+    # narrows the Optional before we read ``preference.subtitle_*`` below.
+    resolve_subtitle = preference is not None
+    default_subtitle = None
+    if preference is not None:
+        chosen_audio_language = default_audio.language if default_audio else None
+        default_subtitle = selector.select_subtitle(
+            text_subs,
+            chosen_audio_language,
+            preference.subtitle_language,
+            preference.subtitle_mode,
+        )
     return TrackListOutput(
         audio_tracks=[
             {
@@ -134,7 +152,7 @@ def serialize_tracks(
                 "format": t.format,
                 "title": t.title,
                 "version": _version_dict(sub_versions.get(t.index)),
-                "is_default": t.is_default,
+                "is_default": (t is default_subtitle) if resolve_subtitle else t.is_default,
                 "is_forced": t.is_forced,
                 "is_external": t.is_external,
                 "is_image_based": t.is_image_based,

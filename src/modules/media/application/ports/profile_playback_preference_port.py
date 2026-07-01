@@ -6,30 +6,36 @@ per-library settings. This port exposes the slice the track selector needs
 so Media never imports the Preferences aggregate or its Unit of Work above
 the adapter (ADR-009). The adapter lives in ``media.infrastructure.acl``.
 
-Phase 2 consumes only ``audio_language`` (the ``/tracks`` audio default).
-``subtitle_language`` / ``subtitle_mode`` are added when ``select_subtitle``
-moves server-side (ADR-026 phase 4).
+Carries the audio default (phase 2) plus the subtitle language + mode the
+domain ``select_subtitle`` rule needs (phase 4).
 """
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from src.shared_kernel.value_objects.language_code import LanguageCode
+from src.shared_kernel.value_objects.subtitle_mode import SubtitleMode
 
 
 @dataclass(frozen=True)
 class PlaybackPreference:
     """Consumer-owned projection of a profile's playback preference.
 
+    Language fields are the strict ISO 639-1 base subtag of the stored IETF
+    tag (e.g. ``pt-BR`` → ``pt``), matched against a media track's language;
+    ``None`` when the stored tag has no usable ISO 639-1 base (the selector
+    then applies no preference for that axis).
+
     Attributes:
-        audio_language: The profile's preferred audio language as a strict
-            ISO 639-1 :class:`LanguageCode` (the base subtag of the stored
-            IETF tag, e.g. ``pt-BR`` → ``pt``), matched against a media
-            track's language. ``None`` when the stored tag has no usable
-            ISO 639-1 base — the selector then applies no preference.
+        audio_language: Preferred audio language, or ``None``.
+        subtitle_language: Preferred subtitle language, or ``None``.
+        subtitle_mode: When to auto-enable a subtitle (always present —
+            the Preferences BC defaults it).
     """
 
     audio_language: LanguageCode | None
+    subtitle_language: LanguageCode | None
+    subtitle_mode: SubtitleMode
 
 
 class ProfilePlaybackPreferencePort(ABC):
