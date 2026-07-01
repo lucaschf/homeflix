@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.modules.preferences.domain.value_objects import SubtitleMode
+from src.shared_kernel.value_objects.subtitle_mode import SubtitleMode
 
 
 @pytest.mark.unit

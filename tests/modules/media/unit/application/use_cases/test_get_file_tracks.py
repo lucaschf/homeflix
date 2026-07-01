@@ -15,20 +15,28 @@ from src.modules.media.application.use_cases.get_file_tracks import (
     GetFileTracksUseCase,
 )
 from src.shared_kernel.value_objects.language_code import LanguageCode
+from src.shared_kernel.value_objects.subtitle_mode import SubtitleMode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 
 def _make_use_case(
-    hls: MagicMock, preferred_audio: LanguageCode | None = None
+    hls: MagicMock,
+    preferred_audio: LanguageCode | None = None,
+    preferred_subtitle: LanguageCode | None = None,
+    subtitle_mode: SubtitleMode = SubtitleMode.OFF,
 ) -> tuple[GetFileTracksUseCase, MagicMock]:
     """Build the use case with a mocked playback-preference port.
 
-    The port returns a ``PlaybackPreference`` with the given audio language
-    (default: none → no preference applied).
+    The port returns a ``PlaybackPreference`` (subtitle mode defaults to OFF
+    so audio-focused tests keep subtitle defaults untouched).
     """
     pref_port = MagicMock(spec=ProfilePlaybackPreferencePort)
     pref_port.for_profile = AsyncMock(
-        return_value=PlaybackPreference(audio_language=preferred_audio)
+        return_value=PlaybackPreference(
+            audio_language=preferred_audio,
+            subtitle_language=preferred_subtitle,
+            subtitle_mode=subtitle_mode,
+        )
     )
     return GetFileTracksUseCase(hls=hls, playback_preference=pref_port), pref_port
 
@@ -239,3 +247,66 @@ class TestGetFileTracksUseCase:
         defaults = [t for t in output.audio_tracks if t["is_default"]]
         assert defaults[0]["index"] == 1  # container default; preference not applied
         pref_port.for_profile.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_subtitle_mode_always_overrides_container_default_subtitle(self) -> None:
+        # Mode ALWAYS + preferred pt: the pt sub becomes default, and the
+        # container-declared en default is normalized away (exactly one).
+        hls = MagicMock(spec=HlsPlaylistPort)
+        hls.probe_tracks.return_value = ProbeResult(
+            audio_tracks=[_audio(0, "en")],
+            subtitle_tracks=[
+                SubtitleTrack(
+                    index=0,
+                    language=LanguageCode("en"),
+                    format="srt",
+                    is_default=True,
+                    is_external=False,
+                ),
+                SubtitleTrack(
+                    index=1,
+                    language=LanguageCode("pt"),
+                    format="srt",
+                    is_external=False,
+                ),
+            ],
+        )
+        use_case, _ = _make_use_case(
+            hls,
+            preferred_subtitle=LanguageCode("pt"),
+            subtitle_mode=SubtitleMode.ALWAYS,
+        )
+
+        output = await use_case.execute(
+            GetFileTracksInput(file_path="/m.mkv", profile_id="prf_abc12345")
+        )
+
+        defaults = [t for t in output.subtitle_tracks if t["is_default"]]
+        assert len(defaults) == 1
+        assert defaults[0]["language"] == "pt"
+
+    @pytest.mark.asyncio
+    async def test_subtitle_mode_off_strips_container_default_subtitle(self) -> None:
+        # With a profile whose mode is OFF, a container-declared subtitle
+        # default is dropped — distinct from the no-profile case, which keeps
+        # the container default.
+        hls = MagicMock(spec=HlsPlaylistPort)
+        hls.probe_tracks.return_value = ProbeResult(
+            audio_tracks=[_audio(0, "en")],
+            subtitle_tracks=[
+                SubtitleTrack(
+                    index=0,
+                    language=LanguageCode("en"),
+                    format="srt",
+                    is_default=True,
+                    is_external=False,
+                ),
+            ],
+        )
+        use_case, _ = _make_use_case(hls, subtitle_mode=SubtitleMode.OFF)
+
+        output = await use_case.execute(
+            GetFileTracksInput(file_path="/m.mkv", profile_id="prf_abc12345")
+        )
+
+        assert [t for t in output.subtitle_tracks if t["is_default"]] == []

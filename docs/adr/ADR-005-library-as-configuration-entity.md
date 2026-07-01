@@ -10,8 +10,11 @@
 > passam a viver no Preferences BC (por-usuário); a autoridade de seleção de
 > faixa default passa a ser o **servidor** (manifesto HLS + `/tracks`
 > concordando), não o cliente. O `TrackSelector` segue sendo a regra de
-> domínio, agora alimentado pela preferência por-usuário. Os demais aspectos
-> deste ADR (Library como config de scan/provedores, VOs de faixa) permanecem.
+> domínio, agora alimentado pela preferência por-usuário. O `SubtitleMode`
+> esboçado abaixo no domínio da library vive hoje em `shared_kernel`
+> (membros reais `OFF`/`FOREIGN_ONLY`/`ALWAYS`/`FORCED_ONLY`), compartilhado
+> por Preferences e Media. Os demais aspectos deste ADR (Library como config
+> de scan/provedores, VOs de faixa) permanecem.
 
 ---
 

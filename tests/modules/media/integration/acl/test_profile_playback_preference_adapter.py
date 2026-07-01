@@ -15,6 +15,7 @@ from src.modules.preferences.infrastructure.persistence.sqlalchemy_unit_of_work 
 )
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.profile_id import ProfileId
+from src.shared_kernel.value_objects.subtitle_mode import SubtitleMode
 
 _PROFILE_ID = ProfileId("prf_test12345678")
 
@@ -36,15 +37,21 @@ class TestProfilePlaybackPreferenceAdapter:
     ) -> None:
         repo = SQLAlchemyPreferencesRepository(db_session)
         await repo.save(
-            PlaybackPreferences.default_for(_PROFILE_ID).apply_updates(audio_lang="pt-BR"),
+            PlaybackPreferences.default_for(_PROFILE_ID).apply_updates(
+                audio_lang="pt-BR",
+                subtitle_lang="en-US",
+                subtitle_mode="always",
+            ),
         )
         await db_session.commit()
 
         adapter = _make_adapter(session_factory)
         result = await adapter.for_profile(str(_PROFILE_ID))
 
-        # IETF "pt-BR" bridges to the strict ISO 639-1 base "pt".
+        # IETF tags bridge to strict ISO 639-1 bases; the mode passes through.
         assert result.audio_language == LanguageCode("pt")
+        assert result.subtitle_language == LanguageCode("en")
+        assert result.subtitle_mode is SubtitleMode.ALWAYS
 
     async def test_defaults_when_no_preferences_row(
         self,
@@ -57,6 +64,8 @@ class TestProfilePlaybackPreferenceAdapter:
         result = await adapter.for_profile(str(_PROFILE_ID))
 
         assert result.audio_language == LanguageCode("pt")
+        assert result.subtitle_language == LanguageCode("pt")
+        assert result.subtitle_mode is SubtitleMode.FOREIGN_ONLY
 
     async def test_unbridgeable_tag_yields_no_audio_language(
         self,
@@ -68,7 +77,10 @@ class TestProfilePlaybackPreferenceAdapter:
         # applies no audio preference (None) rather than raising.
         repo = SQLAlchemyPreferencesRepository(db_session)
         await repo.save(
-            PlaybackPreferences.default_for(_PROFILE_ID).apply_updates(audio_lang="fil"),
+            PlaybackPreferences.default_for(_PROFILE_ID).apply_updates(
+                audio_lang="fil",
+                subtitle_lang="fil",
+            ),
         )
         await db_session.commit()
 
@@ -76,3 +88,4 @@ class TestProfilePlaybackPreferenceAdapter:
         result = await adapter.for_profile(str(_PROFILE_ID))
 
         assert result.audio_language is None
+        assert result.subtitle_language is None

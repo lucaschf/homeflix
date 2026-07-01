@@ -46,7 +46,11 @@ class ProfilePlaybackPreferenceAdapter(ProfilePlaybackPreferencePort):
         # server resolves the same default the client would apply.
         if prefs is None:
             prefs = PlaybackPreferences.default_for(pid)
-        return PlaybackPreference(audio_language=_to_language_code(prefs.audio_lang))
+        return PlaybackPreference(
+            audio_language=_to_language_code(prefs.audio_lang),
+            subtitle_language=_to_language_code(prefs.subtitle_lang),
+            subtitle_mode=prefs.subtitle_mode,
+        )
 
 
 __all__ = ["ProfilePlaybackPreferenceAdapter"]

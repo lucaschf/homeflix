@@ -31,10 +31,11 @@ class GetFileTracksInput:
 class GetFileTracksUseCase:
     """Return the audio and text subtitle tracks a player can select.
 
-    Resolves the viewing profile's preferred audio language (ADR-026) via a
-    cross-BC read port to the Preferences BC, and applies it to the
-    default-audio choice. The probe still reports ``is_default`` truthfully;
-    the preference only steers which track this projection marks as default.
+    Resolves the viewing profile's playback preference (ADR-026) via a
+    cross-BC read port to the Preferences BC, and applies it to the default
+    audio and subtitle choice. The probe still reports ``is_default``
+    truthfully; the preference only steers which tracks this projection marks
+    as default.
     """
 
     def __init__(
@@ -48,11 +49,10 @@ class GetFileTracksUseCase:
     async def execute(self, input_dto: GetFileTracksInput) -> TrackListOutput:
         """Probe ``file_path`` (using the cache when available) and project."""
         probe = self._hls.probe_tracks(input_dto.file_path)
-        preferred_audio_language = None
+        preference = None
         if input_dto.profile_id is not None:
             preference = await self._playback_preference.for_profile(input_dto.profile_id)
-            preferred_audio_language = preference.audio_language
-        return serialize_tracks(probe, preferred_audio_language)
+        return serialize_tracks(probe, preference)
 
 
 __all__ = ["GetFileTracksInput", "GetFileTracksUseCase"]
