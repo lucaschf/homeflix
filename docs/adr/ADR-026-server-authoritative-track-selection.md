@@ -7,6 +7,24 @@
 
 ---
 
+## Status de Implementação (2026-07-01)
+
+A decisão foi implementada em rollout faseado. **Etapas 1, 2, 4 e 5 estão em produção**; a **etapa 3 (coerência do manifesto HLS) foi conscientemente adiada** — ver justificativa abaixo.
+
+| Etapa | Status | PR(s) |
+|-------|--------|-------|
+| 1 · ADR + remover prefs de playback de `LibrarySettings` | ✅ Feito | homeflix #351 · homeflix-web #202 |
+| 2 · Port+ACL `media → preferences` + áudio server-side no `/tracks` | ✅ Feito | #353 |
+| 3 · **Manifesto HLS resolve `DEFAULT=YES` pela mesma preferência** | ⏸️ **Adiado** | — |
+| 4 · `select_subtitle` por modo no domínio (F-3) | ✅ Feito | #354 |
+| 5 · homeflix-web confia no servidor (aplica + override + resume) | ✅ Feito | homeflix-web #203 |
+
+**Por que a etapa 3 fica adiada (decisão consciente, não drift):** o áudio primário é **muxado** dentro dos segmentos de vídeo no transcode, e o cache HLS é **por arquivo+bucket, compartilhado entre perfis** — mas o default é **por-perfil**. Resolver o `DEFAULT=YES` por preferência exige ou quebrar o cache compartilhado (manifesto por-perfil) ou **des-muxar** o áudio (todas as faixas viram renditions separadas, vídeo profile-agnostic, só o `master.m3u8` varia). A segunda é a abordagem limpa, mas mexe no **pipeline de transcode** (risco alto de player; histórico de `h264_mp4toannexb`/vídeo preto ao separar áudio) e exige smoke + limpar cache HLS. Com a etapa 5 pronta, o **ganho prático encolheu**: como o cliente é hls.js e **sempre seleciona ativamente no load** (e re-aplica após seek/Skip Intro), o `DEFAULT=YES` do manifesto é só o track *momentâneo* pré-switch. O que sobra de valor é (a) eliminar um flash de ~meio segundo do áudio muxado no cold start e (b) correção para players HLS **nativos** (que o projeto não usa). **Valor marginal × risco alto → adiado.**
+
+**Estado intermediário assumido:** enquanto a etapa 3 não é feita, o manifesto HLS emite um `DEFAULT=YES,AUTOSELECT=YES` no áudio muxado (index 0) que é um **default de transporte não-autoritativo** — o cliente o sobrepõe aplicando o `/tracks.is_default` (autoritativo). Ou seja, `/tracks` e o manifesto **ainda não concordam** entre si; a autoridade de *decisão* é única (`/tracks`/domínio), mas a *coerência de output* entre os dois artefatos só se completa na etapa 3. Um novo ADR/PR pode retomar a etapa 3 se surgir suporte a player nativo ou se o flash de cold start incomodar.
+
+---
+
 ## Contexto
 
 O ADR-005 modelou a `Library` como entidade de configuração e previu **preferências de reprodução por-library** (`LibrarySettings.preferred_audio_language` / `preferred_subtitle_language` / `subtitle_mode`) dirigindo um `TrackSelector` de domínio que escolhe a faixa default.
@@ -29,7 +47,7 @@ Nós tornaremos o **servidor a autoridade única** da escolha de faixa default, 
 
 2. **Autoridade no servidor.** O `TrackSelector` de domínio (ADR-005) continua dono da regra, agora alimentado pela preferência **por-usuário** lida via Read Port + ACL cross-BC `media → preferences` (ADR-009). A seleção é aplicada nos **dois** pontos de leitura que o cliente consome, que passam a **concordar**:
    - `/tracks` → `is_default` reflete a faixa resolvida;
-   - o **manifesto HLS** → `DEFAULT=YES,AUTOSELECT=YES` na mesma faixa resolvida (não mais sempre index 0).
+   - o **manifesto HLS** → `DEFAULT=YES,AUTOSELECT=YES` na mesma faixa resolvida (não mais sempre index 0). *(Estado-alvo; a etapa 3 do rollout que o realiza está adiada — ver "Status de Implementação".)*
 
 3. **Precedência canônica.** A faixa que toca é resolvida nesta ordem:
    `escolha salva no título (watch_progress) → preferência do perfil (Preferences BC) → default declarado no container → primeira faixa`.
@@ -48,7 +66,7 @@ Esta decisão **emenda o ADR-005**: a localização da preferência de reproduç
 ### Positivas
 
 - Fonte única e autoridade única eliminam o drift back↔front (fim das duas implementações e dois defaults).
-- `/tracks.is_default` e o manifesto HLS passam a concordar — o áudio que o player auto-seleciona é o mesmo que a UI marca como default.
+- `/tracks.is_default` e o manifesto HLS passam a concordar — o áudio que o player auto-seleciona é o mesmo que a UI marca como default. *(Concordância plena depende da etapa 3, adiada; hoje o cliente sobrepõe o `DEFAULT` de transporte do manifesto com o `/tracks.is_default` — ver "Status de Implementação".)*
 - A regra (matching de idioma, mais canais, `subtitle_mode`) vira domínio testável sem browser; alinha ADR-005/ADR-017.
 - Consistência cross-device (a preferência resolve igual em qualquer cliente).
 - Dá um lar correto ao F-3 (`select_subtitle` por modo) no domínio.
@@ -122,7 +140,7 @@ class ProfilePlaybackPreferencePort(ABC):
 **Rollout faseado sugerido (1 PR por etapa, smoke nos que tocam player):**
 1. ADR (este) + remover os campos de preferência de reprodução de `LibrarySettings` (mapper/schemas/DTO; sem migration).
 2. Port+ACL `media → preferences` + resolução server-side no `/tracks` (`is_default` passa a valer).
-3. Manifesto HLS resolve o `DEFAULT=YES` pela mesma preferência (coerência com `/tracks`). **[risco alto — smoke]**
+3. Manifesto HLS resolve o `DEFAULT=YES` pela mesma preferência (coerência com `/tracks`). **[risco alto — smoke] — ⏸️ ADIADO (ver "Status de Implementação")**
 4. `select_subtitle` por modo no domínio (F-3).
 5. homeflix-web: remover `findTrackByLang`/`pickPreferredSubtitleId`, passar a confiar no servidor (aplicar + override + resume). **[risco alto — smoke]**
 
@@ -137,3 +155,4 @@ class ProfilePlaybackPreferencePort(ABC):
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-06-30 | Lucas | Criação inicial |
+| 2026-07-01 | Lucas | Status de Implementação: etapas 1/2/4/5 em produção; etapa 3 (coerência do manifesto HLS) conscientemente adiada, com justificativa e estado intermediário documentados |
