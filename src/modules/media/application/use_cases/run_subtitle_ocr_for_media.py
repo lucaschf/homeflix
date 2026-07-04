@@ -2,10 +2,12 @@
 
 Runs the OCR pipeline on a single movie/episode on demand, records an
 audit run, and returns it. Unlike the periodic job it ignores the
-per-file ``.ocr_done`` marker (it always re-processes) and the operator's
-``languages`` allow-list (it OCRs every mappable track), since the admin
-explicitly asked for this title. It does not require the periodic job to
-be enabled — but it does need tesseract on the host.
+per-file ``.ocr_done`` marker (it always re-processes), but it *does*
+honour the operator's ``languages`` allow-list — some Blu-ray remuxes
+carry 20+ PGS tracks, and OCR-ing every one would take hours, so the
+scope is bounded by the configured languages (empty = every mappable
+track). It does not require the periodic job to be enabled — but it does
+need tesseract on the host.
 """
 
 from __future__ import annotations
@@ -107,12 +109,18 @@ class RunSubtitleOcrForMediaUseCase:
             ffmpeg_threads=streaming.ffmpeg_threads,
         )
         output_dir = ocr_subtitle_output_dir(ref.path, config.subdir)
+        # Honour the configured languages so a 20+ track remux doesn't OCR
+        # everything; empty means every mappable track.
+        language_filter = frozenset(lang.lower() for lang in config.languages) or None
 
         error: str | None = None
         try:
-            # language_filter=None: a manual trigger OCRs every mappable track.
             report = await asyncio.to_thread(
-                self._processor.process_file, str(ref.path), output_dir, options, None
+                self._processor.process_file,
+                str(ref.path),
+                output_dir,
+                options,
+                language_filter,
             )
         except Exception as exc:  # — surface as a FAILED run, not a 500
             _logger.exception("[subtitle-ocr] manual run failed", extra={"source": str(ref.path)})

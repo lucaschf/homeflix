@@ -70,9 +70,9 @@ def _uow(
     return uow
 
 
-def _config() -> AsyncMock:
+def _config(languages: tuple[str, ...] = ()) -> AsyncMock:
     config = AsyncMock()
-    config.subtitle_ocr = AsyncMock(return_value=SubtitleOcrConfig())
+    config.subtitle_ocr = AsyncMock(return_value=SubtitleOcrConfig(languages=languages))
     config.streaming = AsyncMock(return_value=StreamingConfig())
     return config
 
@@ -90,13 +90,16 @@ def _processor(report: FileOcrReport) -> MagicMock:
 
 
 def _use_case(
-    uow: AsyncMock, processor: MagicMock, ocr: MagicMock
+    uow: AsyncMock,
+    processor: MagicMock,
+    ocr: MagicMock,
+    languages: tuple[str, ...] = (),
 ) -> RunSubtitleOcrForMediaUseCase:
     return RunSubtitleOcrForMediaUseCase(
         media_uow_factory=MagicMock(return_value=uow),
         processor=processor,
         ocr_service=ocr,
-        config=_config(),
+        config=_config(languages),
     )
 
 
@@ -129,8 +132,19 @@ class TestRunSubtitleOcrForMedia:
         assert out.outcome == SubtitleOcrOutcome.COMPLETED.value
         assert out.extracted_count == 1
         assert out.track_results[0].cue_count == 42
-        # manual trigger OCRs all languages (no filter)
+        # empty config languages -> no filter (every mappable track)
         assert proc.process_file.call_args.args[3] is None
+
+    async def test_honours_configured_languages(self, tmp_path: Path) -> None:
+        path = tmp_path / "m.mkv"
+        uow = _uow(movie=_movie(path, media_id="mov_cccccccccccc"))
+        proc = _processor(_COMPLETED)
+        # a 20+ track remux must not OCR everything — scope by config
+        use_case = _use_case(uow, proc, _ocr_service(), languages=("pt", "en"))
+
+        await use_case.execute(RunSubtitleOcrInput(media_kind="movie", media_id="mov_cccccccccccc"))
+
+        assert proc.process_file.call_args.args[3] == frozenset({"pt", "en"})
         # COMPLETED writes the done marker
         assert (ocr_subtitle_output_dir(path, ".homeflix/subtitles") / OCR_DONE_MARKER).exists()
 
