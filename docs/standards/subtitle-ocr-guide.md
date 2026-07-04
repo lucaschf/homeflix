@@ -172,8 +172,10 @@ POST /api/v1/admin/subtitle-ocr/episodes/{episode_id}/run  # 202 Accepted
 - Não exige o job periódico ligado.
 - `tesseract` ausente → grava um run `FAILED`.
 
-> O botão por-episódio (SeriesDetail) ainda não existe na UI; o endpoint
-> `/episodes/{id}/run` já funciona.
+> **Episódios não têm botão na UI, por design:** são melhor cobertos pelo
+> job periódico (com `languages` setado) — que converge o acervo — e pelo
+> endpoint `/episodes/{id}/run` para disparos avulsos via API. O botão fica
+> só no detalhe do filme.
 
 ### 5.3. Exposição no player
 
