@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from src.modules.settings.domain.value_objects import (
         ScanDedupConfig,
         StreamingConfig,
+        SubtitleOcrConfig,
         ThumbnailBackfillConfig,
     )
 
@@ -31,6 +32,23 @@ class StreamingConfigPort(Protocol):
     def streaming_snapshot_sync(self) -> StreamingConfig:
         """Return the latest ``StreamingConfig`` without awaiting a refresh."""
         ...
+
+
+class SubtitleOcrConfigPort(Protocol):
+    """Synchronous access to the current subtitle-OCR config snapshot."""
+
+    def subtitle_ocr_snapshot_sync(self) -> SubtitleOcrConfig:
+        """Return the latest ``SubtitleOcrConfig`` without awaiting a refresh."""
+        ...
+
+
+class HlsRuntimeConfigPort(StreamingConfigPort, SubtitleOcrConfigPort, Protocol):
+    """Combined sync config access the HLS service needs.
+
+    ``RuntimeSettings`` satisfies this structurally (it exposes both
+    snapshot getters), so the composition root keeps injecting it
+    unchanged while the HLS service names only the getters it calls.
+    """
 
 
 class ThumbnailConfigPort(Protocol):
@@ -50,7 +68,9 @@ class ScanDedupConfigPort(Protocol):
 
 
 __all__ = [
+    "HlsRuntimeConfigPort",
     "ScanDedupConfigPort",
     "StreamingConfigPort",
+    "SubtitleOcrConfigPort",
     "ThumbnailConfigPort",
 ]

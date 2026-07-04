@@ -63,9 +63,12 @@ from src.modules.media.infrastructure.streaming._subprocess import (
     with_ffmpeg_threads,
 )
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
+from src.modules.media.infrastructure.streaming.subtitle_ocr_surfacing import (
+    attach_ocr_subtitles,
+)
 
 if TYPE_CHECKING:
-    from src.modules.media.application.ports.runtime_config_ports import StreamingConfigPort
+    from src.modules.media.application.ports.runtime_config_ports import HlsRuntimeConfigPort
     from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 _logger = logging.getLogger(__name__)
@@ -179,7 +182,7 @@ class HlsService(HlsPlaylistPort):
 
     def __init__(
         self,
-        runtime_settings: StreamingConfigPort,
+        runtime_settings: HlsRuntimeConfigPort,
         cache_dir: str = "./hls_cache",
         probe_service: MediaProbeService | None = None,
         idle_timeout: float = _DEFAULT_IDLE_TIMEOUT,
@@ -611,12 +614,19 @@ class HlsService(HlsPlaylistPort):
         raise RuntimeError(msg)
 
     def probe_tracks(self, file_path: str) -> ProbeResult:
-        """Probe a file for tracks, using cache when available."""
+        """Probe a file for tracks, using cache when available.
+
+        Image-based subtitles that have an OCR sidecar on disk are
+        surfaced as external text tracks (ADR-027); a no-op when subtitle
+        OCR is disabled. Applied on the base probe (cached without OCR
+        tracks) so the derivation stays idempotent across cache hits.
+        """
         path_hash = self.get_path_hash(file_path)
         cached = self.get_cached_tracks(path_hash)
-        if cached:
-            return self._deserialize_probe(cached)
-        return self._probe.probe(file_path)
+        base = self._deserialize_probe(cached) if cached else self._probe.probe(file_path)
+        return attach_ocr_subtitles(
+            base, file_path, self._runtime_settings.subtitle_ocr_snapshot_sync()
+        )
 
     def clear_cache(self, file_path: str | None = None) -> None:
         """Clear cached HLS segments.
@@ -760,6 +770,14 @@ class HlsService(HlsPlaylistPort):
 
         # Probe outside the lock (potentially slow I/O)
         probe_result = self._probe.probe(safe_path)
+        # Read-time view with OCR text tracks surfaced for image subtitles
+        # that already have a sidecar (ADR-027). The base ``probe_result``
+        # is what gets cached; ``probe_view`` (which may carry the derived
+        # OCR tracks) drives subtitle rendition + master playlist so the
+        # ``sub_N`` indices match ``probe_tracks``. A no-op when disabled.
+        probe_view = attach_ocr_subtitles(
+            probe_result, safe_path, self._runtime_settings.subtitle_ocr_snapshot_sync()
+        )
 
         # Snapshot ffmpeg_threads once per generation start so every
         # command spawned for this path sees the same cap, even if
@@ -772,7 +790,7 @@ class HlsService(HlsPlaylistPort):
         # the file route would block on indefinitely.
         text_subs: list[SubtitleTrack] = [
             s
-            for s in probe_result.all_subtitles
+            for s in probe_view.all_subtitles
             if s.is_text_based and (not s.is_external or s.file_path is not None)
         ]
 
@@ -837,8 +855,10 @@ class HlsService(HlsPlaylistPort):
             # paths that get filled in by the background subtitle extraction
             # below. The player only fetches those URIs when the user enables
             # a subtitle (all entries are emitted as DEFAULT=NO,AUTOSELECT=NO),
-            # so racing them against playback start is safe.
-            self._build_master_playlist(output_dir, probe_result)
+            # so racing them against playback start is safe. Uses ``probe_view``
+            # so surfaced OCR text tracks (ADR-027) get a ``sub_N`` rendition
+            # matching ``text_subs``.
+            self._build_master_playlist(output_dir, probe_view)
 
             # 4. Pre-create per-subtitle readiness events. They MUST be
             # registered before _start_generation returns so the file

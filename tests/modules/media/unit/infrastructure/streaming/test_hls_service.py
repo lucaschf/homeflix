@@ -20,7 +20,11 @@ from src.modules.media.infrastructure.streaming.hls_service import (
     _shift_webvtt_to_bucket_local,
 )
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
-from src.modules.settings.domain.value_objects import HardwareAccel, StreamingConfig
+from src.modules.settings.domain.value_objects import (
+    HardwareAccel,
+    StreamingConfig,
+    SubtitleOcrConfig,
+)
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
@@ -30,11 +34,14 @@ def _fake_runtime_settings(
     ffmpeg_threads: int | None = None,
     hls_cache_max_size_mb: int = 5120,
     hw_accel: HardwareAccel = HardwareAccel.OFF,
+    subtitle_ocr: SubtitleOcrConfig | None = None,
 ) -> MagicMock:
-    """Build a fake :class:`RuntimeSettings` exposing the sync streaming snapshot.
+    """Build a fake :class:`RuntimeSettings` exposing the sync snapshots.
 
     ``hw_accel`` defaults to ``OFF`` so command-building tests stay on
     the deterministic software path and never spawn the NVENC probe.
+    ``subtitle_ocr`` defaults to a disabled config so OCR surfacing is a
+    no-op unless a test opts in.
     """
     runtime = MagicMock()
     runtime.streaming_snapshot_sync.return_value = StreamingConfig(
@@ -42,6 +49,7 @@ def _fake_runtime_settings(
         hls_cache_max_size_mb=hls_cache_max_size_mb,
         hw_accel=hw_accel,
     )
+    runtime.subtitle_ocr_snapshot_sync.return_value = subtitle_ocr or SubtitleOcrConfig()
     return runtime
 
 
