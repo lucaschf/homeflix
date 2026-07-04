@@ -28,6 +28,7 @@ from src.modules.settings.domain.value_objects.streaming_config import (
     HardwareAccel,
     StreamingConfig,
 )
+from src.modules.settings.domain.value_objects.subtitle_ocr_config import SubtitleOcrConfig
 from src.modules.settings.domain.value_objects.thumbnail_backfill_config import (
     ThumbnailBackfillConfig,
 )
@@ -40,6 +41,7 @@ ConfigVO = (
     | StreamingConfig
     | AvatarConfig
     | ScanDedupConfig
+    | SubtitleOcrConfig
 )
 """Union of all configuration VOs persisted in ``app_settings``."""
 
@@ -58,6 +60,7 @@ __all__ = [
     "SettingKey",
     "SettingSource",
     "StreamingConfig",
+    "SubtitleOcrConfig",
     "ThumbnailBackfillConfig",
     "vo_type_for",
 ]

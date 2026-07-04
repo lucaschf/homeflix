@@ -38,6 +38,7 @@ from src.modules.settings.domain.value_objects import (
     SchedulerConfig,
     SettingKey,
     StreamingConfig,
+    SubtitleOcrConfig,
     ThumbnailBackfillConfig,
 )
 
@@ -171,6 +172,11 @@ class RuntimeSettings:
         """Return the current :class:`ScanDedupConfig` snapshot."""
         await self._ensure_fresh()
         return cast(ScanDedupConfig, self._snapshot[SettingKey.SCAN_DEDUP])
+
+    async def subtitle_ocr(self) -> SubtitleOcrConfig:
+        """Return the current :class:`SubtitleOcrConfig` snapshot."""
+        await self._ensure_fresh()
+        return cast(SubtitleOcrConfig, self._snapshot[SettingKey.SUBTITLE_OCR])
 
 
 __all__ = ["RuntimeSettings"]

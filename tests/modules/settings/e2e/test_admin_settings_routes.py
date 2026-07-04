@@ -95,6 +95,7 @@ class TestAdminSettingsList:
                 "streaming",
                 "avatar",
                 "scan_dedup",
+                "subtitle_ocr",
             ]
         )
         for entry in body["data"]:

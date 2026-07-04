@@ -24,6 +24,7 @@ from src.modules.settings.domain.value_objects.scan_dedup_config import ScanDedu
 from src.modules.settings.domain.value_objects.scheduler_config import SchedulerConfig
 from src.modules.settings.domain.value_objects.setting_key import SettingKey
 from src.modules.settings.domain.value_objects.streaming_config import StreamingConfig
+from src.modules.settings.domain.value_objects.subtitle_ocr_config import SubtitleOcrConfig
 from src.modules.settings.domain.value_objects.thumbnail_backfill_config import (
     ThumbnailBackfillConfig,
 )
@@ -37,6 +38,7 @@ SETTING_VO_TYPES: Final[Mapping[SettingKey, type[CompoundValueObject]]] = Mappin
         SettingKey.STREAMING: StreamingConfig,
         SettingKey.AVATAR: AvatarConfig,
         SettingKey.SCAN_DEDUP: ScanDedupConfig,
+        SettingKey.SUBTITLE_OCR: SubtitleOcrConfig,
     }
 )
 """Read-only map from setting bucket to the VO type its row carries."""
