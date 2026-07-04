@@ -152,6 +152,7 @@ acervos só-PGS é alto (legenda essencial ausente).
 
 ## Referências
 
+- **Guia operacional:** [`docs/standards/subtitle-ocr-guide.md`](../standards/subtitle-ocr-guide.md) (instalação do tesseract + modelos, configuração, trigger manual, observabilidade)
 - Backlog: memória `project_image_subtitle_support_backlog` (descoberta + protótipo validado)
 - ADR-013/014 — Runtime Settings persistidos por bucket (`SubtitleOcrConfig`)
 - ADR-021 — Detector de Créditos (precedente best-effort per-arquivo + job + config)
