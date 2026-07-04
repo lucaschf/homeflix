@@ -40,6 +40,7 @@ from src.modules.media.presentation.routes import (
     admin_overview_router,
     admin_relink_router,
     admin_scan_router,
+    admin_subtitle_ocr_router,
     admin_system_router,
     catalog_router,
     collection_router,
@@ -72,6 +73,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.media.presentation.routes.admin_overview_routes",
     "src.modules.media.presentation.routes.admin_relink_routes",
     "src.modules.media.presentation.routes.admin_scan_routes",
+    "src.modules.media.presentation.routes.admin_subtitle_ocr_routes",
     "src.modules.media.presentation.routes.admin_system_routes",
     "src.modules.media.presentation.routes.catalog_routes",
     "src.modules.media.presentation.routes.collection_routes",
@@ -464,6 +466,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_intro_detection_router)
     app.include_router(admin_jobs_router)
     app.include_router(admin_credits_router)
+    app.include_router(admin_subtitle_ocr_router)
     app.include_router(admin_system_router)
     app.include_router(catalog_router)
     app.include_router(collection_router)

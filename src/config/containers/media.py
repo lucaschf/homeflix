@@ -74,6 +74,9 @@ from src.modules.media.application.use_cases.get_series_by_id import GetSeriesBy
 from src.modules.media.application.use_cases.get_series_tmdb_suggestions import (
     GetSeriesTmdbSuggestionsUseCase,
 )
+from src.modules.media.application.use_cases.get_subtitle_ocr_run import (
+    GetSubtitleOcrRunUseCase,
+)
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_conflicts import ListConflictsUseCase
 from src.modules.media.application.use_cases.list_credits_status import (
@@ -102,6 +105,9 @@ from src.modules.media.application.use_cases.list_scan_runs import ListScanRunsU
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
 from src.modules.media.application.use_cases.list_series_needing_review import (
     ListSeriesNeedingReviewUseCase,
+)
+from src.modules.media.application.use_cases.list_subtitle_ocr_runs import (
+    ListSubtitleOcrRunsUseCase,
 )
 from src.modules.media.application.use_cases.promote_movie_to_series import (
     PromoteMovieToSeriesUseCase,
@@ -702,6 +708,16 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
 
     get_intro_detection_run = providers.Factory(
         GetIntroDetectionRunUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    list_subtitle_ocr_runs = providers.Factory(
+        ListSubtitleOcrRunsUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    get_subtitle_ocr_run = providers.Factory(
+        GetSubtitleOcrRunUseCase,
         media_uow_factory=media_unit_of_work_factory,
     )
 
