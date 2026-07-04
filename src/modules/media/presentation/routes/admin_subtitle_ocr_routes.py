@@ -33,18 +33,29 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Subtitle OCR"])
 # Strong references to in-flight manual-OCR tasks so the event loop's weak
 # reference doesn't GC a running OCR (mirrors the eager-thumbnail pattern).
 _manual_ocr_tasks: set[asyncio.Task[Any]] = set()
+# Single-flight guard: media keys currently being OCR'd, so a repeat click
+# doesn't launch a second full-file OCR of the same title.
+_inflight_media: set[str] = set()
 
 
 def _fire_manual_ocr(
     use_case: RunSubtitleOcrForMediaUseCase, media_kind: str, media_id: str
-) -> None:
+) -> bool:
     """Launch a manual OCR run in the background (fire-and-forget).
 
     OCR takes minutes, so the request returns 202 immediately; the run is
     recorded on completion and surfaced via the runs list. Exceptions are
     logged — a not-found media never reaches here (the UI triggers only on
     titles it displays), and OCR failures are recorded as FAILED runs.
+
+    Single-flighted per title: a repeat trigger for a title already being
+    OCR'd is ignored (returns ``False``) so double-clicks don't stack
+    duplicate full-file OCR runs.
     """
+    key = f"{media_kind}:{media_id}"
+    if key in _inflight_media:
+        return False
+    _inflight_media.add(key)
 
     async def _run() -> None:
         try:
@@ -54,10 +65,13 @@ def _fire_manual_ocr(
                 "[subtitle-ocr] manual trigger failed",
                 extra={"media_kind": media_kind, "media_id": media_id},
             )
+        finally:
+            _inflight_media.discard(key)
 
     task = asyncio.create_task(_run())
     _manual_ocr_tasks.add(task)
     task.add_done_callback(_manual_ocr_tasks.discard)
+    return True
 
 
 @router.get("/subtitle-ocr/runs")
@@ -108,10 +122,10 @@ async def run_movie_subtitle_ocr(
     ),
 ) -> dict[str, Any]:
     """Trigger OCR for one movie now (best-effort, runs in the background)."""
-    _fire_manual_ocr(use_case, "movie", movie_id)
+    triggered = _fire_manual_ocr(use_case, "movie", movie_id)
     return api_single(
         "subtitle_ocr_trigger",
-        {"media_kind": "movie", "media_id": movie_id, "triggered": True},
+        {"media_kind": "movie", "media_id": movie_id, "triggered": triggered},
     )
 
 
@@ -125,10 +139,10 @@ async def run_episode_subtitle_ocr(
     ),
 ) -> dict[str, Any]:
     """Trigger OCR for one episode now (best-effort, runs in the background)."""
-    _fire_manual_ocr(use_case, "episode", episode_id)
+    triggered = _fire_manual_ocr(use_case, "episode", episode_id)
     return api_single(
         "subtitle_ocr_trigger",
-        {"media_kind": "episode", "media_id": episode_id, "triggered": True},
+        {"media_kind": "episode", "media_id": episode_id, "triggered": triggered},
     )
 
 

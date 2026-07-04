@@ -164,7 +164,9 @@ POST /api/v1/admin/subtitle-ocr/episodes/{episode_id}/run  # 202 Accepted
 ```
 
 - É **fire-and-forget** (202): o OCR roda em background; o resultado
-  aparece na página de execuções quando termina (minutos).
+  aparece na página de execuções quando termina (minutos). Cliques
+  repetidos no mesmo título enquanto ele processa são ignorados
+  (single-flight; a resposta traz `"triggered": false`).
 - Ignora o marcador `.ocr_done` (sempre reprocessa) mas **respeita
   `languages`**.
 - Não exige o job periódico ligado.
