@@ -36,6 +36,7 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-024](./ADR-024-published-presentation-contracts-cross-bc.md) | Contratos de Presentation Publicados para Imports Cross-BC | ✅ Aceito | 2026-06-29 |
 | [ADR-025](./ADR-025-provider-metadata-reconciliation-in-application.md) | Reconciliação de Metadados de Provider é Concern de Application | ✅ Aceito | 2026-06-29 |
 | [ADR-026](./ADR-026-server-authoritative-track-selection.md) | Seleção de Faixa Default Autoritativa no Servidor a partir de Preferência por Usuário | ✅ Aceito | 2026-06-30 |
+| [ADR-027](./ADR-027-ocr-image-based-subtitles.md) | OCR de Legendas Baseadas em Imagem (PGS/VOBSUB) para Faixas de Texto Selecionáveis | ✅ Aceito | 2026-07-04 |
 
 ## Como Criar um Novo ADR
 
