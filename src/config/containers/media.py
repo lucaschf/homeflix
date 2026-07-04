@@ -8,6 +8,9 @@ from dependency_injector import containers, providers
 from src.modules.media.application.event_handlers import OnMediaCreatedHandler
 from src.modules.media.application.services.job_run_service import JobRunService
 from src.modules.media.application.services.scan_run_service import ScanRunService
+from src.modules.media.application.services.subtitle_ocr_processor import (
+    SubtitleOcrProcessor,
+)
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
 from src.modules.media.application.use_cases.bulk_enrich_metadata import (
     BulkEnrichMetadataUseCase,
@@ -74,6 +77,9 @@ from src.modules.media.application.use_cases.get_series_by_id import GetSeriesBy
 from src.modules.media.application.use_cases.get_series_tmdb_suggestions import (
     GetSeriesTmdbSuggestionsUseCase,
 )
+from src.modules.media.application.use_cases.get_subtitle_ocr_run import (
+    GetSubtitleOcrRunUseCase,
+)
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_conflicts import ListConflictsUseCase
 from src.modules.media.application.use_cases.list_credits_status import (
@@ -103,6 +109,9 @@ from src.modules.media.application.use_cases.list_series import ListSeriesUseCas
 from src.modules.media.application.use_cases.list_series_needing_review import (
     ListSeriesNeedingReviewUseCase,
 )
+from src.modules.media.application.use_cases.list_subtitle_ocr_runs import (
+    ListSubtitleOcrRunsUseCase,
+)
 from src.modules.media.application.use_cases.promote_movie_to_series import (
     PromoteMovieToSeriesUseCase,
 )
@@ -117,6 +126,9 @@ from src.modules.media.application.use_cases.reset_season_intro_detection import
 )
 from src.modules.media.application.use_cases.resolve_media_conflict import (
     ResolveMediaConflictUseCase,
+)
+from src.modules.media.application.use_cases.run_subtitle_ocr_for_media import (
+    RunSubtitleOcrForMediaUseCase,
 )
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
@@ -166,7 +178,11 @@ from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
 from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyMediaUnitOfWorkFactory,
 )
-from src.modules.media.infrastructure.streaming import HlsService, MediaProbeService
+from src.modules.media.infrastructure.streaming import (
+    HlsService,
+    MediaProbeService,
+    TesseractPgsOcrService,
+)
 from src.modules.media.infrastructure.streaming.file_streamer import LocalFileStreamer
 from src.modules.media.infrastructure.streaming.now_playing_registry import (
     NowPlayingRegistry,
@@ -425,6 +441,8 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     variant_detector = providers.Factory(VariantDetector)
 
     media_probe_service = providers.Singleton(MediaProbeService)
+
+    subtitle_ocr_service = providers.Singleton(TesseractPgsOcrService)
 
     hls_service = providers.Singleton(
         HlsService,
@@ -697,6 +715,30 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     get_intro_detection_run = providers.Factory(
         GetIntroDetectionRunUseCase,
         media_uow_factory=media_unit_of_work_factory,
+    )
+
+    list_subtitle_ocr_runs = providers.Factory(
+        ListSubtitleOcrRunsUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    get_subtitle_ocr_run = providers.Factory(
+        GetSubtitleOcrRunUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+    )
+
+    subtitle_ocr_processor = providers.Singleton(
+        SubtitleOcrProcessor,
+        probe_service=media_probe_service,
+        ocr_service=subtitle_ocr_service,
+    )
+
+    run_subtitle_ocr_for_media = providers.Factory(
+        RunSubtitleOcrForMediaUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+        processor=subtitle_ocr_processor,
+        ocr_service=subtitle_ocr_service,
+        config=runtime_settings,
     )
 
     sweep_interrupted_scan_runs = providers.Factory(

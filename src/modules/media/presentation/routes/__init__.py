@@ -21,6 +21,9 @@ from src.modules.media.presentation.routes.admin_relink_routes import (
 from src.modules.media.presentation.routes.admin_scan_routes import (
     router as admin_scan_router,
 )
+from src.modules.media.presentation.routes.admin_subtitle_ocr_routes import (
+    router as admin_subtitle_ocr_router,
+)
 from src.modules.media.presentation.routes.admin_system_routes import (
     router as admin_system_router,
 )
@@ -46,6 +49,7 @@ __all__ = [
     "admin_overview_router",
     "admin_relink_router",
     "admin_scan_router",
+    "admin_subtitle_ocr_router",
     "admin_system_router",
     "catalog_router",
     "collection_router",

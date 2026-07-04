@@ -9,6 +9,7 @@ from src.modules.settings.domain.value_objects import (
     IntroDetectionConfig,
     ScanDedupConfig,
     SchedulerConfig,
+    SubtitleOcrConfig,
 )
 from tests.modules.settings.e2e.conftest import SeededUser
 
@@ -95,6 +96,7 @@ class TestAdminSettingsList:
                 "streaming",
                 "avatar",
                 "scan_dedup",
+                "subtitle_ocr",
             ]
         )
         for entry in body["data"]:
@@ -226,3 +228,26 @@ class TestAdminSettingsPatch:
         response = await client.patch(f"{SETTINGS_ROOT}/scan-dedup", json=body)
 
         assert response.status_code == 422
+
+    async def test_subtitle_ocr_full_replace_persists(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        admin = await _login_as_admin(client, seed_user_with_profile)
+
+        body = SubtitleOcrConfig(
+            enabled=True,
+            batch_size=3,
+            languages=("en", "pt"),
+        ).model_dump(mode="json")
+        response = await client.patch(f"{SETTINGS_ROOT}/subtitle-ocr", json=body)
+
+        assert response.status_code == 200
+        payload = response.json()["data"]
+        assert payload["key"] == "subtitle_ocr"
+        assert payload["source"] == "admin"
+        assert payload["updated_by_user_id"] == admin.user_external_id
+        assert payload["value"]["enabled"] is True
+        assert payload["value"]["batch_size"] == 3
+        assert payload["value"]["languages"] == ["en", "pt"]

@@ -25,6 +25,9 @@ from src.modules.media.infrastructure.persistence.repositories.scan_run_reposito
 from src.modules.media.infrastructure.persistence.repositories.series_repository import (
     SQLAlchemySeriesRepository,
 )
+from src.modules.media.infrastructure.persistence.repositories.subtitle_ocr_run_repository import (
+    SqlAlchemySubtitleOcrRunRepository,
+)
 
 
 class SqlAlchemyMediaUnitOfWork(SqlAlchemyUnitOfWork, MediaUnitOfWork):
@@ -41,6 +44,7 @@ class SqlAlchemyMediaUnitOfWork(SqlAlchemyUnitOfWork, MediaUnitOfWork):
         self.series = SQLAlchemySeriesRepository(session)
         self.scan_runs = SqlAlchemyScanRunRepository(session)
         self.intro_detection_runs = SqlAlchemyIntroDetectionRunRepository(session)
+        self.subtitle_ocr_runs = SqlAlchemySubtitleOcrRunRepository(session)
         self.media_conflicts = SqlAlchemyMediaConflictRepository(session)
         self.job_runs = SqlAlchemyJobRunRepository(session)
 

@@ -63,6 +63,10 @@ from src.modules.media.application.ports.scheduler_inspector_port import (
 from src.modules.media.application.ports.scrub_preview_locator_port import (
     ScrubPreviewLocatorPort,
 )
+from src.modules.media.application.ports.subtitle_ocr_port import (
+    SubtitleOcrOptions,
+    SubtitleOcrPort,
+)
 from src.modules.media.application.ports.variant_detector_port import (
     VariantDetectorPort,
 )
@@ -107,5 +111,7 @@ __all__ = [
     "ScrubPreviewLocatorPort",
     "SearchCandidate",
     "SeasonMetadata",
+    "SubtitleOcrOptions",
+    "SubtitleOcrPort",
     "VariantDetectorPort",
 ]

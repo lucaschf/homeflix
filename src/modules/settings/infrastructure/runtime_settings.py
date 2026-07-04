@@ -38,6 +38,7 @@ from src.modules.settings.domain.value_objects import (
     SchedulerConfig,
     SettingKey,
     StreamingConfig,
+    SubtitleOcrConfig,
     ThumbnailBackfillConfig,
 )
 
@@ -171,6 +172,22 @@ class RuntimeSettings:
         """Return the current :class:`ScanDedupConfig` snapshot."""
         await self._ensure_fresh()
         return cast(ScanDedupConfig, self._snapshot[SettingKey.SCAN_DEDUP])
+
+    async def subtitle_ocr(self) -> SubtitleOcrConfig:
+        """Return the current :class:`SubtitleOcrConfig` snapshot."""
+        await self._ensure_fresh()
+        return cast(SubtitleOcrConfig, self._snapshot[SettingKey.SUBTITLE_OCR])
+
+    def subtitle_ocr_snapshot_sync(self) -> SubtitleOcrConfig:
+        """Return the cached :class:`SubtitleOcrConfig` *without* refreshing.
+
+        Escape hatch for synchronous contexts (the HLS probe/generation
+        path) that cannot ``await``. Like :meth:`streaming_snapshot_sync`,
+        it returns whatever the async path last saw; the OCR ``enabled``
+        flag and ``subdir`` change rarely, so a slightly stale read is
+        acceptable — it converges on the next async refresh.
+        """
+        return cast(SubtitleOcrConfig, self._snapshot[SettingKey.SUBTITLE_OCR])
 
 
 __all__ = ["RuntimeSettings"]

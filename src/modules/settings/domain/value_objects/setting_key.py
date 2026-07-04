@@ -22,6 +22,7 @@ class SettingKey(StrEnum):
     STREAMING = "streaming"
     AVATAR = "avatar"
     SCAN_DEDUP = "scan_dedup"
+    SUBTITLE_OCR = "subtitle_ocr"
 
 
 __all__ = ["SettingKey"]

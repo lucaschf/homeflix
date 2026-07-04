@@ -29,6 +29,7 @@ from src.modules.settings.domain.value_objects import (
     SchedulerConfig,
     SettingKey,
     StreamingConfig,
+    SubtitleOcrConfig,
     ThumbnailBackfillConfig,
 )
 
@@ -186,6 +187,26 @@ async def update_scan_dedup_settings(
     detail = await use_case.execute(
         UpdateSettingInput(
             key=SettingKey.SCAN_DEDUP.value,
+            value=body.model_dump(mode="json"),
+            acting_admin_id=admin.external_id,
+        ),
+    )
+    return api_single("setting", asdict(detail))
+
+
+@router.patch("/subtitle-ocr")
+@inject
+async def update_subtitle_ocr_settings(
+    body: SubtitleOcrConfig,
+    admin: AuthenticatedUser = Depends(authenticated_admin),
+    use_case: UpdateSettingUseCase = Depends(
+        Provide[ApplicationContainer.settings.update_setting],
+    ),
+) -> dict[str, Any]:
+    """Replace the persisted :class:`SubtitleOcrConfig`."""
+    detail = await use_case.execute(
+        UpdateSettingInput(
+            key=SettingKey.SUBTITLE_OCR.value,
             value=body.model_dump(mode="json"),
             acting_admin_id=admin.external_id,
         ),

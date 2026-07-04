@@ -40,6 +40,7 @@ from src.modules.media.presentation.routes import (
     admin_overview_router,
     admin_relink_router,
     admin_scan_router,
+    admin_subtitle_ocr_router,
     admin_system_router,
     catalog_router,
     collection_router,
@@ -72,6 +73,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.media.presentation.routes.admin_overview_routes",
     "src.modules.media.presentation.routes.admin_relink_routes",
     "src.modules.media.presentation.routes.admin_scan_routes",
+    "src.modules.media.presentation.routes.admin_subtitle_ocr_routes",
     "src.modules.media.presentation.routes.admin_system_routes",
     "src.modules.media.presentation.routes.catalog_routes",
     "src.modules.media.presentation.routes.collection_routes",
@@ -239,6 +241,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 sweep_job.run,
                 minutes=scan_dedup_cfg.sweep_interval_minutes,
                 job_id="homeflix:scan-dedup-sweep",
+            )
+        subtitle_ocr_cfg = await runtime_settings.subtitle_ocr()
+        if subtitle_ocr_cfg.enabled:
+            subtitle_ocr_job = await container.subtitle_ocr_job()
+            scheduler.add_interval_job(
+                subtitle_ocr_job.run,
+                minutes=subtitle_ocr_cfg.interval_minutes,
+                job_id="homeflix:subtitle-ocr",
             )
         app.state.scheduler = scheduler
 
@@ -456,6 +466,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_intro_detection_router)
     app.include_router(admin_jobs_router)
     app.include_router(admin_credits_router)
+    app.include_router(admin_subtitle_ocr_router)
     app.include_router(admin_system_router)
     app.include_router(catalog_router)
     app.include_router(collection_router)
