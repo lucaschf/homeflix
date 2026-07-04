@@ -86,6 +86,10 @@ class TesseractPgsOcrService(SubtitleOcrPort):
     def __init__(self) -> None:
         self._installed_langs: dict[str, frozenset[str]] = {}
 
+    def available_languages(self, tesseract_binary: str) -> frozenset[str]:
+        """See :meth:`SubtitleOcrPort.available_languages`."""
+        return self._available_langs(tesseract_binary)
+
     def ocr_track(
         self,
         source_file: str,

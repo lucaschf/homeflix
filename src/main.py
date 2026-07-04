@@ -240,6 +240,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 minutes=scan_dedup_cfg.sweep_interval_minutes,
                 job_id="homeflix:scan-dedup-sweep",
             )
+        subtitle_ocr_cfg = await runtime_settings.subtitle_ocr()
+        if subtitle_ocr_cfg.enabled:
+            subtitle_ocr_job = await container.subtitle_ocr_job()
+            scheduler.add_interval_job(
+                subtitle_ocr_job.run,
+                minutes=subtitle_ocr_cfg.interval_minutes,
+                job_id="homeflix:subtitle-ocr",
+            )
         app.state.scheduler = scheduler
 
     logger.info("Application ready")

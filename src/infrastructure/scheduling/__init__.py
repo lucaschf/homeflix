@@ -9,6 +9,7 @@ from src.infrastructure.scheduling.credits_detection_job import CreditsDetection
 from src.infrastructure.scheduling.intro_detection_job import IntroDetectionJob
 from src.infrastructure.scheduling.scan_dedup_sweep_job import ScanDedupSweepJob
 from src.infrastructure.scheduling.scheduler_service import LibraryScanScheduler
+from src.infrastructure.scheduling.subtitle_ocr_job import SubtitleOcrBackfillJob
 from src.infrastructure.scheduling.thumbnail_backfill_job import ThumbnailBackfillJob
 
 __all__ = [
@@ -16,5 +17,6 @@ __all__ = [
     "IntroDetectionJob",
     "LibraryScanScheduler",
     "ScanDedupSweepJob",
+    "SubtitleOcrBackfillJob",
     "ThumbnailBackfillJob",
 ]

@@ -51,6 +51,17 @@ class SubtitleOcrPort(ABC):
     """OCR a single image-based subtitle track into a WebVTT sidecar."""
 
     @abstractmethod
+    def available_languages(self, tesseract_binary: str) -> frozenset[str]:
+        """Return the OCR language models installed for ``tesseract_binary``.
+
+        Lets the orchestrating job skip an entire tick when OCR is
+        non-functional (no models installed) instead of marking files as
+        processed and never retrying once the operator installs tesseract.
+        An empty set means OCR cannot run.
+        """
+        ...
+
+    @abstractmethod
     def ocr_track(
         self,
         source_file: str,

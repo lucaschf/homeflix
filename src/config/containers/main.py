@@ -25,6 +25,7 @@ from src.infrastructure.scheduling import (
     IntroDetectionJob,
     LibraryScanScheduler,
     ScanDedupSweepJob,
+    SubtitleOcrBackfillJob,
     ThumbnailBackfillJob,
 )
 from src.modules.identity.infrastructure.persistence.sqlalchemy_unit_of_work import (
@@ -331,6 +332,14 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         ScanDedupSweepJob,
         sweep_use_case=media.sweep_movie_conflicts,
         runtime_settings=settings.runtime_settings,
+    )
+
+    subtitle_ocr_job = providers.Singleton(
+        SubtitleOcrBackfillJob,
+        media_uow_factory=media.media_unit_of_work_factory,
+        runtime_settings=settings.runtime_settings,
+        ocr_service=media.subtitle_ocr_service,
+        probe_service=media.media_probe_service,
     )
 
 

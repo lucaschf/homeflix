@@ -166,7 +166,11 @@ from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
 from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyMediaUnitOfWorkFactory,
 )
-from src.modules.media.infrastructure.streaming import HlsService, MediaProbeService
+from src.modules.media.infrastructure.streaming import (
+    HlsService,
+    MediaProbeService,
+    TesseractPgsOcrService,
+)
 from src.modules.media.infrastructure.streaming.file_streamer import LocalFileStreamer
 from src.modules.media.infrastructure.streaming.now_playing_registry import (
     NowPlayingRegistry,
@@ -425,6 +429,8 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     variant_detector = providers.Factory(VariantDetector)
 
     media_probe_service = providers.Singleton(MediaProbeService)
+
+    subtitle_ocr_service = providers.Singleton(TesseractPgsOcrService)
 
     hls_service = providers.Singleton(
         HlsService,
