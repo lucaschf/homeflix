@@ -36,15 +36,16 @@ from typing import TYPE_CHECKING
 
 from src.config.logging import get_logger
 from src.modules.media.application.ports.subtitle_ocr_port import SubtitleOcrOptions
+from src.modules.media.application.services.subtitle_ocr_paths import (
+    OCR_DONE_MARKER,
+    ocr_subtitle_output_dir,
+)
 from src.modules.media.application.services.subtitle_ocr_processor import (
     FileOcrReport,
     SubtitleOcrProcessor,
 )
 from src.modules.media.domain.entities.subtitle_ocr_run import SubtitleOcrRun
 from src.modules.media.domain.value_objects.subtitle_ocr_outcome import SubtitleOcrOutcome
-from src.modules.media.infrastructure.streaming.subtitle_ocr_service import (
-    ocr_subtitle_output_dir,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -57,10 +58,6 @@ if TYPE_CHECKING:
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = get_logger()
-
-#: Sentinel written into a file's OCR output dir once it has been
-#: processed, so subsequent ticks skip it without re-probing.
-OCR_DONE_MARKER = ".ocr_done"
 
 
 @dataclass(frozen=True)

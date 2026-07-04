@@ -50,6 +50,19 @@ class GetSubtitleOcrRunInput:
     run_id: str
 
 
+@dataclass(frozen=True)
+class RunSubtitleOcrInput:
+    """Input for the manual "OCR this title now" trigger.
+
+    Attributes:
+        media_kind: ``movie`` or ``episode``.
+        media_id: External id of the movie/episode to OCR.
+    """
+
+    media_kind: str
+    media_id: str
+
+
 def subtitle_ocr_run_to_output(run: SubtitleOcrRun) -> SubtitleOcrRunOutput:
     """Project a persisted run aggregate to its API output DTO."""
     if run.id is None:
@@ -81,6 +94,7 @@ def subtitle_ocr_run_to_output(run: SubtitleOcrRun) -> SubtitleOcrRunOutput:
 __all__ = [
     "GetSubtitleOcrRunInput",
     "ListSubtitleOcrRunsInput",
+    "RunSubtitleOcrInput",
     "SubtitleOcrRunOutput",
     "SubtitleTrackOcrResultOutput",
     "subtitle_ocr_run_to_output",

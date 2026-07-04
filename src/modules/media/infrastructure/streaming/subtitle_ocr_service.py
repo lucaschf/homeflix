@@ -30,6 +30,10 @@ from src.modules.media.application.ports.subtitle_ocr_port import (
     SubtitleOcrOptions,
     SubtitleOcrPort,
 )
+from src.modules.media.application.services.subtitle_ocr_paths import (
+    ocr_sidecar_filename,
+    ocr_subtitle_output_dir,
+)
 from src.modules.media.domain.value_objects.subtitle_ocr_outcome import SubtitleTrackOutcome
 from src.modules.media.infrastructure.streaming._subprocess import (
     SUBPROCESS_TEXT_KWARGS,
@@ -317,36 +321,6 @@ class TesseractPgsOcrService(SubtitleOcrPort):
             _logger.exception("[subtitle-ocr] tesseract invocation failed")
             return ""
         return _clean_ocr_text(result.stdout.decode("utf-8", errors="replace"))
-
-
-def ocr_subtitle_output_dir(source: Path, subdir: str) -> Path:
-    """Return the deterministic per-stem OCR sidecar directory for a source.
-
-    Mirrors ``scrub_preview_output_dir`` — ``<source-dir>/<subdir>/<stem>/``,
-    one folder per media stem so episodes sharing a season directory don't
-    collide. Centralised so the surfacing step (ADR-027) can predict an
-    already-generated sidecar's location and the backfill job's per-file
-    ``.ocr_done`` marker lives in a stable spot.
-
-    Args:
-        source: Absolute path to the source media file.
-        subdir: Configured OCR sub-directory (e.g. ``.homeflix/subtitles``).
-
-    Returns:
-        The directory that holds (or would hold) this file's OCR sidecars.
-    """
-    return source.parent / subdir / source.stem
-
-
-def ocr_sidecar_filename(track: SubtitleTrack) -> str:
-    """Return the deterministic sidecar filename for an OCR'd track.
-
-    Keyed by the source track's ``index`` and language so the surfacing
-    step (ADR-027) can predict the path from the probed image track and
-    check whether the OCR has already been produced. Example:
-    ``ocr_s4_pt.vtt``.
-    """
-    return f"ocr_s{track.index}_{track.language.value.lower()}.vtt"
 
 
 def _read_file(path: str) -> bytes:

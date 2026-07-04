@@ -8,6 +8,9 @@ from dependency_injector import containers, providers
 from src.modules.media.application.event_handlers import OnMediaCreatedHandler
 from src.modules.media.application.services.job_run_service import JobRunService
 from src.modules.media.application.services.scan_run_service import ScanRunService
+from src.modules.media.application.services.subtitle_ocr_processor import (
+    SubtitleOcrProcessor,
+)
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
 from src.modules.media.application.use_cases.bulk_enrich_metadata import (
     BulkEnrichMetadataUseCase,
@@ -123,6 +126,9 @@ from src.modules.media.application.use_cases.reset_season_intro_detection import
 )
 from src.modules.media.application.use_cases.resolve_media_conflict import (
     ResolveMediaConflictUseCase,
+)
+from src.modules.media.application.use_cases.run_subtitle_ocr_for_media import (
+    RunSubtitleOcrForMediaUseCase,
 )
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
@@ -719,6 +725,20 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     get_subtitle_ocr_run = providers.Factory(
         GetSubtitleOcrRunUseCase,
         media_uow_factory=media_unit_of_work_factory,
+    )
+
+    subtitle_ocr_processor = providers.Singleton(
+        SubtitleOcrProcessor,
+        probe_service=media_probe_service,
+        ocr_service=subtitle_ocr_service,
+    )
+
+    run_subtitle_ocr_for_media = providers.Factory(
+        RunSubtitleOcrForMediaUseCase,
+        media_uow_factory=media_unit_of_work_factory,
+        processor=subtitle_ocr_processor,
+        ocr_service=subtitle_ocr_service,
+        config=runtime_settings,
     )
 
     sweep_interrupted_scan_runs = providers.Factory(

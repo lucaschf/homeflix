@@ -42,6 +42,22 @@ class SubtitleOcrConfigPort(Protocol):
         ...
 
 
+class SubtitleOcrRunConfigPort(Protocol):
+    """Async config access the manual subtitle-OCR trigger needs.
+
+    ``RuntimeSettings`` satisfies this structurally, so the composition
+    root injects it unchanged.
+    """
+
+    async def subtitle_ocr(self) -> SubtitleOcrConfig:
+        """Return the current ``SubtitleOcrConfig``."""
+        ...
+
+    async def streaming(self) -> StreamingConfig:
+        """Return the current ``StreamingConfig`` (for ``ffmpeg_threads``)."""
+        ...
+
+
 class HlsRuntimeConfigPort(StreamingConfigPort, SubtitleOcrConfigPort, Protocol):
     """Combined sync config access the HLS service needs.
 
@@ -72,5 +88,6 @@ __all__ = [
     "ScanDedupConfigPort",
     "StreamingConfigPort",
     "SubtitleOcrConfigPort",
+    "SubtitleOcrRunConfigPort",
     "ThumbnailConfigPort",
 ]
