@@ -12,6 +12,7 @@ import pytest
 from PIL import Image
 
 from src.modules.media.application.ports.subtitle_ocr_port import SubtitleOcrOptions
+from src.modules.media.domain.value_objects.subtitle_ocr_outcome import SubtitleTrackOutcome
 from src.modules.media.infrastructure.streaming import subtitle_ocr_service as svc
 from src.modules.media.infrastructure.streaming.pgs_parser import PgsCue
 from src.modules.media.infrastructure.streaming.subtitle_ocr_service import (
@@ -40,7 +41,10 @@ class TestOcrTrack:
         track = SubtitleTrack(index=1, language=LanguageCode("en"), format="vobsub")
         service = TesseractPgsOcrService()
 
-        assert service.ocr_track("movie.mkv", track, tmp_path, _OPTS) is None
+        result = service.ocr_track("movie.mkv", track, tmp_path, _OPTS)
+
+        assert result.outcome == SubtitleTrackOutcome.UNSUPPORTED_FORMAT
+        assert result.vtt_path is None
 
     def test_unmappable_language_is_skipped(self, tmp_path: Path) -> None:
         # "th" (Thai) is a valid ISO code but not in the model map.
@@ -48,7 +52,7 @@ class TestOcrTrack:
 
         result = service.ocr_track("m.mkv", _pgs_track(lang="th"), tmp_path, _OPTS)
 
-        assert result is None
+        assert result.outcome == SubtitleTrackOutcome.NO_LANGUAGE_MODEL
 
     def test_missing_language_model_is_skipped(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -58,7 +62,7 @@ class TestOcrTrack:
 
         result = service.ocr_track("m.mkv", _pgs_track(), tmp_path, _OPTS)
 
-        assert result is None
+        assert result.outcome == SubtitleTrackOutcome.NO_LANGUAGE_MODEL
 
     def test_writes_vtt_sidecar_on_success(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -73,8 +77,10 @@ class TestOcrTrack:
         track = _pgs_track(index=4, lang="pt")
         result = service.ocr_track("m.mkv", track, tmp_path, _OPTS)
 
-        assert result == tmp_path / "ocr_s4_pt.vtt"
-        content = result.read_text(encoding="utf-8")
+        assert result.outcome == SubtitleTrackOutcome.EXTRACTED
+        assert result.vtt_path == tmp_path / "ocr_s4_pt.vtt"
+        assert result.cue_count == 2
+        content = result.vtt_path.read_text(encoding="utf-8")
         assert content.startswith("WEBVTT")
         assert "00:00:01.000 --> 00:00:02.000" in content
         assert "Olá mundo" in content
@@ -91,7 +97,8 @@ class TestOcrTrack:
 
         result = service.ocr_track("m.mkv", _pgs_track(), tmp_path, _OPTS)
 
-        assert result is None
+        assert result.outcome == SubtitleTrackOutcome.NO_TEXT
+        assert result.vtt_path is None
         assert list(tmp_path.glob("*.vtt")) == []
 
     def test_no_cues_parsed_yields_no_sidecar(
@@ -102,7 +109,9 @@ class TestOcrTrack:
         monkeypatch.setattr(service, "_read_pgs_bytes", lambda *a: b"rawpgs")
         monkeypatch.setattr(svc, "parse_pgs", lambda _raw: [])
 
-        assert service.ocr_track("m.mkv", _pgs_track(), tmp_path, _OPTS) is None
+        result = service.ocr_track("m.mkv", _pgs_track(), tmp_path, _OPTS)
+
+        assert result.outcome == SubtitleTrackOutcome.NO_TEXT
 
     def test_external_sup_reads_file_directly(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

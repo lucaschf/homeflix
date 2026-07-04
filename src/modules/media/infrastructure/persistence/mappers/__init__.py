@@ -18,6 +18,9 @@ from src.modules.media.infrastructure.persistence.mappers.series_mapper import (
     SeasonMapper,
     SeriesMapper,
 )
+from src.modules.media.infrastructure.persistence.mappers.subtitle_ocr_run_mapper import (
+    SubtitleOcrRunMapper,
+)
 
 __all__ = [
     "EpisodeMapper",
@@ -28,4 +31,5 @@ __all__ = [
     "ScanRunMapper",
     "SeasonMapper",
     "SeriesMapper",
+    "SubtitleOcrRunMapper",
 ]

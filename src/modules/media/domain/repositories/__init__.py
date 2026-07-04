@@ -10,6 +10,9 @@ from src.modules.media.domain.repositories.media_conflict_repository import (
 from src.modules.media.domain.repositories.movie_repository import MovieRepository
 from src.modules.media.domain.repositories.scan_run_repository import ScanRunRepository
 from src.modules.media.domain.repositories.series_repository import SeriesRepository
+from src.modules.media.domain.repositories.subtitle_ocr_run_repository import (
+    SubtitleOcrRunRepository,
+)
 
 __all__ = [
     "IntroDetectionRunRepository",
@@ -18,4 +21,5 @@ __all__ = [
     "MovieRepository",
     "ScanRunRepository",
     "SeriesRepository",
+    "SubtitleOcrRunRepository",
 ]

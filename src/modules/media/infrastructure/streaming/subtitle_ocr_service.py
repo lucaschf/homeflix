@@ -26,9 +26,11 @@ from typing import TYPE_CHECKING
 from PIL import Image, ImageOps
 
 from src.modules.media.application.ports.subtitle_ocr_port import (
+    OcrTrackResult,
     SubtitleOcrOptions,
     SubtitleOcrPort,
 )
+from src.modules.media.domain.value_objects.subtitle_ocr_outcome import SubtitleTrackOutcome
 from src.modules.media.infrastructure.streaming._subprocess import (
     SUBPROCESS_TEXT_KWARGS,
     with_ffmpeg_threads,
@@ -96,11 +98,11 @@ class TesseractPgsOcrService(SubtitleOcrPort):
         track: SubtitleTrack,
         output_dir: Path,
         options: SubtitleOcrOptions,
-    ) -> Path | None:
+    ) -> OcrTrackResult:
         """See :meth:`SubtitleOcrPort.ocr_track`."""
         decoded = self._decode_cues(source_file, track, output_dir, options)
-        if decoded is None:
-            return None
+        if isinstance(decoded, SubtitleTrackOutcome):
+            return OcrTrackResult(outcome=decoded)
         model, cues = decoded
 
         vtt_cues = self._ocr_cues(cues, model, options)
@@ -109,7 +111,7 @@ class TesseractPgsOcrService(SubtitleOcrPort):
                 "[subtitle-ocr] OCR produced no text; skipping",
                 extra={"index": track.index, "source": source_file},
             )
-            return None
+            return OcrTrackResult(outcome=SubtitleTrackOutcome.NO_TEXT)
 
         output_dir.mkdir(parents=True, exist_ok=True)
         vtt_path = output_dir / ocr_sidecar_filename(track)
@@ -118,7 +120,11 @@ class TesseractPgsOcrService(SubtitleOcrPort):
             "[subtitle-ocr] wrote OCR sidecar",
             extra={"cues": len(vtt_cues), "path": str(vtt_path)},
         )
-        return vtt_path
+        return OcrTrackResult(
+            outcome=SubtitleTrackOutcome.EXTRACTED,
+            vtt_path=vtt_path,
+            cue_count=len(vtt_cues),
+        )
 
     def _decode_cues(
         self,
@@ -126,27 +132,28 @@ class TesseractPgsOcrService(SubtitleOcrPort):
         track: SubtitleTrack,
         output_dir: Path,
         options: SubtitleOcrOptions,
-    ) -> tuple[str, list[PgsCue]] | None:
+    ) -> tuple[str, list[PgsCue]] | SubtitleTrackOutcome:
         """Resolve the OCR model and decode the track's bitmap cues.
 
         Returns ``(model, cues)`` when the track is a supported bitmap
         format with an installed language model and at least one decodable
-        cue; ``None`` (logged) at the first guard that fails.
+        cue; otherwise a :class:`SubtitleTrackOutcome` (logged) naming the
+        first guard that failed.
         """
         if track.format.lower() not in _SUPPORTED_FORMATS:
             _logger.debug(
                 "[subtitle-ocr] unsupported bitmap format; skipping",
                 extra={"format": track.format, "index": track.index},
             )
-            return None
+            return SubtitleTrackOutcome.UNSUPPORTED_FORMAT
 
         model = self._resolve_model(track, options.tesseract_binary)
         if model is None:
-            return None
+            return SubtitleTrackOutcome.NO_LANGUAGE_MODEL
 
         raw = self._read_pgs_bytes(source_file, track, output_dir, options.ffmpeg_threads)
         if raw is None:
-            return None
+            return SubtitleTrackOutcome.FAILED
 
         try:
             cues = parse_pgs(raw)
@@ -155,9 +162,9 @@ class TesseractPgsOcrService(SubtitleOcrPort):
                 "[subtitle-ocr] not a valid PGS stream; skipping",
                 extra={"index": track.index, "source": source_file},
             )
-            return None
+            return SubtitleTrackOutcome.FAILED
         if not cues:
-            return None
+            return SubtitleTrackOutcome.NO_TEXT
         return model, cues
 
     # -- language models -------------------------------------------------------

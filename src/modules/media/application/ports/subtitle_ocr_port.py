@@ -20,6 +20,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from src.modules.media.domain.value_objects.subtitle_ocr_outcome import (
+        SubtitleTrackOutcome,
+    )
     from src.shared_kernel.value_objects.tracks import SubtitleTrack
 
 
@@ -47,6 +50,23 @@ class SubtitleOcrOptions:
     ffmpeg_threads: int | None = None
 
 
+@dataclass(frozen=True)
+class OcrTrackResult:
+    """Outcome of OCR-ing a single image subtitle track.
+
+    Attributes:
+        outcome: What happened to the track (extracted, no text,
+            unsupported format, no language model, failed).
+        vtt_path: Path to the written sidecar when ``outcome`` is
+            ``EXTRACTED``; ``None`` otherwise.
+        cue_count: Number of cues written (``0`` unless extracted).
+    """
+
+    outcome: SubtitleTrackOutcome
+    vtt_path: Path | None = None
+    cue_count: int = 0
+
+
 class SubtitleOcrPort(ABC):
     """OCR a single image-based subtitle track into a WebVTT sidecar."""
 
@@ -68,17 +88,17 @@ class SubtitleOcrPort(ABC):
         track: SubtitleTrack,
         output_dir: Path,
         options: SubtitleOcrOptions,
-    ) -> Path | None:
+    ) -> OcrTrackResult:
         """OCR one image-based subtitle track to a WebVTT file on disk.
 
         Implementations own the full pipeline: demux/read the bitmap
         stream (from ``source_file`` at ``track.index`` for embedded
         tracks, or from ``track.file_path`` for external ones), decode
         it, OCR each cue, and write a ``.vtt`` into ``output_dir`` at a
-        deterministic name derived from the track. Degrades to ``None``
-        rather than raising when the track cannot be processed (missing
-        source, unsupported bitmap format, no installed language model,
-        empty OCR result).
+        deterministic name derived from the track. Never raises for an
+        unprocessable track — the returned :class:`OcrTrackResult`
+        ``outcome`` reports why (unsupported format, no language model,
+        empty result, failure).
 
         Args:
             source_file: Absolute path to the source media file.
@@ -90,10 +110,10 @@ class SubtitleOcrPort(ABC):
             options: OCR knobs snapshotted from runtime settings.
 
         Returns:
-            The path to the written WebVTT sidecar, or ``None`` if the
-            track could not be OCR'd.
+            An :class:`OcrTrackResult` describing the outcome, with the
+            sidecar path + cue count when extraction succeeded.
         """
         ...
 
 
-__all__ = ["SubtitleOcrOptions", "SubtitleOcrPort"]
+__all__ = ["OcrTrackResult", "SubtitleOcrOptions", "SubtitleOcrPort"]

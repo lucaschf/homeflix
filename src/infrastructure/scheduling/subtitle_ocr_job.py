@@ -14,6 +14,10 @@ is processed under a functioning tesseract, so a genuinely unusable
 track (e.g. VOBSUB) does not block the queue. To reprocess a file (after
 installing a new language model, say), delete its marker.
 
+Each processed file that carries image subtitles (or that fails) also
+appends a row to ``subtitle_ocr_runs`` so operators can see which titles
+were processed and what was extracted per track.
+
 If tesseract has no language models installed, the whole tick is skipped
 and no markers are written, so nothing is silently marked done while OCR
 is non-functional.
@@ -25,11 +29,19 @@ episodes) to keep CPU bounded — OCR is expensive.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.config.logging import get_logger
 from src.modules.media.application.ports.subtitle_ocr_port import SubtitleOcrOptions
+from src.modules.media.application.services.subtitle_ocr_processor import (
+    FileOcrReport,
+    SubtitleOcrProcessor,
+)
+from src.modules.media.domain.entities.subtitle_ocr_run import SubtitleOcrRun
+from src.modules.media.domain.value_objects.subtitle_ocr_outcome import SubtitleOcrOutcome
 from src.modules.media.infrastructure.streaming.subtitle_ocr_service import (
     ocr_subtitle_output_dir,
 )
@@ -40,7 +52,7 @@ if TYPE_CHECKING:
     from src.modules.media.application.ports.media_probe_port import MediaProbePort
     from src.modules.media.application.ports.subtitle_ocr_port import SubtitleOcrPort
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
-    from src.modules.media.domain.entities import Episode, Movie
+    from src.modules.media.domain.entities import Episode, Movie, Series
     from src.modules.settings.domain.value_objects import SubtitleOcrConfig
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
@@ -49,6 +61,16 @@ _logger = get_logger()
 #: Sentinel written into a file's OCR output dir once it has been
 #: processed, so subsequent ticks skip it without re-probing.
 OCR_DONE_MARKER = ".ocr_done"
+
+
+@dataclass(frozen=True)
+class MediaFileRef:
+    """A media file to OCR, plus the identity to record on its run row."""
+
+    kind: str  # "movie" | "episode"
+    media_id: str
+    title: str
+    path: Path
 
 
 class SubtitleOcrBackfillJob:
@@ -63,8 +85,8 @@ class SubtitleOcrBackfillJob:
 
     Args:
         media_uow_factory: Builds fresh media UoWs per query. The job
-            opens a short-lived UoW to list media, then does OCR (slow,
-            off-session) without holding a DB session.
+            opens a short-lived UoW to list media / record a run, then
+            does OCR (slow, off-session) without holding a DB session.
         runtime_settings: Snapshot facade for :class:`SubtitleOcrConfig`
             (and streaming ``ffmpeg_threads``).
         ocr_service: The OCR engine (:class:`SubtitleOcrPort`).
@@ -81,7 +103,7 @@ class SubtitleOcrBackfillJob:
         self._media_uow_factory = media_uow_factory
         self._runtime_settings = runtime_settings
         self._ocr_service = ocr_service
-        self._probe = probe_service
+        self._processor = SubtitleOcrProcessor(probe_service, ocr_service)
 
     async def run(self) -> None:
         """Process one batch of media missing OCR sidecars."""
@@ -103,15 +125,15 @@ class SubtitleOcrBackfillJob:
 
         budget = config.batch_size
         movies = await self._unprocessed_movie_files(config.subdir, budget)
-        for source in movies:
-            await self._process_file(source, config, options)
+        for ref in movies:
+            await self._process_file(ref, config, options)
 
         episodes_done = 0
         budget -= len(movies)
         if budget > 0:
             episodes = await self._unprocessed_episode_files(config.subdir, budget)
-            for source in episodes:
-                await self._process_file(source, config, options)
+            for ref in episodes:
+                await self._process_file(ref, config, options)
             episodes_done = len(episodes)
 
         if movies or episodes_done:
@@ -122,35 +144,57 @@ class SubtitleOcrBackfillJob:
                 batch_size=config.batch_size,
             )
 
-    async def _unprocessed_movie_files(self, subdir: str, limit: int) -> list[Path]:
+    async def _unprocessed_movie_files(self, subdir: str, limit: int) -> list[MediaFileRef]:
         async with self._media_uow_factory() as uow:
             movies = await uow.movies.list_all()
-        return self._collect_unprocessed((self._primary_path(m) for m in movies), subdir, limit)
+        return self._collect_unprocessed((self._movie_ref(m) for m in movies), subdir, limit)
 
-    async def _unprocessed_episode_files(self, subdir: str, limit: int) -> list[Path]:
+    async def _unprocessed_episode_files(self, subdir: str, limit: int) -> list[MediaFileRef]:
         async with self._media_uow_factory() as uow:
             series = await uow.series.list_all()
-        episodes = (
-            self._primary_path(episode)
+        refs = (
+            self._episode_ref(s, episode)
             for s in series
             for season in s.seasons
             for episode in season.episodes
         )
-        return self._collect_unprocessed(episodes, subdir, limit)
+        return self._collect_unprocessed(refs, subdir, limit)
 
     @staticmethod
-    def _collect_unprocessed(sources: Iterable[Path | None], subdir: str, limit: int) -> list[Path]:
+    def _collect_unprocessed(
+        refs: Iterable[MediaFileRef | None], subdir: str, limit: int
+    ) -> list[MediaFileRef]:
         """Take the first ``limit`` on-disk files that lack a done marker."""
-        out: list[Path] = []
-        for source in sources:
-            if source is None or not source.is_file():
+        out: list[MediaFileRef] = []
+        for ref in refs:
+            if ref is None or not ref.path.is_file():
                 continue
-            if (ocr_subtitle_output_dir(source, subdir) / OCR_DONE_MARKER).exists():
+            if (ocr_subtitle_output_dir(ref.path, subdir) / OCR_DONE_MARKER).exists():
                 continue
-            out.append(source)
+            out.append(ref)
             if len(out) >= limit:
                 break
         return out
+
+    @classmethod
+    def _movie_ref(cls, movie: Movie) -> MediaFileRef | None:
+        path = cls._primary_path(movie)
+        if path is None or movie.id is None:
+            return None
+        return MediaFileRef(
+            kind="movie", media_id=str(movie.id), title=movie.title.value, path=path
+        )
+
+    @classmethod
+    def _episode_ref(cls, series: Series, episode: Episode) -> MediaFileRef | None:
+        path = cls._primary_path(episode)
+        if path is None or episode.id is None:
+            return None
+        label = (
+            f"{series.title.value} "
+            f"S{episode.season_number.value:02d}E{episode.episode_number.value:02d}"
+        )
+        return MediaFileRef(kind="episode", media_id=str(episode.id), title=label, path=path)
 
     @staticmethod
     def _primary_path(entity: Movie | Episode) -> Path | None:
@@ -161,40 +205,69 @@ class SubtitleOcrBackfillJob:
 
     async def _process_file(
         self,
-        source: Path,
+        ref: MediaFileRef,
         config: SubtitleOcrConfig,
         options: SubtitleOcrOptions,
     ) -> None:
-        """OCR a single file's image subtitles, then mark it processed.
+        """OCR a single file, mark it processed, and record the run.
 
-        Runs off the event loop (probe + OCR are synchronous, CPU/IO
-        bound). Best-effort: any failure is logged and the file is still
-        marked processed (the marker means "attempted"), so one bad file
-        never wedges the queue — the operator deletes the marker to retry.
+        Best-effort: any failure is logged and the file is still marked
+        processed (the marker means "attempted"), so one bad file never
+        wedges the queue — the operator deletes the marker to retry.
         """
+        started_at = datetime.now(UTC)
+        output_dir = ocr_subtitle_output_dir(ref.path, config.subdir)
+        language_filter = _language_filter(config.languages)
+        error: str | None = None
         try:
-            await asyncio.to_thread(self._ocr_file, source, config, options)
-        except Exception:
-            _logger.exception(
-                "[subtitle-ocr] failed to process file", extra={"source": str(source)}
+            report = await asyncio.to_thread(
+                self._processor.process_file,
+                str(ref.path),
+                output_dir,
+                options,
+                language_filter,
             )
-        self._write_marker(source, config.subdir)
+        except Exception as exc:
+            _logger.exception(
+                "[subtitle-ocr] failed to process file", extra={"source": str(ref.path)}
+            )
+            report = FileOcrReport(outcome=SubtitleOcrOutcome.FAILED)
+            error = f"{type(exc).__name__}: {exc}"[:2000]
+        self._write_marker(ref.path, config.subdir)
+        await self._record_run(ref, report, error, started_at)
 
-    def _ocr_file(
+    async def _record_run(
         self,
-        source: Path,
-        config: SubtitleOcrConfig,
-        options: SubtitleOcrOptions,
+        ref: MediaFileRef,
+        report: FileOcrReport,
+        error: str | None,
+        started_at: datetime,
     ) -> None:
-        """Probe ``source`` and OCR each image subtitle track (sync)."""
-        probe = self._probe.probe(str(source))
-        image_tracks = [t for t in probe.all_subtitles if t.is_image_based]
-        wanted = _language_filter(config.languages)
-        output_dir = ocr_subtitle_output_dir(source, config.subdir)
-        for track in image_tracks:
-            if wanted is not None and track.language.value.lower() not in wanted:
-                continue
-            self._ocr_service.ocr_track(str(source), track, output_dir, options)
+        """Append an audit row for a processed file (best-effort).
+
+        Files with no image subtitles are skipped (they would flood the
+        log) unless they failed; recording never breaks the tick.
+        """
+        if report.image_track_count == 0 and report.outcome != SubtitleOcrOutcome.FAILED:
+            return
+        run = SubtitleOcrRun(
+            media_kind=ref.kind,
+            media_id=ref.media_id,
+            media_title=ref.title,
+            file_path=str(ref.path),
+            outcome=report.outcome,
+            image_track_count=report.image_track_count,
+            extracted_count=report.extracted_count,
+            track_results=report.track_results,
+            error=error,
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+        )
+        try:
+            async with self._media_uow_factory() as uow:
+                await uow.subtitle_ocr_runs.add(run)
+        except Exception:
+            _logger.exception("[subtitle-ocr] failed to record run")
 
     @staticmethod
     def _write_marker(source: Path, subdir: str) -> None:
@@ -210,4 +283,4 @@ def _language_filter(languages: tuple[str, ...]) -> frozenset[str] | None:
     return frozenset(lang.lower() for lang in languages)
 
 
-__all__ = ["OCR_DONE_MARKER", "SubtitleOcrBackfillJob"]
+__all__ = ["OCR_DONE_MARKER", "MediaFileRef", "SubtitleOcrBackfillJob"]
