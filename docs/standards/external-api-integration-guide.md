@@ -451,7 +451,9 @@ WHERE (success = false AND created_at < NOW() - INTERVAL '180 days')
 
 ## Retry e Circuit Breaker
 
-Ver [ADR-006](../adr/ADR-006-retry-circuit-breaker.md) para decisões detalhadas.
+<!-- TODO(docs): referência apontava para um ADR-006-retry-circuit-breaker
+     inexistente (ADR-006 é media-file-variants). Não há ADR dedicado a
+     retry/circuit breaker — criar um ou remover a pendência. -->
 
 ### Retry com Tenacity
 

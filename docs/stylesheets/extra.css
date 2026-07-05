@@ -1,0 +1,33 @@
+/* Paleta do HomeFlix — espelha homeflix-web/src/theme/colors.ts.
+   peach.main #D97757 sobre o deep dark neutral (#0D0D0D / #141414).
+   Ativado por primary/accent: custom no mkdocs.yml. */
+
+/* Header / brand (peach). */
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color:        #d97757; /* peach.main */
+  --md-primary-fg-color--light: #e89a7c; /* peach.light */
+  --md-primary-fg-color--dark:  #b85a3d; /* peach.dark */
+  --md-primary-bg-color:        #0d0d0d; /* peach.contrastText — texto no header */
+  --md-primary-bg-color--light: #0d0d0d;
+}
+
+/* Acento / interativo (peach.dark). */
+[data-md-color-accent="custom"] {
+  --md-accent-fg-color: #b85a3d;
+}
+
+/* Light — links peach escuro p/ contraste em fundo claro. */
+[data-md-color-scheme="default"] {
+  --md-typeset-a-color: #b85a3d;
+}
+
+/* Dark (slate) — deep dark neutral + peach claro nos destaques. */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color:          #0d0d0d; /* neutral.950 */
+  --md-default-bg-color--light:   #141414; /* neutral.900 */
+  --md-default-bg-color--lighter: #1a1a1a; /* neutral.800 */
+  --md-default-bg-color--lightest:#2a2a2a; /* neutral.700 */
+  --md-code-bg-color:             #141414;
+  --md-accent-fg-color:           #e89a7c; /* peach.light */
+  --md-typeset-a-color:           #e89a7c; /* links peach-claro no escuro */
+}
