@@ -246,7 +246,7 @@ Escaneia o sistema de arquivos e detecta novas mídias.
 - Um ou mais caminhos de diretório como fonte
 - Idioma preferido para busca de metadados (ex: pt-BR, en, ja)
 - Limite de 20 bibliotecas por instalação
-**ADR:** [ADR-005](../adr/ADR-005-library-as-configuration-entity.md)
+**ADR:** [ADR-005](adr/ADR-005-library-as-configuration-entity.md)
 
 #### RF-002: Configurar Provedores de Metadados
 **Descrição:** O usuário pode definir quais provedores de metadados usar por biblioteca.
@@ -308,7 +308,7 @@ Escaneia o sistema de arquivos e detecta novas mídias.
 - Uma mídia = uma entidade com múltiplos arquivos
 - Permite merge/separação manual de variantes incorretamente agrupadas
 - Marca automaticamente a melhor qualidade como versão principal
-**ADR:** [ADR-006](../adr/ADR-006-media-file-variants.md)
+**ADR:** [ADR-006](adr/ADR-006-media-file-variants.md)
 
 #### RF-008: Buscar Metadados Automaticamente
 **Descrição:** O sistema deve buscar metadados usando os provedores configurados na biblioteca.

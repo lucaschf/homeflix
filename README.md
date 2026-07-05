@@ -30,7 +30,7 @@ HomeFlix is a self-hosted media server that allows you to:
 
 ## Architecture
 
-This project follows **Screaming Architecture** with **Clean Architecture** and **DDD** principles (see [ADR-008](docs/adr/ADR-008.md)).
+This project follows **Screaming Architecture** with **Clean Architecture** and **DDD** principles (see [ADR-008](docs/adr/ADR-008-screaming-architecture.md)).
 
 ```
 src/
@@ -41,9 +41,11 @@ src/
 │   ├── library/           # Bounded Context: Library Configuration
 │   ├── watch_progress/    # Bounded Context: Watch Progress
 │   ├── collections/       # Bounded Context: Watchlists & Custom Lists
-│   ├── preferences/       # Bounded Context: Playback Preferences
+│   ├── catalog_requests/  # Bounded Context: Missing-title requests
 │   ├── identity/          # Bounded Context: Users, Profiles, Sessions, ACL
-│   └── catalog_requests/  # Bounded Context: Missing-title requests
+│   ├── notifications/     # Bounded Context: Notification delivery
+│   ├── preferences/       # Bounded Context: Playback Preferences
+│   └── settings/          # Bounded Context: Runtime Settings (ADR-013/014)
 ├── infrastructure/       # Shared infra (database, scheduler, Base model)
 ├── config/               # Settings, DI containers
 └── main.py
@@ -64,7 +66,7 @@ modules → shared_kernel → building_blocks
 Presentation → Application → Domain ← Infrastructure
 ```
 
-- Modules do not import from each other (cross-module communication via domain events)
+- Modules do not import from each other — cross-module reads go through Read Ports + ACL (ADR-009); reactions propagate via domain events
 - Domain has no outward dependencies — Infrastructure depends on Domain (not the reverse), implementing its interfaces
 - Application depends on interfaces defined in Domain
 - Infrastructure implements those interfaces
@@ -151,6 +153,8 @@ make typecheck      # Type checking (mypy)
 make pre-commit     # Run pre-commit on all files
 make migration message="description"  # Generate migration
 make migrate        # Apply migrations
+make docs           # Serve docs with live reload
+make docs-build     # Build docs (strict)
 ```
 
 ## Contributing
@@ -169,6 +173,16 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 
 ## Documentation
 
+The `docs/` tree is published as a **MkDocs Material** site (`mkdocs.yml`):
+
+```bash
+make docs-install  # one-time: install the docs toolchain
+make docs          # live preview at http://127.0.0.1:8000
+make docs-build    # static build (strict — the docs gate)
+```
+
+Key entry points:
+
 - [Requirements](docs/homeflix-requirements.md) - Full feature specifications
 - [Roadmap](docs/roadmap.md) - Feature prioritization and next steps
 - [ADRs](docs/adr/) - Architecture Decision Records
@@ -180,8 +194,8 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 streaming server with profile ACLs, automatic intro detection,
 trickplay scrub thumbnails, and a scheduled scan/enrichment pipeline.
 
-- 77 REST API endpoints across 7 bounded contexts
-- 2 200+ tests
+- 137 REST API endpoints across 9 bounded contexts
+- 3 100+ tests
 - Responsive React frontend with HLS player and per-profile UI
 
 ### Modules
@@ -194,7 +208,9 @@ trickplay scrub thumbnails, and a scheduled scan/enrichment pipeline.
 | **Collections** | Watchlist & Custom Lists, scoped per profile | Toggle watchlist, up to 10 custom lists with ordering |
 | **Preferences** | Playback settings, scoped per profile | Audio/subtitle language, subtitle mode, quality, speed |
 | **Identity** | Users, Profiles, Sessions, ACL | FastAPI Users + cookie auth (ADR-011), prefixed external IDs (ADR-002), Profile aggregate with `allowed_library_ids`, avatar upload (Pillow → WebP), bootstrap admin CLI |
-| **Catalog Requests** | Missing-title tracking | Mark titles seen on TMDB but absent locally; auto-fulfilled when scanner picks them up |
+| **Catalog Requests** | Missing-title tracking | Mark titles seen on TMDB but absent locally; multi-user subscriptions + fanout (ADR-022); auto-fulfilled when scanner picks them up |
+| **Notifications** | Notification delivery | Per-user notification delivery for catalog and household events |
+| **Settings** | Runtime configuration | DB-backed runtime settings persisted per bucket (ADR-013/014) |
 
 ### Frontend ([homeflix-web](https://github.com/lucaschf/homeflix-web))
 
