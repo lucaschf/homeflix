@@ -195,7 +195,7 @@ streaming server with profile ACLs, automatic intro detection,
 trickplay scrub thumbnails, and a scheduled scan/enrichment pipeline.
 
 - 137 REST API endpoints across 9 bounded contexts
-- 3 100+ tests
+- 3,100+ tests
 - Responsive React frontend with HLS player and per-profile UI
 
 ### Modules
