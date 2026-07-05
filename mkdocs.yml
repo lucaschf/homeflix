@@ -1,0 +1,111 @@
+# mkdocs.yml — site de documentacao tecnica do HomeFlix.
+# nav gerado sobre docs/ (ADRs, standards, requisitos, roadmap).
+# audits/ e TEMPLATE.md ficam fora do build (locais/nao-pagina).
+site_name: HomeFlix — Documentação Técnica
+docs_dir: docs
+
+theme:
+  name: material
+  language: pt-BR
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+  # Deep dark (slate) como padrao; toggle para o claro.
+  # primary/accent = custom -> cores definidas em stylesheets/extra.css
+  # (sem isso o Material aplica o indigo embutido e sobrescreve o :root).
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle: { icon: material/brightness-4, name: Modo claro }
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle: { icon: material/brightness-7, name: Modo escuro }
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+      # Slugify unicode-preserving: mantem acentos nas ancoras (site pt-BR),
+      # senao "Visão Geral" vira "visao-geral" e quebra TOCs manuais.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds: { case: lower }
+
+plugins:
+  - search
+  # Depende de historico git — so ativa no pipeline (CI=true).
+  - git-revision-date-localized:
+      enabled: !ENV [CI, false]
+      fallback_to_build_date: true
+
+# audits/ e o template de ADR nao entram no build (nem no --strict).
+exclude_docs: |
+  audits/
+  adr/TEMPLATE.md
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Início: index.md
+  - Requisitos: homeflix-requirements.md
+  - Roadmap: roadmap.md
+  - Standards:
+      - standards/api-i18n-guide.md
+      - standards/api-production-addons.md
+      - standards/api-response-standard-rest-v3.md
+      - standards/clean-architecture-decisions.md
+      - standards/exception-hierarchy-clean-architecture.md
+      - standards/external-api-integration-guide.md
+      - standards/logging-guide.md
+      - standards/observability-production-guide.md
+      - standards/subtitle-ocr-guide.md
+      - standards/testing-guide.md
+  - ADRs:
+      - Índice: adr/README.md
+      - adr/ADR-001-pydantic-domain-models.md
+      - adr/ADR-002-prefixed-external-ids.md
+      - adr/ADR-003-package-structure.md
+      - adr/ADR-004-dependency-injection.md
+      - adr/ADR-005-library-as-configuration-entity.md
+      - adr/ADR-006-media-file-variants.md
+      - adr/ADR-007-immutable-entities-with-convention.md
+      - adr/ADR-008-screaming-architecture.md
+      - adr/ADR-009-cross-bc-read-ports.md
+      - adr/ADR-010-identity-bounded-context.md
+      - adr/ADR-011-authentication-strategy.md
+      - adr/ADR-012-decentralized-error-http-mapping.md
+      - adr/ADR-013-runtime-settings-db-backed.md
+      - adr/ADR-014-settings-per-bucket-aggregate.md
+      - adr/ADR-015-scanner-deduplication-by-content-identity.md
+      - adr/ADR-016-media-type-value-object.md
+      - adr/ADR-017-domain-invariants-in-domain-layer.md
+      - adr/ADR-018-domain-identifiers-as-vos-at-boundaries.md
+      - adr/ADR-019-hardware-accelerated-transcoding.md
+      - adr/ADR-020-pluggable-intro-detector-frame-hash.md
+      - adr/ADR-021-credits-detector-per-file-visual.md
+      - adr/ADR-022-catalog-requests-subscriptions-fanout.md
+      - adr/ADR-023-localized-metadata-value-object.md
+      - adr/ADR-024-published-presentation-contracts-cross-bc.md
+      - adr/ADR-025-provider-metadata-reconciliation-in-application.md
+      - adr/ADR-026-server-authoritative-track-selection.md
+      - adr/ADR-027-ocr-image-based-subtitles.md

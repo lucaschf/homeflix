@@ -1,4 +1,4 @@
-.PHONY: help install dev test lint format migrate migration clean
+.PHONY: help install dev test lint format migrate migration clean docs docs-install docs-build
 
 # Default target
 help:
@@ -26,6 +26,11 @@ help:
 	@echo "Database:"
 	@echo "  make migrate       Apply all migrations"
 	@echo "  make migration     Create new migration (use: make migration message='description')"
+	@echo ""
+	@echo "Documentation:"
+	@echo "  make docs-install  Install the MkDocs toolchain"
+	@echo "  make docs          Serve docs with live reload (http://127.0.0.1:8000)"
+	@echo "  make docs-build    Build docs (strict — the docs gate)"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean         Remove generated files"
@@ -95,6 +100,19 @@ migration:
 	poetry run alembic revision --autogenerate -m "$(message)"
 
 # =============================================================================
+# Documentation
+# =============================================================================
+
+docs-install:
+	poetry install --with docs
+
+docs:
+	poetry run mkdocs serve
+
+docs-build:
+	poetry run mkdocs build --strict
+
+# =============================================================================
 # Cleanup
 # =============================================================================
 
@@ -104,5 +122,6 @@ clean:
 	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
+	rm -rf site 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	find . -type f -name ".coverage" -delete 2>/dev/null || true
