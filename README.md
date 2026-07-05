@@ -98,7 +98,7 @@ cd homeflix
 make setup
 
 # Or manual installation
-poetry install --with dev
+poetry install --with dev,docs
 poetry run pre-commit install
 poetry run pre-commit install --hook-type commit-msg
 

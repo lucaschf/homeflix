@@ -7,7 +7,7 @@ help:
 	@echo "Setup:"
 	@echo "  make install       Install all dependencies"
 	@echo "  make install-dev   Install with dev dependencies"
-	@echo "  make setup         Full setup (install + pre-commit)"
+	@echo "  make setup         Full setup (install + docs + pre-commit)"
 	@echo ""
 	@echo "Development:"
 	@echo "  make dev           Run development server"
@@ -45,7 +45,7 @@ install:
 install-dev:
 	poetry install --with dev
 
-setup: install-dev pc-install
+setup: install-dev docs-install pc-install
 	@echo "✅ Setup complete!"
 
 # =============================================================================
