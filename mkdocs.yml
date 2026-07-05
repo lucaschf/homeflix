@@ -68,6 +68,7 @@ validation:
 
 nav:
   - Início: index.md
+  - Funcionalidades: features.md
   - Requisitos: homeflix-requirements.md
   - Roadmap: roadmap.md
   - Standards:

@@ -12,6 +12,7 @@ ferramenta funcional de gerenciamento de mídia.
 
 ## Como navegar
 
+- **[Funcionalidades](features.md)** — o que o sistema oferece hoje, por área.
 - **[Requisitos](homeflix-requirements.md)** — features e regras de negócio.
 - **[Roadmap](roadmap.md)** — priorização e próximos passos.
 - **Standards** — convenções transversais: formato de respostas da API,
