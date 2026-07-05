@@ -2,6 +2,7 @@
 # nav gerado sobre docs/ (ADRs, standards, requisitos, roadmap).
 # audits/ e TEMPLATE.md ficam fora do build (locais/nao-pagina).
 site_name: HomeFlix — Documentação Técnica
+site_url: https://lucaschf.github.io/homeflix/
 docs_dir: docs
 
 theme:
