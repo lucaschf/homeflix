@@ -1,0 +1,47 @@
+# Git
+.git
+.github
+.gitignore
+.gitattributes
+
+# Python
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage
+coverage.xml
+
+# Environment — template is kept, real values never shipped
+.env
+.env.*
+!.env.example
+
+# Runtime data directories (bind-mounted at run time)
+data/
+hls_cache/
+thumbnails/
+*.db
+*.sqlite
+*.sqlite3
+
+# Docs / dev assets not needed at runtime
+docs/
+tests/
+Makefile
+.pre-commit-config.yaml
+
+# IDE / OS clutter
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Node (in case the frontend repo ever lands here)
+node_modules
