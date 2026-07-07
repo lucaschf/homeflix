@@ -137,7 +137,9 @@ exceção; caso de uso com falha esperada = retorno).
 **Enforcement:**
 - **Determinístico (CI):** `raise DomainException(` (a base) fora de
   `src/building_blocks/domain/` falha o pipeline — ratchet que mantém o 0 atual.
-  <!-- TODO(Lucas): adicionar step de grep/ruff-custom no job de lint da CI -->
+  Implementado em `scripts/check_domain_exceptions.sh`, rodado no job `lint` da CI
+  e localmente via `make lint` (ou `make check-domain-exceptions`). O grep casa só
+  a base; as subclasses semânticas não disparam.
 - **Semântico (code review de MR):** escolha da subclasse e presença/reuso de
   `rule_code`, usando a árvore de decisão deste ADR como critério — já coberto
   pelo subagente de code-smell/arch do fluxo `mr-review`.

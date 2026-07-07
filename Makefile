@@ -67,6 +67,10 @@ test-cov:
 lint:
 	poetry run ruff check src tests
 	poetry run ruff format --check src tests
+	bash scripts/check_domain_exceptions.sh
+
+check-domain-exceptions:
+	bash scripts/check_domain_exceptions.sh
 
 format:
 	poetry run ruff check --fix src tests
