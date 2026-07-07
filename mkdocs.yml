@@ -111,3 +111,4 @@ nav:
       - adr/ADR-025-provider-metadata-reconciliation-in-application.md
       - adr/ADR-026-server-authoritative-track-selection.md
       - adr/ADR-027-ocr-image-based-subtitles.md
+      - adr/ADR-028-domain-exception-semantics.md
