@@ -146,17 +146,47 @@ jobs:
         run: pip-audit --require-hashes=false
         continue-on-error: true
 
+  docs:
+    name: Docs Build (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # histórico completo p/ git-revision-date-localized
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install docs dependencies
+        run: poetry install --with docs --no-root --no-interaction
+
+      - name: Build site (strict)
+        env:
+          CI: "true" # ativa o plugin git-revision-date-localized
+        run: poetry run mkdocs build --strict
+
   # Summary job that depends on all others
   ci-success:
     name: CI Success
-    needs: [lint, type-check, test, security]
+    needs: [lint, type-check, test, security, docs]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check all jobs passed
         run: |
           if [[ "${{ needs.lint.result }}" != "success" ]] || \
-             [[ "${{ needs.test.result }}" != "success" ]]; then
+             [[ "${{ needs.test.result }}" != "success" ]] || \
+             [[ "${{ needs.docs.result }}" != "success" ]]; then
             echo "Required jobs failed"
             exit 1
           fi
