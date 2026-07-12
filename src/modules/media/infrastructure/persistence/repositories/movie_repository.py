@@ -154,9 +154,11 @@ class SQLAlchemyMovieRepository(MovieRepository):
         result = await self._session.execute(stmt)
         existing_model = result.scalar_one_or_none()
 
-        # Restore if soft-deleted
+        # Restore if soft-deleted (including its file variants)
         if existing_model is not None and existing_model.is_deleted:
             existing_model.restore()
+            for variant in existing_model.file_variants:
+                variant.restore()
 
         if existing_model is not None:
             # Update existing
@@ -186,9 +188,13 @@ class SQLAlchemyMovieRepository(MovieRepository):
         Returns:
             True if deleted, False if not found.
         """
-        stmt = select(MovieModel).where(
-            MovieModel.external_id == str(movie_id),
-            MovieModel.deleted_at.is_(None),
+        stmt = (
+            select(MovieModel)
+            .where(
+                MovieModel.external_id == str(movie_id),
+                MovieModel.deleted_at.is_(None),
+            )
+            .options(selectinload(MovieModel.file_variants))
         )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
@@ -196,7 +202,12 @@ class SQLAlchemyMovieRepository(MovieRepository):
         if model is None:
             return False
 
+        # Cascade the soft-delete to file variants so their paths are freed
+        # (the partial unique index on media_files.file_path only ignores
+        # soft-deleted rows), letting a later rescan re-register the file.
         model.soft_delete()
+        for variant in model.file_variants:
+            variant.soft_delete()
         await self._session.flush()
         return True
 

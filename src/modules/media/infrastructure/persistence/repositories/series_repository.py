@@ -222,6 +222,8 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                     season.restore()
                     for episode in season.episodes:
                         episode.restore()
+                        for variant in episode.file_variants:
+                            variant.restore()
 
             return await self._update_series(existing_model, series)
 
@@ -243,7 +245,9 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 SeriesModel.deleted_at.is_(None),
             )
             .options(
-                selectinload(SeriesModel.seasons).selectinload(SeasonModel.episodes),
+                selectinload(SeriesModel.seasons)
+                .selectinload(SeasonModel.episodes)
+                .selectinload(EpisodeModel.file_variants),
             )
         )
         result = await self._session.execute(stmt)
@@ -252,12 +256,17 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         if model is None:
             return False
 
-        # Soft delete series and all children
+        # Soft delete series and all children, including episode file variants
+        # so their paths are freed (the partial unique index on
+        # media_files.file_path only ignores soft-deleted rows), letting a
+        # later rescan re-register the files.
         model.soft_delete()
         for season in model.seasons:
             season.soft_delete()
             for episode in season.episodes:
                 episode.soft_delete()
+                for variant in episode.file_variants:
+                    variant.soft_delete()
 
         await self._session.flush()
         return True

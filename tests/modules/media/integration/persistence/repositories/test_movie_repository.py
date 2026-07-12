@@ -19,7 +19,7 @@ from src.modules.media.domain.value_objects import (
     Year,
 )
 from src.modules.media.domain.value_objects.cast_member import CastMember
-from src.modules.media.infrastructure.persistence.models import MovieModel
+from src.modules.media.infrastructure.persistence.models import MediaFileModel, MovieModel
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemyMovieRepository
 from src.shared_kernel.value_objects.library_id import LibraryId
 
@@ -535,6 +535,56 @@ class TestSQLAlchemyMovieRepositorySaveRestore:
         found = await repo.find_by_id(movie_id)
         assert found is not None
         assert found.title.value == "Restored"
+
+
+@pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryDeleteCascade:
+    """Soft-deleting a movie cascades to its file variants and back."""
+
+    async def _files_at(self, db_session: AsyncSession, path: str) -> list[MediaFileModel]:
+        rows = await db_session.execute(
+            select(MediaFileModel).where(MediaFileModel.file_path == path)
+        )
+        return list(rows.scalars().all())
+
+    async def test_delete_soft_deletes_file_variants(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _create_movie(title="Gone", file_path="/movies/gone.mkv")
+        await repo.save(movie)
+
+        await repo.delete(_id_of(movie))
+
+        files = await self._files_at(db_session, "/movies/gone.mkv")
+        assert files and all(f.deleted_at is not None for f in files)
+
+    async def test_deleted_movie_frees_path_for_a_rescan(self, db_session: AsyncSession) -> None:
+        # End-to-end: after deleting a movie, a fresh movie (new id) can
+        # re-register the same file — the whole point of the cascade + the
+        # partial media_files index.
+        repo = SQLAlchemyMovieRepository(db_session)
+        first = _create_movie(title="First", file_path="/movies/reuse.mkv")
+        await repo.save(first)
+        await repo.delete(_id_of(first))
+
+        second = await repo.save(_create_movie(title="Second", file_path="/movies/reuse.mkv"))
+
+        assert second.title.value == "Second"
+        live = [
+            f for f in await self._files_at(db_session, "/movies/reuse.mkv") if not f.deleted_at
+        ]
+        assert len(live) == 1
+
+    async def test_restore_brings_back_file_variants(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _create_movie(title="Restored", file_path="/movies/back.mkv")
+        await repo.save(movie)
+        await repo.delete(_id_of(movie))
+
+        restored = await repo.save(movie)  # same id -> restore path
+
+        assert len(restored.files) == 1
+        live = [f for f in await self._files_at(db_session, "/movies/back.mkv") if not f.deleted_at]
+        assert len(live) == 1
 
 
 @pytest.mark.integration

@@ -26,7 +26,7 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
     Year,
 )
-from src.modules.media.infrastructure.persistence.models import SeriesModel
+from src.modules.media.infrastructure.persistence.models import MediaFileModel, SeriesModel
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemySeriesRepository
 from src.shared_kernel.value_objects.library_id import LibraryId
 
@@ -1981,3 +1981,59 @@ class TestAllowedLibraryIdsFilter:
 
         assert found is not None
         assert found.title.value == "Allowed"
+
+
+@pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryDeleteCascade:
+    """Soft-deleting a series cascades to episode file variants and back."""
+
+    async def _files_at(self, db_session: AsyncSession, path: str) -> list[MediaFileModel]:
+        rows = await db_session.execute(
+            select(MediaFileModel).where(MediaFileModel.file_path == path)
+        )
+        return list(rows.scalars().all())
+
+    async def test_delete_soft_deletes_episode_file_variants(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _create_series(title="Doomed", season_count=1, episodes_per_season=1)
+        await repo.save(series)
+
+        await repo.delete(_id_of(series))
+
+        files = await self._files_at(db_session, "/series/s01e01.mkv")
+        assert files and all(f.deleted_at is not None for f in files)
+
+    async def test_deleted_series_frees_path_for_a_rescan(self, db_session: AsyncSession) -> None:
+        # End-to-end: after deleting a series, a fresh series (new id) can
+        # re-register the same episode file.
+        repo = SQLAlchemySeriesRepository(db_session)
+        first = _create_series(title="First", season_count=1, episodes_per_season=1)
+        await repo.save(first)
+        await repo.delete(_id_of(first))
+
+        second = await repo.save(
+            _create_series(title="Second", season_count=1, episodes_per_season=1)
+        )
+
+        assert second.title.value == "Second"
+        live = [
+            f for f in await self._files_at(db_session, "/series/s01e01.mkv") if not f.deleted_at
+        ]
+        assert len(live) == 1
+
+    async def test_restore_brings_back_episode_file_variants(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _create_series(title="Restored", season_count=1, episodes_per_season=1)
+        await repo.save(series)
+        await repo.delete(_id_of(series))
+
+        await repo.save(series)  # same id -> restore path
+
+        live = [
+            f for f in await self._files_at(db_session, "/series/s01e01.mkv") if not f.deleted_at
+        ]
+        assert len(live) == 1
