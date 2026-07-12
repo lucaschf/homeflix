@@ -9,9 +9,11 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -52,6 +54,17 @@ class MediaFileModel(Base):
             "(movie_id IS NULL AND episode_id IS NOT NULL)",
             name="ck_media_file_single_owner",
         ),
+        # Partial unique index: file_path is unique only among live rows.
+        # Soft-deleted variants keep their path (audit/undo) but must not
+        # block a rescan from re-registering the same file. Mirrors the
+        # partial index on movies/episodes (migration e9d8c7b6a5f4).
+        Index(
+            "ix_media_files_file_path",
+            "file_path",
+            unique=True,
+            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     # Owner FK (exactly one must be set)
@@ -69,11 +82,11 @@ class MediaFileModel(Base):
     )
 
     # File metadata
+    # Uniqueness is enforced by the partial index in __table_args__
+    # (live rows only), not a full column-level unique constraint.
     file_path: Mapped[str] = mapped_column(
         String(2000),
         nullable=False,
-        unique=True,
-        index=True,
     )
     file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
