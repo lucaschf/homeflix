@@ -12,9 +12,13 @@ _logger = logging.getLogger(__name__)
 _SUPPORTED_EXTENSIONS = frozenset({".mp4", ".mkv", ".avi", ".mov", ".wmv"})
 
 # Episode patterns: S01E01, s01e01, 1x01
+# The episode group allows up to 4 digits so long-running shows with a single
+# season (e.g. absolute-numbered anime — S01E167) are captured verbatim. With a
+# 2-digit cap, "S01E100" matched "S01E10" and every E100+ collided with an
+# existing E10..E16, silently dropping them on upsert by (season, episode).
 _EPISODE_PATTERNS = [
-    re.compile(r"[Ss](\d{1,2})[Ee](\d{1,2})"),
-    re.compile(r"(\d{1,2})[Xx](\d{2})"),
+    re.compile(r"[Ss](\d{1,2})[Ee](\d{1,4})"),
+    re.compile(r"(\d{1,2})[Xx](\d{2,4})"),
 ]
 
 # Season folder patterns: "Season 01", "Season 1", "S01"

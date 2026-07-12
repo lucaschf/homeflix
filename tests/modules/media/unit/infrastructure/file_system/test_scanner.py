@@ -171,6 +171,22 @@ class TestScanDirectories:
         assert results[0].season_number == 1
         assert results[0].episode_number == 1
 
+    def test_should_detect_three_digit_episode_number(
+        self, scanner: LocalFileSystemScanner, media_dir: Path
+    ) -> None:
+        # Long-running single-season shows (absolute-numbered anime) use 3-digit
+        # episode numbers. A 2-digit cap parsed "S01E100" as E10 and every E100+
+        # collided with an existing E10..E16, dropping them on upsert.
+        show_dir = media_dir / "InuYasha (2000)" / "Season 01"
+        _create_file(show_dir, "InuYasha (2000) - S01E100.mkv")
+        _create_file(show_dir, "InuYasha (2000) - S01E167.mkv")
+
+        results = scanner.scan_directories([FilePath(str(media_dir))])
+
+        episodes = {r.episode_number for r in results}
+        assert episodes == {100, 167}
+        assert all(r.season_number == 1 for r in results)
+
     def test_should_detect_episode_pattern_nxnn(
         self, scanner: LocalFileSystemScanner, media_dir: Path
     ) -> None:
