@@ -27,6 +27,7 @@ from src.modules.media.presentation.routes.admin_subtitle_ocr_routes import (
 from src.modules.media.presentation.routes.admin_system_routes import (
     router as admin_system_router,
 )
+from src.modules.media.presentation.routes.artwork_routes import router as artwork_router
 from src.modules.media.presentation.routes.catalog_routes import router as catalog_router
 from src.modules.media.presentation.routes.collection_routes import router as collection_router
 from src.modules.media.presentation.routes.enrichment_routes import router as enrichment_router
@@ -51,6 +52,7 @@ __all__ = [
     "admin_scan_router",
     "admin_subtitle_ocr_router",
     "admin_system_router",
+    "artwork_router",
     "catalog_router",
     "collection_router",
     "enrichment_router",

@@ -225,6 +225,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         tmdb_api_key=config.provided.tmdb_api_key,
         supported_locales=config.provided.supported_locales,
         hls_cache_directory=config.provided.hls_cache_directory,
+        artwork_storage_directory=config.provided.artwork_storage_directory,
         runtime_settings=settings.runtime_settings,
     )
 

@@ -112,3 +112,4 @@ nav:
       - adr/ADR-026-server-authoritative-track-selection.md
       - adr/ADR-027-ocr-image-based-subtitles.md
       - adr/ADR-028-domain-exception-semantics.md
+      - adr/ADR-029-artwork-mirroring-storage.md

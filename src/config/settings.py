@@ -90,6 +90,14 @@ class Settings(BaseSettings):  # type: ignore[misc]
         description="Directory to store cached HLS segments",
     )
 
+    # Artwork mirror storage (ADR-029). Local-disk directory holding
+    # mirrored catalog artwork, in the same bootstrap-config style as
+    # ``thumbnails_directory`` / ``hls_cache_directory`` above.
+    artwork_storage_directory: str = Field(
+        default="./artwork",
+        description="Directory to store mirrored catalog artwork",
+    )
+
     # ``hls_cache_max_size_mb`` and the ``avatar_*`` knobs moved to
     # ``app_settings`` in ADR-013 phase 3. Set them via the admin
     # panel or ``UPDATE app_settings SET value_json=...``. The legacy
