@@ -74,6 +74,7 @@ nav:
   - Standards:
       - standards/api-i18n-guide.md
       - standards/api-production-addons.md
+      - standards/artwork-mirroring-guide.md
       - standards/api-response-standard-rest-v3.md
       - standards/clean-architecture-decisions.md
       - standards/exception-hierarchy-clean-architecture.md

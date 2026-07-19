@@ -19,6 +19,7 @@ HomeFlix is a self-hosted media server that allows you to:
 - 📋 Create watchlists and custom collections per profile
 - ⏭️ Skip intros automatically (Chromaprint fingerprinting) and scrub with thumbnail trickplay
 - 🔍 Full-text search across the catalog
+- 🖼️ Mirror provider artwork into local storage so posters survive TMDB removal, rate limits, and offline use (ADR-029)
 
 ## Tech Stack
 
@@ -195,15 +196,15 @@ Key entry points:
 streaming server with profile ACLs, automatic intro detection,
 trickplay scrub thumbnails, and a scheduled scan/enrichment pipeline.
 
-- 137 REST API endpoints across 9 bounded contexts
-- 3,100+ tests
+- 138 REST API endpoints across 9 bounded contexts
+- 3,200+ tests
 - Responsive React frontend with HLS player and per-profile UI
 
 ### Modules
 
 | Module | Scope | Highlights |
 |--------|-------|------------|
-| **Media Catalog** | Movies, Series, Seasons, Episodes | File variants (ADR-006), HLS streaming, multi-audio/subtitle, FTS5 search, TMDB enrichment, filesystem scanner, intro markers, trickplay sprites |
+| **Media Catalog** | Movies, Series, Seasons, Episodes | File variants (ADR-006), HLS streaming, multi-audio/subtitle, FTS5 search, TMDB enrichment, filesystem scanner, intro markers, trickplay sprites, provider artwork mirrored to local storage (ADR-029) |
 | **Library** | Media source configuration | CRUD, metadata providers, scan settings, TrackSelector service (ADR-005) |
 | **Watch Progress** | Playback tracking, scoped per profile | Save/resume, continue watching, auto-complete at 90% |
 | **Collections** | Watchlist & Custom Lists, scoped per profile | Toggle watchlist, up to 10 custom lists with ordering |

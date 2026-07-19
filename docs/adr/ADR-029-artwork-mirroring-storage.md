@@ -1,6 +1,6 @@
 # ADR-029: Mirror de Artwork de Provider via Port de Storage
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-07-18
 **Deciders:** Lucas
 **Technical Story:** Durabilidade de artes do catálogo — hoje poster/backdrop/logo/still são URLs absolutas do TMDB servidas verbatim ao frontend; se o TMDB remove a imagem, aplica rate limit, o CDN cai, ou o uso é offline, a arte some.
@@ -163,3 +163,4 @@ Docs a sincronizar ao implementar (docs-maintainer): página do módulo `media` 
 |------|-------|---------|
 | 2026-07-18 | Lucas | Criação inicial (Proposto) |
 | 2026-07-18 | Lucas | Default de storage passa de object-store (MinIO) para disco local; MinIO/S3 vira adapter plugável (Alternativa 3) |
+| 2026-07-19 | Lucas | **Aceito** — implementado e mergeado (PR #364): endpoint `GET /api/v1/artwork/{key}`, `ArtworkStoragePort` + `LocalArtworkStorage` (único adapter implementado; MinIO/S3 segue plugável, não implementado), `ArtworkMirrorJob` (`homeflix:artwork-mirror`), `HttpxArtworkDownloader` guardado contra SSRF, `ArtworkKey`/`ArtworkColumns` VOs e bucket `ArtworkMirrorConfig`. Escopo entregue: campos top-level (poster/backdrop/logo) de **Movie e Series**. Poster de Season, stills de episódio, artes localizadas e fotos de elenco ficam para follow-ups (§5 do escopo v1). |
