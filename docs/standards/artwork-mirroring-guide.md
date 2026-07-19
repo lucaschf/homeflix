@@ -37,9 +37,10 @@ tick seguinte — a URL remota autoritativa nunca é descartada.
 
 - ✅ Campos top-level **poster / backdrop / logo** de **Movie** e
   **Series** (`ArtworkColumns`).
-- ⏳ Poster de Season, stills de episódio, artes localizadas por locale e
-  fotos de elenco: **planejados** (follow-ups do ADR-029 §5), ainda não
-  implementados.
+- ✅ **Poster de Season** — mirrorado por coluna direta (`seasons.poster_path`),
+  sem round-trip do agregado.
+- ⏳ Stills de episódio, artes localizadas por locale e fotos de elenco:
+  **planejados** (follow-ups do ADR-029 §5), ainda não implementados.
 
 ---
 

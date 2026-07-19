@@ -457,6 +457,26 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_seasons_with_remote_poster(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` seasons whose poster is still a remote URL.
+
+        ``RemoteArtworkRow.media_id`` is the season external id (``ssn_xxx``)
+        and only ``artwork.poster`` is populated — seasons carry no
+        backdrop/logo column.
+        """
+        ...
+
+    @abstractmethod
+    async def update_season_artwork(self, season_id: SeasonId, artwork: ArtworkColumns) -> None:
+        """Set a single season's poster column by external id.
+
+        Direct column update on the ``seasons`` table — the mirror job
+        never round-trips the ``Series`` aggregate. Only ``artwork.poster``
+        is written; the other fields are ignored (no such columns).
+        """
+        ...
+
+    @abstractmethod
     async def find_seasons_pending_intro_detection(
         self,
         limit: int,

@@ -23,6 +23,7 @@ REMOTE_B = "https://image.tmdb.org/t/p/original/b.jpg"
 LOCAL = "/api/v1/artwork/deadbeef.jpg"
 MOVIE_ID = "mov_abc123def456"
 SERIES_ID = "ser_abc123def456"
+SEASON_ID = "ssn_abc123def456"
 
 
 def _row(media_id: str, *, poster=None, backdrop=None, logo=None) -> RemoteArtworkRow:
@@ -51,8 +52,23 @@ class _FakeMovieRepo(_FakeRepo):
 
 
 class _FakeSeriesRepo(_FakeRepo):
+    def __init__(
+        self,
+        rows: list[RemoteArtworkRow],
+        season_rows: list[RemoteArtworkRow] | None = None,
+    ) -> None:
+        super().__init__(rows)
+        self._season_rows = season_rows or []
+        self.season_updates: list[tuple[str, ArtworkColumns]] = []
+
     async def update_series_artwork(self, series_id, artwork: ArtworkColumns) -> None:
         self.updates.append((str(series_id), artwork))
+
+    async def find_seasons_with_remote_poster(self, limit: int) -> list[RemoteArtworkRow]:
+        return self._season_rows[:limit]
+
+    async def update_season_artwork(self, season_id, artwork: ArtworkColumns) -> None:
+        self.season_updates.append((str(season_id), artwork))
 
 
 @dataclass
@@ -124,12 +140,13 @@ def _make(
     *,
     movie_rows: list[RemoteArtworkRow] | None = None,
     series_rows: list[RemoteArtworkRow] | None = None,
+    season_rows: list[RemoteArtworkRow] | None = None,
     config: ArtworkMirrorConfig | None = None,
     fail_urls: set[str] = frozenset(),
     nonimage_urls: set[str] = frozenset(),
 ) -> _Harness:
     movies = _FakeMovieRepo(list(movie_rows or []))
-    series = _FakeSeriesRepo(list(series_rows or []))
+    series = _FakeSeriesRepo(list(series_rows or []), season_rows=list(season_rows or []))
     uow = _FakeUow(movies=movies, series=series)
     downloader = _FakeDownloader(fail_urls=fail_urls, nonimage_urls=nonimage_urls)
     storage = _FakeStorage()
@@ -200,6 +217,16 @@ class TestRun:
         _, cols = h.series.updates[0]
         assert cols.poster.value.startswith("/api/v1/artwork/")
         assert cols.backdrop.value.startswith("/api/v1/artwork/")
+
+    async def test_should_mirror_season_posters(self) -> None:
+        h = _make(season_rows=[_row(SEASON_ID, poster=REMOTE)])
+
+        await h.job.run()
+
+        assert len(h.series.season_updates) == 1
+        media_id, cols = h.series.season_updates[0]
+        assert media_id == SEASON_ID
+        assert cols.poster.value.startswith("/api/v1/artwork/")
 
     async def test_should_split_budget_between_kinds(self) -> None:
         # batch_size 1 → the single slot goes to the movie; series is not
