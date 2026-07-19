@@ -22,9 +22,7 @@ class TestForContent:
         assert str(key) == f"{expected_digest}.jpg"
 
     def test_should_derive_extension_from_content_type(self) -> None:
-        key = ArtworkKey.for_content(
-            b"x", content_type="image/png", source_url="https://x/y"
-        )
+        key = ArtworkKey.for_content(b"x", content_type="image/png", source_url="https://x/y")
 
         assert str(key).endswith(".png")
 
@@ -64,9 +62,7 @@ class TestForContent:
     def test_should_produce_a_key_matching_the_route_charset(self) -> None:
         from src.modules.media.domain.value_objects.artwork_key import ARTWORK_KEY_PATTERN
 
-        key = ArtworkKey.for_content(
-            b"x", content_type="image/jpeg", source_url="https://x/y.jpg"
-        )
+        key = ArtworkKey.for_content(b"x", content_type="image/jpeg", source_url="https://x/y.jpg")
 
         assert ARTWORK_KEY_PATTERN.match(str(key))
 
