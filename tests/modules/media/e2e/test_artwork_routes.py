@@ -72,7 +72,7 @@ class TestGetArtwork:
 
         assert resp.status_code == 404
 
-    async def test_should_redirect_to_origin_when_not_mirrored(
+    async def test_should_redirect_to_allowed_origin_when_not_mirrored(
         self, client: AsyncClient, storage: _FakeArtworkStorage
     ) -> None:
         origin = "https://image.tmdb.org/t/p/original/x.jpg"
@@ -86,12 +86,71 @@ class TestGetArtwork:
         assert resp.status_code == 302
         assert resp.headers["location"] == origin
 
+    async def test_should_404_not_redirect_when_origin_host_not_allowed(
+        self, client: AsyncClient, storage: _FakeArtworkStorage
+    ) -> None:
+        # An arbitrary origin host must never be echoed into Location —
+        # that would make this public endpoint an open redirect.
+        resp = await client.get(
+            ARTWORK_PATH.format(key="missing.jpg"),
+            params={"origin": "https://evil.example.com/x.jpg"},
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 404
+
+    async def test_should_serve_stored_bytes_even_when_origin_supplied(
+        self, client: AsyncClient, storage: _FakeArtworkStorage
+    ) -> None:
+        # Precedence: a mirrored object wins over the origin fallback —
+        # never redirect away from a good local image.
+        await storage.save(content=b"local", content_type="image/jpeg", key="ab12.jpg")
+
+        resp = await client.get(
+            ARTWORK_PATH.format(key="ab12.jpg"),
+            params={"origin": "https://image.tmdb.org/t/p/original/x.jpg"},
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 200
+        assert resp.content == b"local"
+
+    async def test_should_serve_without_authentication(
+        self, client: AsyncClient, storage: _FakeArtworkStorage
+    ) -> None:
+        # Deliberate design: artwork is public <img> imagery that cannot
+        # carry auth headers. This pins the invariant so adding an auth
+        # dependency to the router would fail here by name.
+        await storage.save(content=b"x", content_type="image/png", key="pub.png")
+
+        resp = await client.get(ARTWORK_PATH.format(key="pub.png"))
+
+        assert resp.status_code == 200
+
     async def test_should_400_on_invalid_key(
         self, client: AsyncClient, storage: _FakeArtworkStorage
     ) -> None:
         # A slash-bearing key can't even reach the handler as one path
-        # segment, so probe the charset guard with a traversal attempt
-        # that stays within a single segment.
+        # segment, so probe the charset guard with a space (percent-
+        # encoded) that stays within a single path segment.
         resp = await client.get(ARTWORK_PATH.format(key="bad%20key"))
 
         assert resp.status_code == 400
+        # Assert the 400 came from the charset guard specifically, not
+        # some other validation, so the test can't pass for a wrong reason.
+        # The HTTPException detail lands in the envelope's ``message``.
+        assert resp.json()["message"] == "invalid artwork key"
+
+    async def test_should_400_on_all_dots_key(
+        self, client: AsyncClient, storage: _FakeArtworkStorage
+    ) -> None:
+        # All-dots keys pass the charset regex (dots are allowed) but are
+        # not valid objects and would reach storage as a directory /
+        # traversal-shaped path — must be rejected up front, not 500.
+        # ``...`` is used (not ``.``/``..``) because the server URL-
+        # normalizes the latter before routing, so they never reach the
+        # handler; ``...`` is an ordinary segment that does.
+        resp = await client.get(ARTWORK_PATH.format(key="..."))
+
+        assert resp.status_code == 400
+        assert resp.json()["message"] == "invalid artwork key"

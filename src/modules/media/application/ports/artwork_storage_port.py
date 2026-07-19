@@ -34,8 +34,10 @@ class StoredArtwork:
     Attributes:
         content: The raw image bytes as stored.
         content_type: The MIME type to serve them with (e.g.
-            ``image/jpeg``). Persisted alongside the object at save
-            time so the proxy never has to sniff it.
+            ``image/jpeg``). How it is resolved is backend-specific:
+            an object store persists it as object metadata at save
+            time, while the local-disk adapter derives it from the
+            key's file extension on read.
     """
 
     content: bytes
@@ -51,12 +53,17 @@ class ArtworkStoragePort(ABC):
 
         Args:
             content: Raw image bytes fetched from the provider.
-            content_type: MIME type to persist and later serve with.
+            content_type: MIME type to serve the bytes with. Whether it
+                is stored (object-store metadata) or re-derived from the
+                key's extension on read (local-disk adapter) is
+                backend-specific, so callers MUST give ``key`` a
+                type-bearing extension that matches ``content_type``.
             key: Stable, storage-safe object key. Callers derive it
-                deterministically (e.g. a content hash) so re-saving
-                identical bytes is idempotent and de-duplicated. Must
-                match ``[A-Za-z0-9._-]+`` — it is embedded verbatim in
-                the served URL path.
+                deterministically (e.g. a content hash + extension) so
+                re-saving identical bytes is idempotent and
+                de-duplicated. Must match ``[A-Za-z0-9._-]+`` (and not
+                be all dots) — it is embedded verbatim in the served
+                URL path.
 
         Returns:
             The relative URL the catalog should embed in place of the

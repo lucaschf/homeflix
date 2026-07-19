@@ -109,6 +109,12 @@ class LocalArtworkStorage(ArtworkStoragePort):
             return target.read_bytes()
         except FileNotFoundError:
             return None
+        except OSError:
+            # Target exists but is not a readable file — e.g. a key of
+            # ``.`` resolves to the root directory (``IsADirectoryError``),
+            # or a permission issue. Treat as absent rather than letting
+            # the exception surface as a 500 through the proxy route.
+            return None
 
     @staticmethod
     def _content_type(key: str) -> str:
