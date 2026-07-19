@@ -116,6 +116,80 @@ def _primary_audio_index(probe: ProbeResult) -> int:
     return probe.audio_tracks[0].index if probe.audio_tracks else 0
 
 
+# A leading audio offset above this many seconds is treated as a gap that
+# must be padded with silence (see ``_first_audio_pts``). The threshold is
+# generous — normal muxing jitter is a few milliseconds, so anything past a
+# quarter-second is a real hole at the head of the track, not noise.
+_AUDIO_LEADING_GAP_THRESHOLD = 0.25
+
+
+def _first_audio_pts(file_path: str, audio_index: int) -> float | None:
+    """Return the PTS (seconds) of the first packet of one audio stream.
+
+    Some source files carry an audio track whose first sample lands well
+    after t=0 (e.g. an 11-second silent hole at the head of the stream).
+    Muxed into HLS from t=0, the leading segments then declare an audio
+    stream that has *no* frames yet, and hls.js — which needs the audio
+    codec from the first fragment — stalls forever on that phantom track
+    instead of ever appending a buffer. Detecting the offset lets the
+    caller pad it with silence and keep the copy fast-path off files that
+    would otherwise ship an empty-audio first segment.
+
+    Args:
+        file_path: Absolute path to the source video file.
+        audio_index: Stream index *within the audio streams* (the ``N`` in
+            ffmpeg's ``0:a:N``), matching how the transcode maps it.
+
+    Returns:
+        The first packet's presentation timestamp in seconds, or ``None``
+        if ffprobe fails or reports no readable timestamp (caller then
+        assumes no gap).
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                f"a:{audio_index}",
+                "-read_intervals",
+                "%+#1",
+                "-show_entries",
+                "packet=pts_time",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                file_path,
+            ],
+            **SUBPROCESS_TEXT_KWARGS,
+            check=False,
+            timeout=10,
+        )
+    except Exception:
+        return None
+    raw = result.stdout.strip().splitlines()
+    if not raw:
+        return None
+    try:
+        return float(raw[0])
+    except ValueError:
+        return None
+
+
+def _has_leading_audio_gap(file_path: str, audio_index: int, start: int) -> bool:
+    """Whether a mapped audio stream begins meaningfully after t=0.
+
+    Only meaningful for the initial (``start == 0``) bucket — a seek
+    bucket lands mid-stream where audio already exists and normalises its
+    own timestamps, so we skip the probe there and never treat it as a
+    gap. See :func:`_first_audio_pts` for why the gap matters.
+    """
+    if start != 0:
+        return False
+    pts = _first_audio_pts(file_path, audio_index)
+    return pts is not None and pts > _AUDIO_LEADING_GAP_THRESHOLD
+
+
 def _manifest_track_name(language: str, version: TrackVersion | None) -> str:
     """Compose a fallback ``NAME=`` for a manifest rendition.
 
@@ -129,7 +203,11 @@ def _manifest_track_name(language: str, version: TrackVersion | None) -> str:
     return f"{base} · {token}" if token else base
 
 
-def _audio_args_for(track: AudioTrack | None, start: int) -> list[str]:
+def _audio_args_for(
+    track: AudioTrack | None,
+    start: int,
+    leading_gap: bool = False,
+) -> list[str]:
     """Pick the ffmpeg audio args for one HLS track: copy or re-encode.
 
     Re-encoding every audio track to AAC stereo 48 kHz is wasted work
@@ -146,20 +224,38 @@ def _audio_args_for(track: AudioTrack | None, start: int) -> list[str]:
     - **start == 0** — a non-zero resume offset re-encodes the video with
       ``-accurate_seek``; copying the audio there would land it at the
       nearest packet instead of the exact second and drift out of sync.
+    - **no leading gap** — a track whose first sample lands after t=0
+      (``leading_gap``) must be re-encoded so the silence filter below
+      can backfill the hole; copying would preserve it and ship an
+      empty-audio first segment that stalls hls.js.
 
     Anything else (unknown profile/rate, non-AAC, surround, mid-stream
-    seek) falls back to the safe AAC re-encode.
+    seek, leading gap) falls back to the safe AAC re-encode.
+
+    On the re-encode path for an initial (``start == 0``) bucket we add
+    ``aresample=async=1:first_pts=0``. It pads any leading offset with
+    silence so the audio starts at t=0 and the first HLS segment carries
+    decodable frames — without it, a file whose audio begins late (a real
+    silent intro) yields a first segment with a declared-but-empty audio
+    stream, and hls.js hangs on "preparing" forever. It is a no-op for a
+    track that already starts at zero. The seek path (``start > 0``)
+    already normalises timestamps via ``-avoid_negative_ts make_zero`` and
+    is left untouched.
     """
     if (
         track is not None
         and start == 0
+        and not leading_gap
         and track.codec == "aac"
         and track.is_stereo
         and track.sample_rate == 48000
         and (track.profile or "").strip().upper() == "LC"
     ):
         return ["-c:a", "copy"]
-    return ["-c:a", "aac", "-ac", "2", "-ar", "48000"]
+    args = ["-c:a", "aac", "-ac", "2", "-ar", "48000"]
+    if start == 0:
+        args += ["-af", "aresample=async=1:first_pts=0"]
+    return args
 
 
 class HlsService(HlsPlaylistPort):
@@ -1142,7 +1238,8 @@ class HlsService(HlsPlaylistPort):
         primary_idx = _primary_audio_index(probe)
         audio_map = f"0:a:{primary_idx}"
         primary_track = probe.audio_tracks[0] if probe.audio_tracks else None
-        audio_args = _audio_args_for(primary_track, start)
+        leading_gap = _has_leading_audio_gap(file_path, primary_idx, start)
+        audio_args = _audio_args_for(primary_track, start, leading_gap)
 
         seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
         ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
@@ -1211,6 +1308,7 @@ class HlsService(HlsPlaylistPort):
         """
         seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
         ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
+        leading_gap = _has_leading_audio_gap(file_path, track.index, start)
         return [
             "ffmpeg",
             *seek_args,
@@ -1220,7 +1318,7 @@ class HlsService(HlsPlaylistPort):
             f"0:a:{track.index}",
             "-vn",
             "-sn",
-            *_audio_args_for(track, start),
+            *_audio_args_for(track, start, leading_gap),
             *ts_normalize_args,
             # Zero the MPEG-TS muxer's ~1.4s initial offset so the first
             # segment PTS starts at ~0, keeping the video / audio / subtitle
