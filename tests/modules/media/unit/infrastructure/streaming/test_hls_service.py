@@ -376,6 +376,17 @@ class TestHlsServiceGetCachedTracks:
 class TestHlsServiceBuildAudioCmd:
     """Tests for _build_audio_cmd."""
 
+    @pytest.fixture(autouse=True)
+    def _no_leading_gap_probe(self):  # type: ignore[no-untyped-def]
+        # Keep the command-building tests hermetic: without this, every
+        # start==0 build shells out to a real ffprobe on the fake path.
+        # Default to "no gap"; the gap-specific tests patch it themselves.
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            return_value=None,
+        ):
+            yield
+
     def test_should_include_input_file(self, tmp_path: Path) -> None:
         cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=1))
 
@@ -558,6 +569,16 @@ class TestLeadingAudioGap:
         ):
             assert _first_audio_pts("/movies/test.mkv", 0) is None
 
+    def test_first_pts_returns_none_on_non_numeric_output(self) -> None:
+        # ffprobe emits "N/A" for pts_time on some containers; the parse
+        # must degrade to None (no gap) instead of raising ValueError.
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="N/A\n")
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
+            return_value=completed,
+        ):
+            assert _first_audio_pts("/movies/test.mkv", 0) is None
+
     def test_gap_detected_above_threshold(self) -> None:
         with patch(
             "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
@@ -584,6 +605,16 @@ class TestLeadingAudioGap:
 @pytest.mark.unit
 class TestHlsServiceBuildVideoCmd:
     """Tests for _build_video_cmd with mocked codec probe."""
+
+    @pytest.fixture(autouse=True)
+    def _no_leading_gap_probe(self):  # type: ignore[no-untyped-def]
+        # Keep these hermetic — otherwise each start==0 build spawns a
+        # real ffprobe on the fake path. The gap test patches it itself.
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            return_value=None,
+        ):
+            yield
 
     def test_should_copy_video_for_h264(self, tmp_path: Path) -> None:
         service = HlsService(
