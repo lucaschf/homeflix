@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.media.domain.entities import Episode, Movie, Season, Series
 from src.modules.media.domain.value_objects import (
+    ArtworkColumns,
     Duration,
     EpisodeId,
     FilePath,
@@ -72,8 +73,8 @@ class TestFindWithRemoteArtwork:
 
         assert len(rows) == 1
         assert rows[0].media_id == str(remote.id)
-        assert rows[0].poster_path == _REMOTE
-        assert rows[0].backdrop_path == _LOCAL
+        assert rows[0].artwork.poster == ImageUrl(_REMOTE)
+        assert rows[0].artwork.backdrop == ImageUrl(_LOCAL)
 
     async def test_should_respect_the_limit(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyMovieRepository(db_session)
@@ -99,9 +100,7 @@ class TestUpdateMovieArtwork:
 
         await repo.update_movie_artwork(
             _id(movie),
-            poster_path=_LOCAL,
-            backdrop_path=_LOCAL,
-            logo_path=None,
+            ArtworkColumns(poster=ImageUrl(_LOCAL), backdrop=ImageUrl(_LOCAL), logo=None),
         )
 
         # The title now has no remote artwork, and the reloaded entity
@@ -170,7 +169,7 @@ class TestSeriesArtwork:
         assert rows[0].media_id == str(series.id)
 
         await repo.update_series_artwork(
-            series.id, poster_path=_LOCAL, backdrop_path=None, logo_path=None
+            series.id, ArtworkColumns(poster=ImageUrl(_LOCAL), backdrop=None, logo=None)
         )
 
         assert await repo.find_with_remote_artwork(limit=10) == []

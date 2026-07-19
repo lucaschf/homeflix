@@ -14,6 +14,7 @@ from src.modules.media.domain.repositories.movie_repository import (
     RemoteArtworkRow,
 )
 from src.modules.media.domain.value_objects import (
+    ArtworkColumns,
     CreditsDetectionState,
     CreditsMarker,
     EpisodeId,
@@ -445,19 +446,13 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
-    async def update_series_artwork(
-        self,
-        series_id: SeriesId,
-        *,
-        poster_path: str | None,
-        backdrop_path: str | None,
-        logo_path: str | None,
-    ) -> None:
+    async def update_series_artwork(self, series_id: SeriesId, artwork: ArtworkColumns) -> None:
         """Set the three artwork columns for one series by external id.
 
         A targeted column update rather than an aggregate ``save`` so the
         mirror job never risks persisting the series with its seasons and
-        episodes unloaded. Callers pass the final value for every column.
+        episodes unloaded. ``artwork`` carries the final value for every
+        column.
         """
         ...
 

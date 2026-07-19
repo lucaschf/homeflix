@@ -21,6 +21,7 @@ from src.modules.media.domain.repositories.movie_repository import (
     RemoteArtworkRow,
 )
 from src.modules.media.domain.value_objects import (
+    ArtworkColumns,
     CreditsDetectionState,
     CreditsMarker,
     EpisodeId,
@@ -43,6 +44,10 @@ from src.modules.media.infrastructure.persistence.models import (
     MediaFileModel,
     SeasonModel,
     SeriesModel,
+)
+from src.modules.media.infrastructure.persistence.repositories._artwork_helpers import (
+    artwork_column_values,
+    to_artwork_columns,
 )
 from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
     fetch_genre_paginated_page,
@@ -727,30 +732,17 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         return [
             RemoteArtworkRow(
                 media_id=row.external_id,
-                poster_path=row.poster_path,
-                backdrop_path=row.backdrop_path,
-                logo_path=row.logo_path,
+                artwork=to_artwork_columns(row.poster_path, row.backdrop_path, row.logo_path),
             )
             for row in result.all()
         ]
 
-    async def update_series_artwork(
-        self,
-        series_id: SeriesId,
-        *,
-        poster_path: str | None,
-        backdrop_path: str | None,
-        logo_path: str | None,
-    ) -> None:
+    async def update_series_artwork(self, series_id: SeriesId, artwork: ArtworkColumns) -> None:
         """Set the three artwork columns for one series by external id."""
         await self._session.execute(
             update(SeriesModel)
             .where(SeriesModel.external_id == series_id.value)
-            .values(
-                poster_path=poster_path,
-                backdrop_path=backdrop_path,
-                logo_path=logo_path,
-            )
+            .values(**artwork_column_values(artwork))
         )
 
     async def find_seasons_pending_intro_detection(

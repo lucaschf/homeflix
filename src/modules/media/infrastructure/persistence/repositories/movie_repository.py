@@ -22,6 +22,7 @@ from src.modules.media.domain.repositories.movie_repository import (
     RemoteArtworkRow,
 )
 from src.modules.media.domain.value_objects import (
+    ArtworkColumns,
     CreditsDetectionState,
     CreditsMarker,
     EpisodeId,
@@ -34,6 +35,10 @@ from src.modules.media.infrastructure.persistence.models import (
     EpisodeModel,
     MediaFileModel,
     MovieModel,
+)
+from src.modules.media.infrastructure.persistence.repositories._artwork_helpers import (
+    artwork_column_values,
+    to_artwork_columns,
 )
 from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
     fetch_genre_paginated_page,
@@ -786,30 +791,17 @@ class SQLAlchemyMovieRepository(MovieRepository):
         return [
             RemoteArtworkRow(
                 media_id=row.external_id,
-                poster_path=row.poster_path,
-                backdrop_path=row.backdrop_path,
-                logo_path=row.logo_path,
+                artwork=to_artwork_columns(row.poster_path, row.backdrop_path, row.logo_path),
             )
             for row in result.all()
         ]
 
-    async def update_movie_artwork(
-        self,
-        movie_id: MovieId,
-        *,
-        poster_path: str | None,
-        backdrop_path: str | None,
-        logo_path: str | None,
-    ) -> None:
+    async def update_movie_artwork(self, movie_id: MovieId, artwork: ArtworkColumns) -> None:
         """Set the three artwork columns for one movie by external id."""
         await self._session.execute(
             update(MovieModel)
             .where(MovieModel.external_id == movie_id.value)
-            .values(
-                poster_path=poster_path,
-                backdrop_path=backdrop_path,
-                logo_path=logo_path,
-            )
+            .values(**artwork_column_values(artwork))
         )
 
     async def count_credits_states(self) -> dict[str, int]:
