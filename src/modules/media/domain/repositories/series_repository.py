@@ -477,6 +477,28 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_episodes_with_remote_thumbnail(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` episodes whose still is still a remote URL.
+
+        ``RemoteArtworkRow.media_id`` is the episode external id
+        (``epi_xxx``) and only ``artwork.still`` is populated — the
+        episode still is its single mirrorable image. Soft-deleted
+        episodes are excluded.
+        """
+        ...
+
+    @abstractmethod
+    async def update_episode_thumbnail(
+        self, episode_id: EpisodeId, artwork: ArtworkColumns
+    ) -> None:
+        """Set a single episode's still (``thumbnail_path``) by external id.
+
+        Direct column update on the ``episodes`` table — no aggregate
+        round-trip. Only ``artwork.still`` is written.
+        """
+        ...
+
+    @abstractmethod
     async def find_seasons_pending_intro_detection(
         self,
         limit: int,

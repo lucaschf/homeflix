@@ -241,3 +241,60 @@ class TestSeasonArtwork:
         assert reloaded.seasons[0].poster_path == ImageUrl(_LOCAL)
         # The episode survives a season-poster update untouched.
         assert len(reloaded.seasons[0].episodes) == 1
+
+
+def _series_with_episode_thumbnail(thumb: str) -> tuple[Series, EpisodeId, SeriesId]:
+    sid = SeriesId.generate()
+    episode_id = EpisodeId.generate()
+    episode = Episode(
+        id=episode_id,
+        series_id=sid,
+        season_number=1,
+        episode_number=1,
+        title=Title("E1"),
+        duration=Duration(2700),
+        thumbnail_path=ImageUrl(thumb),
+        files=[
+            MediaFile(
+                file_path=FilePath("/series/s01e01.mkv"),
+                file_size=500_000,
+                resolution=Resolution("1080p"),
+                is_primary=True,
+            )
+        ],
+    )
+    season = Season(
+        id=SeasonId.generate(),
+        series_id=sid,
+        season_number=1,
+        title=Title("Season 1"),
+        episodes=[episode],
+    )
+    series = Series(
+        library_id="lib_test12345678",
+        id=sid,
+        title=Title("With Episode"),
+        start_year=Year(2020),
+        seasons=[season],
+    )
+    return series, episode_id, sid
+
+
+@pytest.mark.integration
+class TestEpisodeArtwork:
+    async def test_should_find_and_update_episode_thumbnail(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series, episode_id, series_id = _series_with_episode_thumbnail(_REMOTE)
+        await repo.save(series)
+
+        rows = await repo.find_episodes_with_remote_thumbnail(limit=10)
+        assert len(rows) == 1
+        assert rows[0].media_id == str(episode_id)
+        assert rows[0].artwork.still == ImageUrl(_REMOTE)
+
+        await repo.update_episode_thumbnail(episode_id, ArtworkColumns(still=ImageUrl(_LOCAL)))
+
+        assert await repo.find_episodes_with_remote_thumbnail(limit=10) == []
+        reloaded = await repo.find_by_id(series_id)
+        assert reloaded is not None
+        assert reloaded.seasons[0].episodes[0].thumbnail_path == ImageUrl(_LOCAL)

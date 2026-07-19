@@ -24,15 +24,17 @@ LOCAL = "/api/v1/artwork/deadbeef.jpg"
 MOVIE_ID = "mov_abc123def456"
 SERIES_ID = "ser_abc123def456"
 SEASON_ID = "ssn_abc123def456"
+EPISODE_ID = "epi_abc123def456"
 
 
-def _row(media_id: str, *, poster=None, backdrop=None, logo=None) -> RemoteArtworkRow:
+def _row(media_id: str, *, poster=None, backdrop=None, logo=None, still=None) -> RemoteArtworkRow:
     return RemoteArtworkRow(
         media_id=media_id,
         artwork=ArtworkColumns(
             poster=ImageUrl(poster) if poster else None,
             backdrop=ImageUrl(backdrop) if backdrop else None,
             logo=ImageUrl(logo) if logo else None,
+            still=ImageUrl(still) if still else None,
         ),
     )
 
@@ -56,10 +58,13 @@ class _FakeSeriesRepo(_FakeRepo):
         self,
         rows: list[RemoteArtworkRow],
         season_rows: list[RemoteArtworkRow] | None = None,
+        episode_rows: list[RemoteArtworkRow] | None = None,
     ) -> None:
         super().__init__(rows)
         self._season_rows = season_rows or []
+        self._episode_rows = episode_rows or []
         self.season_updates: list[tuple[str, ArtworkColumns]] = []
+        self.episode_updates: list[tuple[str, ArtworkColumns]] = []
 
     async def update_series_artwork(self, series_id, artwork: ArtworkColumns) -> None:
         self.updates.append((str(series_id), artwork))
@@ -69,6 +74,12 @@ class _FakeSeriesRepo(_FakeRepo):
 
     async def update_season_artwork(self, season_id, artwork: ArtworkColumns) -> None:
         self.season_updates.append((str(season_id), artwork))
+
+    async def find_episodes_with_remote_thumbnail(self, limit: int) -> list[RemoteArtworkRow]:
+        return self._episode_rows[:limit]
+
+    async def update_episode_thumbnail(self, episode_id, artwork: ArtworkColumns) -> None:
+        self.episode_updates.append((str(episode_id), artwork))
 
 
 @dataclass
@@ -141,12 +152,17 @@ def _make(
     movie_rows: list[RemoteArtworkRow] | None = None,
     series_rows: list[RemoteArtworkRow] | None = None,
     season_rows: list[RemoteArtworkRow] | None = None,
+    episode_rows: list[RemoteArtworkRow] | None = None,
     config: ArtworkMirrorConfig | None = None,
     fail_urls: set[str] = frozenset(),
     nonimage_urls: set[str] = frozenset(),
 ) -> _Harness:
     movies = _FakeMovieRepo(list(movie_rows or []))
-    series = _FakeSeriesRepo(list(series_rows or []), season_rows=list(season_rows or []))
+    series = _FakeSeriesRepo(
+        list(series_rows or []),
+        season_rows=list(season_rows or []),
+        episode_rows=list(episode_rows or []),
+    )
     uow = _FakeUow(movies=movies, series=series)
     downloader = _FakeDownloader(fail_urls=fail_urls, nonimage_urls=nonimage_urls)
     storage = _FakeStorage()
@@ -227,6 +243,16 @@ class TestRun:
         media_id, cols = h.series.season_updates[0]
         assert media_id == SEASON_ID
         assert cols.poster.value.startswith("/api/v1/artwork/")
+
+    async def test_should_mirror_episode_stills(self) -> None:
+        h = _make(episode_rows=[_row(EPISODE_ID, still=REMOTE)])
+
+        await h.job.run()
+
+        assert len(h.series.episode_updates) == 1
+        media_id, cols = h.series.episode_updates[0]
+        assert media_id == EPISODE_ID
+        assert cols.still.value.startswith("/api/v1/artwork/")
 
     async def test_should_split_budget_between_kinds(self) -> None:
         # batch_size 1 → the single slot goes to the movie; series is not

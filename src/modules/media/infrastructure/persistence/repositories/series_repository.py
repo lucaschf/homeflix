@@ -48,6 +48,7 @@ from src.modules.media.infrastructure.persistence.models import (
 from src.modules.media.infrastructure.persistence.repositories._artwork_helpers import (
     artwork_column_values,
     to_artwork_columns,
+    to_still_columns,
 )
 from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
     fetch_genre_paginated_page,
@@ -774,6 +775,36 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             update(SeasonModel)
             .where(SeasonModel.external_id == season_id.value)
             .values(poster_path=artwork.poster.value if artwork.poster else None)
+        )
+
+    async def find_episodes_with_remote_thumbnail(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` episodes whose still is still a remote URL."""
+        stmt = (
+            select(EpisodeModel.external_id, EpisodeModel.thumbnail_path)
+            .where(
+                EpisodeModel.deleted_at.is_(None),
+                EpisodeModel.thumbnail_path.like("http%"),
+            )
+            .order_by(EpisodeModel.id.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [
+            RemoteArtworkRow(
+                media_id=row.external_id,
+                artwork=to_still_columns(row.thumbnail_path),
+            )
+            for row in result.all()
+        ]
+
+    async def update_episode_thumbnail(
+        self, episode_id: EpisodeId, artwork: ArtworkColumns
+    ) -> None:
+        """Set a single episode's ``thumbnail_path`` by external id."""
+        await self._session.execute(
+            update(EpisodeModel)
+            .where(EpisodeModel.external_id == episode_id.value)
+            .values(thumbnail_path=artwork.still.value if artwork.still else None)
         )
 
     async def find_seasons_pending_intro_detection(
