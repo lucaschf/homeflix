@@ -21,6 +21,7 @@ from src.config.containers.watch_progress import WatchProgressContainer
 from src.config.settings import Settings
 from src.infrastructure.health import DatabaseProbe, FilesystemProbe
 from src.infrastructure.scheduling import (
+    ArtworkMirrorJob,
     CreditsDetectionJob,
     IntroDetectionJob,
     LibraryScanScheduler,
@@ -308,6 +309,14 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         media_uow_factory=media.media_unit_of_work_factory,
         runtime_settings=settings.runtime_settings,
         thumbnail_service=media.thumbnail_generation_service,
+    )
+
+    artwork_mirror_job = providers.Singleton(
+        ArtworkMirrorJob,
+        media_uow_factory=media.media_unit_of_work_factory,
+        runtime_settings=settings.runtime_settings,
+        downloader=media.artwork_image_downloader,
+        storage=media.artwork_storage,
     )
 
     intro_detection_job = providers.Singleton(

@@ -11,7 +11,6 @@ supplied it redirects there, otherwise 404. That keeps the catalog
 functional while the background mirror job is still catching up.
 """
 
-import re
 from typing import Annotated
 from urllib.parse import urlsplit
 
@@ -21,16 +20,15 @@ from fastapi.responses import RedirectResponse, Response
 
 from src.config.containers import ApplicationContainer
 from src.modules.media.application.ports.artwork_storage_port import ArtworkStoragePort
+from src.modules.media.domain.value_objects.artwork_key import ARTWORK_KEY_PATTERN
 
 router = APIRouter(prefix="/api/v1/artwork", tags=["Artwork"])
 
-# Keys are derived server-side (content hash + extension) and embedded
-# verbatim in the path. Reject anything outside the safe charset so a
-# crafted key can never escape the bucket namespace or the path param.
-# The charset admits dots, so an all-dots key (``.``/``..``) is rejected
-# separately below — it is not a valid object and would otherwise reach
-# the storage adapter as a directory / traversal-shaped path.
-_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+# Key charset is defined once on ``ArtworkKey`` (the write path) and
+# reused here for the read path. The charset admits dots, so an all-dots
+# key (``.``/``..``) is rejected separately below — it is not a valid
+# object and would otherwise reach the storage adapter as a directory /
+# traversal-shaped path.
 
 # Hosts a fallback ``origin`` is allowed to redirect to. Only provider
 # image CDNs the mirror legitimately stores may be echoed into a
@@ -71,7 +69,7 @@ async def get_artwork(
     the key charset + all-dots check; the ``origin`` fallback only
     redirects to allow-listed provider hosts (no open redirect).
     """
-    if not _KEY_PATTERN.match(key) or set(key) <= {"."}:
+    if not ARTWORK_KEY_PATTERN.match(key) or set(key) <= {"."}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid artwork key",

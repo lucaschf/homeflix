@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, cast
 
 from src.modules.settings.domain.value_objects import (
     SETTING_VO_TYPES,
+    ArtworkMirrorConfig,
     AvatarConfig,
     ConfigVO,
     CreditsDetectionConfig,
@@ -128,6 +129,14 @@ class RuntimeSettings:
         return cast(
             ThumbnailBackfillConfig,
             self._snapshot[SettingKey.THUMBNAIL_BACKFILL],
+        )
+
+    async def artwork_mirror(self) -> ArtworkMirrorConfig:
+        """Return the current :class:`ArtworkMirrorConfig` snapshot."""
+        await self._ensure_fresh()
+        return cast(
+            ArtworkMirrorConfig,
+            self._snapshot[SettingKey.ARTWORK_MIRROR],
         )
 
     async def intro_detection(self) -> IntroDetectionConfig:

@@ -6,6 +6,9 @@ persisted row in ``app_settings`` carries; :class:`SettingSource` marks
 the row's provenance for audit.
 """
 
+from src.modules.settings.domain.value_objects.artwork_mirror_config import (
+    ArtworkMirrorConfig,
+)
 from src.modules.settings.domain.value_objects.avatar_config import AvatarConfig
 from src.modules.settings.domain.value_objects.credits_detection_config import (
     CreditsDetectionConfig,
@@ -42,10 +45,12 @@ ConfigVO = (
     | AvatarConfig
     | ScanDedupConfig
     | SubtitleOcrConfig
+    | ArtworkMirrorConfig
 )
 """Union of all configuration VOs persisted in ``app_settings``."""
 
 __all__ = [
+    "ArtworkMirrorConfig",
     "AvatarConfig",
     "ChromaprintTuningConfig",
     "ConfigVO",

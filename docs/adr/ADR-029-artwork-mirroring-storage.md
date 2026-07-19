@@ -150,7 +150,7 @@ class ArtworkStoragePort(ABC):
 
 Pontos de toque no código (blast radius): endpoint novo `GET /api/v1/artwork/{key}` na presentation de `media`; use case `MirrorArtwork` + registro no scheduler; `ArtworkStoragePort` + `LocalArtworkStorage` + registro no container de `media`; config `artwork_storage_directory` em `settings.py`. `ImageUrl`, mappers e schemas de presentation **não** mudam.
 
-Faseamento (1 PR por item): **PR 1** entrega a fundação — port, `LocalArtworkStorage`, endpoint de proxy, config e fiação (sem mudar o enrichment); **PR 2** o mirror dos campos top-level `ImageUrl` (use case + job em background); **PR 3** estende a stills, artes localizadas e elenco.
+Faseamento (1 PR por item): **PR 1** entrega a fundação — port, `LocalArtworkStorage`, endpoint de proxy, config e fiação (sem mudar o enrichment); **PR 2** o mirror dos campos top-level `ImageUrl` de **Movie e Series** (poster/backdrop/logo) via job em background (`ArtworkMirrorJob` + downloader httpx + bucket `ArtworkMirrorConfig` + finder/update direto por coluna, sem round-trip de aggregate); **PR 3** estende a **poster de Season**, episode stills, artes localizadas e elenco — todos arte de coleção-filha, alcançados por update direto/aggregate à parte.
 
 Docs a sincronizar ao implementar (docs-maintainer): página do módulo `media` (novo endpoint + fluxo de mirror), `README.md` da raiz (contagem de endpoints), e este ADR promovido de **Proposto → Aceito**.
 

@@ -155,7 +155,7 @@ def _warn_about_deprecated_env_vars(logger: Any) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915 — sequential startup script (sweeps + per-job scheduler registration)
     """Application lifespan handler.
 
     Handles startup and shutdown logic:
@@ -251,6 +251,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 subtitle_ocr_job.run,
                 minutes=subtitle_ocr_cfg.interval_minutes,
                 job_id="homeflix:subtitle-ocr",
+            )
+        artwork_mirror_cfg = await runtime_settings.artwork_mirror()
+        if artwork_mirror_cfg.enabled:
+            artwork_mirror_job = await container.artwork_mirror_job()
+            scheduler.add_interval_job(
+                artwork_mirror_job.run,
+                minutes=artwork_mirror_cfg.interval_minutes,
+                job_id="homeflix:artwork-mirror",
             )
         app.state.scheduler = scheduler
 

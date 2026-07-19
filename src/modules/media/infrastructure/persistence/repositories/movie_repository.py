@@ -16,7 +16,11 @@ from src.building_blocks.application.pagination import (
 from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.repositories import MovieRepository
-from src.modules.media.domain.repositories.movie_repository import CreditsStatusRow, GenreRow
+from src.modules.media.domain.repositories.movie_repository import (
+    CreditsStatusRow,
+    GenreRow,
+    RemoteArtworkRow,
+)
 from src.modules.media.domain.value_objects import (
     CreditsDetectionState,
     CreditsMarker,
@@ -751,6 +755,62 @@ class SQLAlchemyMovieRepository(MovieRepository):
         )
         result = await self._session.execute(stmt)
         return [MovieMapper.to_entity(model) for model in result.scalars().all()]
+
+    async def find_with_remote_artwork(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` movies whose artwork is still a remote URL.
+
+        Projects just the four columns the mirror job needs (external id +
+        the three artwork URLs) so it never loads entities or their file
+        variants. ``LIKE 'http%'`` matches the persisted full provider
+        URLs; already-mirrored ``/api/v1/artwork/...`` paths don't match.
+        """
+        stmt = (
+            select(
+                MovieModel.external_id,
+                MovieModel.poster_path,
+                MovieModel.backdrop_path,
+                MovieModel.logo_path,
+            )
+            .where(
+                MovieModel.deleted_at.is_(None),
+                or_(
+                    MovieModel.poster_path.like("http%"),
+                    MovieModel.backdrop_path.like("http%"),
+                    MovieModel.logo_path.like("http%"),
+                ),
+            )
+            .order_by(MovieModel.id.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [
+            RemoteArtworkRow(
+                media_id=row.external_id,
+                poster_path=row.poster_path,
+                backdrop_path=row.backdrop_path,
+                logo_path=row.logo_path,
+            )
+            for row in result.all()
+        ]
+
+    async def update_movie_artwork(
+        self,
+        movie_id: MovieId,
+        *,
+        poster_path: str | None,
+        backdrop_path: str | None,
+        logo_path: str | None,
+    ) -> None:
+        """Set the three artwork columns for one movie by external id."""
+        await self._session.execute(
+            update(MovieModel)
+            .where(MovieModel.external_id == movie_id.value)
+            .values(
+                poster_path=poster_path,
+                backdrop_path=backdrop_path,
+                logo_path=logo_path,
+            )
+        )
 
     async def count_credits_states(self) -> dict[str, int]:
         """Return ``{credits_detection_state: count}`` over non-deleted movies."""

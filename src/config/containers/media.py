@@ -174,6 +174,9 @@ from src.modules.media.infrastructure.audio import (
 )
 from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
+from src.modules.media.infrastructure.metadata.artwork_downloader import (
+    HttpxArtworkDownloader,
+)
 from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
 from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyMediaUnitOfWorkFactory,
@@ -551,6 +554,10 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         LocalArtworkStorage,
         root_directory=artwork_storage_directory,
     )
+
+    # Downloads still-remote provider artwork for the mirror job (ADR-029).
+    # Singleton so one pooled httpx client is shared across ticks.
+    artwork_image_downloader = providers.Singleton(HttpxArtworkDownloader)
 
     # =========================================================================
     # Use Cases — Streaming
