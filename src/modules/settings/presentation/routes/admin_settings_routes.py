@@ -22,6 +22,7 @@ from src.modules.settings.application.use_cases import (
     UpdateSettingUseCase,
 )
 from src.modules.settings.domain.value_objects import (
+    ArtworkMirrorConfig,
     AvatarConfig,
     CreditsDetectionConfig,
     IntroDetectionConfig,
@@ -207,6 +208,26 @@ async def update_subtitle_ocr_settings(
     detail = await use_case.execute(
         UpdateSettingInput(
             key=SettingKey.SUBTITLE_OCR.value,
+            value=body.model_dump(mode="json"),
+            acting_admin_id=admin.external_id,
+        ),
+    )
+    return api_single("setting", asdict(detail))
+
+
+@router.patch("/artwork-mirror")
+@inject
+async def update_artwork_mirror_settings(
+    body: ArtworkMirrorConfig,
+    admin: AuthenticatedUser = Depends(authenticated_admin),
+    use_case: UpdateSettingUseCase = Depends(
+        Provide[ApplicationContainer.settings.update_setting],
+    ),
+) -> dict[str, Any]:
+    """Replace the persisted :class:`ArtworkMirrorConfig`."""
+    detail = await use_case.execute(
+        UpdateSettingInput(
+            key=SettingKey.ARTWORK_MIRROR.value,
             value=body.model_dump(mode="json"),
             acting_admin_id=admin.external_id,
         ),

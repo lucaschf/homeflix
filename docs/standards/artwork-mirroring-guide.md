@@ -201,11 +201,9 @@ Runtime setting persistido em banco, por bucket (ADR-013/014). Definido em
 | `max_bytes` | `10485760` (10 MiB) | Teto de uma imagem baixada. Maiores são puladas (mantêm URL remota). |
 
 O bucket aparece no agregado `GET /api/v1/admin/settings` (junto dos demais
-buckets, com `source='default'` se nunca foi editado).
-
-<!-- TODO(docs): não há endpoint PATCH dedicado (`/admin/settings/artwork-mirror`)
-     como o de subtitle-ocr; hoje o bucket só é editável via app_settings
-     no banco. Documentar aqui quando/se a rota de edição for adicionada. -->
+buckets, com `source='default'` se nunca foi editado) e é editável por
+`PATCH /api/v1/admin/settings/artwork-mirror` (full-replace, body = o
+`ArtworkMirrorConfig`; admin-only), no mesmo padrão dos outros buckets.
 
 > `batch_size` e `max_bytes` são lidos **por tick** (edição vale no próximo
 > run). `enabled` e `interval_minutes` são lidos **no boot** ao registrar o
