@@ -8,6 +8,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -61,6 +62,26 @@ from src.modules.preferences.presentation.routes.preferences_routes import (
 )
 from src.modules.settings.presentation.routes import admin_settings_router
 from src.modules.watch_progress.presentation.routes import progress_router
+
+
+def _resolve_version() -> str:
+    """Resolve the app version from installed package metadata.
+
+    Single source of truth is ``pyproject.toml`` (``tool.poetry.version``),
+    exposed at runtime via the installed distribution's metadata so the
+    OpenAPI schema and health endpoints never drift from the released
+    version. Falls back to ``"0.0.0"`` when the package isn't installed
+    as a distribution (e.g. some ad-hoc script runs), which is a clearer
+    signal than a stale hardcoded number.
+    """
+    try:
+        return version("homeflix")
+    except PackageNotFoundError:
+        return "0.0.0"
+
+
+#: Application version, sourced from package metadata (see ``pyproject.toml``).
+APP_VERSION = _resolve_version()
 
 #: Module paths whose ``@inject``-decorated callables are wired to the
 #: dependency-injector container. Extracted as a module constant so e2e
@@ -441,7 +462,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         description="Personal streaming platform for local media",
-        version="0.1.0",
+        version=APP_VERSION,
         docs_url="/docs" if settings.debug else None,
         redoc_url="/redoc" if settings.debug else None,
         lifespan=lifespan,
@@ -525,7 +546,7 @@ def register_health_routes(app: FastAPI) -> None:
         return {
             "status": "healthy",
             "timestamp": datetime.now(UTC).isoformat(),
-            "version": "0.1.0",
+            "version": APP_VERSION,
         }
 
     @app.get("/health/ready", tags=["Health"])  # type: ignore[misc]
@@ -577,7 +598,7 @@ def register_health_routes(app: FastAPI) -> None:
         """Root endpoint with API information."""
         return {
             "name": "HomeFlix API",
-            "version": "0.1.0",
+            "version": APP_VERSION,
             "docs": "/docs",
         }
 
