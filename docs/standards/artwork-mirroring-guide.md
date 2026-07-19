@@ -39,8 +39,10 @@ tick seguinte — a URL remota autoritativa nunca é descartada.
   **Series** (`ArtworkColumns`).
 - ✅ **Poster de Season** — mirrorado por coluna direta (`seasons.poster_path`),
   sem round-trip do agregado.
-- ⏳ Stills de episódio, artes localizadas por locale e fotos de elenco:
-  **planejados** (follow-ups do ADR-029 §5), ainda não implementados.
+- ✅ **Still de episódio** (`episodes.thumbnail_path`) — mesma via de coluna
+  direta; viaja no campo `still` do `ArtworkColumns`.
+- ⏳ Artes localizadas por locale e fotos de elenco: **planejados**
+  (follow-ups do ADR-029 §5), ainda não implementados.
 
 ---
 

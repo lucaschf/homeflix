@@ -23,6 +23,11 @@ def to_artwork_columns(
     )
 
 
+def to_still_columns(thumbnail: str | None) -> ArtworkColumns:
+    """Wrap a raw episode-still string into an ``ArtworkColumns`` (``still`` set)."""
+    return ArtworkColumns(still=ImageUrl(thumbnail) if thumbnail else None)
+
+
 def artwork_column_values(artwork: ArtworkColumns) -> dict[str, str | None]:
     """Unwrap an ``ArtworkColumns`` into a ``{column: value}`` update map."""
     return {
@@ -32,4 +37,4 @@ def artwork_column_values(artwork: ArtworkColumns) -> dict[str, str | None]:
     }
 
 
-__all__ = ["artwork_column_values", "to_artwork_columns"]
+__all__ = ["artwork_column_values", "to_artwork_columns", "to_still_columns"]

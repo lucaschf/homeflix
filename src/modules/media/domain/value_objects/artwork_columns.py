@@ -1,10 +1,14 @@
-"""The trio of top-level artwork references for a title (ADR-029).
+"""The mirrorable artwork references of a title (ADR-029).
 
-Poster / backdrop / logo travel together everywhere the mirror flows —
-the repository projection, the job's per-field result, and the update
-signature. Bundling them into one value object replaces a three-argument
-data clump (and a stringly-keyed ``dict``) with a single typed value,
-and gives later phases (season posters, stills) one place to grow.
+The image references a title exposes travel together everywhere the
+mirror flows — the repository projection, the job's per-field result,
+and the update signature. Bundling them into one value object replaces a
+data clump (and a stringly-keyed ``dict``) with a single typed value.
+
+Each kind populates the subset that applies to it: movies and series set
+``poster`` / ``backdrop`` / ``logo``; a season sets ``poster``; an
+episode sets ``still``. Unused references stay ``None`` and the mirror
+skips them.
 
 Each reference is an :class:`ImageUrl` — dual-mode, so it carries either
 a remote provider URL or a local ``/api/v1/artwork/...`` path — which
@@ -20,9 +24,10 @@ class ArtworkColumns(CompoundValueObject):
     """Poster / backdrop / logo references for one title.
 
     Attributes:
-        poster: Poster reference, or ``None``.
-        backdrop: Backdrop reference, or ``None``.
-        logo: Title-logo reference, or ``None``.
+        poster: Poster reference (movie / series / season), or ``None``.
+        backdrop: Backdrop reference (movie / series), or ``None``.
+        logo: Title-logo reference (movie / series), or ``None``.
+        still: Episode still reference, or ``None``.
 
     Example:
         >>> cols = ArtworkColumns(poster=ImageUrl("/api/v1/artwork/ab.jpg"))
@@ -33,6 +38,7 @@ class ArtworkColumns(CompoundValueObject):
     poster: ImageUrl | None = None
     backdrop: ImageUrl | None = None
     logo: ImageUrl | None = None
+    still: ImageUrl | None = None
 
 
 __all__ = ["ArtworkColumns"]

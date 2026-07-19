@@ -27,7 +27,7 @@ from src.modules.media.domain.value_objects.artwork_key import (
     SUPPORTED_ARTWORK_CONTENT_TYPES,
 )
 from src.shared_kernel.value_objects.image_url import ImageUrl
-from src.shared_kernel.value_objects.media_id import MovieId, SeasonId, SeriesId
+from src.shared_kernel.value_objects.media_id import EpisodeId, MovieId, SeasonId, SeriesId
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
@@ -105,6 +105,13 @@ class ArtworkMirrorJob:
                 find=lambda uow, limit: uow.series.find_seasons_with_remote_poster(limit),
                 update=lambda uow, media_id, cols: uow.series.update_season_artwork(
                     SeasonId(media_id), cols
+                ),
+            ),
+            _Kind(
+                label="episodes",
+                find=lambda uow, limit: uow.series.find_episodes_with_remote_thumbnail(limit),
+                update=lambda uow, media_id, cols: uow.series.update_episode_thumbnail(
+                    EpisodeId(media_id), cols
                 ),
             ),
         )
@@ -187,10 +194,11 @@ class ArtworkMirrorJob:
         poster, hp, mp = await self._mirror_field(row.artwork.poster, max_bytes)
         backdrop, hb, mb = await self._mirror_field(row.artwork.backdrop, max_bytes)
         logo, hl, ml = await self._mirror_field(row.artwork.logo, max_bytes)
+        still, hs, ms = await self._mirror_field(row.artwork.still, max_bytes)
         return (
-            ArtworkColumns(poster=poster, backdrop=backdrop, logo=logo),
-            hp + hb + hl,
-            mp + mb + ml,
+            ArtworkColumns(poster=poster, backdrop=backdrop, logo=logo, still=still),
+            hp + hb + hl + hs,
+            mp + mb + ml + ms,
         )
 
     async def _mirror_field(
