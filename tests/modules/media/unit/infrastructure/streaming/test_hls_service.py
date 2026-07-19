@@ -14,8 +14,11 @@ from src.modules.media.infrastructure.streaming.hls_service import (
     HlsService,
     _append_endlist_atomic,
     _atomic_write_text,
+    _audio_args_for,
     _ensure_vtt_timestamp_map,
+    _first_audio_pts,
     _has_endlist,
+    _has_leading_audio_gap,
     _primary_audio_index,
     _shift_webvtt_to_bucket_local,
 )
@@ -373,6 +376,17 @@ class TestHlsServiceGetCachedTracks:
 class TestHlsServiceBuildAudioCmd:
     """Tests for _build_audio_cmd."""
 
+    @pytest.fixture(autouse=True)
+    def _no_leading_gap_probe(self):  # type: ignore[no-untyped-def]
+        # Keep the command-building tests hermetic: without this, every
+        # start==0 build shells out to a real ffprobe on the fake path.
+        # Default to "no gap"; the gap-specific tests patch it themselves.
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            return_value=None,
+        ):
+            yield
+
     def test_should_include_input_file(self, tmp_path: Path) -> None:
         cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=1))
 
@@ -483,10 +497,124 @@ class TestHlsServiceBuildAudioCmd:
         assert "copy" not in cmd
         assert cmd[cmd.index("-c:a") + 1] == "aac"
 
+    def test_should_reencode_alt_track_with_leading_gap(self, tmp_path: Path) -> None:
+        # An alternate audio track whose first sample lands after t=0 is
+        # re-encoded (not copied) so the silence pad can backfill the hole
+        # even though it is otherwise copy-eligible AAC-LC stereo 48k.
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            return_value=11.0,
+        ):
+            cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _aac_lc_stereo_48k())
+
+        assert "copy" not in cmd
+        assert cmd[cmd.index("-c:a") + 1] == "aac"
+        assert cmd[cmd.index("-af") + 1] == "aresample=async=1:first_pts=0"
+
+
+@pytest.mark.unit
+class TestAudioArgsFor:
+    """Tests for the _audio_args_for copy/re-encode + silence-pad decision."""
+
+    def test_should_copy_when_browser_ready_and_no_gap(self) -> None:
+        assert _audio_args_for(_aac_lc_stereo_48k(), start=0) == ["-c:a", "copy"]
+
+    def test_should_reencode_and_pad_silence_at_start_zero(self) -> None:
+        # The re-encode path for the initial bucket aligns audio to t=0 so
+        # a late-starting track still fills the first HLS segment.
+        args = _audio_args_for(_make_audio_track(codec="ac3"), start=0)
+
+        assert args[:2] == ["-c:a", "aac"]
+        assert args[args.index("-af") + 1] == "aresample=async=1:first_pts=0"
+
+    def test_should_skip_copy_when_leading_gap(self) -> None:
+        # Copy-eligible audio still re-encodes when it opens after t=0.
+        args = _audio_args_for(_aac_lc_stereo_48k(), start=0, leading_gap=True)
+
+        assert "copy" not in args
+        assert "-af" in args
+
+    def test_should_not_pad_silence_when_seeking(self) -> None:
+        # The seek path (start > 0) normalises timestamps itself; the
+        # leading-silence filter is left off to avoid touching it.
+        args = _audio_args_for(_make_audio_track(codec="ac3"), start=1800)
+
+        assert "-af" not in args
+
+
+@pytest.mark.unit
+class TestLeadingAudioGap:
+    """Tests for _first_audio_pts and _has_leading_audio_gap."""
+
+    def test_first_pts_parses_ffprobe_output(self) -> None:
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="11.000000\n")
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
+            return_value=completed,
+        ):
+            assert _first_audio_pts("/movies/test.mkv", 0) == pytest.approx(11.0)
+
+    def test_first_pts_returns_none_on_empty_output(self) -> None:
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
+            return_value=completed,
+        ):
+            assert _first_audio_pts("/movies/test.mkv", 0) is None
+
+    def test_first_pts_returns_none_when_ffprobe_missing(self) -> None:
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            assert _first_audio_pts("/movies/test.mkv", 0) is None
+
+    def test_first_pts_returns_none_on_non_numeric_output(self) -> None:
+        # ffprobe emits "N/A" for pts_time on some containers; the parse
+        # must degrade to None (no gap) instead of raising ValueError.
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="N/A\n")
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
+            return_value=completed,
+        ):
+            assert _first_audio_pts("/movies/test.mkv", 0) is None
+
+    def test_gap_detected_above_threshold(self) -> None:
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            return_value=11.0,
+        ):
+            assert _has_leading_audio_gap("/movies/test.mkv", 0, start=0) is True
+
+    def test_no_gap_within_threshold(self) -> None:
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            return_value=0.02,
+        ):
+            assert _has_leading_audio_gap("/movies/test.mkv", 0, start=0) is False
+
+    def test_no_gap_probe_skipped_when_seeking(self) -> None:
+        # A seek bucket lands mid-stream; never probe or treat it as a gap.
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+        ) as probe:
+            assert _has_leading_audio_gap("/movies/test.mkv", 0, start=1800) is False
+            probe.assert_not_called()
+
 
 @pytest.mark.unit
 class TestHlsServiceBuildVideoCmd:
     """Tests for _build_video_cmd with mocked codec probe."""
+
+    @pytest.fixture(autouse=True)
+    def _no_leading_gap_probe(self):  # type: ignore[no-untyped-def]
+        # Keep these hermetic — otherwise each start==0 build spawns a
+        # real ffprobe on the fake path. The gap test patches it itself.
+        with patch(
+            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            return_value=None,
+        ):
+            yield
 
     def test_should_copy_video_for_h264(self, tmp_path: Path) -> None:
         service = HlsService(
@@ -557,6 +685,28 @@ class TestHlsServiceBuildVideoCmd:
 
         assert cmd[cmd.index("-c:a") + 1] == "copy"
         assert "libx264" in cmd  # video still re-encoded
+
+    def test_should_reencode_primary_audio_with_leading_gap(self, tmp_path: Path) -> None:
+        # A copy-eligible primary audio track that opens after t=0 is
+        # re-encoded with the silence pad so the first segment carries
+        # decodable audio instead of a phantom empty stream that hangs
+        # hls.js on "preparing" forever.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
+        probe = ProbeResult(audio_tracks=[_aac_lc_stereo_48k()])
+
+        with (
+            patch.object(HlsService, "_probe_video_codec", return_value="h264"),
+            patch(
+                "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+                return_value=11.0,
+            ),
+        ):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert cmd[cmd.index("-c:a") + 1] == "aac"
+        assert cmd[cmd.index("-af") + 1] == "aresample=async=1:first_pts=0"
 
     def test_should_use_nvenc_when_available(self, tmp_path: Path) -> None:
         # AUTO + a passing functional probe → full-GPU NVENC pipeline.
