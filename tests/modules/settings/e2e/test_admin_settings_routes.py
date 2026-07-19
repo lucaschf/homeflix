@@ -6,6 +6,7 @@ import pytest
 from httpx import AsyncClient
 
 from src.modules.settings.domain.value_objects import (
+    ArtworkMirrorConfig,
     IntroDetectionConfig,
     ScanDedupConfig,
     SchedulerConfig,
@@ -252,3 +253,39 @@ class TestAdminSettingsPatch:
         assert payload["value"]["enabled"] is True
         assert payload["value"]["batch_size"] == 3
         assert payload["value"]["languages"] == ["en", "pt"]
+
+    async def test_artwork_mirror_full_replace_persists(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        admin = await _login_as_admin(client, seed_user_with_profile)
+
+        body = ArtworkMirrorConfig(
+            enabled=False,
+            batch_size=50,
+            interval_minutes=15,
+        ).model_dump(mode="json")
+        response = await client.patch(f"{SETTINGS_ROOT}/artwork-mirror", json=body)
+
+        assert response.status_code == 200
+        payload = response.json()["data"]
+        assert payload["key"] == "artwork_mirror"
+        assert payload["source"] == "admin"
+        assert payload["updated_by_user_id"] == admin.user_external_id
+        assert payload["value"]["enabled"] is False
+        assert payload["value"]["batch_size"] == 50
+        assert payload["value"]["interval_minutes"] == 15
+
+    async def test_artwork_mirror_rejects_non_positive_batch_size(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        await _login_as_admin(client, seed_user_with_profile)
+
+        body = ArtworkMirrorConfig().model_dump(mode="json")
+        body["batch_size"] = 0
+        response = await client.patch(f"{SETTINGS_ROOT}/artwork-mirror", json=body)
+
+        assert response.status_code == 422

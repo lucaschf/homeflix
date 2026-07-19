@@ -196,7 +196,7 @@ Key entry points:
 streaming server with profile ACLs, automatic intro detection,
 trickplay scrub thumbnails, and a scheduled scan/enrichment pipeline.
 
-- 138 REST API endpoints across 9 bounded contexts
+- 139 REST API endpoints across 9 bounded contexts
 - 3,200+ tests
 - Responsive React frontend with HLS player and per-profile UI
 
