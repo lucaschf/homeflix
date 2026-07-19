@@ -180,3 +180,64 @@ class TestSeriesArtwork:
         # must survive an artwork update untouched.
         assert len(reloaded.seasons) == 1
         assert len(reloaded.seasons[0].episodes) == 1
+
+
+def _series_with_season_poster(poster: str) -> tuple[Series, SeasonId, SeriesId]:
+    sid = SeriesId.generate()
+    season_id = SeasonId.generate()
+    episode = Episode(
+        id=EpisodeId.generate(),
+        series_id=sid,
+        season_number=1,
+        episode_number=1,
+        title=Title("E1"),
+        duration=Duration(2700),
+        files=[
+            MediaFile(
+                file_path=FilePath("/series/s01e01.mkv"),
+                file_size=500_000,
+                resolution=Resolution("1080p"),
+                is_primary=True,
+            )
+        ],
+    )
+    season = Season(
+        id=season_id,
+        series_id=sid,
+        season_number=1,
+        title=Title("Season 1"),
+        poster_path=ImageUrl(poster),
+        episodes=[episode],
+    )
+    series = Series(
+        library_id="lib_test12345678",
+        id=sid,
+        title=Title("With Season"),
+        start_year=Year(2020),
+        seasons=[season],
+    )
+    return series, season_id, sid
+
+
+@pytest.mark.integration
+class TestSeasonArtwork:
+    async def test_should_find_and_update_season_poster(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series, season_id, series_id = _series_with_season_poster(_REMOTE)
+        await repo.save(series)
+
+        rows = await repo.find_seasons_with_remote_poster(limit=10)
+        assert len(rows) == 1
+        assert rows[0].media_id == str(season_id)
+        assert rows[0].artwork.poster == ImageUrl(_REMOTE)
+
+        await repo.update_season_artwork(
+            season_id, ArtworkColumns(poster=ImageUrl(_LOCAL), backdrop=None, logo=None)
+        )
+
+        assert await repo.find_seasons_with_remote_poster(limit=10) == []
+        reloaded = await repo.find_by_id(series_id)
+        assert reloaded is not None
+        assert reloaded.seasons[0].poster_path == ImageUrl(_LOCAL)
+        # The episode survives a season-poster update untouched.
+        assert len(reloaded.seasons[0].episodes) == 1

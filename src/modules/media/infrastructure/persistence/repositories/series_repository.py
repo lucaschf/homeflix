@@ -745,6 +745,37 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .values(**artwork_column_values(artwork))
         )
 
+    async def find_seasons_with_remote_poster(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` seasons whose poster is still a remote URL.
+
+        Projects the season external id + poster column (seasons have no
+        backdrop/logo). Seasons carry no soft-delete column of their own;
+        a season of a soft-deleted series is harmless to mirror and the
+        row still exists.
+        """
+        stmt = (
+            select(SeasonModel.external_id, SeasonModel.poster_path)
+            .where(SeasonModel.poster_path.like("http%"))
+            .order_by(SeasonModel.id.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [
+            RemoteArtworkRow(
+                media_id=row.external_id,
+                artwork=to_artwork_columns(row.poster_path, None, None),
+            )
+            for row in result.all()
+        ]
+
+    async def update_season_artwork(self, season_id: SeasonId, artwork: ArtworkColumns) -> None:
+        """Set a single season's poster column by external id."""
+        await self._session.execute(
+            update(SeasonModel)
+            .where(SeasonModel.external_id == season_id.value)
+            .values(poster_path=artwork.poster.value if artwork.poster else None)
+        )
+
     async def find_seasons_pending_intro_detection(
         self,
         limit: int,

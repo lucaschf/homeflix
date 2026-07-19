@@ -27,7 +27,7 @@ from src.modules.media.domain.value_objects.artwork_key import (
     SUPPORTED_ARTWORK_CONTENT_TYPES,
 )
 from src.shared_kernel.value_objects.image_url import ImageUrl
-from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
+from src.shared_kernel.value_objects.media_id import MovieId, SeasonId, SeriesId
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
@@ -98,6 +98,13 @@ class ArtworkMirrorJob:
                 find=lambda uow, limit: uow.series.find_with_remote_artwork(limit),
                 update=lambda uow, media_id, cols: uow.series.update_series_artwork(
                     SeriesId(media_id), cols
+                ),
+            ),
+            _Kind(
+                label="seasons",
+                find=lambda uow, limit: uow.series.find_seasons_with_remote_poster(limit),
+                update=lambda uow, media_id, cols: uow.series.update_season_artwork(
+                    SeasonId(media_id), cols
                 ),
             ),
         )
