@@ -37,6 +37,13 @@ Para os requisitos completos (incluindo o que ainda é planejado), veja
   ([ADR-023](adr/ADR-023-localized-metadata-value-object.md)) e reconciliado na
   camada de aplicação
   ([ADR-025](adr/ADR-025-provider-metadata-reconciliation-in-application.md)).
+- **Mirror de artwork do provider** — um job de background baixa poster,
+  backdrop e logo (hoje URLs do TMDB) para storage próprio e passa a servi-los
+  por um endpoint estável (`/api/v1/artwork/{key}`), com fallback gracioso para
+  a URL remota enquanto a arte ainda não foi espelhada. O catálogo deixa de
+  depender do CDN do TMDB para exibir artes
+  ([ADR-029](adr/ADR-029-artwork-mirroring-storage.md)). Detalhes operacionais no
+  [Guia de Mirror de Artwork](standards/artwork-mirroring-guide.md).
 
 ## Reprodução (player)
 
