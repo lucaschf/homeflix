@@ -40,6 +40,16 @@ _CONTENT_TYPE_EXTENSIONS = {
     "image/avif": ".avif",
 }
 
+#: Content types the mirror will accept as artwork. Exposed so the job
+#: can reject a non-image response (e.g. an HTML rate-limit page served
+#: with 200, or an ``image/svg+xml`` XSS vector) before storing it.
+SUPPORTED_ARTWORK_CONTENT_TYPES = frozenset(_CONTENT_TYPE_EXTENSIONS)
+
+# Extensions accepted when derived from a source URL's path. Restricted
+# to the raster set above (plus the ``.jpeg`` spelling) so a URL ending
+# in ``.svg`` or an arbitrary suffix can never mint a dangerous key.
+_SAFE_URL_EXTENSIONS = frozenset(_CONTENT_TYPE_EXTENSIONS.values()) | {".jpeg"}
+
 # Fallback extension when neither the content type nor the source URL
 # yields one. Artwork is always an image, so a generic image extension
 # keeps the served content type sensible.
@@ -67,9 +77,7 @@ class ArtworkKey(StringValueObject):
             raise ValueError("ArtworkKey must be a string")
         value = value.strip()
         if not ARTWORK_KEY_PATTERN.match(value) or set(value) <= {"."}:
-            raise ValueError(
-                "ArtworkKey must match [A-Za-z0-9._-]+ and not be all dots"
-            )
+            raise ValueError("ArtworkKey must match [A-Za-z0-9._-]+ and not be all dots")
         return value
 
     @classmethod
@@ -109,12 +117,12 @@ def _extension_for(content_type: str | None, source_url: str) -> str:
 
 
 def _clean_suffix(path: str) -> str:
-    """Return a charset-safe extension from a URL path, or empty string."""
+    """Return a safe raster extension from a URL path, or empty string."""
     dot = path.rfind(".")
     if dot == -1:
         return ""
-    suffix = path[dot:]
-    return suffix if ARTWORK_KEY_PATTERN.match(suffix.lstrip(".")) else ""
+    suffix = path[dot:].lower()
+    return suffix if suffix in _SAFE_URL_EXTENSIONS else ""
 
 
-__all__ = ["ARTWORK_KEY_PATTERN", "ArtworkKey"]
+__all__ = ["ARTWORK_KEY_PATTERN", "SUPPORTED_ARTWORK_CONTENT_TYPES", "ArtworkKey"]

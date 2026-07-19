@@ -22,6 +22,9 @@ from typing import TYPE_CHECKING
 from src.building_blocks.infrastructure.errors import GatewayException
 from src.config.logging import get_logger
 from src.modules.media.domain.value_objects import ArtworkKey
+from src.modules.media.domain.value_objects.artwork_key import (
+    SUPPORTED_ARTWORK_CONTENT_TYPES,
+)
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 
 if TYPE_CHECKING:
@@ -160,14 +163,36 @@ class ArtworkMirrorJob:
     async def _mirror_one(self, url: str | None, max_bytes: int) -> str | None:
         """Download + store one image; return its served URL, or None.
 
-        None means "leave the column unchanged" — either the value was
-        not a remote URL, or the download/store failed (logged).
+        None means "leave the column unchanged": the value was not a
+        remote URL, the response was not a supported image type, or the
+        download/store failed. Every non-mirror path keeps the original
+        remote URL so a later tick can retry — a bad response never
+        overwrites the authoritative provider URL.
         """
         if not _is_remote(url):
             return None
         assert url is not None  # narrowed by _is_remote
         try:
             image = await self._downloader.fetch(url, max_bytes=max_bytes)
+            if not _is_supported_image(image.content_type):
+                # A 200 serving HTML (rate-limit/geoblock page) or an
+                # svg/unknown type must not be stored over the remote URL.
+                _logger.warning(
+                    "[artwork-mirror] non-image response; keeping remote URL",
+                    url=url,
+                    content_type=image.content_type,
+                )
+                return None
+            key = ArtworkKey.for_content(
+                image.content,
+                content_type=image.content_type,
+                source_url=url,
+            )
+            return await self._storage.save(
+                content=image.content,
+                content_type=image.content_type,
+                key=str(key),
+            )
         except GatewayException as exc:
             _logger.warning(
                 "[artwork-mirror] download failed; keeping remote URL",
@@ -175,16 +200,13 @@ class ArtworkMirrorJob:
                 error=str(exc),
             )
             return None
-        key = ArtworkKey.for_content(
-            image.content,
-            content_type=image.content_type,
-            source_url=url,
-        )
-        return await self._storage.save(
-            content=image.content,
-            content_type=image.content_type,
-            key=str(key),
-        )
+        except OSError as exc:
+            _logger.warning(
+                "[artwork-mirror] storage failed; keeping remote URL",
+                url=url,
+                error=str(exc),
+            )
+            return None
 
     async def _persist(
         self,
@@ -193,7 +215,15 @@ class ArtworkMirrorJob:
         *,
         is_movie: bool,
     ) -> None:
-        """Write the mirrored artwork columns in a fresh UoW."""
+        """Write the mirrored artwork columns in a fresh UoW.
+
+        Writes all three columns from the fetch-time snapshot (mirrored
+        where produced, original otherwise). This is a blind
+        last-writer-wins update: a concurrent re-enrichment in the small
+        fetch→persist window could be reverted, but the 30-min cadence
+        and self-healing re-mirror on the next tick make that acceptable
+        over guarding every column value in the WHERE clause.
+        """
         async with self._media_uow_factory() as uow:
             if is_movie:
                 await uow.movies.update_movie_artwork(
@@ -214,6 +244,13 @@ class ArtworkMirrorJob:
 def _is_remote(url: str | None) -> bool:
     """Whether ``url`` is a value the job should mirror (an http(s) URL)."""
     return bool(url) and url.startswith("http")  # type: ignore[union-attr]
+
+
+def _is_supported_image(content_type: str | None) -> bool:
+    """Whether a response content type is an artwork image we will store."""
+    if not content_type:
+        return False
+    return content_type.split(";", 1)[0].strip().lower() in SUPPORTED_ARTWORK_CONTENT_TYPES
 
 
 __all__ = ["ArtworkMirrorJob"]

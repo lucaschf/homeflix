@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse, Response
 
 from src.config.containers import ApplicationContainer
+from src.modules.media.application.ports.artwork_downloader_port import ALLOWED_ARTWORK_HOSTS
 from src.modules.media.application.ports.artwork_storage_port import ArtworkStoragePort
 from src.modules.media.domain.value_objects.artwork_key import ARTWORK_KEY_PATTERN
 
@@ -30,13 +31,6 @@ router = APIRouter(prefix="/api/v1/artwork", tags=["Artwork"])
 # object and would otherwise reach the storage adapter as a directory /
 # traversal-shaped path.
 
-# Hosts a fallback ``origin`` is allowed to redirect to. Only provider
-# image CDNs the mirror legitimately stores may be echoed into a
-# ``Location`` header — otherwise the public, unauthenticated endpoint
-# would be an open redirect (bounce a victim to any URL). TMDB is the
-# only image provider today; extend this set as providers are added.
-_ALLOWED_ORIGIN_HOSTS = frozenset({"image.tmdb.org"})
-
 # Cache mirrored art aggressively — a content-hashed key is immutable,
 # so a long-lived immutable cache is safe and spares the proxy on every
 # repeat view.
@@ -44,9 +38,14 @@ _CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 
 def _is_allowed_origin(origin: str) -> bool:
-    """Whether ``origin`` is an https URL on an allow-listed provider host."""
+    """Whether ``origin`` is an https URL on an allow-listed provider host.
+
+    Reuses ``ALLOWED_ARTWORK_HOSTS`` (the same set the downloader fetches
+    from) so the redirect fallback can only bounce to a real provider
+    CDN — the public endpoint is never an open redirect.
+    """
     parts = urlsplit(origin)
-    return parts.scheme == "https" and parts.hostname in _ALLOWED_ORIGIN_HOSTS
+    return parts.scheme == "https" and parts.hostname in ALLOWED_ARTWORK_HOSTS
 
 
 @router.get("/{key}")  # type: ignore[misc]
@@ -90,7 +89,12 @@ async def get_artwork(
     return Response(
         content=stored.content,
         media_type=stored.content_type,
-        headers={"Cache-Control": _CACHE_CONTROL},
+        headers={
+            "Cache-Control": _CACHE_CONTROL,
+            # Never let the browser MIME-sniff a stored object into an
+            # executable type (defense-in-depth against a mis-typed asset).
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

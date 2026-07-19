@@ -745,7 +745,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         """Set the three artwork columns for one series by external id."""
         await self._session.execute(
             update(SeriesModel)
-            .where(SeriesModel.external_id == str(series_id))
+            .where(SeriesModel.external_id == series_id.value)
             .values(
                 poster_path=poster_path,
                 backdrop_path=backdrop_path,

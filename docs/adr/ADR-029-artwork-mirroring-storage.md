@@ -42,8 +42,8 @@ Enquanto uma arte não foi mirrorada (job ainda não rodou, download falhou, TMD
 **5. Escopo v1 — todas as artes.**
 Top-level (`poster_path`, `backdrop_path`, `logo_path` de Movie/Series + poster de Season), **episode stills** (`thumbnail_path`), **artes localizadas por locale** (`LocalizedFields.{poster,backdrop,logo}_path` — tratadas à parte por serem `str` cru no JSON, não `ImageUrl`) e **fotos de elenco** (`profile_path`). O `scrub_preview_path` **fica fora** — é asset gerado localmente, não vem de provider.
 
-**6. Chave de armazenamento determinística e content-addressed.**
-A chave do objeto deriva de `(tipo de entidade, id, tipo de arte, locale, hash do conteúdo)`. Content-hash dá dedup natural (mesmo poster referenciado por vários títulos ocupa um objeto) e cache-busting embutido (mudou a arte → muda a chave → o cliente refetcha), espelhando o `?v=...` do avatar.
+**6. Chave de armazenamento content-addressed.**
+A chave (`ArtworkKey`) é `sha256(bytes) + extensão` — content-address puro. Dá dedup natural (mesmo poster referenciado por vários títulos ocupa um objeto) e cache-busting embutido (mudou a arte → muda a chave → o cliente refetcha), espelhando o `?v=...` do avatar. Não é preciso codificar tipo/id/locale na chave: o hash já deduplica, e o `ArtworkKey` guarda o charset (`ARTWORK_KEY_PATTERN`) tanto na escrita (job) quanto na leitura (rota).
 
 ## Consequências
 
@@ -138,17 +138,20 @@ class ArtworkStoragePort(ABC):
     async def delete(self, key: str) -> None: ...  # idempotente
 
 
-# media/application/use_cases/mirror_artwork.py  (rodado pelo scheduler)
-#   para cada entidade com ImageUrl.is_remote:
-#     bytes, ctype = await http.get(image_url.value)
-#     key = artwork_key(kind, entity_id, art_kind, locale, sha256(bytes))
-#     served_url = await storage.save(content=bytes, content_type=ctype, key=key)
-#     entity = entity.with_poster_path(ImageUrl(served_url))   # troca remoto -> local
-#   falha de download/save -> log + retry; mantém a URL remota (fallback gracioso)
-#   artes localizadas: mesmo fluxo sobre LocalizedFields.{poster,backdrop,logo}_path (str)
+# infrastructure/scheduling/artwork_mirror_job.py  (ArtworkMirrorJob.run, no scheduler)
+#   segue a convenção dos jobs irmãos (ThumbnailBackfillJob et al.): a
+#   orquestração vive no job de infra, não num use case dedicado.
+#   para cada título com coluna LIKE 'http%':
+#     img = await downloader.fetch(url, max_bytes=cfg.max_bytes)   # https + host allow-list
+#     if not is_supported_image(img.content_type): continuar (mantém remoto)
+#     key = ArtworkKey.for_content(img.content, content_type=img.content_type, source_url=url)
+#     served = await storage.save(content=img.content, content_type=img.content_type, key=str(key))
+#     update direto da coluna (sem save de aggregate → não apaga filhos)
+#   falha de download/store ou não-imagem -> log + mantém a URL remota (fallback gracioso)
+#   artes localizadas: mesmo fluxo sobre LocalizedFields.{poster,backdrop,logo}_path (str) — PR 3
 ```
 
-Pontos de toque no código (blast radius): endpoint novo `GET /api/v1/artwork/{key}` na presentation de `media`; use case `MirrorArtwork` + registro no scheduler; `ArtworkStoragePort` + `LocalArtworkStorage` + registro no container de `media`; config `artwork_storage_directory` em `settings.py`. `ImageUrl`, mappers e schemas de presentation **não** mudam.
+Pontos de toque no código (blast radius): endpoint novo `GET /api/v1/artwork/{key}` na presentation de `media` (PR 1); `ArtworkStoragePort` + `LocalArtworkStorage` + config `artwork_storage_directory` (PR 1); `ArtworkMirrorJob` + `ArtworkDownloaderPort`/`HttpxArtworkDownloader` + `ArtworkKey` + bucket `ArtworkMirrorConfig` + finders/updaters de coluna + registro no scheduler (PR 2). A orquestração é do **job de infra** (convenção ratificada dos jobs irmãos), não de um use case de application. `ImageUrl`, mappers e schemas de presentation **não** mudam.
 
 Faseamento (1 PR por item): **PR 1** entrega a fundação — port, `LocalArtworkStorage`, endpoint de proxy, config e fiação (sem mudar o enrichment); **PR 2** o mirror dos campos top-level `ImageUrl` de **Movie e Series** (poster/backdrop/logo) via job em background (`ArtworkMirrorJob` + downloader httpx + bucket `ArtworkMirrorConfig` + finder/update direto por coluna, sem round-trip de aggregate); **PR 3** estende a **poster de Season**, episode stills, artes localizadas e elenco — todos arte de coleção-filha, alcançados por update direto/aggregate à parte.
 

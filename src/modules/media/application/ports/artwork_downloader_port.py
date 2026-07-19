@@ -13,6 +13,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+#: Provider image hosts artwork may be downloaded from (and, in the read
+#: route, redirected to). Downloading is a server-side fetch of a
+#: DB-stored URL, so it MUST be constrained to known provider CDNs — an
+#: unconstrained fetch is an SSRF primitive. TMDB is the only image
+#: provider today; extend as providers are added. Shared by the
+#: downloader adapter (write path) and the proxy route (redirect path).
+ALLOWED_ARTWORK_HOSTS = frozenset({"image.tmdb.org"})
+
 
 @dataclass(frozen=True, slots=True)
 class DownloadedImage:
@@ -20,12 +28,14 @@ class DownloadedImage:
 
     Attributes:
         content: The raw image bytes.
-        content_type: The response ``Content-Type`` (e.g. ``image/jpeg``),
-            used to pick the stored key's extension.
+        content_type: The response ``Content-Type`` (e.g. ``image/jpeg``)
+            exactly as the provider sent it, or ``None`` when the header
+            was absent — the caller decides how to treat a missing type
+            rather than the adapter fabricating one.
     """
 
     content: bytes
-    content_type: str
+    content_type: str | None
 
 
 class ArtworkDownloaderPort(ABC):

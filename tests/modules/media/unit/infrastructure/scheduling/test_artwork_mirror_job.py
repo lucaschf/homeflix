@@ -18,6 +18,7 @@ from src.modules.media.domain.repositories.movie_repository import RemoteArtwork
 from src.modules.settings.domain.value_objects import ArtworkMirrorConfig
 
 REMOTE = "https://image.tmdb.org/t/p/original/x.jpg"
+REMOTE_B = "https://image.tmdb.org/t/p/original/b.jpg"
 LOCAL = "/api/v1/artwork/deadbeef.jpg"
 
 
@@ -84,15 +85,22 @@ class _FakeRuntimeSettings:
 
 
 class _FakeDownloader:
-    def __init__(self, *, fail_urls: set[str] = frozenset()) -> None:
+    def __init__(
+        self,
+        *,
+        fail_urls: set[str] = frozenset(),
+        nonimage_urls: set[str] = frozenset(),
+    ) -> None:
         self._fail_urls = fail_urls
+        self._nonimage_urls = nonimage_urls
         self.fetched: list[str] = []
 
     async def fetch(self, url: str, *, max_bytes: int) -> DownloadedImage:
         self.fetched.append(url)
         if url in self._fail_urls:
             raise GatewayUnavailableException(message="down", gateway_name="artwork-cdn")
-        return DownloadedImage(content=b"image-bytes", content_type="image/jpeg")
+        content_type = "text/html" if url in self._nonimage_urls else "image/jpeg"
+        return DownloadedImage(content=b"image-bytes", content_type=content_type)
 
 
 class _FakeStorage:
@@ -119,11 +127,12 @@ def _make(
     series_rows: list[RemoteArtworkRow] | None = None,
     config: ArtworkMirrorConfig | None = None,
     fail_urls: set[str] = frozenset(),
+    nonimage_urls: set[str] = frozenset(),
 ) -> _Harness:
     movies = _FakeMovieRepo(list(movie_rows or []))
     series = _FakeSeriesRepo(list(series_rows or []))
     uow = _FakeUow(movies=movies, series=series)
-    downloader = _FakeDownloader(fail_urls=fail_urls)
+    downloader = _FakeDownloader(fail_urls=fail_urls, nonimage_urls=nonimage_urls)
     storage = _FakeStorage()
     job = ArtworkMirrorJob(
         media_uow_factory=_FakeUowFactory(uow),
@@ -176,6 +185,49 @@ class TestRun:
         assert h.movies.updates == []
         assert h.storage.saved == []
 
+    async def test_should_keep_remote_url_when_response_is_not_an_image(self) -> None:
+        # A 200 serving HTML (rate-limit page) must never overwrite the
+        # authoritative remote URL with a broken "artwork".
+        h = _make(
+            movie_rows=[
+                RemoteArtworkRow(
+                    media_id="mov_abc123def456",
+                    poster_path=REMOTE,
+                    backdrop_path=None,
+                    logo_path=None,
+                )
+            ],
+            nonimage_urls={REMOTE},
+        )
+
+        await h.job.run()
+
+        assert h.movies.updates == []
+        assert h.storage.saved == []
+
+    async def test_should_persist_partial_when_one_field_fails(self) -> None:
+        # Two remote fields, one download fails: the winner is mirrored,
+        # the loser keeps its remote URL, and the title is still updated.
+        h = _make(
+            movie_rows=[
+                RemoteArtworkRow(
+                    media_id="mov_abc123def456",
+                    poster_path=REMOTE,
+                    backdrop_path=REMOTE_B,
+                    logo_path=None,
+                )
+            ],
+            fail_urls={REMOTE_B},
+        )
+
+        await h.job.run()
+
+        assert len(h.movies.updates) == 1
+        update = h.movies.updates[0]
+        assert update.poster_path.startswith("/api/v1/artwork/")
+        assert update.backdrop_path == REMOTE_B  # failed → kept remote
+        assert len(h.storage.saved) == 1
+
     async def test_should_mirror_series_too(self) -> None:
         h = _make(
             series_rows=[
@@ -201,12 +253,18 @@ class TestRun:
         h = _make(
             movie_rows=[
                 RemoteArtworkRow(
-                    media_id="mov_abc123def456", poster_path=REMOTE, backdrop_path=None, logo_path=None
+                    media_id="mov_abc123def456",
+                    poster_path=REMOTE,
+                    backdrop_path=None,
+                    logo_path=None,
                 )
             ],
             series_rows=[
                 RemoteArtworkRow(
-                    media_id="ser_abc123def456", poster_path=REMOTE, backdrop_path=None, logo_path=None
+                    media_id="ser_abc123def456",
+                    poster_path=REMOTE,
+                    backdrop_path=None,
+                    logo_path=None,
                 )
             ],
             config=ArtworkMirrorConfig(batch_size=1),
