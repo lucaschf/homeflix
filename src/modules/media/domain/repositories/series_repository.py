@@ -8,8 +8,13 @@ from src.building_blocks.domain.pagination import PaginatedResult
 from src.modules.media.domain.entities.episode import Episode
 from src.modules.media.domain.entities.season import Season
 from src.modules.media.domain.entities.series import Series
-from src.modules.media.domain.repositories.movie_repository import CreditsStatusRow, GenreRow
+from src.modules.media.domain.repositories.movie_repository import (
+    CreditsStatusRow,
+    GenreRow,
+    RemoteArtworkRow,
+)
 from src.modules.media.domain.value_objects import (
+    ArtworkColumns,
     CreditsDetectionState,
     CreditsMarker,
     EpisodeId,
@@ -427,6 +432,27 @@ class SeriesRepository(ABC):
         Returns:
             ``True`` if a row was updated, ``False`` if no episode with
             that id exists.
+        """
+        ...
+
+    @abstractmethod
+    async def find_with_remote_artwork(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` series with a still-remote artwork URL.
+
+        Mirror of ``MovieRepository.find_with_remote_artwork`` over
+        series ``poster_path`` / ``backdrop_path`` / ``logo_path``. Season
+        posters and episode stills are handled separately (ADR-029 PR 3).
+        """
+        ...
+
+    @abstractmethod
+    async def update_series_artwork(self, series_id: SeriesId, artwork: ArtworkColumns) -> None:
+        """Set the three artwork columns for one series by external id.
+
+        A targeted column update rather than an aggregate ``save`` so the
+        mirror job never risks persisting the series with its seasons and
+        episodes unloaded. ``artwork`` carries the final value for every
+        column.
         """
         ...
 

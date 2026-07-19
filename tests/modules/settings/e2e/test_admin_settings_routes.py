@@ -97,6 +97,7 @@ class TestAdminSettingsList:
                 "avatar",
                 "scan_dedup",
                 "subtitle_ocr",
+                "artwork_mirror",
             ]
         )
         for entry in body["data"]:

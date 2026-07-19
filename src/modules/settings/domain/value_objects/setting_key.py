@@ -23,6 +23,7 @@ class SettingKey(StrEnum):
     AVATAR = "avatar"
     SCAN_DEDUP = "scan_dedup"
     SUBTITLE_OCR = "subtitle_ocr"
+    ARTWORK_MIRROR = "artwork_mirror"
 
 
 __all__ = ["SettingKey"]

@@ -15,8 +15,13 @@ from src.building_blocks.application.pagination import (
 from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.repositories import SeriesRepository
-from src.modules.media.domain.repositories.movie_repository import CreditsStatusRow, GenreRow
+from src.modules.media.domain.repositories.movie_repository import (
+    CreditsStatusRow,
+    GenreRow,
+    RemoteArtworkRow,
+)
 from src.modules.media.domain.value_objects import (
+    ArtworkColumns,
     CreditsDetectionState,
     CreditsMarker,
     EpisodeId,
@@ -39,6 +44,10 @@ from src.modules.media.infrastructure.persistence.models import (
     MediaFileModel,
     SeasonModel,
     SeriesModel,
+)
+from src.modules.media.infrastructure.persistence.repositories._artwork_helpers import (
+    artwork_column_values,
+    to_artwork_columns,
 )
 from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
     fetch_genre_paginated_page,
@@ -692,6 +701,49 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         )
         result = await self._session.execute(stmt)
         return bool(result.rowcount)
+
+    async def find_with_remote_artwork(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` series whose artwork is still a remote URL.
+
+        Projects only the external id + three artwork columns so the
+        mirror job never loads the series aggregate (seasons + episodes).
+        ``LIKE 'http%'`` matches persisted provider URLs; already-mirrored
+        ``/api/v1/artwork/...`` paths do not.
+        """
+        stmt = (
+            select(
+                SeriesModel.external_id,
+                SeriesModel.poster_path,
+                SeriesModel.backdrop_path,
+                SeriesModel.logo_path,
+            )
+            .where(
+                SeriesModel.deleted_at.is_(None),
+                or_(
+                    SeriesModel.poster_path.like("http%"),
+                    SeriesModel.backdrop_path.like("http%"),
+                    SeriesModel.logo_path.like("http%"),
+                ),
+            )
+            .order_by(SeriesModel.id.asc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [
+            RemoteArtworkRow(
+                media_id=row.external_id,
+                artwork=to_artwork_columns(row.poster_path, row.backdrop_path, row.logo_path),
+            )
+            for row in result.all()
+        ]
+
+    async def update_series_artwork(self, series_id: SeriesId, artwork: ArtworkColumns) -> None:
+        """Set the three artwork columns for one series by external id."""
+        await self._session.execute(
+            update(SeriesModel)
+            .where(SeriesModel.external_id == series_id.value)
+            .values(**artwork_column_values(artwork))
+        )
 
     async def find_seasons_pending_intro_detection(
         self,

@@ -13,6 +13,9 @@ from types import MappingProxyType
 from typing import Final
 
 from src.building_blocks.domain.value_objects import CompoundValueObject
+from src.modules.settings.domain.value_objects.artwork_mirror_config import (
+    ArtworkMirrorConfig,
+)
 from src.modules.settings.domain.value_objects.avatar_config import AvatarConfig
 from src.modules.settings.domain.value_objects.credits_detection_config import (
     CreditsDetectionConfig,
@@ -39,6 +42,7 @@ SETTING_VO_TYPES: Final[Mapping[SettingKey, type[CompoundValueObject]]] = Mappin
         SettingKey.AVATAR: AvatarConfig,
         SettingKey.SCAN_DEDUP: ScanDedupConfig,
         SettingKey.SUBTITLE_OCR: SubtitleOcrConfig,
+        SettingKey.ARTWORK_MIRROR: ArtworkMirrorConfig,
     }
 )
 """Read-only map from setting bucket to the VO type its row carries."""

@@ -174,10 +174,14 @@ from src.modules.media.infrastructure.audio import (
 )
 from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
+from src.modules.media.infrastructure.metadata.artwork_downloader import (
+    HttpxArtworkDownloader,
+)
 from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
 from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyMediaUnitOfWorkFactory,
 )
+from src.modules.media.infrastructure.storage import LocalArtworkStorage
 from src.modules.media.infrastructure.streaming import (
     HlsService,
     MediaProbeService,
@@ -260,6 +264,11 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     # and ``hls_cache_max_size_mb`` moved to ``StreamingConfig`` in
     # ADR-013 phase 3 and are read from ``RuntimeSettings``.
     hls_cache_directory = providers.Dependency(default="./hls_cache")
+
+    # Artwork mirror directory (ADR-029), wired from
+    # ``Settings.artwork_storage_directory`` at the composition root.
+    # Bootstrap filesystem path, same style as ``hls_cache_directory``.
+    artwork_storage_directory = providers.Dependency(default="./artwork")
 
     # RuntimeSettings facade — needed by HlsService, AudioExtractor,
     # ThumbnailGenerationService for streaming config + by
@@ -537,6 +546,18 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
     )
 
     file_streamer = providers.Factory(LocalFileStreamer)
+
+    # Local-disk storage for mirrored catalog artwork (ADR-029).
+    # Singleton so the proxy route and the mirror job share one
+    # instance (it is stateless apart from the root path).
+    artwork_storage = providers.Singleton(
+        LocalArtworkStorage,
+        root_directory=artwork_storage_directory,
+    )
+
+    # Downloads still-remote provider artwork for the mirror job (ADR-029).
+    # Singleton so one pooled httpx client is shared across ticks.
+    artwork_image_downloader = providers.Singleton(HttpxArtworkDownloader)
 
     # =========================================================================
     # Use Cases — Streaming

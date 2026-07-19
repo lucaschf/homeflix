@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from src.building_blocks.domain.pagination import PaginatedResult
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.value_objects import (
+    ArtworkColumns,
     CreditsDetectionState,
     CreditsMarker,
     EpisodeId,
@@ -53,6 +54,24 @@ class CreditsStatusRow:
     series_id: str | None = None
     season_number: int | None = None
     episode_number: int | None = None
+
+
+@dataclass(frozen=True)
+class RemoteArtworkRow:
+    """Lightweight projection of a title's artwork references.
+
+    Used by the artwork-mirror job (ADR-029) to find titles whose
+    poster/backdrop/logo is still a remote provider URL and update just
+    those columns directly — without loading the aggregate, which a full
+    ``save`` would risk persisting with unloaded children (file variants,
+    seasons). ``media_id`` is the external id (``mov_xxx`` / ``ser_xxx``);
+    ``artwork`` carries the three references as ``ImageUrl`` values, so
+    ``.is_remote`` is available without re-parsing strings. Reused for
+    both movies and series (same three columns).
+    """
+
+    media_id: str
+    artwork: ArtworkColumns
 
 
 class MovieRepository(ABC):
@@ -592,6 +611,29 @@ class MovieRepository(ABC):
 
         Returns:
             Sequence of movies whose ``scrub_preview_path`` is null.
+        """
+        ...
+
+    @abstractmethod
+    async def find_with_remote_artwork(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` movies with a still-remote artwork URL.
+
+        A row is returned when any of ``poster_path`` / ``backdrop_path``
+        / ``logo_path`` is still an ``http(s)`` provider URL (not yet
+        mirrored). Soft-deleted rows are excluded and results are ordered
+        by id so the mirror job makes steady forward progress.
+        """
+        ...
+
+    @abstractmethod
+    async def update_movie_artwork(self, movie_id: MovieId, artwork: ArtworkColumns) -> None:
+        """Set the three artwork columns directly (mirror job).
+
+        A targeted column update rather than an aggregate ``save`` so the
+        mirror job never risks persisting the movie with unloaded file
+        variants. ``artwork`` carries the final value for every column
+        (the mirrored local reference where one was produced, the
+        original value otherwise).
         """
         ...
 

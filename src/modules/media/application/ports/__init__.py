@@ -1,5 +1,13 @@
 """Media application ports (interfaces for infrastructure and external BCs)."""
 
+from src.modules.media.application.ports.artwork_downloader_port import (
+    ArtworkDownloaderPort,
+    DownloadedImage,
+)
+from src.modules.media.application.ports.artwork_storage_port import (
+    ArtworkStoragePort,
+    StoredArtwork,
+)
 from src.modules.media.application.ports.catalog_request_lookup_port import (
     CatalogRequestLookupPort,
     CatalogRequestStatus,
@@ -72,6 +80,8 @@ from src.modules.media.application.ports.variant_detector_port import (
 )
 
 __all__ = [
+    "ArtworkDownloaderPort",
+    "ArtworkStoragePort",
     "CatalogRequestLookupPort",
     "CatalogRequestStatus",
     "CollectionDetailMetadata",
@@ -83,6 +93,7 @@ __all__ = [
     "CreditsSignal",
     "DetectedCredits",
     "DetectedIntro",
+    "DownloadedImage",
     "EpisodeMediaRef",
     "EpisodeMetadata",
     "FileStreamerPort",
@@ -111,6 +122,7 @@ __all__ = [
     "ScrubPreviewLocatorPort",
     "SearchCandidate",
     "SeasonMetadata",
+    "StoredArtwork",
     "SubtitleOcrOptions",
     "SubtitleOcrPort",
     "VariantDetectorPort",
