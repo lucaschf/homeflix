@@ -119,6 +119,26 @@ o content-type da extensão da chave na leitura, e confina o path resolvido
 ao diretório raiz (defesa em profundidade contra traversal). I/O de disco
 roda em `asyncio.to_thread` (não bloqueia o event loop).
 
+### Onde os arquivos ficam
+
+Um **store central e content-addressed**, não co-localizado por arquivo de
+mídia (diferente dos scrub-preview sprites, que ficam em `.homeflix/` ao
+lado do vídeo). Concretamente:
+
+- Todas as imagens vão **flat** dentro de um único diretório
+  (`artwork_storage_directory`, default `./artwork`), cada uma nomeada
+  `{sha256-do-conteúdo}.{ext}` (ex.: `010616cc…bd0.jpg`).
+- Content-addressed ⇒ **dedup natural**: o mesmo pôster referenciado por
+  vários títulos ocupa **um** arquivo só. Por isso o store é central (por
+  título, não por arquivo de vídeo), cobrindo uniformemente movie / series
+  / season / episode.
+- A coluna no banco guarda a referência própria `/api/v1/artwork/{key}`; a
+  rota proxy serve lendo desse mesmo diretório.
+
+Em **produção**, aponte o diretório para um **caminho absoluto num volume
+persistente** (ex.: `ARTWORK_STORAGE_DIRECTORY=/data/homeflix/artwork`) —
+assim os arquivos não somem em redeploy e o backup é copiar essa pasta.
+
 ### Configuração de bootstrap
 
 | Setting | Default | Onde |
