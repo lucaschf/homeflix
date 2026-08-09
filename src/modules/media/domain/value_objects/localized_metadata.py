@@ -188,7 +188,9 @@ class LocalizedMetadata(RootModel[dict[str, LocalizedFields]], ValueObject):
     @classmethod
     def from_serializable(cls, raw: dict[str, dict[str, Any]] | None) -> "LocalizedMetadata":
         """Build from the stored JSON dict (``None`` → empty)."""
-        return cls(raw or {})
+        # Pydantic coerces the raw nested dict into LocalizedFields at the
+        # RootModel boundary; mypy can't follow that coercion.
+        return cls(raw or {})  # type: ignore[arg-type]
 
 
 __all__ = ["LocalizedField", "LocalizedFields", "LocalizedMetadata"]

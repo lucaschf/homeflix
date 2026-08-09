@@ -1,5 +1,7 @@
 """Mapper between Series/Season/Episode entities and ORM models."""
 
+from typing import cast
+
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
     AirDate,
@@ -457,7 +459,10 @@ def _intro_marker_from_columns(model: EpisodeModel) -> IntroMarker | None:
     return IntroMarker(
         start_seconds=model.intro_start_seconds,
         end_seconds=model.intro_end_seconds,
-        source=IntroMarkerSource(model.intro_source),
+        # Marker columns are co-populated: a non-null start guarantees a
+        # non-null source (a partial row is schema corruption, surfaced as a
+        # validation error below).
+        source=IntroMarkerSource(cast(str, model.intro_source)),
         confidence=model.intro_confidence,
         detected_at=model.intro_detected_at,
     )
@@ -492,7 +497,7 @@ def _credits_marker_from_columns(model: EpisodeModel) -> CreditsMarker | None:
 
     return CreditsMarker(
         start_seconds=model.credits_start_seconds,
-        source=CreditsMarkerSource(model.credits_source),
+        source=CreditsMarkerSource(cast(str, model.credits_source)),
         confidence=model.credits_confidence,
         detected_at=model.credits_detected_at,
     )
