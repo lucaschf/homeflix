@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import Field
 
 from src.building_blocks.domain import CompoundValueObject, utc_now
+from src.modules.media.domain.value_objects.file_segment import FileSegment
 from src.modules.media.domain.value_objects.hdr_format import HdrFormat
 from src.modules.media.domain.value_objects.resolution import Resolution
 from src.modules.media.domain.value_objects.video_codec import VideoCodec
@@ -29,6 +30,9 @@ class MediaFile(CompoundValueObject):
         subtitle_tracks: Subtitle tracks in this file.
         is_primary: Whether this is the primary (preferred) file variant.
         added_at: When this file variant was registered.
+        segment: Time window this title occupies within the physical file
+            when the file is shared by several titles (ADR-030), or ``None``
+            (the default) when this variant is the whole file.
 
     Example:
         >>> media_file = MediaFile(
@@ -50,6 +54,12 @@ class MediaFile(CompoundValueObject):
     subtitle_tracks: list[SubtitleTrack] = Field(default_factory=list)
     is_primary: bool = False
     added_at: datetime = Field(default_factory=utc_now)
+    segment: FileSegment | None = None
+
+    @property
+    def is_segment(self) -> bool:
+        """Return True when this variant is a bounded window of a shared file."""
+        return self.segment is not None
 
 
 __all__ = ["MediaFile"]

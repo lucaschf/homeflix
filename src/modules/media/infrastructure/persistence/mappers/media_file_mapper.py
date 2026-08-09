@@ -5,6 +5,7 @@ import secrets
 import string
 
 from src.modules.media.domain.value_objects import (
+    FileSegment,
     HdrFormat,
     MediaFile,
     Resolution,
@@ -61,6 +62,8 @@ class MediaFileMapper:
             video_codec=file.video_codec.value if file.video_codec else None,
             video_bitrate=file.video_bitrate,
             hdr_format=file.hdr_format.value if file.hdr_format else None,
+            start_offset_seconds=file.segment.start_seconds if file.segment else None,
+            end_offset_seconds=file.segment.end_seconds if file.segment else None,
             is_primary=file.is_primary,
             added_at=file.added_at,
             audio_tracks_json=audio_json,
@@ -87,6 +90,13 @@ class MediaFileMapper:
                 SubtitleTrack(**data) for data in json.loads(model.subtitle_tracks_json)
             ]
 
+        segment = None
+        if model.start_offset_seconds is not None and model.end_offset_seconds is not None:
+            segment = FileSegment(
+                start_seconds=model.start_offset_seconds,
+                end_seconds=model.end_offset_seconds,
+            )
+
         return MediaFile(
             file_path=FilePath(model.file_path),
             file_size=model.file_size,
@@ -98,6 +108,7 @@ class MediaFileMapper:
             added_at=model.added_at,
             audio_tracks=audio_tracks,
             subtitle_tracks=subtitle_tracks,
+            segment=segment,
         )
 
     @staticmethod
@@ -119,6 +130,8 @@ class MediaFileMapper:
         model.video_codec = file.video_codec.value if file.video_codec else None
         model.video_bitrate = file.video_bitrate
         model.hdr_format = file.hdr_format.value if file.hdr_format else None
+        model.start_offset_seconds = file.segment.start_seconds if file.segment else None
+        model.end_offset_seconds = file.segment.end_seconds if file.segment else None
         model.is_primary = file.is_primary
         model.added_at = file.added_at
 

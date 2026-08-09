@@ -6,6 +6,7 @@ from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.media.domain.value_objects import (
     AudioTrack,
     FilePath,
+    FileSegment,
     HdrFormat,
     MediaFile,
     Resolution,
@@ -34,6 +35,42 @@ class TestMediaFileCreation:
         assert media_file.audio_tracks == []
         assert media_file.subtitle_tracks == []
         assert media_file.is_primary is False
+        assert media_file.segment is None
+        assert media_file.is_segment is False
+
+
+class TestMediaFileSegment:
+    """Tests for the optional FileSegment on a MediaFile (ADR-030)."""
+
+    def test_is_segment_true_when_segment_present(self):
+        media_file = MediaFile(
+            file_path=FilePath("/series/shared.mkv"),
+            file_size=8_000_000_000,
+            resolution=Resolution("1080p"),
+            segment=FileSegment(start_seconds=4740, end_seconds=9480),
+        )
+
+        assert media_file.is_segment is True
+        assert media_file.segment is not None
+        assert media_file.segment.duration_seconds == 4740
+
+    def test_two_episodes_can_share_path_with_disjoint_segments(self):
+        path = FilePath("/series/shared.mkv")
+        first = MediaFile(
+            file_path=path,
+            file_size=8_000_000_000,
+            resolution=Resolution("1080p"),
+            segment=FileSegment(start_seconds=0, end_seconds=4740),
+        )
+        second = MediaFile(
+            file_path=path,
+            file_size=8_000_000_000,
+            resolution=Resolution("1080p"),
+            segment=FileSegment(start_seconds=4740, end_seconds=9480),
+        )
+
+        assert first.file_path == second.file_path
+        assert first != second
 
     def test_should_create_with_all_fields(self):
         audio = AudioTrack(

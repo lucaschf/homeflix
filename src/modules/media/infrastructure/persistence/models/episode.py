@@ -53,13 +53,15 @@ class EpisodeModel(Base):
             "episode_number",
             name="uq_episode_season_number",
         ),
-        # Partial unique index: file_path is unique only among live rows.
-        # Soft-deleted episodes keep their path (audit/undo) but must not
-        # block a rescan from re-registering the same file.
+        # Non-unique lookup index on the denormalized primary-file path.
+        # Uniqueness is intentionally NOT enforced here: ADR-030 lets several
+        # episodes share one physical file as disjoint segments, so two live
+        # episode rows may legitimately carry the same flat ``file_path``. The
+        # authoritative per-``(path, segment)`` guard lives on ``media_files``
+        # (``ux_media_file_path_segment``).
         Index(
             "ix_episodes_file_path",
             "file_path",
-            unique=True,
             sqlite_where=text("deleted_at IS NULL"),
             postgresql_where=text("deleted_at IS NULL"),
         ),

@@ -12,6 +12,7 @@ from src.modules.media.domain.value_objects.credits_detection_state import Credi
 from src.modules.media.domain.value_objects.credits_marker import CreditsMarker, CreditsMarkerSource
 from src.modules.media.domain.value_objects.duration import Duration
 from src.modules.media.domain.value_objects.episode_number import EpisodeNumber
+from src.modules.media.domain.value_objects.file_segment import FileSegment
 from src.modules.media.domain.value_objects.genre import Genre
 from src.modules.media.domain.value_objects.hdr_format import HdrFormat
 from src.modules.media.domain.value_objects.imdb_id import ImdbId
@@ -66,6 +67,7 @@ __all__ = [
     "EpisodeId",
     "EpisodeNumber",
     "FilePath",
+    "FileSegment",
     "Genre",
     "ImageUrl",
     "HdrFormat",
