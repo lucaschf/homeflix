@@ -9,12 +9,15 @@ from src.building_blocks.application.pagination import (
     MAX_PAGE_SIZE,
     CursorValue,
     DualCursorValue,
+    SortCursorValue,
     TitleCursorValue,
     decode_cursor,
     decode_dual_cursor,
+    decode_sort_cursor,
     decode_title_cursor,
     encode_cursor,
     encode_dual_cursor,
+    encode_sort_cursor,
     encode_title_cursor,
 )
 from src.building_blocks.domain.pagination import PaginatedResult, Pagination
@@ -201,6 +204,64 @@ class TestTitleCursor:
     def test_should_return_none_when_id_part_is_not_an_integer(self) -> None:
         bogus = base64.urlsafe_b64encode(b"title\x1fnot_an_int").decode("ascii")
         assert decode_title_cursor(bogus) is None
+
+
+@pytest.mark.unit
+class TestSortCursor:
+    """Tests for the sort-bound ``(sort, key, id)`` cursor."""
+
+    def test_should_roundtrip_a_title_cursor(self) -> None:
+        encoded = encode_sort_cursor("title_asc", "inception", 42)
+
+        decoded = decode_sort_cursor(encoded, expected_sort="title_asc")
+
+        assert decoded == SortCursorValue(sort="title_asc", key="inception", id=42)
+
+    def test_should_roundtrip_a_year_cursor(self) -> None:
+        encoded = encode_sort_cursor("year_desc", "2010", 7)
+
+        decoded = decode_sort_cursor(encoded, expected_sort="year_desc")
+
+        assert decoded == SortCursorValue(sort="year_desc", key="2010", id=7)
+
+    def test_should_roundtrip_an_empty_key_for_id_only_sorts(self) -> None:
+        # recently_added orders on id alone, so its key is empty.
+        encoded = encode_sort_cursor("recently_added", "", 99)
+
+        decoded = decode_sort_cursor(encoded, expected_sort="recently_added")
+
+        assert decoded == SortCursorValue(sort="recently_added", key="", id=99)
+
+    def test_should_reject_a_cursor_minted_under_a_different_sort(self) -> None:
+        # A cursor from one sort replayed under another must decode to
+        # "no cursor" so the listing restarts from page 1 instead of
+        # reinterpreting the key in the wrong order.
+        encoded = encode_sort_cursor("title_asc", "inception", 42)
+
+        assert decode_sort_cursor(encoded, expected_sort="year_desc") is None
+
+    def test_should_preserve_a_key_containing_the_separator(self) -> None:
+        # The parser splits the sort off the front and the id off the
+        # back, so a separator byte inside the key survives intact.
+        weird_key = "a\x1fb"
+        encoded = encode_sort_cursor("title_asc", weird_key, 5)
+
+        decoded = decode_sort_cursor(encoded, expected_sort="title_asc")
+
+        assert decoded == SortCursorValue(sort="title_asc", key=weird_key, id=5)
+
+    def test_should_return_none_for_empty_or_invalid_cursor(self) -> None:
+        assert decode_sort_cursor(None, expected_sort="title_asc") is None
+        assert decode_sort_cursor("", expected_sort="title_asc") is None
+        assert decode_sort_cursor("not-valid-base64!!!", expected_sort="title_asc") is None
+
+    def test_should_return_none_when_payload_lacks_separators(self) -> None:
+        bogus = base64.urlsafe_b64encode(b"missing-separators").decode("ascii")
+        assert decode_sort_cursor(bogus, expected_sort="title_asc") is None
+
+    def test_should_return_none_when_id_part_is_not_an_integer(self) -> None:
+        bogus = base64.urlsafe_b64encode(b"title_asc\x1fkey\x1fnot_an_int").decode("ascii")
+        assert decode_sort_cursor(bogus, expected_sort="title_asc") is None
 
 
 @pytest.mark.unit

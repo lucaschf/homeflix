@@ -1,9 +1,10 @@
 """ListByGenreUseCase - paginated mixed (movies + series) listing per genre."""
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TypeVar
+from functools import cmp_to_key
+from typing import Any, TypeVar
 
 from src.building_blocks.application.pagination import (
     DualCursorValue,
@@ -21,11 +22,66 @@ from src.modules.media.application.ports.profile_library_access_port import (
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie, Series
-from src.modules.media.domain.value_objects import Genre
+from src.modules.media.domain.value_objects import CatalogSort, Genre
 from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.library_id import LibraryId
 
 _T = TypeVar("_T")
+
+# Sorts whose primary key descends. Kept as a set so the merge
+# comparator and any future reader agree on the direction of each sort
+# in one place.
+_DESCENDING_SORTS = frozenset(
+    {CatalogSort.TITLE_DESC, CatalogSort.YEAR_DESC, CatalogSort.RECENTLY_ADDED}
+)
+
+
+def _merge_primary_key(entity: Movie | Series, sort: CatalogSort, lang: str) -> Any:
+    """Primary sort key for one entity, matching the SQL ORDER BY key.
+
+    Mirrors ``_GenreSortSpec`` on the repository side: title sorts
+    compare the lowercased localized title, year sorts the release year
+    (movie ``year`` / series ``start_year``), and ``recently_added`` the
+    ``created_at`` timestamp — the cross-stream analogue of each stream's
+    ``id DESC`` order (ids from the two tables aren't comparable, so a
+    real timestamp is required; same rationale as
+    ``ListRecentlyAddedCatalogUseCase``).
+    """
+    if sort in (CatalogSort.TITLE_ASC, CatalogSort.TITLE_DESC):
+        return (entity.get_title(lang) or "").lower()
+    if sort in (CatalogSort.YEAR_ASC, CatalogSort.YEAR_DESC):
+        return entity.year.value if isinstance(entity, Movie) else entity.start_year.value
+    return entity.created_at
+
+
+def _merge_comparator(
+    sort: CatalogSort, lang: str
+) -> Callable[["_MergedItem", "_MergedItem"], int]:
+    """Build a stable comparator matching each stream's own SQL order.
+
+    Compares the primary key in the sort's direction and breaks ties on
+    ``source_index`` *ascending* regardless of direction. Each stream
+    arrives already in its SQL order, so preserving source order on a
+    primary-key tie keeps the merged sequence consistent with each
+    stream's per-item cursor. A descending primary must NOT simply
+    reverse the whole sort key — that would flip the source-order
+    tie-break too and dupe/skip rows across the page boundary (the bug
+    only surfaces on page 2+). When both the primary key and the source
+    index tie (two streams contributing the same key at the same depth),
+    the comparator returns 0 and Python's stable sort keeps movies before
+    series — deterministic across pages.
+    """
+    descending = sort in _DESCENDING_SORTS
+
+    def compare(a: "_MergedItem", b: "_MergedItem") -> int:
+        ka = _merge_primary_key(a.entity, sort, lang)
+        kb = _merge_primary_key(b.entity, sort, lang)
+        if ka != kb:
+            base = -1 if ka < kb else 1
+            return -base if descending else base
+        return (a.source_index > b.source_index) - (a.source_index < b.source_index)
+
+    return compare
 
 
 def _empty_page(_element_type: type[_T]) -> PaginatedResult[_T]:
@@ -64,10 +120,14 @@ class ListByGenreUseCase:
     """Paginated mixed listing of movies + series for a single genre.
 
     Both repositories are queried in parallel via their own
-    ``list_paginated_by_genre`` method (sorted by ``LOWER(title), id``),
-    the two streams are merged in Python by title, the merged result
-    is trimmed to the requested page size, and a dual cursor is
-    composed from the position each stream is left at.
+    ``list_paginated_by_genre`` method under the requested ``sort``
+    (title / year / recently-added, each ending in ``id`` as the
+    tie-breaker); the two streams are merged in Python by the same sort
+    key, the merged result is trimmed to the requested page size, and a
+    dual cursor is composed from the position each stream is left at. The
+    Python merge key and its direction mirror the SQL order exactly (see
+    ``_merge_comparator``) so partial-prefix cursor advancement stays
+    correct for every sort.
 
     Cursor advancement is "consumed-aware": each repository populates
     a parallel ``item_cursors`` list on its ``PaginatedResult`` with
@@ -127,6 +187,7 @@ class ListByGenreUseCase:
             decoded=decoded,
             limit=input_dto.limit,
             media_type=input_dto.media_type,
+            sort=input_dto.sort,
             lang=input_dto.lang,
             allowed_library_ids=allowed,
         )
@@ -140,17 +201,12 @@ class ListByGenreUseCase:
             _MergedItem(kind=MediaType.SERIES, source_index=index, entity=item)
             for index, item in enumerate(series_page.items)
         ]
-        # Sort by (lowercase localized title, source index) — the source
-        # index tie-breaker matches the SQL
-        # `(LOWER(COALESCE(localized[lang].title, title)), id) ASC` order
-        # within each stream and gives a stable cross-stream order when
-        # two rows share a title.
-        tagged.sort(
-            key=lambda mi: (
-                (mi.entity.get_title(input_dto.lang) or "").lower(),
-                mi.source_index,
-            )
-        )
+        # Merge the two already-sorted streams under the requested order.
+        # The comparator applies the sort's direction to the primary key
+        # and breaks ties on ``source_index`` (ascending) so each stream
+        # stays in the exact order its SQL query — and therefore its
+        # per-item cursor — produced. See ``_merge_comparator``.
+        tagged.sort(key=cmp_to_key(_merge_comparator(input_dto.sort, input_dto.lang)))
 
         page_items = tagged[: input_dto.limit]
 
@@ -196,6 +252,7 @@ class ListByGenreUseCase:
         decoded: DualCursorValue,
         limit: int,
         media_type: MediaType | None,
+        sort: CatalogSort,
         lang: str,
         allowed_library_ids: Sequence[LibraryId],
     ) -> tuple[PaginatedResult[Movie], PaginatedResult[Series]]:
@@ -217,6 +274,7 @@ class ListByGenreUseCase:
                     genre=genre,
                     cursor=decoded.movies,
                     limit=limit,
+                    sort=sort,
                     lang=lang,
                     allowed_library_ids=allowed_library_ids,
                 )
@@ -227,6 +285,7 @@ class ListByGenreUseCase:
                     genre=genre,
                     cursor=decoded.series,
                     limit=limit,
+                    sort=sort,
                     lang=lang,
                     allowed_library_ids=allowed_library_ids,
                 )
@@ -236,6 +295,7 @@ class ListByGenreUseCase:
                 genre=genre,
                 cursor=decoded.movies,
                 limit=limit,
+                sort=sort,
                 lang=lang,
                 allowed_library_ids=allowed_library_ids,
             ),
@@ -243,6 +303,7 @@ class ListByGenreUseCase:
                 genre=genre,
                 cursor=decoded.series,
                 limit=limit,
+                sort=sort,
                 lang=lang,
                 allowed_library_ids=allowed_library_ids,
             ),
@@ -254,6 +315,7 @@ class ListByGenreUseCase:
         genre: Genre,
         cursor: str | None,
         limit: int,
+        sort: CatalogSort,
         lang: str,
         allowed_library_ids: Sequence[LibraryId],
     ) -> PaginatedResult[Movie]:
@@ -262,6 +324,7 @@ class ListByGenreUseCase:
                 genre=genre,
                 cursor=cursor,
                 limit=limit,
+                sort=sort,
                 lang=lang,
                 allowed_library_ids=allowed_library_ids,
             )
@@ -272,6 +335,7 @@ class ListByGenreUseCase:
         genre: Genre,
         cursor: str | None,
         limit: int,
+        sort: CatalogSort,
         lang: str,
         allowed_library_ids: Sequence[LibraryId],
     ) -> PaginatedResult[Series]:
@@ -280,6 +344,7 @@ class ListByGenreUseCase:
                 genre=genre,
                 cursor=cursor,
                 limit=limit,
+                sort=sort,
                 lang=lang,
                 allowed_library_ids=allowed_library_ids,
             )

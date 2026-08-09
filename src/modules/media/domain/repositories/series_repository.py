@@ -15,6 +15,7 @@ from src.modules.media.domain.repositories.movie_repository import (
 )
 from src.modules.media.domain.value_objects import (
     ArtworkColumns,
+    CatalogSort,
     CreditsDetectionState,
     CreditsMarker,
     EpisodeId,
@@ -221,16 +222,19 @@ class SeriesRepository(ABC):
         cursor: str | None,
         limit: int,
         *,
+        sort: CatalogSort = CatalogSort.TITLE_ASC,
         lang: str = "en",
         allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Series]:
         """List series belonging to a specific genre, paginated.
 
-        Sorted by ``(LOWER(COALESCE(localized[lang].title, title)) ASC,
-        id ASC)``. Same contract as
+        Ordering is chosen by ``sort`` (see :class:`CatalogSort`),
+        defaulting to ``(LOWER(COALESCE(localized[lang].title, title))
+        ASC, id ASC)``. For ``year_*`` sorts the series ``start_year``
+        is the release-year key. Same contract as
         ``MovieRepository.list_paginated_by_genre`` — see that method
-        for the full description of the cursor format and the genre
-        filter (whole-word LIKE on the comma-separated ``genres``
+        for the full description of the sort-bound cursor format and the
+        genre filter (whole-word LIKE on the comma-separated ``genres``
         column).
         """
         ...

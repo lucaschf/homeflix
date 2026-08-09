@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
+    CatalogSort,
     Duration,
     FilePath,
     Genre,
@@ -993,6 +994,139 @@ class TestSQLAlchemyMovieRepositoryListPaginatedByGenre:
 
         assert len(page.items) == 1
         assert page.items[0].title.value == "B"
+
+
+@pytest.mark.integration
+class TestSQLAlchemyMovieRepositoryListPaginatedByGenreSort:
+    """The ``sort`` parameter drives ORDER BY and cursor stability."""
+
+    async def test_year_desc_orders_newest_first(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        for title, year in [("Old", 2000), ("New", 2020), ("Mid", 2010)]:
+            await repo.save(
+                _create_movie(title=title, year=year, file_path=f"/m/{title}.mkv").with_genre(
+                    Genre("Action")
+                )
+            )
+
+        page = await repo.list_paginated_by_genre(
+            genre=Genre("Action"), cursor=None, limit=10, sort=CatalogSort.YEAR_DESC
+        )
+
+        assert [m.year.value for m in page.items] == [2020, 2010, 2000]
+
+    async def test_year_asc_orders_oldest_first(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        for title, year in [("Old", 2000), ("New", 2020), ("Mid", 2010)]:
+            await repo.save(
+                _create_movie(title=title, year=year, file_path=f"/m/{title}.mkv").with_genre(
+                    Genre("Action")
+                )
+            )
+
+        page = await repo.list_paginated_by_genre(
+            genre=Genre("Action"), cursor=None, limit=10, sort=CatalogSort.YEAR_ASC
+        )
+
+        assert [m.year.value for m in page.items] == [2000, 2010, 2020]
+
+    async def test_recently_added_orders_by_insertion_desc(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        # Saved in order A, B, C — recently_added (id DESC) surfaces the
+        # last-inserted first.
+        for title in ["A", "B", "C"]:
+            await repo.save(
+                _create_movie(title=title, file_path=f"/m/{title}.mkv").with_genre(Genre("Action"))
+            )
+
+        page = await repo.list_paginated_by_genre(
+            genre=Genre("Action"), cursor=None, limit=10, sort=CatalogSort.RECENTLY_ADDED
+        )
+
+        assert [m.title.value for m in page.items] == ["C", "B", "A"]
+
+    async def test_walks_all_pages_under_year_desc_without_dupes(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        years = [2001, 2005, 2010, 2015, 2020]
+        for i, year in enumerate(years):
+            await repo.save(
+                _create_movie(title=f"M{i}", year=year, file_path=f"/m/m{i}.mkv").with_genre(
+                    Genre("Action")
+                )
+            )
+
+        seen: list[int] = []
+        cursor: str | None = None
+        for _ in range(10):  # generous upper bound; breaks when exhausted
+            page = await repo.list_paginated_by_genre(
+                genre=Genre("Action"), cursor=cursor, limit=2, sort=CatalogSort.YEAR_DESC
+            )
+            seen.extend(m.year.value for m in page.items)
+            if not page.pagination.has_more:
+                break
+            cursor = page.pagination.next_cursor
+
+        # Every year exactly once, newest-first, no dupes or skips.
+        assert seen == sorted(years, reverse=True)
+
+    async def test_year_ties_break_by_id_and_stay_stable_across_pages(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        # Three movies share a year — the id tie-breaker must keep them
+        # all visible across pages under a year sort.
+        for path in ["/m/t1.mkv", "/m/t2.mkv", "/m/t3.mkv"]:
+            await repo.save(
+                _create_movie(title="Tie", year=2010, file_path=path).with_genre(Genre("Action"))
+            )
+
+        page1 = await repo.list_paginated_by_genre(
+            genre=Genre("Action"), cursor=None, limit=2, sort=CatalogSort.YEAR_ASC
+        )
+        page2 = await repo.list_paginated_by_genre(
+            genre=Genre("Action"),
+            cursor=page1.pagination.next_cursor,
+            limit=2,
+            sort=CatalogSort.YEAR_ASC,
+        )
+
+        ids = [m.id for m in page1.items] + [m.id for m in page2.items]
+        assert len(page1.items) == 2
+        assert len(page2.items) == 1
+        assert len(set(ids)) == 3  # no duplicates across the page boundary
+
+    async def test_cursor_from_another_sort_is_rejected(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        for title, year in [("Old", 2000), ("New", 2020), ("Mid", 2010)]:
+            await repo.save(
+                _create_movie(title=title, year=year, file_path=f"/m/{title}.mkv").with_genre(
+                    Genre("Action")
+                )
+            )
+
+        year_page = await repo.list_paginated_by_genre(
+            genre=Genre("Action"), cursor=None, limit=1, sort=CatalogSort.YEAR_DESC
+        )
+        assert year_page.pagination.next_cursor is not None
+
+        # Replay the YEAR_DESC cursor under TITLE_ASC: it must be rejected
+        # and the listing restart from the first title-sorted page.
+        title_page = await repo.list_paginated_by_genre(
+            genre=Genre("Action"),
+            cursor=year_page.pagination.next_cursor,
+            limit=10,
+            sort=CatalogSort.TITLE_ASC,
+        )
+        fresh_title_page = await repo.list_paginated_by_genre(
+            genre=Genre("Action"), cursor=None, limit=10, sort=CatalogSort.TITLE_ASC
+        )
+
+        assert [m.title.value for m in title_page.items] == [
+            m.title.value for m in fresh_title_page.items
+        ]
+        assert [m.title.value for m in title_page.items] == ["Mid", "New", "Old"]
 
 
 @pytest.mark.integration

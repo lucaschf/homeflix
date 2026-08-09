@@ -23,6 +23,7 @@ from src.modules.media.application.use_cases.list_movies_by_actor import (
 from src.modules.media.application.use_cases.list_recently_added_catalog import (
     ListRecentlyAddedCatalogUseCase,
 )
+from src.modules.media.domain.value_objects import CatalogSort
 from src.modules.media.presentation.dependencies import resolve_profile_id
 from src.shared_kernel.value_objects import MediaType
 
@@ -36,6 +37,17 @@ _MEDIA_TYPE_QUERY: MediaType | None = Query(
     description=(
         "Optional filter — restrict the result to a single media type. "
         "Accepts 'movie' or 'series'; omit to aggregate both."
+    ),
+)
+
+# OpenAPI/validation config for the by-genre `?sort=` query param. An
+# unknown value is rejected with 422 (the frontend narrows to this union
+# before sending, so a 422 only ever signals contract drift).
+_SORT_QUERY: CatalogSort = Query(
+    default=CatalogSort.TITLE_ASC,
+    description=(
+        "Ordering for the merged listing. One of: title_asc (default), "
+        "title_desc, year_desc, year_asc, recently_added."
     ),
 )
 
@@ -82,6 +94,7 @@ async def list_by_genre(
     limit: int = DEFAULT_PAGE_SIZE,
     lang: str = "en",
     type: MediaType | None = _MEDIA_TYPE_QUERY,
+    sort: CatalogSort = _SORT_QUERY,
     profile_id: str = Depends(resolve_profile_id),
     use_case: ListByGenreUseCase = Depends(
         Provide[ApplicationContainer.media.list_by_genre],
@@ -91,14 +104,15 @@ async def list_by_genre(
 
     The ``genre`` path parameter is the canonical English id from
     ``GET /api/v1/catalog/genres``. Items are merged from both media
-    types, sorted alphabetically by title, and paginated with an
+    types, ordered by the requested ``sort``, and paginated with an
     opaque dual-stream cursor.
 
     Query params:
         cursor: Opaque token returned by the previous page's
             ``metadata.pagination.next_cursor``. Omit on the first
-            request. Invalid / tampered cursors silently start over
-            from the beginning.
+            request. Invalid / tampered cursors — including one carried
+            over after changing ``sort`` — silently start over from the
+            beginning.
         limit: Page size, clamped to ``[1, MAX_PAGE_SIZE]``.
         lang: Language code for localized titles, synopses, and
             genre names returned in each item.
@@ -106,6 +120,9 @@ async def list_by_genre(
             only the matching stream is queried so the Movies and
             Series tabs can show a genre restricted to their side of
             the catalog without mixing in the other.
+        sort: Ordering for the merged listing — ``title_asc`` (default),
+            ``title_desc``, ``year_desc``, ``year_asc`` or
+            ``recently_added``. An unknown value is rejected with 422.
     """
     clamped_limit = max(1, min(limit, MAX_PAGE_SIZE))
     result = await use_case.execute(
@@ -116,6 +133,7 @@ async def list_by_genre(
             limit=clamped_limit,
             lang=lang,
             media_type=type,
+            sort=sort,
         )
     )
     return api_list(

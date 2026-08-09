@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE
+from src.modules.media.domain.value_objects import CatalogSort
 
 if TYPE_CHECKING:
     from src.shared_kernel.value_objects import MediaType
@@ -109,12 +110,15 @@ class ListByGenreInput:
         genre: Canonical English genre id — same value the frontend
             received from ``ListGenresOutput.genres[*].id``.
         cursor: Opaque dual-stream cursor from the previous page, or
-            ``None`` for the first page.
+            ``None`` for the first page. A cursor minted under a
+            different ``sort`` is rejected and treated as the first page.
         limit: Page size. Routes clamp to ``[1, MAX_PAGE_SIZE]``.
         lang: Language for localized titles / synopses / genres.
         media_type: Optional filter — when set the use case only
             pulls from the matching stream (movie or series). ``None``
             (default) merges both streams as usual.
+        sort: Ordering for the merged listing (see :class:`CatalogSort`).
+            Defaults to ``TITLE_ASC``.
     """
 
     profile_id: str
@@ -123,6 +127,7 @@ class ListByGenreInput:
     limit: int = DEFAULT_PAGE_SIZE
     lang: str = "en"
     media_type: MediaType | None = None
+    sort: CatalogSort = CatalogSort.TITLE_ASC
 
 
 @dataclass(frozen=True)
@@ -131,7 +136,7 @@ class ListByGenreOutput:
 
     Attributes:
         items: Mixed list of movies and series for the requested
-            genre, sorted alphabetically by title.
+            genre, ordered by the requested ``sort``.
         next_cursor: Opaque dual-stream cursor for the next page, or
             ``None`` when both streams are exhausted.
         has_more: Convenience flag matching ``next_cursor is not None``.

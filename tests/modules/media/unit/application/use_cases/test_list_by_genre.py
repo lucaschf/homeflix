@@ -1,5 +1,7 @@
 """Tests for ListByGenreUseCase."""
 
+from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -12,6 +14,7 @@ from src.modules.media.application.dtos.catalog_dtos import (
 )
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.domain.entities import Movie, Series
+from src.modules.media.domain.value_objects import CatalogSort
 from src.shared_kernel.value_objects import MediaType
 from tests.modules.media.unit.conftest import (
     FakeProfileLibraryAccessPort,
@@ -23,20 +26,39 @@ _LIBRARY_ID_OTHER = "lib_otherlibrary"
 _PROFILE_ID = "prf_test12345678"
 
 
-def _movie(title: str, *, library_id: str = _LIBRARY_ID) -> Movie:
+def _movie(
+    title: str,
+    *,
+    year: int = 2020,
+    created_at: datetime | None = None,
+    library_id: str = _LIBRARY_ID,
+) -> Movie:
+    kwargs: dict[str, Any] = {}
+    if created_at is not None:
+        kwargs["created_at"] = created_at
     return Movie.create(
         library_id=library_id,
         title=title,
-        year=2020,
+        year=year,
         duration=7200,
         file_path=f"/movies/{title.lower().replace(' ', '_')}.mkv",
         file_size=1_000_000_000,
         resolution="1080p",
+        **kwargs,
     )
 
 
-def _series(title: str, *, library_id: str = _LIBRARY_ID) -> Series:
-    return Series.create(library_id=library_id, title=title, start_year=2020)
+def _series(
+    title: str,
+    *,
+    start_year: int = 2020,
+    created_at: datetime | None = None,
+    library_id: str = _LIBRARY_ID,
+) -> Series:
+    kwargs: dict[str, Any] = {}
+    if created_at is not None:
+        kwargs["created_at"] = created_at
+    return Series.create(library_id=library_id, title=title, start_year=start_year, **kwargs)
 
 
 def _movies_page(
@@ -349,3 +371,143 @@ class TestListByGenreUseCase:
         assert list(movie_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
         assert list(series_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
         assert _LIBRARY_ID_OTHER not in list(movie_kwargs["allowed_library_ids"])
+
+
+@pytest.mark.unit
+class TestListByGenreSort:
+    """The merge respects the requested ``sort`` across both streams."""
+
+    @pytest.mark.asyncio
+    async def test_should_default_to_title_ascending(self) -> None:
+        mocks = make_media_uow_mock()
+        mocks.movies.list_paginated_by_genre.return_value = _movies_page(
+            [_movie("Avatar"), _movie("Cyrano")]
+        )
+        mocks.series.list_paginated_by_genre.return_value = _series_page([_series("Breaking Bad")])
+        use_case = _make_use_case(mocks)
+
+        result = await use_case.execute(ListByGenreInput(profile_id=_PROFILE_ID, genre="Action"))
+
+        assert [item.title for item in result.items] == ["Avatar", "Breaking Bad", "Cyrano"]
+        # The default input forwards TITLE_ASC to both repositories.
+        assert (
+            mocks.movies.list_paginated_by_genre.await_args.kwargs["sort"] is CatalogSort.TITLE_ASC
+        )
+
+    @pytest.mark.asyncio
+    async def test_should_sort_by_title_descending(self) -> None:
+        mocks = make_media_uow_mock()
+        mocks.movies.list_paginated_by_genre.return_value = _movies_page(
+            [_movie("Avatar"), _movie("Cyrano")]
+        )
+        mocks.series.list_paginated_by_genre.return_value = _series_page([_series("Breaking Bad")])
+        use_case = _make_use_case(mocks)
+
+        result = await use_case.execute(
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", sort=CatalogSort.TITLE_DESC)
+        )
+
+        assert [item.title for item in result.items] == ["Cyrano", "Breaking Bad", "Avatar"]
+
+    @pytest.mark.asyncio
+    async def test_should_sort_by_year_descending(self) -> None:
+        mocks = make_media_uow_mock()
+        mocks.movies.list_paginated_by_genre.return_value = _movies_page(
+            [_movie("Old", year=2000), _movie("Mid", year=2010)]
+        )
+        mocks.series.list_paginated_by_genre.return_value = _series_page(
+            [_series("New", start_year=2020)]
+        )
+        use_case = _make_use_case(mocks)
+
+        result = await use_case.execute(
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", sort=CatalogSort.YEAR_DESC)
+        )
+
+        assert [item.title for item in result.items] == ["New", "Mid", "Old"]
+        assert [item.year for item in result.items] == [2020, 2010, 2000]
+
+    @pytest.mark.asyncio
+    async def test_should_sort_by_year_ascending(self) -> None:
+        mocks = make_media_uow_mock()
+        mocks.movies.list_paginated_by_genre.return_value = _movies_page(
+            [_movie("Old", year=2000), _movie("Mid", year=2010)]
+        )
+        mocks.series.list_paginated_by_genre.return_value = _series_page(
+            [_series("New", start_year=2020)]
+        )
+        use_case = _make_use_case(mocks)
+
+        result = await use_case.execute(
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", sort=CatalogSort.YEAR_ASC)
+        )
+
+        assert [item.year for item in result.items] == [2000, 2010, 2020]
+
+    @pytest.mark.asyncio
+    async def test_should_sort_by_recently_added_using_created_at(self) -> None:
+        # Cross-stream "newest first" orders by created_at (movie ids and
+        # series ids come from independent sequences and aren't
+        # comparable), matching ListRecentlyAddedCatalogUseCase.
+        mocks = make_media_uow_mock()
+        mocks.movies.list_paginated_by_genre.return_value = _movies_page(
+            [
+                _movie("Newest", created_at=datetime(2024, 1, 3, tzinfo=UTC)),
+                _movie("Oldest", created_at=datetime(2024, 1, 1, tzinfo=UTC)),
+            ]
+        )
+        mocks.series.list_paginated_by_genre.return_value = _series_page(
+            [_series("Middle", created_at=datetime(2024, 1, 2, tzinfo=UTC))]
+        )
+        use_case = _make_use_case(mocks)
+
+        result = await use_case.execute(
+            ListByGenreInput(
+                profile_id=_PROFILE_ID, genre="Action", sort=CatalogSort.RECENTLY_ADDED
+            )
+        )
+
+        assert [item.title for item in result.items] == ["Newest", "Middle", "Oldest"]
+
+    @pytest.mark.asyncio
+    async def test_should_forward_sort_to_both_repositories(self) -> None:
+        mocks = make_media_uow_mock()
+        mocks.movies.list_paginated_by_genre.return_value = _movies_page([])
+        mocks.series.list_paginated_by_genre.return_value = _series_page([])
+        use_case = _make_use_case(mocks)
+
+        await use_case.execute(
+            ListByGenreInput(profile_id=_PROFILE_ID, genre="Action", sort=CatalogSort.YEAR_DESC)
+        )
+
+        assert (
+            mocks.movies.list_paginated_by_genre.await_args.kwargs["sort"] is CatalogSort.YEAR_DESC
+        )
+        assert (
+            mocks.series.list_paginated_by_genre.await_args.kwargs["sort"] is CatalogSort.YEAR_DESC
+        )
+
+    @pytest.mark.asyncio
+    async def test_should_break_year_ties_by_source_order_within_a_stream(self) -> None:
+        # Two movies share a year: the merge must keep them in the
+        # stream's own (year, id) order — a descending primary must not
+        # flip the source-order tie-break — and the consumed-aware
+        # cursor must advance to the last consumed row.
+        mocks = make_media_uow_mock()
+        mocks.movies.list_paginated_by_genre.return_value = _movies_page(
+            [_movie("A", year=2010), _movie("B", year=2010)],
+            has_more=True,
+        )
+        mocks.series.list_paginated_by_genre.return_value = _series_page([])
+        use_case = _make_use_case(mocks)
+
+        result = await use_case.execute(
+            ListByGenreInput(
+                profile_id=_PROFILE_ID, genre="Action", limit=1, sort=CatalogSort.YEAR_ASC
+            )
+        )
+
+        assert [item.title for item in result.items] == ["A"]
+        assert result.has_more is True
+        decoded = decode_dual_cursor(result.next_cursor)
+        assert decoded.movies == "m-cursor-0"

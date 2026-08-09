@@ -8,6 +8,7 @@ from src.building_blocks.domain.pagination import PaginatedResult
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.value_objects import (
     ArtworkColumns,
+    CatalogSort,
     CreditsDetectionState,
     CreditsMarker,
     EpisodeId,
@@ -264,17 +265,21 @@ class MovieRepository(ABC):
         cursor: str | None,
         limit: int,
         *,
+        sort: CatalogSort = CatalogSort.TITLE_ASC,
         lang: str = "en",
         allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies belonging to a specific genre, paginated.
 
-        Sorted by ``(LOWER(COALESCE(localized[lang].title, title)) ASC,
-        id ASC)`` so the catalog carousel renders alphabetically in the
-        viewer's language (falling back to the canonical title). The
-        cursor is a ``(title, id)`` composite (see ``encode_title_cursor``
-        in the pagination building block) — the ``id`` tie-breaker keeps
-        pagination stable when two rows share a title.
+        The ordering is chosen by ``sort`` (see :class:`CatalogSort`) and
+        always ends in the internal ``id`` as its tie-breaker so
+        pagination stays stable when two rows share the primary key. The
+        default ``TITLE_ASC`` orders by
+        ``(LOWER(COALESCE(localized[lang].title, title)) ASC, id ASC)`` so
+        the catalog carousel renders alphabetically in the viewer's
+        language (falling back to the canonical title). The cursor is a
+        sort-bound ``(sort, key, id)`` token (see ``encode_sort_cursor``
+        in the pagination building block).
 
         The genre filter matches the canonical English genre name
         stored in ``MovieModel.genres`` (a comma-separated string).
@@ -285,13 +290,17 @@ class MovieRepository(ABC):
 
         Args:
             genre: The canonical (English) genre to filter by.
-            cursor: Opaque title cursor from the previous page, or
-                ``None`` for the first page. Invalid cursors silently
-                fall back to the first page.
+            cursor: Opaque sort cursor from the previous page, or
+                ``None`` for the first page. Invalid cursors — including
+                one minted under a different ``sort`` — silently fall
+                back to the first page.
             limit: Page size. The repository fetches ``limit + 1``
                 rows and trims the sentinel to detect ``has_more``.
-            lang: Language whose localized title drives the sort order
-                (falls back to the canonical ``title`` when absent).
+            sort: Ordering to apply. Defaults to ``TITLE_ASC``, which is
+                byte-identical to the pre-sort behavior.
+            lang: Language whose localized title drives the title sort
+                order (falls back to the canonical ``title`` when
+                absent).
             allowed_library_ids: Optional per-profile ACL filter. When
                 non-``None``, results are restricted to rows whose
                 ``library_id`` is in the supplied set. ``None``
