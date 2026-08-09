@@ -263,6 +263,7 @@ class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[mis
         session_factory=infrastructure.session_factory,
         media_uow_factory=media.media_unit_of_work_factory,
         watch_progress_uow_factory=watch_progress.watch_progress_unit_of_work_factory,
+        identity_uow_factory=_identity_uow_factory_for_profile_library_access,
     )
 
     # =========================================================================

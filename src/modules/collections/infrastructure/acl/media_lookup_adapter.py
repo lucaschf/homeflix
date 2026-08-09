@@ -48,6 +48,7 @@ class MediaLookupAdapter(MediaLookupPort):
                         genres=tuple(movie.get_genres(lang)),
                         resolution=best.resolution.value if best else None,
                         hdr=best.hdr_format is not None if best else False,
+                        library_id=movie.library_id,
                     )
 
             if series_ids:
@@ -63,6 +64,7 @@ class MediaLookupAdapter(MediaLookupPort):
                         poster_path=series.get_poster_path(lang),
                         year=series.start_year.value,
                         genres=tuple(series.get_genres(lang)),
+                        library_id=series.library_id,
                     )
 
         return result

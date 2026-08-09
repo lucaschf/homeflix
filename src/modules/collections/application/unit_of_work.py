@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from src.building_blocks.application.unit_of_work import UnitOfWork
 from src.modules.collections.domain.repositories import (
     CustomListRepository,
+    ListFollowRepository,
     WatchlistRepository,
 )
 
@@ -14,6 +15,7 @@ class CollectionsUnitOfWork(UnitOfWork):
 
     watchlist: WatchlistRepository
     custom_lists: CustomListRepository
+    list_follows: ListFollowRepository
 
 
 class CollectionsUnitOfWorkFactory(ABC):

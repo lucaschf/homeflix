@@ -7,15 +7,25 @@ from src.modules.collections.application.use_cases import (
     CheckWatchlistUseCase,
     CreateCustomListUseCase,
     DeleteCustomListUseCase,
+    FollowSharedListUseCase,
     GetCustomListItemsUseCase,
+    GetSharedListPreviewUseCase,
     GetWatchlistUseCase,
     ListCustomListsUseCase,
     RemoveItemFromCustomListUseCase,
     RenameCustomListUseCase,
     ReorderCustomListItemsUseCase,
+    RevokeCustomListShareUseCase,
+    ShareCustomListUseCase,
     ToggleWatchlistUseCase,
+    UnfollowCustomListUseCase,
 )
-from src.modules.collections.infrastructure.acl import MediaLookupAdapter, ProgressLookupAdapter
+from src.modules.collections.infrastructure.acl import (
+    MediaLookupAdapter,
+    ProfileLibraryAccessAdapter,
+    ProfileLookupAdapter,
+    ProgressLookupAdapter,
+)
 from src.modules.collections.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyCollectionsUnitOfWorkFactory,
 )
@@ -38,6 +48,11 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
     # own short-lived transactions. Use cases only see
     # ``ProgressLookupPort``.
     watch_progress_uow_factory = providers.Dependency()
+    # Identity UoW factory — the profile ACL adapters open their own
+    # short-lived Identity transactions to resolve a follower's library
+    # access and an owner's display name. Use cases only see the
+    # ``ProfileLibraryAccessPort`` / ``ProfileLookupPort`` abstractions.
+    identity_uow_factory = providers.Dependency()
 
     # =========================================================================
     # Unit of Work
@@ -60,6 +75,16 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
     progress_lookup = providers.Factory(
         ProgressLookupAdapter,
         watch_progress_uow_factory=watch_progress_uow_factory,
+    )
+
+    profile_library_access = providers.Factory(
+        ProfileLibraryAccessAdapter,
+        identity_uow_factory=identity_uow_factory,
+    )
+
+    profile_lookup = providers.Factory(
+        ProfileLookupAdapter,
+        identity_uow_factory=identity_uow_factory,
     )
 
     # =========================================================================
@@ -95,6 +120,7 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
     list_custom_lists = providers.Factory(
         ListCustomListsUseCase,
         uow_factory=collections_unit_of_work_factory,
+        profile_lookup=profile_lookup,
     )
 
     rename_custom_list = providers.Factory(
@@ -127,4 +153,38 @@ class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[mis
         uow_factory=collections_unit_of_work_factory,
         media_lookup=media_lookup,
         progress_lookup=progress_lookup,
+        profile_library_access=profile_library_access,
+    )
+
+    # =========================================================================
+    # Share / Follow Use Cases
+    # =========================================================================
+
+    share_custom_list = providers.Factory(
+        ShareCustomListUseCase,
+        uow_factory=collections_unit_of_work_factory,
+    )
+
+    revoke_custom_list_share = providers.Factory(
+        RevokeCustomListShareUseCase,
+        uow_factory=collections_unit_of_work_factory,
+    )
+
+    get_shared_list_preview = providers.Factory(
+        GetSharedListPreviewUseCase,
+        uow_factory=collections_unit_of_work_factory,
+        media_lookup=media_lookup,
+        progress_lookup=progress_lookup,
+        profile_library_access=profile_library_access,
+        profile_lookup=profile_lookup,
+    )
+
+    follow_shared_list = providers.Factory(
+        FollowSharedListUseCase,
+        uow_factory=collections_unit_of_work_factory,
+    )
+
+    unfollow_custom_list = providers.Factory(
+        UnfollowCustomListUseCase,
+        uow_factory=collections_unit_of_work_factory,
     )

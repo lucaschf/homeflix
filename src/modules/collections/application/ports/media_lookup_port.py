@@ -37,6 +37,11 @@ class MediaSummary:
             ``"1080p"``). Set for movies with files; ``None`` for series
             (episode-derived, deferred).
         hdr: Whether the best file carries an HDR format. Movies only.
+        library_id: External id (``lib_xxx``) of the library the media
+            lives in, or ``None`` when unknown. Consumed by the shared
+            /followed list reads to filter items through the follower's
+            per-profile library access (ADR-010) — an owner's list may
+            reference titles a follower's profile can't see.
     """
 
     media_id: str
@@ -48,6 +53,7 @@ class MediaSummary:
     genres: tuple[str, ...] = ()
     resolution: str | None = None
     hdr: bool = False
+    library_id: str | None = None
 
 
 class MediaLookupPort(ABC):

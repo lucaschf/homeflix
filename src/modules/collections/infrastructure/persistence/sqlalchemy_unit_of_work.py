@@ -10,6 +10,9 @@ from src.modules.collections.application.unit_of_work import (
 from src.modules.collections.infrastructure.persistence.repositories.custom_list_repository import (
     SQLAlchemyCustomListRepository,
 )
+from src.modules.collections.infrastructure.persistence.repositories.list_follow_repository import (
+    SQLAlchemyListFollowRepository,
+)
 from src.modules.collections.infrastructure.persistence.repositories.watchlist_repository import (
     SQLAlchemyWatchlistRepository,
 )
@@ -21,6 +24,7 @@ class SqlAlchemyCollectionsUnitOfWork(SqlAlchemyUnitOfWork, CollectionsUnitOfWor
     def _build_repositories(self, session: AsyncSession) -> None:
         self.watchlist = SQLAlchemyWatchlistRepository(session)
         self.custom_lists = SQLAlchemyCustomListRepository(session)
+        self.list_follows = SQLAlchemyListFollowRepository(session)
 
 
 class SqlAlchemyCollectionsUnitOfWorkFactory(CollectionsUnitOfWorkFactory):

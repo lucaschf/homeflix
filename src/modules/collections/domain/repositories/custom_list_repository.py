@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from src.modules.collections.domain.entities import CustomList, CustomListItem
-from src.modules.collections.domain.value_objects import CollectionMediaId
+from src.modules.collections.domain.value_objects import CollectionMediaId, ShareToken
 from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
@@ -38,6 +38,26 @@ class CustomListRepository(ABC):
         profile_id: ProfileId,
     ) -> CustomList | None:
         """Find a list (case-insensitive name match) within the profile."""
+
+    @abstractmethod
+    async def find_by_id_unscoped(self, list_id: str) -> CustomList | None:
+        """Find a non-deleted list by external ID, regardless of owner.
+
+        Unlike :meth:`find_by_id` this is **not** scoped to a profile —
+        it exists so a follower (who is not the owner) can resolve a
+        list they follow. Callers must apply their own authorization
+        (a live follow or a valid share token) before exposing the
+        result. A soft-deleted list returns ``None`` so followers of a
+        deleted list get no dangling read.
+        """
+
+    @abstractmethod
+    async def find_by_share_token(self, token: ShareToken) -> CustomList | None:
+        """Find the non-deleted list carrying this live share token.
+
+        Returns ``None`` when the token is unknown or was revoked
+        (cleared), which the preview/follow use cases surface as a 404.
+        """
 
     @abstractmethod
     async def add(self, custom_list: CustomList) -> CustomList:

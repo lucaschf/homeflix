@@ -22,6 +22,10 @@ class CustomListModel(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     item_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Opaque share secret. NULL ⇒ the list is not shared. Indexed for
+    # the follower's token lookup; a partial unique index (live rows
+    # only) lives in the alembic migration.
+    share_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     items: Mapped[list["CustomListItemModel"]] = relationship(
         back_populates="custom_list",
