@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
+    CatalogSort,
     Duration,
     EpisodeId,
     FilePath,
@@ -1115,6 +1116,80 @@ class TestSQLAlchemySeriesRepositoryListPaginatedByGenre:
 
         assert len(page.items) == 1
         assert page.items[0].title.value == "B"
+
+
+@pytest.mark.integration
+class TestSQLAlchemySeriesRepositoryListPaginatedByGenreSort:
+    """The ``sort`` parameter uses ``start_year`` and stays cursor-stable."""
+
+    async def test_year_desc_orders_by_start_year_newest_first(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        for title, start_year in [("Old", 2000), ("New", 2020), ("Mid", 2010)]:
+            await repo.save(
+                _create_series(title=title, start_year=start_year, genres=[Genre("Drama")])
+            )
+
+        page = await repo.list_paginated_by_genre(
+            genre=Genre("Drama"), cursor=None, limit=10, sort=CatalogSort.YEAR_DESC
+        )
+
+        assert [s.start_year.value for s in page.items] == [2020, 2010, 2000]
+
+    async def test_recently_added_orders_by_insertion_desc(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        for title in ["A", "B", "C"]:
+            await repo.save(_create_series(title=title, genres=[Genre("Drama")]))
+
+        page = await repo.list_paginated_by_genre(
+            genre=Genre("Drama"), cursor=None, limit=10, sort=CatalogSort.RECENTLY_ADDED
+        )
+
+        assert [s.title.value for s in page.items] == ["C", "B", "A"]
+
+    async def test_walks_all_pages_under_year_desc_without_dupes(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        years = [2001, 2005, 2010, 2015, 2020]
+        for i, year in enumerate(years):
+            await repo.save(_create_series(title=f"S{i}", start_year=year, genres=[Genre("Drama")]))
+
+        seen: list[int] = []
+        cursor: str | None = None
+        for _ in range(10):
+            page = await repo.list_paginated_by_genre(
+                genre=Genre("Drama"), cursor=cursor, limit=2, sort=CatalogSort.YEAR_DESC
+            )
+            seen.extend(s.start_year.value for s in page.items)
+            if not page.pagination.has_more:
+                break
+            cursor = page.pagination.next_cursor
+
+        assert seen == sorted(years, reverse=True)
+
+    async def test_cursor_from_another_sort_is_rejected(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        for title, start_year in [("Old", 2000), ("New", 2020), ("Mid", 2010)]:
+            await repo.save(
+                _create_series(title=title, start_year=start_year, genres=[Genre("Drama")])
+            )
+
+        year_page = await repo.list_paginated_by_genre(
+            genre=Genre("Drama"), cursor=None, limit=1, sort=CatalogSort.YEAR_DESC
+        )
+        assert year_page.pagination.next_cursor is not None
+
+        title_page = await repo.list_paginated_by_genre(
+            genre=Genre("Drama"),
+            cursor=year_page.pagination.next_cursor,
+            limit=10,
+            sort=CatalogSort.TITLE_ASC,
+        )
+
+        # The stale YEAR_DESC cursor is rejected → full title-sorted page.
+        assert [s.title.value for s in title_page.items] == ["Mid", "New", "Old"]
 
 
 def _series_with_episode_paths(

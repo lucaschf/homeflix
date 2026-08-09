@@ -4,6 +4,7 @@ from src.modules.media.domain.value_objects.air_date import AirDate
 from src.modules.media.domain.value_objects.artwork_columns import ArtworkColumns
 from src.modules.media.domain.value_objects.artwork_key import ArtworkKey
 from src.modules.media.domain.value_objects.cast_member import CastMember
+from src.modules.media.domain.value_objects.catalog_sort import CatalogSort
 from src.modules.media.domain.value_objects.collection import Collection
 from src.modules.media.domain.value_objects.conflict_candidate import ConflictCandidate
 from src.modules.media.domain.value_objects.content_rating import ContentRating
@@ -53,6 +54,7 @@ __all__ = [
     "ArtworkKey",
     "AudioTrack",
     "CastMember",
+    "CatalogSort",
     "Collection",
     "ConflictCandidate",
     "ContentRating",

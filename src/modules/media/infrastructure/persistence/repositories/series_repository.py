@@ -22,6 +22,7 @@ from src.modules.media.domain.repositories.movie_repository import (
 )
 from src.modules.media.domain.value_objects import (
     ArtworkColumns,
+    CatalogSort,
     CreditsDetectionState,
     CreditsMarker,
     EpisodeId,
@@ -426,17 +427,19 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         cursor: str | None,
         limit: int,
         *,
+        sort: CatalogSort = CatalogSort.TITLE_ASC,
         lang: str = "en",
         allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Series]:
-        """List series for a single genre, paginated and sorted by title.
+        """List series for a single genre, paginated under ``sort``.
 
         Delegates the SQL boilerplate to the shared
         ``fetch_genre_paginated_page`` helper so this method and its
-        movie counterpart stay in lockstep. The full season / episode
-        hierarchy is loaded via the existing ``_series_load_options``
-        because consumers may want to render episode counts on the
-        carousel card.
+        movie counterpart stay in lockstep. ``SeriesModel.start_year`` is
+        the release-year key for the ``year_*`` sorts. The full season /
+        episode hierarchy is loaded via the existing
+        ``_series_load_options`` because consumers may want to render
+        episode counts on the carousel card.
         """
         return await fetch_genre_paginated_page(
             session=self._session,
@@ -446,6 +449,8 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             genre=genre,
             cursor=cursor,
             limit=limit,
+            year_column=SeriesModel.start_year,
+            sort=sort,
             lang=lang,
             allowed_library_ids=allowed_library_ids,
         )

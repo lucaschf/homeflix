@@ -23,6 +23,7 @@ from src.modules.media.domain.repositories.movie_repository import (
 )
 from src.modules.media.domain.value_objects import (
     ArtworkColumns,
+    CatalogSort,
     CreditsDetectionState,
     CreditsMarker,
     EpisodeId,
@@ -373,16 +374,18 @@ class SQLAlchemyMovieRepository(MovieRepository):
         cursor: str | None,
         limit: int,
         *,
+        sort: CatalogSort = CatalogSort.TITLE_ASC,
         lang: str = "en",
         allowed_library_ids: Sequence[LibraryId] | None = None,
     ) -> PaginatedResult[Movie]:
-        """List movies for a single genre, paginated and sorted by title.
+        """List movies for a single genre, paginated under ``sort``.
 
         Delegates the SQL boilerplate (delimited LIKE filter,
-        localized ``LOWER(COALESCE(localized[lang].title, title))``
-        cursor, fetch N+1 trick, per-item cursor population) to the
-        shared ``fetch_genre_paginated_page`` helper so this method and
-        its series counterpart can't drift apart.
+        sort-aware ``(key, id)`` cursor, fetch N+1 trick, per-item
+        cursor population) to the shared ``fetch_genre_paginated_page``
+        helper so this method and its series counterpart can't drift
+        apart. ``MovieModel.year`` is the release-year key for the
+        ``year_*`` sorts.
         """
         return await fetch_genre_paginated_page(
             session=self._session,
@@ -392,6 +395,8 @@ class SQLAlchemyMovieRepository(MovieRepository):
             genre=genre,
             cursor=cursor,
             limit=limit,
+            year_column=MovieModel.year,
+            sort=sort,
             lang=lang,
             allowed_library_ids=allowed_library_ids,
         )

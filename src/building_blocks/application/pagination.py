@@ -153,6 +153,99 @@ def decode_title_cursor(cursor: str | None) -> TitleCursorValue | None:
         return None
 
 
+@dataclass(frozen=True)
+class SortCursorValue:
+    """Decoded cursor for a sort-parametrized listing.
+
+    Generalizes :class:`TitleCursorValue` to any single-column sort key
+    plus the ``id`` tie-breaker, and additionally carries the ``sort``
+    discriminant the cursor was minted under. The catalog by-genre
+    endpoint accepts a ``?sort=`` union (title / year / recently-added);
+    each order expresses one composite ``(sort_key, id)`` position, and
+    the encoded ``sort`` lets the decoder reject a cursor replayed under
+    a *different* sort instead of silently reinterpreting its ``key`` in
+    the wrong order.
+
+    Attributes:
+        sort: The ``CatalogSort`` value (its string form) the cursor was
+            minted under.
+        key: The primary sort key rendered as a string —
+            ``LOWER(title)`` for title sorts, ``str(year)`` for year
+            sorts, and empty for ``recently_added`` (which orders on
+            ``id`` alone).
+        id: Internal autoincrement id of the last row of the previous
+            page — the final tie-breaker for every sort.
+    """
+
+    sort: str
+    key: str
+    id: int
+
+
+# Separator used inside the sort cursor's encoded payload. Same
+# rationale as `_TITLE_CURSOR_SEP` — a control character can't collide
+# with any realistic sort key or sort name.
+_SORT_CURSOR_SEP = "\x1f"
+
+
+def encode_sort_cursor(sort: str, key: str, internal_id: int) -> str:
+    """Encode a ``(sort, key, id)`` triple as an opaque sort cursor.
+
+    The caller is responsible for rendering ``key`` in the exact form
+    the SQL ``ORDER BY`` compares against (e.g. lowercasing a title, or
+    stringifying a year) — pagination must use the same comparison the
+    query uses or rows can be skipped or repeated across pages.
+
+    Args:
+        sort: The sort discriminant (a ``CatalogSort`` value's string).
+        key: The primary sort key of the last row, already normalized to
+            match the SQL comparison. Empty when the sort orders on
+            ``id`` alone.
+        internal_id: The internal autoincrement id of the same row.
+
+    Returns:
+        URL-safe base64 string suitable for use as a query parameter.
+    """
+    raw = f"{sort}{_SORT_CURSOR_SEP}{key}{_SORT_CURSOR_SEP}{internal_id}"
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+
+
+def decode_sort_cursor(cursor: str | None, *, expected_sort: str) -> SortCursorValue | None:
+    """Decode a sort cursor, rejecting one minted under a different sort.
+
+    Returns ``None`` — "no cursor, start from the first page" — for an
+    absent, malformed, or *sort-mismatched* token. The sort-mismatch
+    rule keeps a stale cursor from a previous ``?sort=`` value from being
+    reinterpreted under the new sort (whose ``key`` means something
+    different), which would otherwise dupe or skip rows; the frontend
+    already restarts from page 1 on a sort change, so dropping the cursor
+    is the correct, invisible fallback.
+
+    Args:
+        cursor: The opaque cursor string, or ``None``.
+        expected_sort: The sort the current request is running under. A
+            decoded cursor whose embedded sort differs is discarded.
+
+    Returns:
+        A ``SortCursorValue`` on success, or ``None`` when the input is
+        empty, malformed, or was minted under a different sort.
+    """
+    if not cursor:
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
+        # Split the sort off the front and the id off the back so a key
+        # that itself contains the separator can't corrupt the parse.
+        sort, rest = raw.split(_SORT_CURSOR_SEP, 1)
+        key, id_str = rest.rsplit(_SORT_CURSOR_SEP, 1)
+        cursor_id = int(id_str)
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return None
+    if sort != expected_sort:
+        return None
+    return SortCursorValue(sort=sort, key=key, id=cursor_id)
+
+
 # Separator for the dual-cursor wire format. Same rationale as
 # `_TITLE_CURSOR_SEP` — using a control character keeps the parser
 # robust against any payload bytes the inner stream cursors might
@@ -227,11 +320,14 @@ __all__ = [
     "MAX_PAGE_SIZE",
     "CursorValue",
     "DualCursorValue",
+    "SortCursorValue",
     "TitleCursorValue",
     "decode_cursor",
     "decode_dual_cursor",
+    "decode_sort_cursor",
     "decode_title_cursor",
     "encode_cursor",
     "encode_dual_cursor",
+    "encode_sort_cursor",
     "encode_title_cursor",
 ]
