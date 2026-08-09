@@ -9,6 +9,7 @@ from src.modules.collections.application.unit_of_work import (
 )
 from src.modules.collections.domain.repositories import (
     CustomListRepository,
+    ListFollowRepository,
     WatchlistRepository,
 )
 
@@ -21,20 +22,27 @@ class CollectionsUoWMocks:
     uow: CollectionsUnitOfWork
     watchlist: AsyncMock
     custom_lists: AsyncMock
+    list_follows: AsyncMock
 
 
 def make_collections_uow_mock() -> CollectionsUoWMocks:
     """Build a mock :class:`CollectionsUnitOfWork` factory."""
     watchlist = AsyncMock(spec=WatchlistRepository)
     custom_lists = AsyncMock(spec=CustomListRepository)
+    list_follows = AsyncMock(spec=ListFollowRepository)
 
     uow: CollectionsUnitOfWork = AsyncMock()
     uow.__aenter__.return_value = uow  # type: ignore[attr-defined]
     uow.__aexit__.return_value = None  # type: ignore[attr-defined]
     uow.watchlist = watchlist
     uow.custom_lists = custom_lists
+    uow.list_follows = list_follows
 
     factory = MagicMock(return_value=uow)
     return CollectionsUoWMocks(
-        factory=factory, uow=uow, watchlist=watchlist, custom_lists=custom_lists
+        factory=factory,
+        uow=uow,
+        watchlist=watchlist,
+        custom_lists=custom_lists,
+        list_follows=list_follows,
     )

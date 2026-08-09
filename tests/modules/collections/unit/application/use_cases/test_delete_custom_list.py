@@ -18,10 +18,11 @@ class TestDeleteCustomListUseCase:
     """Tests for deleting custom lists."""
 
     @pytest.mark.asyncio
-    async def test_should_delete_successfully(self) -> None:
+    async def test_should_delete_and_drop_follows(self) -> None:
         custom_list = CustomList.create(profile_id=_PROFILE_ID, name="To Delete", existing_count=0)
         mocks = make_collections_uow_mock()
         mock_repo = mocks.custom_lists
+        mock_repo.find_by_id.return_value = custom_list
         mock_repo.remove.return_value = True
         use_case = DeleteCustomListUseCase(uow_factory=mocks.factory)
 
@@ -33,12 +34,13 @@ class TestDeleteCustomListUseCase:
         )
 
         mock_repo.remove.assert_called_once_with(str(custom_list.id), _PROFILE_ID)
+        # Followers of a deleted shared list are cleaned up (edge case 1).
+        mocks.list_follows.remove_all_for_list.assert_awaited_once_with(custom_list.id)
 
     @pytest.mark.asyncio
     async def test_should_raise_when_list_not_found(self) -> None:
         mocks = make_collections_uow_mock()
-        mock_repo = mocks.custom_lists
-        mock_repo.remove.return_value = False
+        mocks.custom_lists.find_by_id.return_value = None
         use_case = DeleteCustomListUseCase(uow_factory=mocks.factory)
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
@@ -50,3 +52,4 @@ class TestDeleteCustomListUseCase:
             )
 
         assert exc_info.value.resource_type == "CustomList"
+        mocks.list_follows.remove_all_for_list.assert_not_awaited()

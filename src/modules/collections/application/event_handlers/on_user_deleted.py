@@ -41,13 +41,19 @@ class OnUserDeletedHandler(EventHandler):
         async with self._uow_factory() as uow:
             watchlist_deleted = await uow.watchlist.delete_all_for_profiles(profile_ids)
             lists_deleted = await uow.custom_lists.delete_all_for_profiles(profile_ids)
+            # Drop follows the deleted profiles made. Follows *of* their
+            # lists don't need explicit cleanup: the lists are now
+            # soft-deleted, so ``find_by_id_unscoped`` skips them and no
+            # follower gets a dangling read.
+            follows_deleted = await uow.list_follows.delete_all_for_followers(profile_ids)
 
-        if watchlist_deleted or lists_deleted:
+        if watchlist_deleted or lists_deleted or follows_deleted:
             _logger.info(
-                "Cleared %d watchlist + %d custom-list row(s) for deleted user %s "
-                "(%d profile(s))",
+                "Cleared %d watchlist + %d custom-list + %d follow row(s) for deleted "
+                "user %s (%d profile(s))",
                 watchlist_deleted,
                 lists_deleted,
+                follows_deleted,
                 event.user_id,
                 len(profile_ids),
             )

@@ -107,6 +107,67 @@ class TestSQLAlchemyCustomListRepositoryCRUD:
 
         assert found is None
 
+
+@pytest.mark.integration
+class TestSQLAlchemyCustomListRepositorySharing:
+    """Share-token persistence and cross-owner resolution."""
+
+    async def test_share_token_round_trips(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        shared = _create_list(name="Shared").shared()
+        await repo.add(shared)
+
+        found = await repo.find_by_id(str(shared.id), _PROFILE_ID)
+
+        assert found is not None
+        assert found.is_shared is True
+        assert found.share_token == shared.share_token
+
+    async def test_find_by_share_token_resolves_across_owners(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        shared = _create_list(name="Shared", profile_id=_PROFILE_ID).shared()
+        await repo.add(shared)
+
+        # A different profile (the follower) resolves it by token.
+        found = await repo.find_by_share_token(shared.share_token)
+
+        assert found is not None
+        assert found.id == shared.id
+
+    async def test_find_by_share_token_returns_none_after_revoke(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        shared = _create_list(name="Shared").shared()
+        await repo.add(shared)
+        token = shared.share_token
+
+        await repo.update(shared.unshared())
+
+        assert await repo.find_by_share_token(token) is None
+
+    async def test_find_by_id_unscoped_ignores_owner(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        owned = _create_list(name="Owned", profile_id=_PROFILE_ID)
+        await repo.add(owned)
+
+        found = await repo.find_by_id_unscoped(str(owned.id))
+
+        assert found is not None
+        assert found.profile_id == _PROFILE_ID
+
+    async def test_find_by_id_unscoped_returns_none_when_deleted(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        owned = _create_list(name="Owned")
+        await repo.add(owned)
+        await repo.remove(str(owned.id), _PROFILE_ID)
+
+        assert await repo.find_by_id_unscoped(str(owned.id)) is None
+
     async def test_find_by_name_should_isolate_by_profile(self, db_session: AsyncSession) -> None:
         # Same name in two profiles must not collide.
         repo = SQLAlchemyCustomListRepository(db_session)

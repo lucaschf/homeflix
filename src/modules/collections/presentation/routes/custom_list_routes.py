@@ -12,20 +12,30 @@ from src.modules.collections.application.dtos import (
     AddItemToCustomListInput,
     CreateCustomListInput,
     DeleteCustomListInput,
+    FollowSharedListInput,
     GetCustomListItemsInput,
+    GetSharedListPreviewInput,
     RemoveItemFromCustomListInput,
     RenameCustomListInput,
     ReorderCustomListItemsInput,
+    RevokeCustomListShareInput,
+    ShareCustomListInput,
+    UnfollowCustomListInput,
 )
 from src.modules.collections.application.use_cases import (
     AddItemToCustomListUseCase,
     CreateCustomListUseCase,
     DeleteCustomListUseCase,
+    FollowSharedListUseCase,
     GetCustomListItemsUseCase,
+    GetSharedListPreviewUseCase,
     ListCustomListsUseCase,
     RemoveItemFromCustomListUseCase,
     RenameCustomListUseCase,
     ReorderCustomListItemsUseCase,
+    RevokeCustomListShareUseCase,
+    ShareCustomListUseCase,
+    UnfollowCustomListUseCase,
 )
 from src.modules.collections.application.use_cases.list_custom_lists import (
     ListCustomListsInput,
@@ -121,11 +131,19 @@ async def get_custom_list_items(
         Provide[ApplicationContainer.collections.get_custom_list_items],
     ),
 ) -> dict[str, Any]:
-    """List items in a custom list with media metadata."""
-    items = await use_case.execute(
+    """List items in a custom list with media metadata.
+
+    Serves the owner's own list *and* a list the caller follows. On a
+    followed list, items the caller's profile can't access are filtered
+    out and reported via ``metadata.hidden_count``.
+    """
+    result = await use_case.execute(
         GetCustomListItemsInput(profile_id=profile_id, list_id=list_id, lang=lang)
     )
-    return api_list([asdict(item) for item in items])
+    return api_list(
+        [asdict(item) for item in result.items],
+        metadata_extras={"hidden_count": result.hidden_count},
+    )
 
 
 @router.post("/{list_id}/items", status_code=201)  # type: ignore[misc]
@@ -187,6 +205,79 @@ async def remove_item_from_custom_list(
     await use_case.execute(
         RemoveItemFromCustomListInput(profile_id=profile_id, list_id=list_id, media_id=media_id)
     )
+
+
+# -- Sharing & following -------------------------------------------------------
+
+
+@router.post("/{list_id}/share")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def share_custom_list(
+    list_id: str,
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: ShareCustomListUseCase = Depends(
+        Provide[ApplicationContainer.collections.share_custom_list],
+    ),
+) -> dict[str, Any]:
+    """Mint (or return the existing) share token for a list the caller owns."""
+    result = await use_case.execute(ShareCustomListInput(profile_id=profile_id, list_id=list_id))
+    return api_single("custom_list_share", asdict(result))
+
+
+@router.delete("/{list_id}/share", status_code=204)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def revoke_custom_list_share(
+    list_id: str,
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: RevokeCustomListShareUseCase = Depends(
+        Provide[ApplicationContainer.collections.revoke_custom_list_share],
+    ),
+) -> None:
+    """Stop sharing a list: invalidate the token and drop its followers."""
+    await use_case.execute(RevokeCustomListShareInput(profile_id=profile_id, list_id=list_id))
+
+
+@router.get("/shared/{token}")  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def get_shared_list_preview(
+    token: str,
+    lang: str = "en",
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: GetSharedListPreviewUseCase = Depends(
+        Provide[ApplicationContainer.collections.get_shared_list_preview],
+    ),
+) -> dict[str, Any]:
+    """Read-only preview of a shared list, filtered by the caller's access."""
+    result = await use_case.execute(
+        GetSharedListPreviewInput(profile_id=profile_id, token=token, lang=lang)
+    )
+    return api_single("shared_list", asdict(result))
+
+
+@router.post("/shared/{token}/follow", status_code=204)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def follow_shared_list(
+    token: str,
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: FollowSharedListUseCase = Depends(
+        Provide[ApplicationContainer.collections.follow_shared_list],
+    ),
+) -> None:
+    """Follow a shared list by token (idempotent)."""
+    await use_case.execute(FollowSharedListInput(profile_id=profile_id, token=token))
+
+
+@router.delete("/{list_id}/follow", status_code=204)  # type: ignore[misc]
+@inject  # type: ignore[misc]
+async def unfollow_custom_list(
+    list_id: str,
+    profile_id: str = Depends(resolve_profile_id),
+    use_case: UnfollowCustomListUseCase = Depends(
+        Provide[ApplicationContainer.collections.unfollow_custom_list],
+    ),
+) -> None:
+    """Stop following a list (idempotent)."""
+    await use_case.execute(UnfollowCustomListInput(profile_id=profile_id, list_id=list_id))
 
 
 __all__ = ["router"]

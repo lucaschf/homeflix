@@ -5,6 +5,7 @@ from src.modules.collections.domain.value_objects import (
     CollectionMediaId,
     CustomListItemId,
     ListId,
+    ShareToken,
 )
 from src.modules.collections.infrastructure.persistence.models import (
     CustomListItemModel,
@@ -30,6 +31,7 @@ class CustomListMapper:
             name=entity.name.value,
             description=entity.description,
             item_count=entity.item_count,
+            share_token=entity.share_token.value if entity.share_token else None,
         )
 
     @staticmethod
@@ -41,6 +43,7 @@ class CustomListMapper:
             name=model.name,
             description=model.description,
             item_count=model.item_count,
+            share_token=ShareToken(model.share_token) if model.share_token else None,
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -51,6 +54,7 @@ class CustomListMapper:
         model.name = entity.name.value
         model.description = entity.description
         model.item_count = entity.item_count
+        model.share_token = entity.share_token.value if entity.share_token else None
         return model
 
 

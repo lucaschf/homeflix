@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.collections.domain.entities import CustomList, CustomListItem
 from src.modules.collections.domain.repositories import CustomListRepository
-from src.modules.collections.domain.value_objects import CollectionMediaId
+from src.modules.collections.domain.value_objects import CollectionMediaId, ShareToken
 from src.modules.collections.infrastructure.persistence.mappers import (
     CustomListItemMapper,
     CustomListMapper,
@@ -58,6 +58,26 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         stmt = select(CustomListModel).where(
             func.lower(CustomListModel.name) == name.strip().lower(),
             CustomListModel.profile_id == str(profile_id),
+            CustomListModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return None if model is None else CustomListMapper.to_entity(model)
+
+    async def find_by_id_unscoped(self, list_id: str) -> CustomList | None:
+        """Find a non-deleted list by external ID, regardless of owner."""
+        stmt = select(CustomListModel).where(
+            CustomListModel.external_id == list_id,
+            CustomListModel.deleted_at.is_(None),
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return None if model is None else CustomListMapper.to_entity(model)
+
+    async def find_by_share_token(self, token: ShareToken) -> CustomList | None:
+        """Find the non-deleted list carrying this live share token."""
+        stmt = select(CustomListModel).where(
+            CustomListModel.share_token == token.value,
             CustomListModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)

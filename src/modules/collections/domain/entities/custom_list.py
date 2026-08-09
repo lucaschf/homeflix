@@ -17,6 +17,7 @@ from src.modules.collections.domain.value_objects import (
     CustomListItemId,
     ListId,
     ListName,
+    ShareToken,  # — runtime for Pydantic
 )
 from src.shared_kernel.value_objects import (
     MediaType,  # — runtime for Pydantic
@@ -115,6 +116,13 @@ class CustomList(AggregateRoot[ListId]):
     name: ListName
     description: str | None = Field(default=None, max_length=500)
     item_count: int = 0
+    # Presence of a token ⇒ the list is shared. Cleared on revoke.
+    share_token: ShareToken | None = Field(default=None)
+
+    @property
+    def is_shared(self) -> bool:
+        """Whether the list currently carries a live share token."""
+        return self.share_token is not None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -192,6 +200,33 @@ class CustomList(AggregateRoot[ListId]):
             A new CustomList instance with both fields updated.
         """
         return self.with_updates(name=name, description=description)
+
+    def shared(self) -> CustomList:
+        """Return a shared copy, minting a token if absent (idempotent).
+
+        Sharing twice is a no-op: an already-shared list keeps its
+        existing token so the link a member already copied stays valid.
+
+        Returns:
+            ``self`` when already shared, otherwise a copy carrying a
+            freshly minted :class:`ShareToken`.
+        """
+        if self.share_token is not None:
+            return self
+        return self.with_updates(share_token=ShareToken.generate())
+
+    def unshared(self) -> CustomList:
+        """Return an unshared copy, clearing any token (idempotent).
+
+        Revoking a list that was never shared is a no-op.
+
+        Returns:
+            ``self`` when not shared, otherwise a copy with the token
+            cleared so the old link stops resolving.
+        """
+        if self.share_token is None:
+            return self
+        return self.with_updates(share_token=None)
 
     def increment_item_count(self) -> CustomList:
         """Increment item count after adding an item.

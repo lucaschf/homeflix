@@ -8,9 +8,12 @@ import pytest
 from src.modules.collections.application.ports import (
     MediaLookupPort,
     MediaSummary,
+    ProfileLibraryAccessPort,
+    ProfileLookupPort,
     ProgressLookupPort,
 )
 from src.shared_kernel.value_objects import MediaType
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 MediaSummaryFactory = Callable[..., MediaSummary]
 
@@ -28,6 +31,7 @@ def movie_summary() -> MediaSummaryFactory:
         genres: tuple[str, ...] = ("Action", "Sci-Fi"),
         resolution: str | None = "4K",
         hdr: bool = True,
+        library_id: str | None = "lib_movies00001",
     ) -> MediaSummary:
         return MediaSummary(
             media_id=media_id,
@@ -39,6 +43,7 @@ def movie_summary() -> MediaSummaryFactory:
             genres=genres,
             resolution=resolution,
             hdr=hdr,
+            library_id=library_id,
         )
 
     return _factory
@@ -54,6 +59,7 @@ def series_summary() -> MediaSummaryFactory:
         poster_path: str | None = "https://image.tmdb.org/series.jpg",
         year: int | None = 2008,
         genres: tuple[str, ...] = ("Drama",),
+        library_id: str | None = "lib_series00001",
     ) -> MediaSummary:
         return MediaSummary(
             media_id=media_id,
@@ -62,6 +68,7 @@ def series_summary() -> MediaSummaryFactory:
             poster_path=poster_path,
             year=year,
             genres=genres,
+            library_id=library_id,
         )
 
     return _factory
@@ -78,4 +85,22 @@ def make_progress_lookup_mock(progress: dict[str, float] | None = None) -> Async
     """Build an ``AsyncMock`` of ``ProgressLookupPort`` returning ``progress``."""
     mock = AsyncMock(spec=ProgressLookupPort)
     mock.get_progress.return_value = progress or {}
+    return mock
+
+
+def make_profile_library_access_mock(*library_ids: str) -> AsyncMock:
+    """Build an ``AsyncMock`` of ``ProfileLibraryAccessPort``.
+
+    Returns the given library ids (as typed ``LibraryId``) for any
+    profile. An empty call means deny-all.
+    """
+    mock = AsyncMock(spec=ProfileLibraryAccessPort)
+    mock.find_for_profile.return_value = [LibraryId(lib) for lib in library_ids]
+    return mock
+
+
+def make_profile_lookup_mock(names: dict[str, str] | None = None) -> AsyncMock:
+    """Build an ``AsyncMock`` of ``ProfileLookupPort`` returning ``names``."""
+    mock = AsyncMock(spec=ProfileLookupPort)
+    mock.get_names.return_value = names or {}
     return mock
