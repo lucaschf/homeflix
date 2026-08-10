@@ -220,6 +220,18 @@ async def episode_hls_playlist(
     file_path = _require_file(episode.file_path)
     if episode.scrub_preview_path is None and episode.id is not None:
         _fire_eager_episode(backfill_job, episode.id)
+    # Translate the player-relative resume position into file-absolute
+    # coordinates when this episode is only a sub-range of a shared file
+    # (ADR-030). ``start`` arrives relative to the episode (0 = episode
+    # start); ffmpeg needs it relative to the physical file.
+    seg_start = episode.segment_start_seconds
+    seg_end = episode.segment_end_seconds
+    if seg_start is not None and seg_end is not None:
+        file_start = min(seg_start + start, seg_end)
+        end: int | None = seg_end
+    else:
+        file_start = start
+        end = None
     view = NowPlayingViewContext(
         profile_id=profile_id,
         media_id=series_id,
@@ -230,7 +242,7 @@ async def episode_hls_playlist(
         device=_device_label(request),
         duration_seconds=episode.duration_seconds,
     )
-    return await _serve_master(hls_uc, file_path, start=start, view=view)
+    return await _serve_master(hls_uc, file_path, start=file_start, view=view, end=end)
 
 
 # -- Track info ----------------------------------------------------------------
@@ -463,6 +475,7 @@ async def _serve_master(
     file_path: str,
     start: int = 0,
     view: NowPlayingViewContext | None = None,
+    end: int | None = None,
 ) -> Response:
     """Run the generate-playlist use case and wrap its DTO in a Response."""
     output = await use_case.execute(
@@ -470,6 +483,7 @@ async def _serve_master(
             file_path=file_path,
             base_url_template=_MASTER_BASE_URL,
             start=start,
+            end=end,
             view=view,
         )
     )

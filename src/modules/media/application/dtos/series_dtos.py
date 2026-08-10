@@ -28,6 +28,12 @@ class EpisodeOutput:
         file_path: Path to video file (None if no primary file).
         file_size: File size in bytes (None if no primary file).
         resolution: Video resolution (None if no primary file).
+        segment_start_seconds: Start second of this episode within a
+            shared physical file (ADR-030), or ``None`` when the primary
+            file is a whole file. Streaming translates player-relative
+            positions against this offset.
+        segment_end_seconds: Exclusive end second of this episode within
+            a shared physical file, or ``None`` for a whole file.
         thumbnail_path: Path to thumbnail (optional).
         scrub_preview_path: Absolute filesystem path to the scrub-preview
             VTT, or ``None`` until the backfill job generates it.
@@ -47,6 +53,8 @@ class EpisodeOutput:
     thumbnail_path: str | None
     scrub_preview_path: str | None
     air_date: str | None
+    segment_start_seconds: int | None = None
+    segment_end_seconds: int | None = None
     intro: IntroMarkerOutput | None = None
     credits: CreditsMarkerOutput | None = None
     progress_percentage: float | None = None

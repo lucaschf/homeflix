@@ -228,6 +228,12 @@ class GetSeriesByIdUseCase:
             file_path=primary.file_path.value if primary else None,
             file_size=primary.file_size if primary else None,
             resolution=primary.resolution.value if primary else None,
+            segment_start_seconds=(
+                primary.segment.start_seconds if primary and primary.segment else None
+            ),
+            segment_end_seconds=(
+                primary.segment.end_seconds if primary and primary.segment else None
+            ),
             files=[to_media_file_output(f) for f in episode.files],
             thumbnail_path=episode.thumbnail_path.value if episode.thumbnail_path else None,
             scrub_preview_path=episode.scrub_preview_path.value

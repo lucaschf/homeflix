@@ -43,7 +43,7 @@ class HlsPlaylistPort(ABC):
     """Manage the HLS cache: playlists, segments, subtitles, eviction."""
 
     @abstractmethod
-    async def ensure_playlist(self, file_path: str, start: int = 0) -> str:
+    async def ensure_playlist(self, file_path: str, start: int = 0, end: int | None = None) -> str:
         """Prepare an HLS cache for ``file_path`` and return its path hash.
 
         Blocks until at least the master playlist and the first segment
@@ -55,6 +55,12 @@ class HlsPlaylistPort(ABC):
         reuses the same encode) and spawns ffmpeg with an input seek
         to that bucket. The default of ``0`` preserves the
         single-bucket-per-file behaviour for cold first plays.
+
+        ``end`` is the source-time second the encode is clamped to end
+        at, for a title that occupies only a sub-range of a shared
+        physical file (ADR-030). ``None`` (the default) encodes to the
+        end of the file. It is folded into the returned path hash so
+        distinct sub-ranges of one file cache independently.
         """
         ...
 

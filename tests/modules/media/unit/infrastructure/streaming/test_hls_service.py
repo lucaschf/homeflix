@@ -201,6 +201,20 @@ class TestHlsServiceGetPathHash:
         assert service.get_path_hash(path, start=0) != service.get_path_hash(path, start=300)
         assert service.get_path_hash(path, start=300) != service.get_path_hash(path, start=600)
 
+    def test_should_fold_segment_end_into_hash(self, tmp_path: Path) -> None:
+        # Two episodes sharing one physical file (ADR-030) differ only by
+        # their end offset, so it must change the bucket.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
+        )
+        path = "/series/shared.mkv"
+        assert service.get_path_hash(path, start=0, end=4740) != service.get_path_hash(
+            path, start=4740, end=9480
+        )
+        # A whole-file hash (end=None) stays byte-identical to the pre-ADR-030
+        # key so existing cache buckets survive the upgrade.
+        assert service.get_path_hash(path, start=0, end=None) == service.get_path_hash(path)
+
 
 @pytest.mark.unit
 class TestHlsServiceGetFileByHash:
@@ -397,6 +411,21 @@ class TestHlsServiceBuildAudioCmd:
         cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=2))
 
         assert "0:a:2" in cmd
+
+    def test_should_clamp_duration_to_segment(self, tmp_path: Path) -> None:
+        # Alternate-audio track for a segmented episode (ADR-030) ends at the
+        # same title boundary as the video track.
+        cmd = HlsService._build_audio_cmd(
+            "/series/shared.mkv", tmp_path, _make_audio_track(index=1), start=4740, end=9480
+        )
+
+        assert "-t" in cmd
+        assert cmd[cmd.index("-t") + 1] == "4740"
+
+    def test_should_not_clamp_duration_without_end(self, tmp_path: Path) -> None:
+        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=1))
+
+        assert "-t" not in cmd
 
     def test_should_disable_video_and_subtitle(self, tmp_path: Path) -> None:
         cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
@@ -671,6 +700,35 @@ class TestHlsServiceBuildVideoCmd:
             cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "libx264" in cmd
+
+    def test_should_not_clamp_duration_without_end(self, tmp_path: Path) -> None:
+        # A whole-file variant (end=None) must never carry ``-t`` — that
+        # would truncate normal playback.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+
+        assert "-t" not in cmd
+
+    def test_should_clamp_duration_to_segment(self, tmp_path: Path) -> None:
+        # A segmented episode (ADR-030) bounds the encode with ``-t`` equal
+        # to ``end - start`` so the stream ends at the title boundary.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
+            cmd = service._build_video_cmd(
+                "/series/shared.mkv", tmp_path, probe, start=4740, end=9480
+            )
+
+        assert "-t" in cmd
+        assert cmd[cmd.index("-t") + 1] == "4740"
 
     def test_should_copy_primary_audio_when_aac_lc_stereo_48k(self, tmp_path: Path) -> None:
         # Video transcodes (hevc) but the AAC-LC stereo 48k primary
@@ -1988,7 +2046,7 @@ class TestEnsurePlaylistSoftwareFallback:
 
         calls: list[bool] = []
 
-        def fake_generate(_file_path, _start, _path_hash, *, force_software):
+        def fake_generate(_file_path, _start, _path_hash, *, force_software, end=None):
             calls.append(force_software)
             if not force_software:
                 msg = "FFmpeg failed (hwaccel init)"
@@ -2021,7 +2079,7 @@ class TestEnsurePlaylistSoftwareFallback:
 
         calls: list[bool] = []
 
-        def fake_generate(_file_path, _start, _path_hash, *, force_software):
+        def fake_generate(_file_path, _start, _path_hash, *, force_software, end=None):
             calls.append(force_software)
             msg = "FFmpeg failed"
             raise RuntimeError(msg)
