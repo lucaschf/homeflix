@@ -1,6 +1,6 @@
 # ADR-030: Arquivos de Mídia Multi-Título (Segmentos de Tempo)
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-08-09
 **Deciders:** Lucas
 **Technical Story:** Minisséries antigas onde vários episódios vivem num único arquivo de vídeo (ex.: `20,000 Leagues Under the Sea (1997)`, 2 episódios num só `.mkv`)
@@ -190,3 +190,4 @@ GenerateHlsPlaylistInput(file_path=..., start=file_start, end=end)
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-08-09 | Lucas | Criação inicial (Proposto) |
+| 2026-08-10 | Lucas | Aceito — implementado em 3 PRs (domínio/persistência, streaming, endpoint admin) |
