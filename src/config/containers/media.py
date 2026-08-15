@@ -26,6 +26,9 @@ from src.modules.media.application.use_cases.clear_hls_cache import ClearHlsCach
 from src.modules.media.application.use_cases.clear_hls_cache_global import (
     ClearHlsCacheGlobalUseCase,
 )
+from src.modules.media.application.use_cases.define_episode_segments import (
+    DefineEpisodeSegmentsUseCase,
+)
 from src.modules.media.application.use_cases.delete_movie import DeleteMovieUseCase
 from src.modules.media.application.use_cases.delete_series import DeleteSeriesUseCase
 from src.modules.media.application.use_cases.detect_movie_conflicts import (
@@ -624,6 +627,12 @@ class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
         probe_service=media_probe_service,
         event_bus=event_bus,
         scrub_preview_locator=scrub_preview_locator,
+    )
+
+    define_episode_segments = providers.Factory(
+        DefineEpisodeSegmentsUseCase,
+        uow_factory=media_unit_of_work_factory,
+        probe_service=media_probe_service,
     )
 
     # =========================================================================
