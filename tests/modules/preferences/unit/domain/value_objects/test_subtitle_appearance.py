@@ -35,6 +35,13 @@ class TestSubtitleAppearance:
         assert appearance.font_size is SubtitleFontSize.LARGE
         assert appearance.text_edge is SubtitleTextEdge.OUTLINE
 
+    def test_accepts_xlarge_font_size(self) -> None:
+        appearance = SubtitleAppearance(
+            color="#FFFFFF", background="#000000", font_size="xlarge", text_edge="none"
+        )
+
+        assert appearance.font_size is SubtitleFontSize.XLARGE
+
     def test_rejects_invalid_color(self) -> None:
         with pytest.raises(DomainValidationException):
             SubtitleAppearance(

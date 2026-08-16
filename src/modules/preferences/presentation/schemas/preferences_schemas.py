@@ -10,7 +10,7 @@ class SubtitleAppearanceRequest(BaseModel):
 
     color: str | None = None
     background: str | None = None
-    font_size: Literal["small", "medium", "large"] | None = None
+    font_size: Literal["small", "medium", "large", "xlarge"] | None = None
     text_edge: Literal["none", "shadow", "outline"] | None = None
 
 
