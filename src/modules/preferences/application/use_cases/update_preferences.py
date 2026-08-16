@@ -35,16 +35,11 @@ class UpdatePreferencesUseCase:
                 subtitle_mode=input_dto.subtitle_mode,
                 default_quality=input_dto.default_quality,
                 speed=input_dto.speed,
+                subtitle_appearance=input_dto.subtitle_appearance,
             )
             saved = await uow.preferences.save(updated)
 
-        return PreferencesOutput(
-            audio_lang=saved.audio_lang.value,
-            subtitle_lang=saved.subtitle_lang.value,
-            subtitle_mode=saved.subtitle_mode.value,
-            default_quality=saved.default_quality.value,
-            speed=saved.speed.value,
-        )
+        return PreferencesOutput.from_entity(saved)
 
 
 __all__ = ["UpdatePreferencesUseCase"]

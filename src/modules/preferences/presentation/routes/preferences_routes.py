@@ -57,6 +57,11 @@ async def update_preferences(
             subtitle_mode=body.subtitle_mode,
             default_quality=body.default_quality,
             speed=body.speed,
+            subtitle_appearance=(
+                body.subtitle_appearance.model_dump(exclude_none=True)
+                if body.subtitle_appearance is not None
+                else None
+            ),
         )
     )
     return api_single("preferences", asdict(result))

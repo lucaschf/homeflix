@@ -27,18 +27,7 @@ class GetPreferencesUseCase:
             entity = await uow.preferences.find_by_profile_id(profile_id)
         if entity is None:
             entity = PlaybackPreferences.default_for(profile_id)
-        return _to_output(entity)
-
-
-def _to_output(entity: PlaybackPreferences) -> PreferencesOutput:
-    """Project the entity into the transport DTO."""
-    return PreferencesOutput(
-        audio_lang=entity.audio_lang.value,
-        subtitle_lang=entity.subtitle_lang.value,
-        subtitle_mode=entity.subtitle_mode.value,
-        default_quality=entity.default_quality.value,
-        speed=entity.speed.value,
-    )
+        return PreferencesOutput.from_entity(entity)
 
 
 __all__ = ["GetPreferencesUseCase"]
