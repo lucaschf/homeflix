@@ -10,6 +10,8 @@ case factories from this container and the auth deps from the auth
 package.
 """
 
+from typing import Any
+
 from dependency_injector import containers, providers
 
 from src.modules.identity.application.use_cases import (
@@ -54,15 +56,15 @@ class IdentityContainer(containers.DeclarativeContainer):
     """
 
     # Wired from InfrastructureContainer via the application container.
-    session_factory = providers.Dependency()
-    event_bus = providers.Dependency()
+    session_factory = providers.Dependency[Any]()
+    event_bus = providers.Dependency[Any]()
 
     # Avatar storage configuration. ``thumbnails_directory`` stays a
     # filesystem path bootstrap-style. The bucket fields (subdir,
     # max_size, size_pixels) come from ``RuntimeSettings`` via ADR-013
     # phase 3.
-    thumbnails_directory = providers.Dependency(default="./thumbnails")
-    runtime_settings = providers.Dependency()
+    thumbnails_directory = providers.Dependency[str](default="./thumbnails")
+    runtime_settings = providers.Dependency[Any]()
 
     # =========================================================================
     # Unit of Work

@@ -1,5 +1,7 @@
 """Collections bounded context dependency container."""
 
+from typing import Any
+
 from dependency_injector import containers, providers
 
 from src.modules.collections.application.use_cases import (
@@ -39,20 +41,20 @@ class CollectionsContainer(containers.DeclarativeContainer):
     parent container.
     """
 
-    session_factory = providers.Dependency()
+    session_factory = providers.Dependency[Any]()
     # Media UoW factory comes in so the ACL adapter can open its own
     # short-lived Media transactions. Use cases only see
     # ``MediaLookupPort``.
-    media_uow_factory = providers.Dependency()
+    media_uow_factory = providers.Dependency[Any]()
     # Watch Progress UoW factory — the progress ACL adapter opens its
     # own short-lived transactions. Use cases only see
     # ``ProgressLookupPort``.
-    watch_progress_uow_factory = providers.Dependency()
+    watch_progress_uow_factory = providers.Dependency[Any]()
     # Identity UoW factory — the profile ACL adapters open their own
     # short-lived Identity transactions to resolve a follower's library
     # access and an owner's display name. Use cases only see the
     # ``ProfileLibraryAccessPort`` / ``ProfileLookupPort`` abstractions.
-    identity_uow_factory = providers.Dependency()
+    identity_uow_factory = providers.Dependency[Any]()
 
     # =========================================================================
     # Unit of Work

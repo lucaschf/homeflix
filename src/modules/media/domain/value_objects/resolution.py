@@ -202,7 +202,7 @@ class Resolution(CompoundValueObject):
 
     def _compare(self, other: object, op: Callable[[int, int], bool]) -> bool:
         if not isinstance(other, Resolution):
-            return NotImplemented
+            return NotImplemented  # type: ignore[no-any-return]  # rich-comparison sentinel
         return op(self.total_pixels, other.total_pixels)
 
     def __gt__(self, other: object) -> bool:

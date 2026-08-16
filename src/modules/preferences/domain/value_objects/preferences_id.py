@@ -11,7 +11,7 @@ migrated away.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from pydantic import model_validator
 
@@ -52,7 +52,7 @@ class PreferencesId(StringValueObject):
                 f"[{PreferencesRuleCodes.PREFERENCES_ID_INVALID}]"
             )
 
-        return value
+        return cast(str, value)
 
     @classmethod
     def for_profile(cls, profile_id: ProfileId) -> PreferencesId:

@@ -32,7 +32,7 @@ def _build_cookie_transport() -> CookieTransport:
 
 cookie_transport: CookieTransport = _build_cookie_transport()
 
-auth_backend: AuthenticationBackend = AuthenticationBackend(
+auth_backend: AuthenticationBackend = AuthenticationBackend(  # type: ignore[type-arg]  # fastapi-users typing
     name="cookie-session",
     transport=cookie_transport,
     get_strategy=get_database_strategy,

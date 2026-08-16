@@ -3,6 +3,8 @@
 Provides repositories and use cases for the Media module.
 """
 
+from typing import Any
+
 from dependency_injector import containers, providers
 
 from src.modules.media.application.event_handlers import OnMediaCreatedHandler
@@ -224,60 +226,60 @@ class MediaContainer(containers.DeclarativeContainer):
     """
 
     # Must be wired from InfrastructureContainer
-    session_factory = providers.Dependency()
-    event_bus = providers.Dependency()
+    session_factory = providers.Dependency[Any]()
+    event_bus = providers.Dependency[Any]()
 
     # Wired at the composition root — the adapter depends on the
     # Watch Progress UoW factory so the Media BC only knows the port.
-    progress_lookup = providers.Dependency()
+    progress_lookup = providers.Dependency[Any]()
 
     # Wired at the composition root — the adapter lives in the
     # Catalog Requests BC, so this BC only ever sees
     # ``CatalogRequestLookupPort``.
-    catalog_request_lookup = providers.Dependency()
+    catalog_request_lookup = providers.Dependency[Any]()
 
     # Wired at the composition root — the adapter reads
     # ``Profile.allowed_library_ids`` via the Identity UoW so this
     # BC only ever sees ``ProfileLibraryAccessPort``.
-    profile_library_access = providers.Dependency()
+    profile_library_access = providers.Dependency[Any]()
 
     # Wired at the composition root — the trigger-scan use case
     # needs to look up the requested library before opening the
     # ``scan_runs`` row. Keeps the cross-BC dependency explicit.
-    library_uow_factory = providers.Dependency()
+    library_uow_factory = providers.Dependency[Any]()
 
     # Wired at the composition root — ADR-015 Phase 3 detector uses
     # this port to distinguish a real orphan (file moved/deleted by
     # the operator) from transient I/O failure (drive unmounted).
-    library_health = providers.Dependency()
+    library_health = providers.Dependency[Any]()
 
     # Wired at the composition root — the OverviewStats aggregator
     # reads the users count from identity. Same pattern as
     # ``library_uow_factory`` above: a read-only cross-BC count
     # for admin dashboard aggregation, not domain coupling.
-    identity_uow_factory = providers.Dependency()
+    identity_uow_factory = providers.Dependency[Any]()
 
     # Wired at the composition root — ADR-026: the /tracks use case reads
     # the viewing profile's preferred audio language from the Preferences BC
     # to pick the default audio track at read time.
-    preferences_uow_factory = providers.Dependency()
+    preferences_uow_factory = providers.Dependency[Any]()
 
     # Must be wired from parent container (Settings.hls_cache_directory).
     # Only the filesystem path remains in ``.env``; ``ffmpeg_threads``
     # and ``hls_cache_max_size_mb`` moved to ``StreamingConfig`` in
     # ADR-013 phase 3 and are read from ``RuntimeSettings``.
-    hls_cache_directory = providers.Dependency(default="./hls_cache")
+    hls_cache_directory = providers.Dependency[str](default="./hls_cache")
 
     # Artwork mirror directory (ADR-029), wired from
     # ``Settings.artwork_storage_directory`` at the composition root.
     # Bootstrap filesystem path, same style as ``hls_cache_directory``.
-    artwork_storage_directory = providers.Dependency(default="./artwork")
+    artwork_storage_directory = providers.Dependency[str](default="./artwork")
 
     # RuntimeSettings facade — needed by HlsService, AudioExtractor,
     # ThumbnailGenerationService for streaming config + by
     # IntroDetectionJob (wired from the composition root) for intro
     # tuning. ADR-013.
-    runtime_settings = providers.Dependency()
+    runtime_settings = providers.Dependency[Any]()
 
     # =========================================================================
     # Unit of Work
@@ -640,12 +642,12 @@ class MediaContainer(containers.DeclarativeContainer):
     # =========================================================================
 
     # Must be wired from parent container (Settings.tmdb_api_key)
-    tmdb_api_key = providers.Dependency(default="")
+    tmdb_api_key = providers.Dependency[str](default="")
 
     # Wired from parent container (Settings.supported_locales). Drives
     # which non-English translations the TMDB client overlays during
     # enrichment — adding a language is a config change, not a code edit.
-    supported_locales = providers.Dependency(default=["en", "pt-BR"])
+    supported_locales = providers.Dependency[list[str]](default=["en", "pt-BR"])
 
     tmdb_client = providers.Singleton(
         TmdbClient,

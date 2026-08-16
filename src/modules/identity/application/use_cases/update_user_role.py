@@ -1,5 +1,7 @@
 """UpdateUserRoleUseCase — flip a user between ADMIN and MEMBER."""
 
+from typing import cast
+
 from src.modules.identity.application.dtos.identity_dtos import (
     UpdateUserRoleInput,
     UserSummary,
@@ -50,7 +52,7 @@ class UpdateUserRoleUseCase:
             else:
                 saved = user
 
-            profile_count = await uow.profiles.count_for_user(saved.id)
+            profile_count = await uow.profiles.count_for_user(cast(UserId, saved.id))
 
         return UserSummary(
             id=str(saved.id),

@@ -42,7 +42,7 @@ class SqlAlchemyAccessTokenRepository(AccessTokenRepository):
         underlying UUID.
         """
         stmt = (
-            select(
+            select(  # type: ignore[call-overload]  # fastapi-users typing
                 AccessTokenModel.token,
                 AccessTokenModel.created_at,
                 UserModel.external_id.label("user_external_id"),
@@ -97,19 +97,19 @@ class SqlAlchemyAccessTokenRepository(AccessTokenRepository):
 
         update_stmt = (
             update(AccessTokenModel)
-            .where(AccessTokenModel.token == token)
+            .where(AccessTokenModel.token == token)  # type: ignore[arg-type]  # fastapi-users typing
             .values(current_profile_id=profile_uuid)
         )
         result = await self._session.execute(update_stmt)
         await self._session.flush()
-        return bool(result.rowcount and result.rowcount > 0)
+        return bool(result.rowcount and result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
     async def delete_older_than(self, cutoff: datetime) -> int:
         """Remove sessions whose ``created_at`` is strictly older than ``cutoff``."""
-        stmt = delete(AccessTokenModel).where(AccessTokenModel.created_at < cutoff)
+        stmt = delete(AccessTokenModel).where(AccessTokenModel.created_at < cutoff)  # type: ignore[arg-type]  # fastapi-users typing
         result = await self._session.execute(stmt)
         await self._session.flush()
-        return int(result.rowcount or 0)
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
 
 __all__ = ["SqlAlchemyAccessTokenRepository"]

@@ -1,5 +1,7 @@
 """Preferences bounded context dependency container."""
 
+from typing import Any
+
 from dependency_injector import containers, providers
 
 from src.modules.preferences.application.use_cases.get_preferences import (
@@ -16,7 +18,7 @@ from src.modules.preferences.infrastructure.persistence.sqlalchemy_unit_of_work 
 class PreferencesContainer(containers.DeclarativeContainer):
     """Container for Preferences bounded context."""
 
-    session_factory = providers.Dependency()
+    session_factory = providers.Dependency[Any]()
 
     preferences_unit_of_work_factory = providers.Singleton(
         SqlAlchemyPreferencesUnitOfWorkFactory,

@@ -5,6 +5,8 @@ Provides the persistence wiring for the ``app_settings`` table
 admin-panel use cases (phase 4).
 """
 
+from typing import Any
+
 from dependency_injector import containers, providers
 
 from src.modules.settings.application.use_cases import (
@@ -29,7 +31,7 @@ class SettingsContainer(containers.DeclarativeContainer):
           ``/api/v1/admin/settings`` (phase 4).
     """
 
-    session_factory = providers.Dependency()
+    session_factory = providers.Dependency[Any]()
 
     settings_unit_of_work_factory = providers.Singleton(
         SqlAlchemySettingsUnitOfWorkFactory,

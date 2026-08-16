@@ -74,7 +74,7 @@ class SqlAlchemyUserRepository(UserRepository):
         """Look up a non-deleted user by normalised email."""
         # Email VO already lower-cases and trims; no further normalisation needed.
         stmt = select(UserModel).where(
-            UserModel.email == email.value,
+            UserModel.email == email.value,  # type: ignore[arg-type]  # fastapi-users typing
             UserModel.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
@@ -98,7 +98,7 @@ class SqlAlchemyUserRepository(UserRepository):
 
     async def count(self, *, role: UserRole | None = None) -> int:
         """Count non-deleted users matching the filter."""
-        stmt = select(func.count(UserModel.id)).where(UserModel.deleted_at.is_(None))
+        stmt = select(func.count(UserModel.id)).where(UserModel.deleted_at.is_(None))  # type: ignore[arg-type]  # fastapi-users typing
         if role is not None:
             stmt = stmt.where(UserModel.role == role.value)
         result = await self._session.execute(stmt)
@@ -106,9 +106,9 @@ class SqlAlchemyUserRepository(UserRepository):
 
     async def count_active_admins(self) -> int:
         """Count non-deleted, active users in the ``ADMIN`` role."""
-        stmt = select(func.count(UserModel.id)).where(
+        stmt = select(func.count(UserModel.id)).where(  # type: ignore[arg-type]  # fastapi-users typing
             UserModel.deleted_at.is_(None),
-            UserModel.is_active.is_(True),
+            UserModel.is_active.is_(True),  # type: ignore[attr-defined]  # fastapi-users typing
             UserModel.role == UserRole.ADMIN.value,
         )
         result = await self._session.execute(stmt)

@@ -141,12 +141,12 @@ class SqlAlchemyProfileRepository(ProfileRepository):
 
     async def _resolve_user_uuid(self, user_id: UserId) -> uuid.UUID:
         """Translate prefixed UserId → internal UUID via SELECT."""
-        stmt = select(UserModel.id).where(UserModel.external_id == str(user_id))
+        stmt = select(UserModel.id).where(UserModel.external_id == str(user_id))  # type: ignore[call-overload]  # fastapi-users typing
         result = await self._session.execute(stmt)
         user_uuid = result.scalar_one_or_none()
         if user_uuid is None:
             raise ValueError(f"User {user_id} does not exist")
-        return user_uuid
+        return user_uuid  # type: ignore[no-any-return]  # fastapi-users typing
 
 
 __all__ = ["SqlAlchemyProfileRepository"]

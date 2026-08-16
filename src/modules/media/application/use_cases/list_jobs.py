@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.modules.media.application.dtos.job_dtos import (
     JobOutput,
@@ -59,7 +59,7 @@ class ListJobsUseCase:
 
         # ``recent_per_job`` returns newest-first within each job; the
         # first row per job is therefore its last run.
-        recent_by_job: dict[str, list] = defaultdict(list)
+        recent_by_job: dict[str, list[Any]] = defaultdict(list)
         for run in recent:
             recent_by_job[run.job_id].append(run)
         last_by_job = {job_id: runs[0] for job_id, runs in recent_by_job.items()}
