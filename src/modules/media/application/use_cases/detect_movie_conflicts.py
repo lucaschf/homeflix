@@ -26,7 +26,10 @@ if TYPE_CHECKING:
         LibraryHealthPort,
     )
     from src.modules.media.application.ports.runtime_config_ports import ScanDedupConfigPort
-    from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+    from src.modules.media.application.unit_of_work import (
+        MediaUnitOfWork,
+        MediaUnitOfWorkFactory,
+    )
     from src.modules.media.domain.entities.movie import Movie
     from src.modules.settings.domain.value_objects import ScanDedupConfig
 
@@ -215,7 +218,7 @@ class DetectMovieConflictsUseCase:
     async def _queue_conflict(
         self,
         *,
-        uow: object,
+        uow: MediaUnitOfWork,
         self_id: str,
         self_runtime: float | None,
         other: Movie,
@@ -233,7 +236,7 @@ class DetectMovieConflictsUseCase:
             abs_threshold_minutes=abs_threshold,
             relative_threshold=relative_threshold,
         )
-        persisted = await uow.media_conflicts.save(conflict)  # type: ignore[attr-defined]
+        persisted = await uow.media_conflicts.save(conflict)
         event = MediaConflictDetectedEvent(
             conflict_id=str(persisted.id),
             candidate_a_id=MovieId(persisted.candidate_a.id),
@@ -245,7 +248,7 @@ class DetectMovieConflictsUseCase:
 
     async def _collect_title_year_matches(
         self,
-        uow: object,
+        uow: MediaUnitOfWork,
         self_movie: Movie,
         *,
         exclude: set[str],
@@ -258,7 +261,7 @@ class DetectMovieConflictsUseCase:
         TMDB pass) are skipped to avoid double-queuing.
         """
         self_key = _normalized_identity_title(self_movie)
-        candidates = await uow.movies.find_all_by_year(self_movie.year.value)  # type: ignore[attr-defined]
+        candidates = await uow.movies.find_all_by_year(self_movie.year.value)
         return [
             m
             for m in candidates
@@ -284,16 +287,12 @@ class DetectMovieConflictsUseCase:
     async def _auto_merge_orphan(
         self,
         *,
-        uow: object,
+        uow: MediaUnitOfWork,
         self_movie: Movie,
         self_runtime: float | None,
         orphan: Movie,
     ) -> tuple[MediaConflict, MovieMergedEvent]:
         """Persist a resolved-AUTO conflict and soft-delete the orphan."""
-        # ``uow`` is typed ``object`` here because importing
-        # MediaUnitOfWork would form a runtime cycle through this
-        # module — the caller passes the live UoW from the same
-        # ``async with`` block above.
         conflict = MediaConflict.detect(
             candidate_a=ConflictCandidate(id=str(self_movie.id), type=MediaType.MOVIE),
             candidate_a_runtime_minutes=self_runtime,
@@ -306,7 +305,7 @@ class DetectMovieConflictsUseCase:
             winner_id=str(self_movie.id),
             source=ResolutionSource.AUTO,
         )
-        persisted = await uow.media_conflicts.save(resolved)  # type: ignore[attr-defined]
+        persisted = await uow.media_conflicts.save(resolved)
 
         loser_id = persisted.loser_id()
         if loser_id is None:  # pragma: no cover — guarded by aggregate
@@ -315,7 +314,7 @@ class DetectMovieConflictsUseCase:
         if winner_id is None:  # pragma: no cover — loaded from the repository
             raise RuntimeError("auto-merge winner movie missing id")
 
-        deleted = await uow.movies.delete(MovieId(loser_id))  # type: ignore[attr-defined]
+        deleted = await uow.movies.delete(MovieId(loser_id))
         if not deleted:
             _logger.warning(
                 "Orphan movie %s missing during auto-merge of %s",

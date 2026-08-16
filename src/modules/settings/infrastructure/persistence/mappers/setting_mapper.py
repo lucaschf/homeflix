@@ -1,6 +1,6 @@
 """Bidirectional mapper between :class:`Setting` and :class:`SettingModel`."""
 
-from typing import Any
+from typing import Any, cast
 
 from src.modules.settings.domain.entities import Setting
 from src.modules.settings.domain.value_objects import (
@@ -46,7 +46,9 @@ class SettingMapper:
         key = SettingKey(model.key)
         vo_type = vo_type_for(key)
         payload: dict[str, Any] = dict(model.value_json or {})
-        value: ConfigVO = vo_type.model_validate(payload)  # type: ignore[assignment]
+        # vo_type_for(key) returns the concrete ConfigVO subtype for this key;
+        # model_validate yields that subtype, which mypy widens to the union.
+        value = cast(ConfigVO, vo_type.model_validate(payload))
         return Setting(
             id=key,
             value=value,

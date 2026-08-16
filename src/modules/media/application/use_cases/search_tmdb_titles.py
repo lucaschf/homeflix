@@ -41,18 +41,37 @@ _TMDB_BARE_RE = re.compile(r"^\d+$")
 
 
 @dataclass(frozen=True)
-class _ParsedQuery:
-    """Outcome of input parsing — one of three branches."""
+class _TmdbIdQuery:
+    """A resolved TMDB numeric id, from a URL or a bare number.
 
-    kind: Literal["tmdb_id", "imdb_id", "text"]
-    # tmdb_id branch: the numeric id + which media type to fetch
-    # ("movie" / "tv" / None for ambiguous bare numeric).
-    tmdb_id: int | None = None
+    ``media_type`` is ``None`` for an ambiguous bare numeric (TMDB ids are
+    not unique across the movie / tv namespaces), so the caller fetches both.
+    """
+
+    tmdb_id: int
     media_type: Literal["movie", "tv"] | None = None
-    # imdb_id branch: the canonical "tt..." string.
-    imdb_id: str | None = None
-    # text branch: the cleaned free-text query.
-    text: str | None = None
+    kind: Literal["tmdb_id"] = "tmdb_id"
+
+
+@dataclass(frozen=True)
+class _ImdbIdQuery:
+    """A canonical IMDb id (``tt...``)."""
+
+    imdb_id: str
+    kind: Literal["imdb_id"] = "imdb_id"
+
+
+@dataclass(frozen=True)
+class _TextQuery:
+    """A cleaned free-text search query."""
+
+    text: str
+    kind: Literal["text"] = "text"
+
+
+# Discriminated union on ``kind`` — each branch carries only its own fields,
+# so mypy narrows the payload without per-branch ``| None`` widening.
+_ParsedQuery = _TmdbIdQuery | _ImdbIdQuery | _TextQuery
 
 
 def parse_lookup_query(raw: str) -> _ParsedQuery | None:
@@ -68,26 +87,22 @@ def parse_lookup_query(raw: str) -> _ParsedQuery | None:
 
     if url_match := _TMDB_URL_RE.search(cleaned):
         kind = url_match.group("kind").lower()
-        return _ParsedQuery(
-            kind="tmdb_id",
+        return _TmdbIdQuery(
             tmdb_id=int(url_match.group("id")),
             media_type="movie" if kind == "movie" else "tv",
         )
 
     if imdb_match := _IMDB_URL_RE.search(cleaned):
-        return _ParsedQuery(kind="imdb_id", imdb_id=imdb_match.group("id").lower())
+        return _ImdbIdQuery(imdb_id=imdb_match.group("id").lower())
 
     if _IMDB_BARE_RE.fullmatch(cleaned):
-        return _ParsedQuery(kind="imdb_id", imdb_id=cleaned.lower())
+        return _ImdbIdQuery(imdb_id=cleaned.lower())
 
     if _TMDB_BARE_RE.fullmatch(cleaned):
-        # Bare numeric — TMDB ids are not unique across the movie /
-        # tv namespaces, so the use case fetches both summaries and
-        # returns whichever exist. Leave media_type unset to flag
-        # "try both."
-        return _ParsedQuery(kind="tmdb_id", tmdb_id=int(cleaned))
+        # Bare numeric — media_type unset flags "try both" (see docstring).
+        return _TmdbIdQuery(tmdb_id=int(cleaned))
 
-    return _ParsedQuery(kind="text", text=cleaned)
+    return _TextQuery(text=cleaned)
 
 
 class SearchTmdbTitlesUseCase:
@@ -118,26 +133,25 @@ class SearchTmdbTitlesUseCase:
 
         if parsed.kind == "tmdb_id":
             candidates = await self._fetch_by_tmdb_id(
-                parsed.tmdb_id,  # type: ignore[arg-type]  # guaranteed non-None on this branch
+                parsed.tmdb_id,
                 parsed.media_type,
             )
-            display = parsed.text or input_dto.query.strip()
             return SearchTmdbTitlesOutput(
-                query=display,
+                query=input_dto.query.strip(),
                 kind="tmdb_id",
                 candidates=await self._mark_in_catalog(candidates),
             )
 
         if parsed.kind == "imdb_id":
-            results = await self._provider.find_by_imdb_id(parsed.imdb_id)  # type: ignore[arg-type]
+            results = await self._provider.find_by_imdb_id(parsed.imdb_id)
             return SearchTmdbTitlesOutput(
-                query=parsed.imdb_id or "",
+                query=parsed.imdb_id,
                 kind="imdb_id",
                 candidates=await self._mark_in_catalog([_to_dto(c) for c in results]),
             )
 
         # text branch
-        text = parsed.text or ""
+        text = parsed.text
         limit = max(1, min(input_dto.limit, 20))
         movies, series = await asyncio.gather(
             self._provider.find_movie_candidates(text, year=None, limit=limit),
