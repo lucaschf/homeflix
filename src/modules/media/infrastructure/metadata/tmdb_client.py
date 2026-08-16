@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import httpx
 
@@ -336,7 +336,7 @@ class TmdbClient(MetadataProvider):
         target = language.lower()
         target_base = target.split("-", 1)[0]
         best = min(logos, key=lambda logo: self._logo_rank(logo, target, target_base))
-        return self._image_url(best.get("file_path"))
+        return self._image_url(cast("str | None", best.get("file_path")))
 
     async def search_movie(self, title: str, year: int | None = None) -> MediaMetadata | None:
         """Search TMDB for a movie and return metadata for the best match.
@@ -360,7 +360,7 @@ class TmdbClient(MetadataProvider):
         if best is None:
             return None
 
-        return await self._fetch_movie_details(best["id"])
+        return await self._fetch_movie_details(cast(int, best["id"]))
 
     async def search_series(self, title: str, year: int | None = None) -> MediaMetadata | None:
         """Search TMDB for a TV series and return metadata for the best match.
@@ -384,7 +384,7 @@ class TmdbClient(MetadataProvider):
         if best is None:
             return None
 
-        return await self._fetch_series_details(best["id"])
+        return await self._fetch_series_details(cast(int, best["id"]))
 
     async def find_movie_candidates(
         self,

@@ -233,11 +233,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915 — se
     runtime_settings = await container.settings.runtime_settings()
     scheduler_cfg = await runtime_settings.scheduler()
     if scheduler_cfg.enabled:
-        scheduler = await container.library_scan_scheduler()
+        scheduler = await container.library_scan_scheduler()  # type: ignore[misc]  # dependency-injector async provider
         await scheduler.start()
         backfill_cfg = await runtime_settings.thumbnail_backfill()
         if backfill_cfg.enabled:
-            backfill_job = await container.thumbnail_backfill_job()
+            backfill_job = await container.thumbnail_backfill_job()  # type: ignore[misc]  # dependency-injector async provider
             scheduler.add_interval_job(
                 backfill_job.run,
                 minutes=backfill_cfg.interval_minutes,
@@ -245,7 +245,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915 — se
             )
         intro_cfg = await runtime_settings.intro_detection()
         if intro_cfg.enabled:
-            intro_job = await container.intro_detection_job()
+            intro_job = await container.intro_detection_job()  # type: ignore[misc]  # dependency-injector async provider
             scheduler.add_interval_job(
                 intro_job.run,
                 minutes=intro_cfg.interval_minutes,
@@ -253,7 +253,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915 — se
             )
         credits_cfg = await runtime_settings.credits_detection()
         if credits_cfg.enabled:
-            credits_job = await container.credits_detection_job()
+            credits_job = await container.credits_detection_job()  # type: ignore[misc]  # dependency-injector async provider
             scheduler.add_interval_job(
                 credits_job.run,
                 minutes=credits_cfg.interval_minutes,
@@ -261,7 +261,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915 — se
             )
         scan_dedup_cfg = await runtime_settings.scan_dedup()
         if scan_dedup_cfg.sweep_enabled:
-            sweep_job = await container.scan_dedup_sweep_job()
+            sweep_job = await container.scan_dedup_sweep_job()  # type: ignore[misc]  # dependency-injector async provider
             scheduler.add_interval_job(
                 sweep_job.run,
                 minutes=scan_dedup_cfg.sweep_interval_minutes,
@@ -269,7 +269,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915 — se
             )
         subtitle_ocr_cfg = await runtime_settings.subtitle_ocr()
         if subtitle_ocr_cfg.enabled:
-            subtitle_ocr_job = await container.subtitle_ocr_job()
+            subtitle_ocr_job = await container.subtitle_ocr_job()  # type: ignore[misc]  # dependency-injector async provider
             scheduler.add_interval_job(
                 subtitle_ocr_job.run,
                 minutes=subtitle_ocr_cfg.interval_minutes,
@@ -277,7 +277,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915 — se
             )
         artwork_mirror_cfg = await runtime_settings.artwork_mirror()
         if artwork_mirror_cfg.enabled:
-            artwork_mirror_job = await container.artwork_mirror_job()
+            artwork_mirror_job = await container.artwork_mirror_job()  # type: ignore[misc]  # dependency-injector async provider
             scheduler.add_interval_job(
                 artwork_mirror_job.run,
                 minutes=artwork_mirror_cfg.interval_minutes,
@@ -569,8 +569,8 @@ def register_health_routes(app: FastAPI) -> None:
         from src.infrastructure.health import ProbeResult, ProbeStatus
 
         container: ApplicationContainer = request.app.state.container
-        database_probe = await container.database_probe()
-        filesystem_probe = await container.filesystem_probe()
+        database_probe = await container.database_probe()  # type: ignore[misc]  # dependency-injector async provider
+        filesystem_probe = await container.filesystem_probe()  # type: ignore[misc]  # dependency-injector async provider
 
         results: list[ProbeResult] = [
             await database_probe.execute(),

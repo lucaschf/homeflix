@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Sequence
+from typing import cast
 
 from src.modules.media.application.dtos.catalog_dtos import (
     CatalogItemOutput,
@@ -84,7 +85,7 @@ class ListRecentlyAddedCatalogUseCase:
         )
 
         merged: list[Movie | Series] = sorted(
-            [*movies, *series_list],
+            cast("list[Movie | Series]", [*movies, *series_list]),
             key=lambda item: item.created_at,
             reverse=True,
         )[: input_dto.limit]

@@ -159,7 +159,7 @@ class SqlAlchemyJobRunRepository(JobRunRepository):
             .values(deleted_at=datetime.now(UTC)),
         )
         await self._session.flush()
-        return int(result.rowcount or 0)
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
 
 __all__ = ["SqlAlchemyJobRunRepository"]

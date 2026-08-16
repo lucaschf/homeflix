@@ -27,26 +27,20 @@ repos:
       # Formatter
       - id: ruff-format
 
-  # MyPy — type checking in the PROJECT venv (matches `make typecheck` / CI).
-  #
-  # Runs `poetry run mypy` against the real dependency set (FastAPI,
-  # dependency-injector, …) instead of the old mirrors-mypy isolated env. In
-  # the isolated env every route decorator resolved to `Any`, so each one
-  # needed a `# type: ignore[misc]` — which the full-env `mypy src` then
-  # flagged as unused. Running in the project env removes that contradiction.
-  #
-  # `--follow-imports=silent` type-checks the changed files (surfacing real
-  # errors you introduce) without failing on the pre-existing type debt in
-  # imported modules. The whole-project gate (`mypy src`) stays in CI until
-  # that debt is cleared, at which point this becomes `mypy src`.
+  # MyPy — whole-project type check in the PROJECT venv (identical to
+  # `make typecheck` and the CI gate). Runs `poetry run mypy src` against the
+  # real dependency set (FastAPI, dependency-injector, …), not the old
+  # mirrors-mypy isolated env that mistyped every route decorator as `Any`.
+  # The tree is mypy-clean (0 errors), so this is an authoritative blocking
+  # gate — no more `# type: ignore[misc]` on routes, no more --no-verify.
   - repo: local
     hooks:
       - id: mypy
         name: mypy
-        entry: poetry run mypy
+        entry: poetry run mypy src
         language: system
         types: [python]
-        args: [--follow-imports=silent]
+        pass_filenames: false
         require_serial: true
 
   # Conventional commits

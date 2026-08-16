@@ -1,6 +1,6 @@
 """List name value object."""
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from pydantic import model_validator
 
@@ -53,7 +53,7 @@ class ListName(StringValueObject):
                 f"[{CollectionRuleCodes.LIST_NAME_TOO_LONG}]"
             )
 
-        return value
+        return cast(str, value)
 
 
 __all__ = ["ListName"]

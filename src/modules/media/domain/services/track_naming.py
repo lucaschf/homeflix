@@ -22,7 +22,7 @@ import re
 import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -148,15 +148,15 @@ def render_version_token(version: TrackVersion | None) -> str | None:
     return version.value
 
 
-def _group_by_language(tracks: Iterable[object]) -> list[list]:
+def _group_by_language(tracks: Iterable[object]) -> list[list[Any]]:
     """Group tracks by language code, preserving first-seen order."""
-    groups: dict[str, list] = defaultdict(list)
+    groups: dict[str, list[Any]] = defaultdict(list)
     for track in tracks:
         groups[track.language.value].append(track)  # type: ignore[attr-defined]
     return list(groups.values())
 
 
-def _ordinal_labels(group: list) -> dict[int, TrackVersion]:
+def _ordinal_labels(group: list[Any]) -> dict[int, TrackVersion]:
     """Assign 1-based ordinals to every track in a group — the safe fallback."""
     return {t.index: TrackVersion("ordinal", str(i)) for i, t in enumerate(group, start=1)}
 
@@ -229,7 +229,7 @@ def subtitle_version_labels(
 
         # Genuine duplicates share (is_forced, is_sdh); only those need an
         # ordinal. Everything else is distinguishable by language + forced.
-        buckets: dict[tuple[bool, bool], list] = defaultdict(list)
+        buckets: dict[tuple[bool, bool], list[Any]] = defaultdict(list)
         for track in group:
             buckets[(track.is_forced, track.index in sdh)].append(track)
 

@@ -1,5 +1,7 @@
 """Notifications bounded context dependency container."""
 
+from typing import Any
+
 from dependency_injector import containers, providers
 
 from src.modules.notifications.application.use_cases import (
@@ -27,7 +29,7 @@ class NotificationsContainer(containers.DeclarativeContainer):
           ``NotificationPublisherPort`` (ADR-009).
     """
 
-    session_factory = providers.Dependency()
+    session_factory = providers.Dependency[Any]()
 
     # =========================================================================
     # Unit of Work

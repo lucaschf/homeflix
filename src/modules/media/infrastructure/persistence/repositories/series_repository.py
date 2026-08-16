@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, distinct, func, or_, select, text, update
+from sqlalchemy import ColumnElement, and_, distinct, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -67,7 +67,7 @@ def _series_filter_conditions(
     library_id: str | None,
     has_tmdb_id: bool | None,
     fts_matching_ids: Sequence[int] | None,
-) -> list:
+) -> list[ColumnElement[bool]]:
     """Build SQLAlchemy ``WHERE`` clauses for the optional series filters.
 
     Mirrors ``_movie_filter_conditions`` so both repositories surface
@@ -75,7 +75,7 @@ def _series_filter_conditions(
     the result of pre-querying ``series_fts`` for the operator's
     ``q`` text; the caller resolves it once before the page query.
     """
-    conditions: list = []
+    conditions: list[ColumnElement[bool]] = []
     if allowed_library_ids is not None:
         conditions.append(
             SeriesModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
@@ -706,7 +706,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .values(scrub_preview_path=path)
         )
         result = await self._session.execute(stmt)
-        return bool(result.rowcount)
+        return bool(result.rowcount)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
     async def find_with_remote_artwork(self, limit: int) -> Sequence[RemoteArtworkRow]:
         """Return up to ``limit`` series whose artwork is still a remote URL.
@@ -914,7 +914,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .values(**values)
         )
         result = await self._session.execute(stmt)
-        return bool(result.rowcount)
+        return bool(result.rowcount)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
     async def update_episode_intro(
         self,
@@ -953,7 +953,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .values(**values)
         )
         result = await self._session.execute(stmt)
-        return bool(result.rowcount)
+        return bool(result.rowcount)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
     async def clear_auto_intro_markers_for_season(self, season_id: SeasonId) -> int:
         """Null the intro columns of a season's AUTO_DETECTED episodes."""
@@ -977,7 +977,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             )
         )
         result = await self._session.execute(stmt)
-        return int(result.rowcount or 0)
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
     async def count_episode_credits_states(self) -> dict[str, int]:
         """Return ``{credits_detection_state: count}`` over non-deleted episodes."""
@@ -987,7 +987,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .group_by(EpisodeModel.credits_detection_state)
         )
         result = await self._session.execute(stmt)
-        return dict(result.all())
+        return dict(result.tuples().all())
 
     async def episode_file_size_by_library(self) -> dict[str, int]:
         """Sum episode primary-file bytes per library, via the parent series."""
@@ -1008,7 +1008,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         self, state: str | None, limit: int, offset: int
     ) -> tuple[Sequence[CreditsStatusRow], int]:
         """Return a page of episode credits-status rows + total (newest first)."""
-        conditions = [EpisodeModel.deleted_at.is_(None)]
+        conditions: list[ColumnElement[bool]] = [EpisodeModel.deleted_at.is_(None)]
         if state is not None:
             conditions.append(EpisodeModel.credits_detection_state == state)
 
@@ -1103,7 +1103,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .values(**values)
         )
         result = await self._session.execute(stmt)
-        return bool(result.rowcount)
+        return bool(result.rowcount)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
     async def count_under_paths(self, paths: Sequence[str]) -> int:
         """Count distinct series with at least one episode under ``paths``.

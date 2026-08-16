@@ -79,7 +79,7 @@ async def get_user_db(
 
 
 async def get_user_manager(
-    user_db: SQLAlchemyUserDatabase = Depends(get_user_db),
+    user_db: SQLAlchemyUserDatabase = Depends(get_user_db),  # type: ignore[type-arg]  # fastapi-users typing
 ) -> AsyncGenerator[UserManager, None]:
     """Yield a ``UserManager`` instance for the current request."""
     yield UserManager(user_db)
@@ -93,8 +93,8 @@ async def get_access_token_db(
 
 
 def get_database_strategy(
-    access_token_db: SQLAlchemyAccessTokenDatabase = Depends(get_access_token_db),
-) -> DatabaseStrategy:
+    access_token_db: SQLAlchemyAccessTokenDatabase = Depends(get_access_token_db),  # type: ignore[type-arg]  # fastapi-users typing
+) -> DatabaseStrategy:  # type: ignore[type-arg]  # fastapi-users typing
     """Build the ``DatabaseStrategy`` consumed by ``auth_backend``."""
     settings = get_settings()
     return DatabaseStrategy(

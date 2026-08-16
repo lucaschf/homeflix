@@ -80,7 +80,7 @@ class RuntimeSettings:
         self._uow_factory = uow_factory
         self._ttl = cache_ttl_seconds
         self._snapshot: dict[SettingKey, ConfigVO] = {
-            key: vo_type() for key, vo_type in SETTING_VO_TYPES.items()
+            key: cast(ConfigVO, vo_type()) for key, vo_type in SETTING_VO_TYPES.items()
         }
         # -inf so the first read always refreshes regardless of where
         # ``time.monotonic()`` happens to be — a fresh CI worker starts
@@ -99,7 +99,7 @@ class RuntimeSettings:
         async with self._uow_factory() as uow:
             rows: list[Setting] = list(await uow.settings.list_all())
         new_snapshot: dict[SettingKey, ConfigVO] = {
-            key: vo_type() for key, vo_type in SETTING_VO_TYPES.items()
+            key: cast(ConfigVO, vo_type()) for key, vo_type in SETTING_VO_TYPES.items()
         }
         for row in rows:
             new_snapshot[row.id] = row.value

@@ -101,7 +101,7 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
             .limit(limit)
         )
         result = await self._session.execute(stmt)
-        return self._to_entities_dropping_invalid(result.scalars().all())
+        return self._to_entities_dropping_invalid(list(result.scalars().all()))
 
     async def list_recently_watched(
         self,
@@ -120,7 +120,7 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
             .limit(limit)
         )
         result = await self._session.execute(stmt)
-        return self._to_entities_dropping_invalid(result.scalars().all())
+        return self._to_entities_dropping_invalid(list(result.scalars().all()))
 
     @staticmethod
     def _to_entities_dropping_invalid(

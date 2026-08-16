@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.catalog_requests.application.dtos import (
@@ -81,7 +81,7 @@ class IncludeCatalogRequestUseCase:
             request = await uow.catalog_requests.update(request.mark_fulfilled())
             if self._notification_publisher is not None:
                 subscriptions = await uow.catalog_subscriptions.list_for_request(
-                    request.id,
+                    cast(CatalogRequestId, request.id),
                 )
                 subscriber_ids = [sub.user_id for sub in subscriptions]
 

@@ -235,17 +235,17 @@ class ArtworkMirrorJob:
                 _logger.warning(
                     "[artwork-mirror] non-image response; keeping remote URL",
                     url=url.value,
-                    content_type=image.content_type,
+                    content_type=image.content_type or "application/octet-stream",
                 )
                 return None
             key = ArtworkKey.for_content(
                 image.content,
-                content_type=image.content_type,
+                content_type=image.content_type or "application/octet-stream",
                 source_url=url.value,
             )
             served = await self._storage.save(
                 content=image.content,
-                content_type=image.content_type,
+                content_type=image.content_type or "application/octet-stream",
                 key=str(key),
             )
             return ImageUrl(served)

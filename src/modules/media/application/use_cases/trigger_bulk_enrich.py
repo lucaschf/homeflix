@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from typing import Any
 
 from src.modules.media.application.dtos.scan_run_dtos import (
     ScanRunOutput,
@@ -44,7 +45,7 @@ class TriggerBulkEnrichUseCase:
         return scan_run_to_output(run)
 
 
-def _log_task_failure(task: asyncio.Task) -> None:
+def _log_task_failure(task: asyncio.Task[Any]) -> None:
     if task.cancelled():
         _logger.info("Enrich task %s was cancelled", task.get_name())
         return

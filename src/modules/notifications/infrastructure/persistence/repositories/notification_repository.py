@@ -117,7 +117,7 @@ class SQLAlchemyNotificationRepository(NotificationRepository):
         )
         result = await self._session.execute(stmt)
         await self._session.flush()
-        return result.rowcount or 0
+        return result.rowcount or 0  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
 
 __all__ = ["SQLAlchemyNotificationRepository"]

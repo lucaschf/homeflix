@@ -4,6 +4,8 @@ Provides repositories, use cases, and domain services for the
 Library module.
 """
 
+from typing import Any
+
 from dependency_injector import containers, providers
 
 from src.modules.library.application.use_cases.create_library import CreateLibraryUseCase
@@ -28,11 +30,11 @@ class LibraryContainer(containers.DeclarativeContainer):
     """
 
     # Wired from InfrastructureContainer via main container.
-    session_factory = providers.Dependency()
+    session_factory = providers.Dependency[Any]()
     # Media UoW factory comes in so the ACL adapter can open short-lived
     # transactions against the Media catalog for count queries. Use
     # cases themselves only know ``MediaCountQueryPort``.
-    media_uow_factory = providers.Dependency()
+    media_uow_factory = providers.Dependency[Any]()
 
     # =========================================================================
     # Unit of Work

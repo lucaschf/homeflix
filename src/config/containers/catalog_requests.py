@@ -1,5 +1,7 @@
 """Catalog Requests bounded context dependency container."""
 
+from typing import Any
+
 from dependency_injector import containers, providers
 
 from src.modules.catalog_requests.application.use_cases import (
@@ -30,16 +32,16 @@ class CatalogRequestsContainer(containers.DeclarativeContainer):
           REST routes.
     """
 
-    session_factory = providers.Dependency()
+    session_factory = providers.Dependency[Any]()
 
     # Cross-BC publisher (Notifications BC) — powers the arrival fanout
     # on the manual "mark as included" action (ADR-022 / ADR-009).
-    notification_publisher = providers.Dependency()
+    notification_publisher = providers.Dependency[Any]()
 
     # Cross-BC title provider (Media BC / TMDB) — resolves the
     # per-language title snapshot at request-creation time. Wired at
     # the composition root so this BC takes no Media dependency.
-    localized_title_provider = providers.Dependency()
+    localized_title_provider = providers.Dependency[Any]()
 
     # =========================================================================
     # Unit of Work

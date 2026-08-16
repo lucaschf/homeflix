@@ -3,7 +3,7 @@
 import json
 from collections.abc import Sequence
 
-from sqlalchemy import and_, func, or_, select, text, update
+from sqlalchemy import ColumnElement, and_, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -60,7 +60,7 @@ def _movie_filter_conditions(
     has_tmdb_id: bool | None,
     needs_enrichment_review: bool | None,
     fts_matching_ids: Sequence[int] | None,
-) -> list:
+) -> list[ColumnElement[bool]]:
     """Build SQLAlchemy ``WHERE`` clauses for the optional movie filters.
 
     Pulled out as a helper so ``list_paginated`` and its
@@ -72,7 +72,7 @@ def _movie_filter_conditions(
     Caller resolves it once, before the page query, so the same
     id set scopes both ``SELECT`` and ``COUNT(*)``.
     """
-    conditions: list = []
+    conditions: list[ColumnElement[bool]] = []
     if allowed_library_ids is not None:
         conditions.append(
             MovieModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
@@ -708,7 +708,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             ),
             {"movie_pk": movie_pk, "episode_pk": episode_pk},
         )
-        return result.rowcount or 0
+        return result.rowcount or 0  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
     async def transfer_file_variants_between_movies(
         self,
@@ -743,7 +743,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         # relationship. Expire them so the next query reloads fresh
         # from the database.
         self._session.expire_all()
-        return result.rowcount or 0
+        return result.rowcount or 0  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
     async def find_missing_scrub_preview(self, limit: int) -> Sequence[Movie]:
         """Return up to ``limit`` movies whose ``scrub_preview_path`` is null.
@@ -817,7 +817,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             .group_by(MovieModel.credits_detection_state)
         )
         result = await self._session.execute(stmt)
-        return dict(result.all())
+        return dict(result.tuples().all())
 
     async def total_file_size_by_library(self) -> dict[str, int]:
         """Sum primary-file bytes per library over non-deleted movies."""
@@ -836,7 +836,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         self, state: str | None, limit: int, offset: int
     ) -> tuple[Sequence[CreditsStatusRow], int]:
         """Return a page of movie credits-status rows + total (newest first)."""
-        conditions = [MovieModel.deleted_at.is_(None)]
+        conditions: list[ColumnElement[bool]] = [MovieModel.deleted_at.is_(None)]
         if state is not None:
             conditions.append(MovieModel.credits_detection_state == state)
 
@@ -922,7 +922,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             .values(**values)
         )
         result = await self._session.execute(stmt)
-        return bool(result.rowcount)
+        return bool(result.rowcount)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
     async def count_under_paths(self, paths: Sequence[str]) -> int:
         r"""Count non-deleted movies whose ``file_path`` is under any of ``paths``.

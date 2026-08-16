@@ -88,7 +88,7 @@ class LibraryScanScheduler:
     @property
     def is_running(self) -> bool:
         """Whether the scheduler is started and ticking."""
-        return self._scheduler.running
+        return bool(self._scheduler.running)
 
     def trigger_now(self, job_id: str) -> bool:
         """Reschedule a registered job to fire immediately.

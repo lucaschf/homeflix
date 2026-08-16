@@ -1,5 +1,7 @@
 """List pending catalog requests enriched for the admin queue."""
 
+from typing import cast
+
 from src.modules.catalog_requests.application.dtos import (
     AdminCatalogRequestItem,
     CatalogRequestOutput,
@@ -7,6 +9,7 @@ from src.modules.catalog_requests.application.dtos import (
 from src.modules.catalog_requests.application.unit_of_work import (
     CatalogRequestsUnitOfWorkFactory,
 )
+from src.modules.catalog_requests.domain.value_objects import CatalogRequestId
 
 
 class ListAdminCatalogRequestsUseCase:
@@ -41,7 +44,7 @@ class ListAdminCatalogRequestsUseCase:
         return [
             AdminCatalogRequestItem(
                 request=CatalogRequestOutput.from_entity(request, lang),
-                subscriber_count=counts.get(request.id, 0),
+                subscriber_count=counts.get(cast(CatalogRequestId, request.id), 0),
             )
             for request in pending
         ]

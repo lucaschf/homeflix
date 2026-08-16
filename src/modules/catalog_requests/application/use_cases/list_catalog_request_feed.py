@@ -1,6 +1,7 @@
 """List pending catalog requests enriched for the member 'Em breve' feed."""
 
 from dataclasses import dataclass
+from typing import cast
 
 from src.modules.catalog_requests.application.dtos import (
     CatalogRequestFeedItem,
@@ -9,6 +10,7 @@ from src.modules.catalog_requests.application.dtos import (
 from src.modules.catalog_requests.application.unit_of_work import (
     CatalogRequestsUnitOfWorkFactory,
 )
+from src.modules.catalog_requests.domain.value_objects import CatalogRequestId
 
 
 @dataclass(frozen=True)
@@ -68,7 +70,7 @@ class ListCatalogRequestFeedUseCase:
         return [
             CatalogRequestFeedItem(
                 request=CatalogRequestOutput.from_entity(request, input_dto.lang),
-                subscriber_count=counts.get(request.id, 0),
+                subscriber_count=counts.get(cast(CatalogRequestId, request.id), 0),
                 is_subscribed=request.id in subscribed,
             )
             for request in pending

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from src.building_blocks.application.event_bus import EventHandler
 from src.modules.catalog_requests.application.ports import (
     CatalogArrivalNotification,
     NotificationPublisherPort,
 )
+from src.modules.catalog_requests.domain.value_objects import CatalogRequestId
 from src.shared_kernel.integration_events import MediaEnrichedEvent
 from src.shared_kernel.value_objects.media_type import MediaType
 
@@ -91,7 +92,7 @@ class OnMediaEnrichedHandler(EventHandler):
             # there's no publisher wired (earlier rollout slices / tests).
             if self._notification_publisher is not None:
                 subscriptions = await uow.catalog_subscriptions.list_for_request(
-                    existing.id,
+                    cast(CatalogRequestId, existing.id),
                 )
                 subscriber_ids = [sub.user_id for sub in subscriptions]
 
@@ -162,7 +163,7 @@ class OnMediaEnrichedHandler(EventHandler):
             except Exception:
                 _logger.exception(
                     "Failed to publish catalog-arrival notification for request %s to user %s",
-                    request.id,
+                    cast(CatalogRequestId, request.id),
                     user_id,
                 )
 
