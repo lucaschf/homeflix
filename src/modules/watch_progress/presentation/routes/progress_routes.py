@@ -50,8 +50,8 @@ class SaveProgressRequest(BaseModel):
 # -- Endpoints (continue-watching MUST come before {media_id}) -----------------
 
 
-@router.get("/continue-watching")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/continue-watching")
+@inject
 async def continue_watching(
     limit: int = Query(20, ge=1, le=100),
     lang: str = "en",
@@ -67,8 +67,8 @@ async def continue_watching(
     return api_list([asdict(item) for item in result.items])
 
 
-@router.put("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.put("")
+@inject
 async def save_progress(
     body: SaveProgressRequest,
     profile_id: str = Depends(resolve_profile_id),
@@ -91,8 +91,8 @@ async def save_progress(
     return api_single("progress", asdict(result))
 
 
-@router.get("/{media_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{media_id}")
+@inject
 async def get_progress(
     media_id: str,
     profile_id: str = Depends(resolve_profile_id),
@@ -107,8 +107,8 @@ async def get_progress(
     return api_single("progress", asdict(result))
 
 
-@router.delete("/series/{series_id}", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/series/{series_id}", status_code=204)
+@inject
 async def clear_series_progress(
     series_id: str,
     profile_id: str = Depends(resolve_profile_id),
@@ -126,8 +126,8 @@ async def clear_series_progress(
     return Response(status_code=204)
 
 
-@router.delete("/{media_id}", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{media_id}", status_code=204)
+@inject
 async def clear_progress(
     media_id: str,
     profile_id: str = Depends(resolve_profile_id),

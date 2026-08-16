@@ -59,8 +59,8 @@ router = APIRouter(prefix="/api/v1/series", tags=["Series"])
 # ── Series endpoints ────────────────────────────────────────────────
 
 
-@router.get("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("")
+@inject
 async def list_series(
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
@@ -108,8 +108,8 @@ async def list_series(
 
 # Registered before ``/{series_id}`` so the dynamic segment doesn't
 # swallow ``recently-added`` and dispatch to ``get_series``.
-@router.get("/recently-added")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/recently-added")
+@inject
 async def list_recently_added_series(
     limit: int = 20,
     lang: str = "en",
@@ -131,8 +131,8 @@ async def list_recently_added_series(
     return api_list([_dataclass_to_dict(s) for s in result.series])
 
 
-@router.get("/{series_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{series_id}")
+@inject
 async def get_series(
     series_id: str,
     lang: str = "en",
@@ -148,8 +148,8 @@ async def get_series(
     return api_single("series", _dataclass_to_dict(result))
 
 
-@router.delete("/{series_id}", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{series_id}", status_code=204)
+@inject
 async def delete_series(
     series_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -168,8 +168,8 @@ async def delete_series(
     await use_case.execute(DeleteSeriesInput(series_id=series_id))
 
 
-@router.get("/{series_id}/related")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{series_id}/related")
+@inject
 async def get_related_series(
     series_id: str,
     lang: str = "en",
@@ -200,8 +200,8 @@ async def get_related_series(
 # ── Episode file variant endpoints ──────────────────────────────────
 
 
-@router.get("/episodes/{episode_id}/files")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/episodes/{episode_id}/files")
+@inject
 async def get_episode_file_variants(
     episode_id: str,
     use_case: GetFileVariantsUseCase = Depends(
@@ -213,8 +213,8 @@ async def get_episode_file_variants(
     return api_list([_dataclass_to_dict(f) for f in result])
 
 
-@router.post("/episodes/{episode_id}/files", status_code=201)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/episodes/{episode_id}/files", status_code=201)
+@inject
 async def add_episode_file_variant(
     episode_id: str,
     body: AddFileVariantRequest,
@@ -239,8 +239,8 @@ async def add_episode_file_variant(
     return api_single("media_file", _dataclass_to_dict(result))
 
 
-@router.delete("/episodes/{episode_id}/files", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/episodes/{episode_id}/files", status_code=204)
+@inject
 async def remove_episode_file_variant(
     episode_id: str,
     body: RemoveFileVariantRequest,
@@ -255,8 +255,8 @@ async def remove_episode_file_variant(
     )
 
 
-@router.put("/episodes/{episode_id}/files/primary")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.put("/episodes/{episode_id}/files/primary")
+@inject
 async def set_episode_primary_file(
     episode_id: str,
     body: SetPrimaryFileRequest,
@@ -272,8 +272,8 @@ async def set_episode_primary_file(
     return api_list([_dataclass_to_dict(f) for f in result])
 
 
-@router.put("/episodes/{episode_id}/intro")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.put("/episodes/{episode_id}/intro")
+@inject
 async def set_episode_intro(
     episode_id: str,
     body: SetIntroRequest,
@@ -297,8 +297,8 @@ async def set_episode_intro(
     return api_single("intro", _dataclass_to_dict(result))
 
 
-@router.delete("/episodes/{episode_id}/intro", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/episodes/{episode_id}/intro", status_code=204)
+@inject
 async def clear_episode_intro(
     episode_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -315,8 +315,8 @@ async def clear_episode_intro(
     await use_case.execute(ClearEpisodeIntroInput(episode_id=episode_id))
 
 
-@router.post("/seasons/{season_id}/intro-detection/reset")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/seasons/{season_id}/intro-detection/reset")
+@inject
 async def reset_season_intro_detection(
     season_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),

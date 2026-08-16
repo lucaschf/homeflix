@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 _PLACEHOLDER_SECRET_KEY = "CHANGE-ME-IN-PRODUCTION"  # — sentinel literal, not a secret
 
 
-class Settings(BaseSettings):  # type: ignore[misc]
+class Settings(BaseSettings):
     """Application settings.
 
     All settings can be overridden via environment variables.

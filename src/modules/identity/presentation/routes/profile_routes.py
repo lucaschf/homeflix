@@ -57,8 +57,8 @@ from src.modules.identity.presentation.schemas.profile_schemas import (
 router = APIRouter(prefix="/api/v1/profiles", tags=["Profiles"])
 
 
-@router.get("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("")
+@inject
 async def list_profiles(
     user: UserModel = Depends(current_active_user),
     use_case: ListProfilesForUserUseCase = Depends(
@@ -72,8 +72,8 @@ async def list_profiles(
     return api_list([asdict(p) for p in result])
 
 
-@router.post("", status_code=201)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("", status_code=201)
+@inject
 async def create_profile(
     body: CreateProfileRequest,
     user: UserModel = Depends(current_active_user),
@@ -94,8 +94,8 @@ async def create_profile(
     return api_single("profile", asdict(result))
 
 
-@router.put("/{profile_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.put("/{profile_id}")
+@inject
 async def update_profile(
     profile_id: str,
     body: UpdateProfileRequest,
@@ -123,8 +123,8 @@ async def update_profile(
     return api_single("profile", asdict(result))
 
 
-@router.delete("/{profile_id}", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{profile_id}", status_code=204)
+@inject
 async def delete_profile(
     profile_id: str,
     user: UserModel = Depends(current_active_user),
@@ -142,8 +142,8 @@ async def delete_profile(
     )
 
 
-@router.post("/{profile_id}/switch", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/{profile_id}/switch", status_code=204)
+@inject
 async def switch_profile(
     profile_id: str,
     user: UserModel = Depends(current_active_user),
@@ -169,8 +169,8 @@ async def switch_profile(
     )
 
 
-@router.post("/{profile_id}/avatar")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/{profile_id}/avatar")
+@inject
 async def upload_profile_avatar(
     profile_id: str,
     file: UploadFile = File(...),
@@ -209,8 +209,8 @@ async def upload_profile_avatar(
     return api_single("profile", asdict(result))
 
 
-@router.delete("/{profile_id}/avatar")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{profile_id}/avatar")
+@inject
 async def delete_profile_avatar(
     profile_id: str,
     user: UserModel = Depends(current_active_user),
@@ -229,8 +229,8 @@ async def delete_profile_avatar(
     return api_single("profile", asdict(result))
 
 
-@router.get("/{profile_id}/avatar")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{profile_id}/avatar")
+@inject
 async def get_profile_avatar(
     profile_id: str,
     _user: UserModel = Depends(current_active_user),

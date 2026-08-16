@@ -18,7 +18,7 @@ from src.modules.catalog_requests.infrastructure.persistence.sqlalchemy_unit_of_
 )
 
 
-class CatalogRequestsContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+class CatalogRequestsContainer(containers.DeclarativeContainer):
     """Container for the Catalog Requests bounded context.
 
     Exposes:

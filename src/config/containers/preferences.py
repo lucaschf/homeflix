@@ -13,7 +13,7 @@ from src.modules.preferences.infrastructure.persistence.sqlalchemy_unit_of_work 
 )
 
 
-class PreferencesContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+class PreferencesContainer(containers.DeclarativeContainer):
     """Container for Preferences bounded context."""
 
     session_factory = providers.Dependency()

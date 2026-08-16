@@ -17,7 +17,7 @@ from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_wo
 )
 
 
-class WatchProgressContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+class WatchProgressContainer(containers.DeclarativeContainer):
     """Container for Watch Progress bounded context dependencies.
 
     The ``session_factory`` and ``media_uow_factory`` dependencies

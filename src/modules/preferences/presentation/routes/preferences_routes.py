@@ -26,8 +26,8 @@ from src.modules.preferences.presentation.schemas.preferences_schemas import (
 router = APIRouter(prefix="/api/v1/preferences", tags=["Preferences"])
 
 
-@router.get("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("")
+@inject
 async def get_preferences(
     profile_id: str = Depends(resolve_profile_id),
     use_case: GetPreferencesUseCase = Depends(
@@ -39,8 +39,8 @@ async def get_preferences(
     return api_single("preferences", asdict(result))
 
 
-@router.put("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.put("")
+@inject
 async def update_preferences(
     body: UpdatePreferencesRequest,
     profile_id: str = Depends(resolve_profile_id),

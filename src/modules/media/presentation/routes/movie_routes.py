@@ -48,8 +48,8 @@ router = APIRouter(prefix="/api/v1/movies", tags=["Movies"])
 # ── Movie endpoints ─────────────────────────────────────────────────
 
 
-@router.get("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("")
+@inject
 async def list_movies(
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
@@ -122,8 +122,8 @@ async def list_movies(
 
 # Registered before ``/{movie_id}`` so the dynamic segment doesn't
 # swallow ``recently-added`` and dispatch to ``get_movie``.
-@router.get("/recently-added")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/recently-added")
+@inject
 async def list_recently_added_movies(
     limit: int = 20,
     lang: str = "en",
@@ -146,8 +146,8 @@ async def list_recently_added_movies(
     return api_list([_dataclass_to_dict(m) for m in result.movies])
 
 
-@router.get("/{movie_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{movie_id}")
+@inject
 async def get_movie(
     movie_id: str,
     lang: str = "en",
@@ -163,8 +163,8 @@ async def get_movie(
     return api_single("movie", _dataclass_to_dict(result))
 
 
-@router.get("/{movie_id}/related")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{movie_id}/related")
+@inject
 async def get_related_movies(
     movie_id: str,
     lang: str = "en",
@@ -192,8 +192,8 @@ async def get_related_movies(
     return api_list([_dataclass_to_dict(item) for item in items])
 
 
-@router.delete("/{movie_id}", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{movie_id}", status_code=204)
+@inject
 async def delete_movie(
     movie_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -212,8 +212,8 @@ async def delete_movie(
 # ── File variant endpoints ──────────────────────────────────────────
 
 
-@router.get("/{movie_id}/files")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{movie_id}/files")
+@inject
 async def get_file_variants(
     movie_id: str,
     use_case: GetFileVariantsUseCase = Depends(
@@ -225,8 +225,8 @@ async def get_file_variants(
     return api_list([_dataclass_to_dict(f) for f in result])
 
 
-@router.post("/{movie_id}/files", status_code=201)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/{movie_id}/files", status_code=201)
+@inject
 async def add_file_variant(
     movie_id: str,
     body: AddFileVariantRequest,
@@ -251,8 +251,8 @@ async def add_file_variant(
     return api_single("media_file", _dataclass_to_dict(result))
 
 
-@router.delete("/{movie_id}/files", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{movie_id}/files", status_code=204)
+@inject
 async def remove_file_variant(
     movie_id: str,
     body: RemoveFileVariantRequest,
@@ -267,8 +267,8 @@ async def remove_file_variant(
     )
 
 
-@router.put("/{movie_id}/files/primary")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.put("/{movie_id}/files/primary")
+@inject
 async def set_primary_file(
     movie_id: str,
     body: SetPrimaryFileRequest,

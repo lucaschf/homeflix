@@ -48,8 +48,8 @@ def _is_allowed_origin(origin: str) -> bool:
     return parts.scheme == "https" and parts.hostname in ALLOWED_ARTWORK_HOSTS
 
 
-@router.get("/{key}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{key}")
+@inject
 async def get_artwork(
     key: str,
     origin: Annotated[

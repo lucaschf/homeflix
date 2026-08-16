@@ -31,7 +31,7 @@ from src.modules.collections.infrastructure.persistence.sqlalchemy_unit_of_work 
 )
 
 
-class CollectionsContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+class CollectionsContainer(containers.DeclarativeContainer):
     """Container for Collections bounded context dependencies.
 
     The ``session_factory``, ``media_uow_factory`` and

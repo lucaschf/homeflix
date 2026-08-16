@@ -22,8 +22,8 @@ from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenti
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Catalog Requests"])
 
 
-@router.get("/catalog-requests")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/catalog-requests")
+@inject
 async def list_admin_catalog_requests(
     lang: str = "en",
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -44,8 +44,8 @@ async def list_admin_catalog_requests(
     )
 
 
-@router.post("/catalog-requests/{request_id}/include", status_code=200)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/catalog-requests/{request_id}/include", status_code=200)
+@inject
 async def include_catalog_request(
     request_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -65,8 +65,8 @@ async def include_catalog_request(
     return api_single("catalog_request", asdict(result))
 
 
-@router.delete("/catalog-requests/{request_id}", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/catalog-requests/{request_id}", status_code=204)
+@inject
 async def dismiss_catalog_request(
     request_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),

@@ -23,8 +23,8 @@ from src.modules.notifications.application.use_cases import (
 router = APIRouter(prefix="/api/v1/notifications", tags=["Notifications"])
 
 
-@router.get("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("")
+@inject
 async def list_user_notifications(
     user: AuthenticatedUser = Depends(authenticated_user),
     unread_only: bool = Query(default=False),
@@ -55,8 +55,8 @@ async def list_user_notifications(
     )
 
 
-@router.patch("/{notification_id}/read")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.patch("/{notification_id}/read")
+@inject
 async def mark_notification_read(
     notification_id: str,
     user: AuthenticatedUser = Depends(authenticated_user),
@@ -81,8 +81,8 @@ async def mark_notification_read(
     return api_single("notification", asdict(result))
 
 
-@router.post("/read-all")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/read-all")
+@inject
 async def mark_all_notifications_read(
     user: AuthenticatedUser = Depends(authenticated_user),
     use_case: MarkAllNotificationsReadUseCase = Depends(

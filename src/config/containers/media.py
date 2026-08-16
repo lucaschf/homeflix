@@ -207,7 +207,7 @@ from src.modules.media.infrastructure.video import (
 )
 
 
-class MediaContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+class MediaContainer(containers.DeclarativeContainer):
     """Container for Media bounded context dependencies.
 
     Provides:

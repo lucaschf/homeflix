@@ -32,8 +32,8 @@ _MAX_QUERY_LEN = 500
 router = APIRouter(prefix="/api/v1/catalog", tags=["Catalog Lookup"])
 
 
-@router.get("/lookup")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/lookup")
+@inject
 async def lookup_catalog_title(
     q: str = Query(..., min_length=1, max_length=_MAX_QUERY_LEN),
     limit: int = Query(default=_DEFAULT_LIMIT, ge=_MIN_LIMIT, le=_MAX_LIMIT),

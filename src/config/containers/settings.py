@@ -17,7 +17,7 @@ from src.modules.settings.infrastructure.persistence.sqlalchemy_unit_of_work imp
 from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 
-class SettingsContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+class SettingsContainer(containers.DeclarativeContainer):
     """Container for the Settings bounded context.
 
     Exposes:

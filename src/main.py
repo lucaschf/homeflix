@@ -543,7 +543,7 @@ def create_app() -> FastAPI:
 def register_health_routes(app: FastAPI) -> None:
     """Register health check endpoints."""
 
-    @app.get("/health", tags=["Health"])  # type: ignore[misc]
+    @app.get("/health", tags=["Health"])
     async def health_check() -> dict[str, Any]:
         """Basic health check endpoint."""
         return {
@@ -552,7 +552,7 @@ def register_health_routes(app: FastAPI) -> None:
             "version": APP_VERSION,
         }
 
-    @app.get("/health/ready", tags=["Health"])  # type: ignore[misc]
+    @app.get("/health/ready", tags=["Health"])
     async def readiness_check(request: Request) -> dict[str, Any]:
         """Readiness check covering every probe + a top-level rollup.
 
@@ -596,7 +596,7 @@ def register_health_routes(app: FastAPI) -> None:
             payload["messages"] = messages
         return payload
 
-    @app.get("/", tags=["Root"])  # type: ignore[misc]
+    @app.get("/", tags=["Root"])
     async def root() -> dict[str, str]:
         """Root endpoint with API information."""
         return {

@@ -18,8 +18,8 @@ from src.modules.media.application.use_cases.get_hls_cache_stats import (
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — System"])
 
 
-@router.get("/hls-cache")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/hls-cache")
+@inject
 async def get_hls_cache_stats(
     _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetHlsCacheStatsUseCase = Depends(
@@ -45,8 +45,8 @@ async def get_hls_cache_stats(
     )
 
 
-@router.delete("/hls-cache", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/hls-cache", status_code=204)
+@inject
 async def clear_hls_cache_global(
     _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ClearHlsCacheGlobalUseCase = Depends(

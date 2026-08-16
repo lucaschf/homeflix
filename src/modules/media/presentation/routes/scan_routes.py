@@ -19,8 +19,8 @@ from src.modules.media.presentation.schemas import ScanMediaRequest
 router = APIRouter(prefix="/api/v1/scan", tags=["Scan"])
 
 
-@router.post("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("")
+@inject
 async def scan_media(
     body: ScanMediaRequest,
     _admin: AuthenticatedUser = Depends(authenticated_admin),

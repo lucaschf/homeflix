@@ -27,8 +27,8 @@ from src.modules.media.presentation.schemas import EnrichRequest
 router = APIRouter(prefix="/api/v1", tags=["Metadata Enrichment"])
 
 
-@router.post("/movies/{movie_id}/enrich")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/movies/{movie_id}/enrich")
+@inject
 async def enrich_movie(
     movie_id: str,
     body: EnrichRequest | None = None,
@@ -43,8 +43,8 @@ async def enrich_movie(
     return api_single("enrichment", asdict(output))
 
 
-@router.post("/series/{series_id}/enrich")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/series/{series_id}/enrich")
+@inject
 async def enrich_series(
     series_id: str,
     body: EnrichRequest | None = None,
@@ -59,8 +59,8 @@ async def enrich_series(
     return api_single("enrichment", asdict(output))
 
 
-@router.post("/enrich")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/enrich")
+@inject
 async def bulk_enrich(
     body: EnrichRequest | None = None,
     _admin: AuthenticatedUser = Depends(authenticated_admin),

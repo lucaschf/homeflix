@@ -28,8 +28,8 @@ from src.modules.library.presentation.schemas.library_schemas import (
 router = APIRouter(prefix="/api/v1/libraries", tags=["Libraries"])
 
 
-@router.post("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("")
+@inject
 async def create_library(
     body: CreateLibraryRequest,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -52,8 +52,8 @@ async def create_library(
     return api_single("library", asdict(result))
 
 
-@router.get("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("")
+@inject
 async def list_libraries(
     use_case: ListLibrariesUseCase = Depends(
         Provide[ApplicationContainer.library.list_libraries],
@@ -64,8 +64,8 @@ async def list_libraries(
     return api_list([asdict(lib) for lib in result])
 
 
-@router.get("/{library_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{library_id}")
+@inject
 async def get_library(
     library_id: str,
     use_case: GetLibraryByIdUseCase = Depends(
@@ -77,8 +77,8 @@ async def get_library(
     return api_single("library", asdict(result))
 
 
-@router.put("/{library_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.put("/{library_id}")
+@inject
 async def update_library(
     library_id: str,
     body: UpdateLibraryRequest,
@@ -107,8 +107,8 @@ async def update_library(
     return api_single("library", asdict(result))
 
 
-@router.delete("/{library_id}", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{library_id}", status_code=204)
+@inject
 async def delete_library(
     library_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),

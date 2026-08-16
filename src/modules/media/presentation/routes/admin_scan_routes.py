@@ -41,8 +41,8 @@ class TriggerBulkEnrichRequest(BaseModel):
     force: bool = False
 
 
-@router.get("/scans")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/scans")
+@inject
 async def list_admin_scans(
     kind: str | None = None,
     trigger: str | None = None,
@@ -73,8 +73,8 @@ async def list_admin_scans(
     return api_list([asdict(r) for r in rows])
 
 
-@router.get("/scans/{run_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/scans/{run_id}")
+@inject
 async def get_admin_scan(
     run_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -87,8 +87,8 @@ async def get_admin_scan(
     return api_single("scan_run", asdict(output))
 
 
-@router.post("/scans", status_code=202)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/scans", status_code=202)
+@inject
 async def trigger_admin_scan(
     body: TriggerScanRequest,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -114,8 +114,8 @@ async def trigger_admin_scan(
     return api_single("scan_run", asdict(output))
 
 
-@router.post("/enrichments", status_code=202)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/enrichments", status_code=202)
+@inject
 async def trigger_admin_bulk_enrich(
     body: TriggerBulkEnrichRequest,
     _admin: AuthenticatedUser = Depends(authenticated_admin),

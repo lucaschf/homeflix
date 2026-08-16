@@ -54,8 +54,8 @@ router = APIRouter(prefix="/api/v1/custom-lists", tags=["Custom Lists"])
 # -- List CRUD -----------------------------------------------------------------
 
 
-@router.post("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("")
+@inject
 async def create_custom_list(
     body: CreateCustomListRequest,
     profile_id: str = Depends(resolve_profile_id),
@@ -70,8 +70,8 @@ async def create_custom_list(
     return api_single("custom_list", asdict(result))
 
 
-@router.get("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("")
+@inject
 async def list_custom_lists(
     profile_id: str = Depends(resolve_profile_id),
     use_case: ListCustomListsUseCase = Depends(
@@ -83,8 +83,8 @@ async def list_custom_lists(
     return api_list([asdict(item) for item in items])
 
 
-@router.patch("/{list_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.patch("/{list_id}")
+@inject
 async def rename_custom_list(
     list_id: str,
     body: RenameCustomListRequest,
@@ -105,8 +105,8 @@ async def rename_custom_list(
     return api_single("custom_list", asdict(result))
 
 
-@router.delete("/{list_id}", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{list_id}", status_code=204)
+@inject
 async def delete_custom_list(
     list_id: str,
     profile_id: str = Depends(resolve_profile_id),
@@ -121,8 +121,8 @@ async def delete_custom_list(
 # -- Item management -----------------------------------------------------------
 
 
-@router.get("/{list_id}/items")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{list_id}/items")
+@inject
 async def get_custom_list_items(
     list_id: str,
     lang: str = "en",
@@ -146,8 +146,8 @@ async def get_custom_list_items(
     )
 
 
-@router.post("/{list_id}/items", status_code=201)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/{list_id}/items", status_code=201)
+@inject
 async def add_item_to_custom_list(
     list_id: str,
     body: AddItemToCustomListRequest,
@@ -171,8 +171,8 @@ async def add_item_to_custom_list(
     )
 
 
-@router.patch("/{list_id}/items/order", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.patch("/{list_id}/items/order", status_code=204)
+@inject
 async def reorder_custom_list_items(
     list_id: str,
     body: ReorderCustomListItemsRequest,
@@ -191,8 +191,8 @@ async def reorder_custom_list_items(
     )
 
 
-@router.delete("/{list_id}/items/{media_id}", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{list_id}/items/{media_id}", status_code=204)
+@inject
 async def remove_item_from_custom_list(
     list_id: str,
     media_id: str,
@@ -210,8 +210,8 @@ async def remove_item_from_custom_list(
 # -- Sharing & following -------------------------------------------------------
 
 
-@router.post("/{list_id}/share")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/{list_id}/share")
+@inject
 async def share_custom_list(
     list_id: str,
     profile_id: str = Depends(resolve_profile_id),
@@ -224,8 +224,8 @@ async def share_custom_list(
     return api_single("custom_list_share", asdict(result))
 
 
-@router.delete("/{list_id}/share", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{list_id}/share", status_code=204)
+@inject
 async def revoke_custom_list_share(
     list_id: str,
     profile_id: str = Depends(resolve_profile_id),
@@ -237,8 +237,8 @@ async def revoke_custom_list_share(
     await use_case.execute(RevokeCustomListShareInput(profile_id=profile_id, list_id=list_id))
 
 
-@router.get("/shared/{token}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/shared/{token}")
+@inject
 async def get_shared_list_preview(
     token: str,
     lang: str = "en",
@@ -254,8 +254,8 @@ async def get_shared_list_preview(
     return api_single("shared_list", asdict(result))
 
 
-@router.post("/shared/{token}/follow", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/shared/{token}/follow", status_code=204)
+@inject
 async def follow_shared_list(
     token: str,
     profile_id: str = Depends(resolve_profile_id),
@@ -267,8 +267,8 @@ async def follow_shared_list(
     await use_case.execute(FollowSharedListInput(profile_id=profile_id, token=token))
 
 
-@router.delete("/{list_id}/follow", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{list_id}/follow", status_code=204)
+@inject
 async def unfollow_custom_list(
     list_id: str,
     profile_id: str = Depends(resolve_profile_id),

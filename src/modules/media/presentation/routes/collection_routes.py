@@ -19,8 +19,8 @@ from src.modules.media.presentation.dependencies import resolve_profile_id
 router = APIRouter(prefix="/api/v1/collections", tags=["Collections"])
 
 
-@router.get("/{tmdb_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{tmdb_id}")
+@inject
 async def get_collection(
     tmdb_id: int = Path(..., ge=1, description="TMDB collection id."),
     lang: str = "en",
