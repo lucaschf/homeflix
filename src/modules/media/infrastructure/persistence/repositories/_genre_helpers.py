@@ -21,7 +21,7 @@ the column format changes.
 
 import json
 import re
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
 
@@ -225,7 +225,7 @@ async def fetch_genre_paginated_page(
     *,
     session: AsyncSession,
     model: Any,
-    mapper_to_entity: Callable[[Any], TEntity] | Callable[[Any], Awaitable[TEntity]],
+    mapper_to_entity: Callable[[Any], TEntity],
     options: Sequence[_AbstractLoad],
     genre: Genre,
     cursor: str | None,
@@ -337,7 +337,7 @@ async def fetch_genre_paginated_page(
         next_cursor = item_cursors[-1]
 
     return PaginatedResult(
-        items=[mapper_to_entity(row) for row in rows],  # type: ignore[misc]
+        items=[mapper_to_entity(row) for row in rows],
         pagination=Pagination(next_cursor=next_cursor, has_more=has_more),
         total_count=None,
         item_cursors=item_cursors,

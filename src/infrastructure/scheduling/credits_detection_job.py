@@ -31,13 +31,14 @@ from src.modules.media.domain.value_objects import (
     CreditsDetectionState,
     CreditsMarker,
     CreditsMarkerSource,
+    EpisodeId,
+    MovieId,
 )
 
 if TYPE_CHECKING:
     from src.modules.media.application.ports import CreditsDetectorPort, DetectedCredits
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities import Episode, Movie
-    from src.modules.media.domain.value_objects import EpisodeId, MovieId
     from src.modules.settings.domain.value_objects import CreditsDetectionConfig
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
@@ -163,9 +164,15 @@ class CreditsDetectionJob:
     ) -> None:
         async with self._media_uow_factory() as uow:
             if kind == _MOVIE:
-                await uow.movies.update_movie_credits(media_id, marker, state)  # type: ignore[arg-type]
+                # The kind/id invariant is coupled here: a movie kind must
+                # carry a MovieId, so the narrowing assert both satisfies the
+                # type checker and guards against ever writing an EpisodeId
+                # into the movies update (or vice versa).
+                assert isinstance(media_id, MovieId)
+                await uow.movies.update_movie_credits(media_id, marker, state)
             else:
-                await uow.series.update_episode_credits(media_id, marker, state)  # type: ignore[arg-type]
+                assert isinstance(media_id, EpisodeId)
+                await uow.series.update_episode_credits(media_id, marker, state)
 
 
 def _build_tuning(config: CreditsDetectionConfig) -> CreditsDetectorTuning:

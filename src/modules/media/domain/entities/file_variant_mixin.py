@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
     from src.modules.media.domain.value_objects import MediaFile, Resolution
@@ -19,6 +19,12 @@ class FileVariantMixin:
     """
 
     files: list[MediaFile]
+
+    if TYPE_CHECKING:
+
+        def with_updates(self, **changes: Any) -> Self:
+            """Return a copy with fields replaced (provided by DomainModel)."""
+            ...
 
     @property
     def primary_file(self) -> MediaFile | None:
@@ -57,7 +63,7 @@ class FileVariantMixin:
         """
         if any(f.file_path == file.file_path for f in self.files):
             return self
-        return self.with_updates(files=[*self.files, file])  # type: ignore[attr-defined, no-any-return]
+        return self.with_updates(files=[*self.files, file])
 
     def get_file_by_resolution(self, resolution: Resolution | str) -> MediaFile | None:
         """Find a file variant by resolution.
