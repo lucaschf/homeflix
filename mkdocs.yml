@@ -114,3 +114,4 @@ nav:
       - adr/ADR-027-ocr-image-based-subtitles.md
       - adr/ADR-028-domain-exception-semantics.md
       - adr/ADR-029-artwork-mirroring-storage.md
+      - adr/ADR-030-multi-episode-file-segments.md
