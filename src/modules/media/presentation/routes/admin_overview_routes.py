@@ -20,8 +20,8 @@ from src.modules.media.application.use_cases.get_overview_stats import (
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Overview"])
 
 
-@router.get("/overview/stats")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/overview/stats")
+@inject
 async def get_admin_overview_stats(
     _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetOverviewStatsUseCase = Depends(
@@ -39,8 +39,8 @@ async def get_admin_overview_stats(
     return api_single("overview_stats", asdict(stats))
 
 
-@router.get("/now-playing")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/now-playing")
+@inject
 async def get_admin_now_playing(
     _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetNowPlayingUseCase = Depends(
@@ -58,8 +58,8 @@ async def get_admin_now_playing(
     return api_single("now_playing", asdict(snapshot))
 
 
-@router.get("/library-usage")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/library-usage")
+@inject
 async def get_admin_library_usage(
     _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetLibraryUsageUseCase = Depends(

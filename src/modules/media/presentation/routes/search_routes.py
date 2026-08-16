@@ -17,8 +17,8 @@ from src.shared_kernel.value_objects import MediaType
 router = APIRouter(prefix="/api/v1", tags=["Search"])
 
 
-@router.get("/search")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/search")
+@inject
 async def search(
     q: str = Query(..., min_length=1, description="Full-text search query"),
     type: MediaType | None = Query(

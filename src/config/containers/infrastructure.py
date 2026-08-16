@@ -59,7 +59,7 @@ async def _init_engine(
     await engine.dispose()
 
 
-class InfrastructureContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+class InfrastructureContainer(containers.DeclarativeContainer):
     """Container for infrastructure dependencies."""
 
     config = providers.Dependency(instance_of=Settings)

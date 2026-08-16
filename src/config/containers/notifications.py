@@ -14,7 +14,7 @@ from src.modules.notifications.infrastructure.persistence.sqlalchemy_unit_of_wor
 )
 
 
-class NotificationsContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+class NotificationsContainer(containers.DeclarativeContainer):
     """Container for the Notifications bounded context.
 
     Exposes:

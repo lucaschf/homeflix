@@ -17,7 +17,7 @@ from src.modules.library.infrastructure.persistence.sqlalchemy_unit_of_work impo
 )
 
 
-class LibraryContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+class LibraryContainer(containers.DeclarativeContainer):
     """Container for Library bounded context dependencies.
 
     Provides:

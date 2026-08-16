@@ -30,8 +30,8 @@ from src.modules.media.presentation.schemas.segment_schemas import (
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Segments"])
 
 
-@router.post("/series/{series_id}/file-segments")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/series/{series_id}/file-segments")
+@inject
 async def define_episode_segments(
     series_id: str,
     body: DefineEpisodeSegmentsRequest,

@@ -52,8 +52,8 @@ _SORT_QUERY: CatalogSort = Query(
 )
 
 
-@router.get("/genres")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/genres")
+@inject
 async def list_genres(
     lang: str = "en",
     type: MediaType | None = _MEDIA_TYPE_QUERY,
@@ -86,8 +86,8 @@ async def list_genres(
     return api_list([asdict(g) for g in result.genres])
 
 
-@router.get("/by-genre/{genre}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/by-genre/{genre}")
+@inject
 async def list_by_genre(
     genre: str,
     cursor: str | None = None,
@@ -142,8 +142,8 @@ async def list_by_genre(
     )
 
 
-@router.get("/recently-added")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/recently-added")
+@inject
 async def list_recently_added_catalog(
     limit: int = 20,
     lang: str = "en",
@@ -172,8 +172,8 @@ async def list_recently_added_catalog(
     return api_list([asdict(item) for item in result.items])
 
 
-@router.get("/by-actor")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/by-actor")
+@inject
 async def list_by_actor(
     name: str,
     cursor: str | None = None,

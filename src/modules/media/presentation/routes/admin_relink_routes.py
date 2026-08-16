@@ -73,8 +73,8 @@ from src.modules.media.presentation.schemas import (
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Movie Relink"])
 
 
-@router.get("/movies/needs-review")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/movies/needs-review")
+@inject
 async def list_movies_needing_review(
     _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListMoviesNeedingReviewUseCase = Depends(
@@ -86,8 +86,8 @@ async def list_movies_needing_review(
     return api_list([asdict(m) for m in output.movies])
 
 
-@router.post("/movies/{movie_id}/flag-enrichment")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/movies/{movie_id}/flag-enrichment")
+@inject
 async def flag_movie_enrichment(
     movie_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -100,8 +100,8 @@ async def flag_movie_enrichment(
     return api_single("flag_enrichment", asdict(output))
 
 
-@router.get("/movies/{movie_id}/tmdb-suggestions")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/movies/{movie_id}/tmdb-suggestions")
+@inject
 async def get_movie_tmdb_suggestions(
     movie_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -114,8 +114,8 @@ async def get_movie_tmdb_suggestions(
     return api_single("tmdb_suggestions", asdict(output))
 
 
-@router.post("/movies/{movie_id}/relink")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/movies/{movie_id}/relink")
+@inject
 async def relink_movie(
     movie_id: str,
     body: RelinkMovieRequest,
@@ -135,8 +135,8 @@ async def relink_movie(
     return api_single("relink", asdict(output))
 
 
-@router.post("/movies/{movie_id}/promote-to-series")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/movies/{movie_id}/promote-to-series")
+@inject
 async def promote_movie_to_series(
     movie_id: str,
     body: PromoteMovieToSeriesRequest,
@@ -152,8 +152,8 @@ async def promote_movie_to_series(
     return api_single("promote_to_series", asdict(output))
 
 
-@router.get("/series/needs-review")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/series/needs-review")
+@inject
 async def list_series_needing_review(
     _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListSeriesNeedingReviewUseCase = Depends(
@@ -165,8 +165,8 @@ async def list_series_needing_review(
     return api_list([asdict(s) for s in output.series])
 
 
-@router.post("/series/{series_id}/flag-enrichment")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/series/{series_id}/flag-enrichment")
+@inject
 async def flag_series_enrichment(
     series_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -179,8 +179,8 @@ async def flag_series_enrichment(
     return api_single("flag_enrichment", asdict(output))
 
 
-@router.get("/series/{series_id}/tmdb-suggestions")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/series/{series_id}/tmdb-suggestions")
+@inject
 async def get_series_tmdb_suggestions(
     series_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -193,8 +193,8 @@ async def get_series_tmdb_suggestions(
     return api_single("tmdb_suggestions", asdict(output))
 
 
-@router.post("/series/{series_id}/relink")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/series/{series_id}/relink")
+@inject
 async def relink_series(
     series_id: str,
     body: RelinkSeriesRequest,

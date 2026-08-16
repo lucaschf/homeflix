@@ -38,8 +38,8 @@ class ToggleWatchlistRequest(BaseModel):
 # -- Endpoints -----------------------------------------------------------------
 
 
-@router.post("/toggle")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/toggle")
+@inject
 async def toggle_watchlist(
     body: ToggleWatchlistRequest,
     profile_id: str = Depends(resolve_profile_id),
@@ -58,8 +58,8 @@ async def toggle_watchlist(
     return api_single("watchlist", asdict(result))
 
 
-@router.get("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("")
+@inject
 async def get_watchlist(
     limit: int = Query(100, ge=1, le=500),
     lang: str = "en",
@@ -73,8 +73,8 @@ async def get_watchlist(
     return api_list([asdict(item) for item in items])
 
 
-@router.get("/check/{media_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/check/{media_id}")
+@inject
 async def check_watchlist(
     media_id: str,
     profile_id: str = Depends(resolve_profile_id),

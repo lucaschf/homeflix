@@ -16,8 +16,8 @@ from src.modules.media.application.use_cases.get_person_bio import (
 router = APIRouter(prefix="/api/v1/people", tags=["People"])
 
 
-@router.get("/{tmdb_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{tmdb_id}")
+@inject
 async def get_person(
     tmdb_id: int,
     lang: str = "en-US",

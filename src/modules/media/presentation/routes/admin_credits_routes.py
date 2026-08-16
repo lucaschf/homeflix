@@ -35,8 +35,8 @@ from src.modules.media.presentation.schemas.credits_schemas import SetCreditsReq
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Credits"])
 
 
-@router.get("/credits/status")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/credits/status")
+@inject
 async def list_credits_status(
     media_type: str = "movie",
     state: str | None = None,
@@ -64,8 +64,8 @@ async def list_credits_status(
     return api_single("credits_status", asdict(output))
 
 
-@router.put("/media/{media_id}/credits")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.put("/media/{media_id}/credits")
+@inject
 async def set_credits_marker(
     media_id: str,
     body: SetCreditsRequest,
@@ -85,8 +85,8 @@ async def set_credits_marker(
     return api_single("credits", asdict(result))
 
 
-@router.delete("/media/{media_id}/credits", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/media/{media_id}/credits", status_code=204)
+@inject
 async def clear_credits_marker(
     media_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -102,8 +102,8 @@ async def clear_credits_marker(
     await use_case.execute(media_id)
 
 
-@router.post("/media/{media_id}/credits-detection/reset")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/media/{media_id}/credits-detection/reset")
+@inject
 async def reset_credits_detection(
     media_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),

@@ -20,8 +20,8 @@ from src.modules.media.application.use_cases.trigger_job import (
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Jobs"])
 
 
-@router.get("/jobs")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/jobs")
+@inject
 async def list_admin_jobs(
     _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ListJobsUseCase = Depends(Provide[ApplicationContainer.list_jobs]),
@@ -36,8 +36,8 @@ async def list_admin_jobs(
     return api_single("jobs_overview", asdict(overview))
 
 
-@router.get("/jobs/runs")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/jobs/runs")
+@inject
 async def list_admin_job_runs(
     job_id: str | None = None,
     limit: int = 50,
@@ -54,8 +54,8 @@ async def list_admin_job_runs(
     return api_list([asdict(r) for r in rows])
 
 
-@router.post("/jobs/{job_id}/run", status_code=202)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/jobs/{job_id}/run", status_code=202)
+@inject
 async def trigger_admin_job(
     job_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),

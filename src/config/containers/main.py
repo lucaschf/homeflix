@@ -59,7 +59,7 @@ from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_wo
 )
 
 
-class ApplicationContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+class ApplicationContainer(containers.DeclarativeContainer):
     """Main application dependency injection container.
 
     This container composes all sub-containers and serves as the

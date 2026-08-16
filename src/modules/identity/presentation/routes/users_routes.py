@@ -26,8 +26,8 @@ from src.modules.identity.presentation.schemas.user_schemas import UserRead
 router = APIRouter(prefix="/api/v1/users", tags=["Users"])
 
 
-@router.get("/me")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/me")
+@inject
 async def get_me(
     user: UserModel = Depends(current_active_user),
     session_token: str = Depends(get_session_token),

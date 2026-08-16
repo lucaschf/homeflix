@@ -71,8 +71,8 @@ class SubscribeNotifyRequest(BaseModel):
 # -- Endpoints -----------------------------------------------------------------
 
 
-@router.post("", status_code=201)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("", status_code=201)
+@inject
 async def create_catalog_request(
     body: CreateCatalogRequestRequest,
     user: AuthenticatedUser = Depends(authenticated_user),
@@ -103,8 +103,8 @@ async def create_catalog_request(
     return api_single("catalog_request", asdict(result))
 
 
-@router.post("/{tmdb_id}/notify", status_code=200)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("/{tmdb_id}/notify", status_code=200)
+@inject
 async def subscribe_catalog_notification(
     tmdb_id: int,
     body: SubscribeNotifyRequest,
@@ -133,8 +133,8 @@ async def subscribe_catalog_notification(
     return api_single("catalog_request", asdict(result))
 
 
-@router.delete("/{tmdb_id}/notify", status_code=200)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{tmdb_id}/notify", status_code=200)
+@inject
 async def unsubscribe_catalog_notification(
     tmdb_id: int,
     media_type: MediaType = Query(...),
@@ -165,8 +165,8 @@ async def unsubscribe_catalog_notification(
     return api_single("catalog_request", asdict(result))
 
 
-@router.get("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("")
+@inject
 async def list_catalog_requests(
     collection_tmdb_id: int | None = Query(default=None, ge=1),
     lang: str = "en",

@@ -45,8 +45,8 @@ from src.modules.identity.presentation.schemas import (
 router = APIRouter(prefix="/api/v1/admin/users", tags=["Admin — Users"])
 
 
-@router.get("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("")
+@inject
 async def list_admin_users(
     role: UserRole | None = None,
     limit: int = 50,
@@ -67,8 +67,8 @@ async def list_admin_users(
     return api_list([asdict(s) for s in summaries])
 
 
-@router.post("", status_code=201)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.post("", status_code=201)
+@inject
 async def create_admin_user(
     body: CreateAdminUserRequest,
     _admin: UserModel = Depends(current_admin_user),
@@ -92,8 +92,8 @@ async def create_admin_user(
     return api_single("user", asdict(summary))
 
 
-@router.get("/{user_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/{user_id}")
+@inject
 async def get_admin_user(
     user_id: str,
     _admin: UserModel = Depends(current_admin_user),
@@ -106,8 +106,8 @@ async def get_admin_user(
     return api_single("user", asdict(detail))
 
 
-@router.patch("/{user_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.patch("/{user_id}")
+@inject
 async def update_admin_user_role(
     user_id: str,
     body: UpdateUserRoleRequest,
@@ -127,8 +127,8 @@ async def update_admin_user_role(
     return api_single("user", asdict(summary))
 
 
-@router.delete("/{user_id}", status_code=204)  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/{user_id}", status_code=204)
+@inject
 async def delete_admin_user(
     user_id: str,
     admin: UserModel = Depends(current_admin_user),

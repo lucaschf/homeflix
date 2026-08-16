@@ -44,7 +44,7 @@ from src.modules.identity.infrastructure.persistence.sqlalchemy_unit_of_work imp
 from src.modules.identity.infrastructure.storage import LocalAvatarStorage
 
 
-class IdentityContainer(containers.DeclarativeContainer):  # type: ignore[misc]
+class IdentityContainer(containers.DeclarativeContainer):
     """Container for the identity bounded context.
 
     Provides the ``IdentityUnitOfWork`` factory, the avatar storage

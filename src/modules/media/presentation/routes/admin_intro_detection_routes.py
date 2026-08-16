@@ -23,8 +23,8 @@ from src.modules.media.application.use_cases.list_intro_detection_runs import (
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Intro Detection"])
 
 
-@router.get("/intro-detection/runs")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/intro-detection/runs")
+@inject
 async def list_intro_detection_runs(
     season_id: str | None = None,
     series_id: str | None = None,
@@ -47,8 +47,8 @@ async def list_intro_detection_runs(
     return api_list([asdict(row) for row in rows])
 
 
-@router.get("/intro-detection/runs/{run_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/intro-detection/runs/{run_id}")
+@inject
 async def get_intro_detection_run(
     run_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),

@@ -15,8 +15,8 @@ from src.modules.media.presentation.dependencies import resolve_profile_id
 router = APIRouter(prefix="/api/v1/featured", tags=["Featured"])
 
 
-@router.get("")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("")
+@inject
 async def get_featured(
     type: str = Query("all", pattern="^(all|movie|series)$"),
     limit: int = Query(6, ge=1, le=20),

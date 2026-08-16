@@ -97,8 +97,8 @@ def _require_file(file_path: str | None) -> str:
 # -- HLS file serving (no DB access) ------------------------------------------
 
 
-@router.get("/hls/{path_hash}/{file_path:path}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/hls/{path_hash}/{file_path:path}")
+@inject
 async def hls_file(
     path_hash: str,
     file_path: str,
@@ -134,8 +134,8 @@ async def hls_file(
 # -- HLS playlist endpoints (need DB to resolve file path) ---------------------
 
 
-@router.get("/movie/{movie_id}/hls/playlist.m3u8")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/movie/{movie_id}/hls/playlist.m3u8")
+@inject
 async def movie_hls_playlist(
     movie_id: str,
     request: Request,
@@ -184,8 +184,8 @@ async def movie_hls_playlist(
     return await _serve_master(hls_uc, file_path, start=start, view=view)
 
 
-@router.get("/episode/{series_id}/{season_number}/{episode_number}/hls/playlist.m3u8")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/episode/{series_id}/{season_number}/{episode_number}/hls/playlist.m3u8")
+@inject
 async def episode_hls_playlist(
     series_id: str,
     season_number: int,
@@ -248,8 +248,8 @@ async def episode_hls_playlist(
 # -- Track info ----------------------------------------------------------------
 
 
-@router.get("/movie/{movie_id}/tracks")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/movie/{movie_id}/tracks")
+@inject
 async def movie_tracks(
     movie_id: str,
     profile_id: str = Depends(resolve_profile_id),
@@ -267,8 +267,8 @@ async def movie_tracks(
     return asdict(tracks)
 
 
-@router.get("/episode/{series_id}/{season_number}/{episode_number}/tracks")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/episode/{series_id}/{season_number}/{episode_number}/tracks")
+@inject
 async def episode_tracks(
     series_id: str,
     season_number: int,
@@ -321,8 +321,8 @@ def _scrub_preview_files(scrub_preview_path: str | None) -> tuple[Path, Path]:
     return vtt_path, sprite_path
 
 
-@router.get("/movie/{movie_id}/scrub-preview/sprite.vtt")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/movie/{movie_id}/scrub-preview/sprite.vtt")
+@inject
 async def movie_scrub_preview_vtt(
     movie_id: str,
     profile_id: str = Depends(resolve_profile_id),
@@ -336,8 +336,8 @@ async def movie_scrub_preview_vtt(
     return FileResponse(str(vtt_path), media_type="text/vtt")
 
 
-@router.get("/movie/{movie_id}/scrub-preview/sprite.jpg")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/movie/{movie_id}/scrub-preview/sprite.jpg")
+@inject
 async def movie_scrub_preview_sprite(
     movie_id: str,
     profile_id: str = Depends(resolve_profile_id),
@@ -351,8 +351,8 @@ async def movie_scrub_preview_sprite(
     return FileResponse(str(sprite_path), media_type="image/jpeg")
 
 
-@router.get("/episode/{series_id}/{season_number}/{episode_number}/scrub-preview/sprite.vtt")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/episode/{series_id}/{season_number}/{episode_number}/scrub-preview/sprite.vtt")
+@inject
 async def episode_scrub_preview_vtt(
     series_id: str,
     season_number: int,
@@ -370,8 +370,8 @@ async def episode_scrub_preview_vtt(
     return FileResponse(str(vtt_path), media_type="text/vtt")
 
 
-@router.get("/episode/{series_id}/{season_number}/{episode_number}/scrub-preview/sprite.jpg")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/episode/{series_id}/{season_number}/{episode_number}/scrub-preview/sprite.jpg")
+@inject
 async def episode_scrub_preview_sprite(
     series_id: str,
     season_number: int,
@@ -392,8 +392,8 @@ async def episode_scrub_preview_sprite(
 # -- Cache management ----------------------------------------------------------
 
 
-@router.delete("/movie/{movie_id}/hls/cache")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.delete("/movie/{movie_id}/hls/cache")
+@inject
 async def clear_movie_hls_cache(
     movie_id: str,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
@@ -414,8 +414,8 @@ async def clear_movie_hls_cache(
 # -- Direct streaming (fallback for MP4/WebM) ---------------------------------
 
 
-@router.get("/movie/{movie_id}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/movie/{movie_id}")
+@inject
 async def stream_movie(
     movie_id: str,
     request: Request,
@@ -433,8 +433,8 @@ async def stream_movie(
     return await _stream_range(stream_uc, file_path, request.headers.get("range"))
 
 
-@router.get("/episode/{series_id}/{season_number}/{episode_number}")  # type: ignore[misc]
-@inject  # type: ignore[misc]
+@router.get("/episode/{series_id}/{season_number}/{episode_number}")
+@inject
 async def stream_episode(
     series_id: str,
     season_number: int,
