@@ -28,6 +28,13 @@ class PreferencesModel(Base):
     subtitle_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="foreignOnly")
     default_quality: Mapped[str] = mapped_column(String(20), nullable=False, default="best")
     speed: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    subtitle_color: Mapped[str] = mapped_column(String(32), nullable=False, default="#FFFFFF")
+    subtitle_background: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="rgba(0, 0, 0, 0.75)",
+    )
+    subtitle_font_size: Mapped[str] = mapped_column(String(10), nullable=False, default="medium")
 
 
 __all__ = ["PreferencesModel"]

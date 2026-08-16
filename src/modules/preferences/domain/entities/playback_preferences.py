@@ -11,6 +11,7 @@ from src.modules.preferences.domain.value_objects import (
     PreferencesId,
     Quality,
     Speed,
+    SubtitleAppearance,
     SubtitleMode,
 )
 from src.shared_kernel.value_objects.language_tag import LanguageTag
@@ -55,6 +56,7 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
     subtitle_mode: SubtitleMode = DEFAULT_SUBTITLE_MODE
     default_quality: Quality = DEFAULT_QUALITY
     speed: Speed = Field(default_factory=lambda: Speed(DEFAULT_SPEED))
+    subtitle_appearance: SubtitleAppearance = Field(default_factory=SubtitleAppearance.default)
 
     @field_validator("audio_lang", "subtitle_lang", mode="before")
     @classmethod
@@ -96,10 +98,13 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
         subtitle_mode: str | None = None,
         default_quality: str | None = None,
         speed: float | None = None,
+        subtitle_appearance: dict[str, Any] | None = None,
     ) -> Self:
         """Return a copy with only the non-``None`` fields replaced.
 
-        Invalid enum / range inputs raise ``DomainValidationException``
+        ``subtitle_appearance`` is merged field-by-field onto the current
+        value, so a client can change just the color and keep the rest.
+        Invalid enum / range / color inputs raise ``DomainValidationException``
         at the field validators — the use case doesn't need to probe.
         """
         updates: dict[str, Any] = {}
@@ -113,6 +118,10 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
             updates["default_quality"] = default_quality
         if speed is not None:
             updates["speed"] = speed
+        if subtitle_appearance is not None:
+            merged = self.subtitle_appearance.model_dump(mode="json")
+            merged.update(subtitle_appearance)
+            updates["subtitle_appearance"] = merged
         if not updates:
             return self
         return self.with_updates(**updates)

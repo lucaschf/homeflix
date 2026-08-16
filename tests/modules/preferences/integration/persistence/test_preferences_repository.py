@@ -82,3 +82,19 @@ class TestSQLAlchemyPreferencesRepository:
         assert other.profile_id == _OTHER_PROFILE_ID
         assert first.speed.value == 1.5
         assert other.speed.value == 0.75
+
+    async def test_subtitle_appearance_round_trips(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyPreferencesRepository(db_session)
+        await repo.save(
+            PlaybackPreferences.default_for(_PROFILE_ID).apply_updates(
+                subtitle_appearance={"color": "yellow", "font_size": "large"},
+            ),
+        )
+
+        found = await repo.find_by_profile_id(_PROFILE_ID)
+
+        assert found is not None
+        assert found.subtitle_appearance.color.value == "yellow"
+        assert found.subtitle_appearance.font_size.value == "large"
+        # Untouched knob kept its default through the DB round-trip.
+        assert found.subtitle_appearance.background.value == "rgba(0, 0, 0, 0.75)"

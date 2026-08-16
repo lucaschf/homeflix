@@ -22,6 +22,9 @@ class TestDefaultFactory:
         assert prefs.subtitle_mode is SubtitleMode.FOREIGN_ONLY
         assert prefs.default_quality is Quality.BEST
         assert prefs.speed == Speed(1.0)
+        assert prefs.subtitle_appearance.color.value == "#FFFFFF"
+        assert prefs.subtitle_appearance.background.value == "rgba(0, 0, 0, 0.75)"
+        assert prefs.subtitle_appearance.font_size.value == "medium"
         assert prefs.id is not None
         assert prefs.id.value == _PROFILE_ID.value
 
@@ -80,3 +83,37 @@ class TestApplyUpdates:
         updated = prefs.apply_updates(audio_lang="en-us", subtitle_lang="PT-br")
         assert updated.audio_lang.value == "en-US"
         assert updated.subtitle_lang.value == "pt-BR"
+
+
+@pytest.mark.unit
+class TestSubtitleAppearanceUpdates:
+    def test_partial_merge_keeps_untouched_knobs(self) -> None:
+        prefs = PlaybackPreferences.default_for(_PROFILE_ID)
+
+        updated = prefs.apply_updates(subtitle_appearance={"color": "yellow"})
+
+        # Only color changed; background and size keep their defaults.
+        assert updated.subtitle_appearance.color.value == "yellow"
+        assert updated.subtitle_appearance.background.value == "rgba(0, 0, 0, 0.75)"
+        assert updated.subtitle_appearance.font_size.value == "medium"
+        # Immutable per ADR-007 — the original is untouched.
+        assert prefs.subtitle_appearance.color.value == "#FFFFFF"
+
+    def test_full_replace(self) -> None:
+        prefs = PlaybackPreferences.default_for(_PROFILE_ID)
+
+        updated = prefs.apply_updates(
+            subtitle_appearance={
+                "color": "#00FF00",
+                "background": "rgba(0, 0, 0, 0.5)",
+                "font_size": "large",
+            },
+        )
+
+        assert updated.subtitle_appearance.color.value == "#00FF00"
+        assert updated.subtitle_appearance.font_size.value == "large"
+
+    def test_rejects_invalid_color(self) -> None:
+        prefs = PlaybackPreferences.default_for(_PROFILE_ID)
+        with pytest.raises(DomainValidationException):
+            prefs.apply_updates(subtitle_appearance={"color": "#GG0000"})
