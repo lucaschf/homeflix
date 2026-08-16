@@ -140,7 +140,7 @@ class CatalogRequestOutput:
             tmdb_id=entity.tmdb_id,
             media_type=entity.media_type.value,
             title=entity.get_title(lang) if lang is not None else entity.title,
-            poster_url=entity.poster_url,
+            poster_url=entity.poster_url.value if entity.poster_url else None,
             requester_user_id=entity.requester_user_id,
             collection_tmdb_id=entity.collection_tmdb_id,
             source=entity.source.value,

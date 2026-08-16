@@ -10,7 +10,7 @@ from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestSource,
     CatalogRequestStatus,
 )
-from src.shared_kernel.value_objects import MediaType
+from src.shared_kernel.value_objects import ImageUrl, MediaType
 
 
 @pytest.mark.unit
@@ -160,13 +160,13 @@ class TestCatalogRequest:
             poster_url="https://image.tmdb.org/t/p/original/alien.jpg",
         )
 
-        assert request.poster_url == "https://image.tmdb.org/t/p/original/alien.jpg"
+        assert request.poster_url == ImageUrl("https://image.tmdb.org/t/p/original/alien.jpg")
 
     def test_reconcile_backfills_poster_first_owner_wins(self) -> None:
         without = CatalogRequest.create(tmdb_id=348, media_type=MediaType.MOVIE)
         backfilled = without.reconcile(poster_url="https://img/poster.jpg")
         assert backfilled is not None
-        assert backfilled.poster_url == "https://img/poster.jpg"
+        assert backfilled.poster_url == ImageUrl("https://img/poster.jpg")
 
         # A later poster never overwrites the first snapshot.
         assert backfilled.reconcile(poster_url="https://img/other.jpg") is None

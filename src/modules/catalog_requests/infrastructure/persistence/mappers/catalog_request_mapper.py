@@ -46,7 +46,7 @@ class CatalogRequestMapper:
             localized_titles=json.dumps(entity.localized_titles, ensure_ascii=False)
             if entity.localized_titles
             else None,
-            poster_url=entity.poster_url,
+            poster_url=entity.poster_url.value if entity.poster_url else None,
             requester_user_id=entity.requester_user_id,
             collection_tmdb_id=entity.collection_tmdb_id,
             source=entity.source.value,
@@ -96,7 +96,7 @@ class CatalogRequestMapper:
             if entity.localized_titles
             else None
         )
-        model.poster_url = entity.poster_url
+        model.poster_url = entity.poster_url.value if entity.poster_url else None
         model.requester_user_id = entity.requester_user_id
         model.collection_tmdb_id = entity.collection_tmdb_id
         model.notify_on_arrival = entity.notify_on_arrival
