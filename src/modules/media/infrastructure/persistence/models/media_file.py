@@ -9,9 +9,12 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,6 +45,11 @@ class MediaFileModel(Base):
         hdr_format: HDR format if applicable.
         is_primary: Whether this is the primary file variant.
         added_at: When this file variant was registered.
+        start_offset_seconds: Start of the title's window within a shared
+            physical file (ADR-030), or NULL when this variant is the whole
+            file.
+        end_offset_seconds: Exclusive end of the title's window within a
+            shared physical file, or NULL when this variant is the whole file.
         audio_tracks_json: JSON-serialized audio track metadata.
         subtitle_tracks_json: JSON-serialized subtitle track metadata.
     """
@@ -51,6 +59,19 @@ class MediaFileModel(Base):
             "(movie_id IS NOT NULL AND episode_id IS NULL) OR "
             "(movie_id IS NULL AND episode_id IS NOT NULL)",
             name="ck_media_file_single_owner",
+        ),
+        # A physical file may be shared by several titles as disjoint time
+        # windows (ADR-030), so uniqueness is per ``(path, segment)`` rather
+        # than per path. COALESCE gives whole-file rows (NULL offsets) a
+        # concrete key so duplicate whole-file registrations are still
+        # rejected (SQL treats NULL != NULL, which would otherwise slip
+        # duplicates past the index).
+        Index(
+            "ux_media_file_path_segment",
+            "file_path",
+            func.coalesce(text("start_offset_seconds"), text("-1")),
+            func.coalesce(text("end_offset_seconds"), text("-1")),
+            unique=True,
         ),
     )
 
@@ -68,11 +89,13 @@ class MediaFileModel(Base):
         index=True,
     )
 
-    # File metadata
+    # File metadata. ``file_path`` is intentionally NOT globally unique:
+    # ADR-030 lets several episodes share one physical file as disjoint
+    # segments. Uniqueness is enforced per ``(path, segment)`` by
+    # ``ux_media_file_path_segment`` above.
     file_path: Mapped[str] = mapped_column(
         String(2000),
         nullable=False,
-        unique=True,
         index=True,
     )
     file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -86,6 +109,11 @@ class MediaFileModel(Base):
     video_codec: Mapped[str | None] = mapped_column(String(20), nullable=True)
     video_bitrate: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hdr_format: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+    # Time window within a shared physical file (ADR-030). Both NULL when
+    # this variant is the whole file (the default, backward-compatible case).
+    start_offset_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_offset_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Flags
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

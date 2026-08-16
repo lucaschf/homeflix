@@ -31,11 +31,17 @@ class GenerateHlsPlaylistInput:
             anchors a fresh encode on the target second. ``0`` (the
             default) keeps the legacy single-bucket cache. The player
             quantises resume positions itself when it wants cache reuse.
+        end: Source-time second the encode is clamped to end at, for a
+            title occupying only a sub-range of a shared physical file
+            (ADR-030). ``None`` (the default) encodes to the end of the
+            file. Presentation resolves it from the episode's file
+            segment and passes the file-absolute value.
     """
 
     file_path: str
     base_url_template: str
     start: int = 0
+    end: int | None = None
     view: NowPlayingViewContext | None = None
 
 
@@ -63,7 +69,9 @@ class GenerateHlsPlaylistUseCase:
             ResourceNotFoundException: If the playlist content is missing
                 from the cache after ``ensure_playlist`` returns.
         """
-        path_hash = await self._hls.ensure_playlist(input_dto.file_path, input_dto.start)
+        path_hash = await self._hls.ensure_playlist(
+            input_dto.file_path, input_dto.start, input_dto.end
+        )
 
         # Best-effort: record who/what for the admin now-playing panel.
         # Strictly observational — a failure here must never break the

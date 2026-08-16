@@ -460,7 +460,7 @@ class HlsService(HlsPlaylistPort):
 
     # -- Public API ------------------------------------------------------------
 
-    def get_path_hash(self, file_path: str, start: int = 0) -> str:
+    def get_path_hash(self, file_path: str, start: int = 0, end: int | None = None) -> str:
         """Get the hash key for a source file at a given start offset.
 
         Args:
@@ -473,6 +473,11 @@ class HlsService(HlsPlaylistPort):
                 ``start`` themselves before calling. ``0`` (the default)
                 hashes the file path alone, keeping pre-existing cache
                 directories valid after upgrade.
+            end: Source-time second the encode is clamped to end at, for a
+                title that occupies only a sub-range of a shared physical
+                file (ADR-030). ``None`` (the default) encodes to the end
+                of the file. Folded into the hash so two episodes sharing
+                one file get distinct buckets.
 
         Returns:
             Hex MD5 digest uniquely identifying the cache bucket. The
@@ -480,7 +485,7 @@ class HlsService(HlsPlaylistPort):
             being deterministic so the same offset always re-attaches
             to the same on-disk bucket.
         """
-        key = file_path if start == 0 else f"{file_path}:{start}"
+        key = file_path if start == 0 and end is None else f"{file_path}:{start}:{end}"
         return hashlib.md5(key.encode()).hexdigest()
 
     def get_file_by_hash(self, path_hash: str, relative_path: str) -> Path | None:
@@ -598,7 +603,7 @@ class HlsService(HlsPlaylistPort):
         except (OSError, json.JSONDecodeError):
             return None
 
-    async def ensure_playlist(self, file_path: str, start: int = 0) -> str:
+    async def ensure_playlist(self, file_path: str, start: int = 0, end: int | None = None) -> str:
         """Start generation and wait until the first segments are ready.
 
         Args:
@@ -608,16 +613,20 @@ class HlsService(HlsPlaylistPort):
                 target second. Callers wanting cache reuse across nearby
                 positions quantise ``start`` before calling. ``0`` is the
                 legacy behaviour (single bucket per file).
+            end: Source-time second to clamp the encode at, for a title
+                occupying only a sub-range of a shared physical file
+                (ADR-030). ``None`` (the default) encodes to the end of
+                the file.
 
         Returns:
             The path hash for the bucket — unique per ``(file_path,
-            start_bucket)`` pair.
+            start_bucket, end)`` triple.
 
         Raises:
             RuntimeError: If FFmpeg is not available, fails, or times out.
             FileNotFoundError: If the source file does not exist.
         """
-        path_hash = self.get_path_hash(file_path, start)
+        path_hash = self.get_path_hash(file_path, start, end)
         # Touch immediately so the eviction loop never kills a process
         # that the user just asked for, even if no segments have been
         # served yet (e.g. while waiting for ffmpeg to start).
@@ -642,7 +651,9 @@ class HlsService(HlsPlaylistPort):
         # this only runs after the HW attempt already failed.
         hw_eligible = self._would_use_hw_transcode(file_path, start)
         try:
-            await self._generate_and_wait(file_path, start, path_hash, force_software=False)
+            await self._generate_and_wait(
+                file_path, start, path_hash, force_software=False, end=end
+            )
         except RuntimeError:
             if not hw_eligible:
                 raise
@@ -653,7 +664,7 @@ class HlsService(HlsPlaylistPort):
             )
             shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
             self._kill_processes(path_hash)
-            await self._generate_and_wait(file_path, start, path_hash, force_software=True)
+            await self._generate_and_wait(file_path, start, path_hash, force_software=True, end=end)
         return path_hash
 
     def _would_use_hw_transcode(self, file_path: str, start: int) -> bool:
@@ -676,6 +687,7 @@ class HlsService(HlsPlaylistPort):
         path_hash: str,
         *,
         force_software: bool,
+        end: int | None = None,
     ) -> None:
         """Start generation and block until the first segments are ready.
 
@@ -683,7 +695,7 @@ class HlsService(HlsPlaylistPort):
             RuntimeError: if the ffmpeg process fails or no segments
                 appear within the poll timeout.
         """
-        await asyncio.to_thread(self._start_generation, file_path, start, force_software)
+        await asyncio.to_thread(self._start_generation, file_path, start, force_software, end)
 
         video_playlist = self._cache_dir / path_hash / _VIDEO_DIR / "playlist.m3u8"
         attempts = int(_POLL_TIMEOUT / _POLL_INTERVAL)
@@ -835,7 +847,11 @@ class HlsService(HlsPlaylistPort):
     # -- Private: generation ---------------------------------------------------
 
     def _start_generation(
-        self, file_path: str, start: int = 0, force_software: bool = False
+        self,
+        file_path: str,
+        start: int = 0,
+        force_software: bool = False,
+        end: int | None = None,
     ) -> str:
         """Start all FFmpeg processes for multi-track HLS generation.
 
@@ -850,10 +866,13 @@ class HlsService(HlsPlaylistPort):
             start: Source-time second to begin the encode at.
             force_software: Skip the NVENC pipeline and encode with
                 libx264 — the fallback used after a HW attempt fails.
+            end: Source-time second to clamp the encode at, for a title
+                occupying only a sub-range of a shared file (ADR-030), or
+                ``None`` to encode to the end of the file.
         """
         source = self._validate_source(file_path)
         safe_path = str(source)
-        path_hash = self.get_path_hash(file_path, start)
+        path_hash = self.get_path_hash(file_path, start, end)
         # The encode is anchored at the exact requested second so a
         # forward seek lands on the first segment of a fresh manifest
         # (no out-of-range seek on the live/event playlist). Cache reuse
@@ -916,7 +935,7 @@ class HlsService(HlsPlaylistPort):
             video_dir.mkdir()
             cmd = with_ffmpeg_threads(
                 self._build_video_cmd(
-                    safe_path, video_dir, probe_result, bucket_start, force_software
+                    safe_path, video_dir, probe_result, bucket_start, force_software, end
                 ),
                 ffmpeg_threads,
             )
@@ -933,7 +952,7 @@ class HlsService(HlsPlaylistPort):
                 audio_dir = output_dir / f"audio_{track.index}"
                 audio_dir.mkdir()
                 cmd = with_ffmpeg_threads(
-                    self._build_audio_cmd(safe_path, audio_dir, track, bucket_start),
+                    self._build_audio_cmd(safe_path, audio_dir, track, bucket_start, end),
                     ffmpeg_threads,
                 )
                 _logger.info(
@@ -1137,6 +1156,7 @@ class HlsService(HlsPlaylistPort):
         probe: ProbeResult,
         start: int = 0,
         force_software: bool = False,
+        end: int | None = None,
     ) -> list[str]:
         """Build FFmpeg command for video + default audio.
 
@@ -1243,6 +1263,11 @@ class HlsService(HlsPlaylistPort):
 
         seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
         ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
+        # Clamp the encode to a sub-range when this title occupies only part
+        # of a shared physical file (ADR-030). ``-t`` is an output option, so
+        # with the input seek above it measures from ``start``: the emitted
+        # stream is exactly ``[start, end)`` source seconds.
+        duration_args = ["-t", str(end - start)] if end is not None else []
 
         return [
             "ffmpeg",
@@ -1259,6 +1284,7 @@ class HlsService(HlsPlaylistPort):
             *video_args,
             *audio_args,
             *ts_normalize_args,
+            *duration_args,
             # Zero the MPEG-TS muxer's ~1.4s initial offset so the first
             # segment PTS starts at ~0, keeping the video / audio / subtitle
             # timelines aligned (the WebVTT X-TIMESTAMP-MAP anchors to MPEGTS:0).
@@ -1291,6 +1317,7 @@ class HlsService(HlsPlaylistPort):
         output_dir: Path,
         track: AudioTrack,
         start: int = 0,
+        end: int | None = None,
     ) -> list[str]:
         """Build FFmpeg command for audio-only HLS track.
 
@@ -1308,6 +1335,9 @@ class HlsService(HlsPlaylistPort):
         """
         seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
         ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
+        # Clamp to the same sub-range as the video track (ADR-030) so an
+        # alternate-audio playlist ends at the title boundary, not the file's.
+        duration_args = ["-t", str(end - start)] if end is not None else []
         leading_gap = _has_leading_audio_gap(file_path, track.index, start)
         return [
             "ffmpeg",
@@ -1320,6 +1350,7 @@ class HlsService(HlsPlaylistPort):
             "-sn",
             *_audio_args_for(track, start, leading_gap),
             *ts_normalize_args,
+            *duration_args,
             # Zero the MPEG-TS muxer's ~1.4s initial offset so the first
             # segment PTS starts at ~0, keeping the video / audio / subtitle
             # timelines aligned (the WebVTT X-TIMESTAMP-MAP anchors to MPEGTS:0).

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from src.modules.media.domain.value_objects import (
+    FileSegment,
     HdrFormat,
     MediaFile,
     Resolution,
@@ -212,3 +213,47 @@ class TestMediaFileMapperUpdateModel:
         assert model.resolution_name == "4K"
         assert model.video_codec == "h265"
         assert model.is_primary is False
+
+
+@pytest.mark.unit
+class TestMediaFileMapperSegment:
+    """Tests for FileSegment persistence on MediaFile (ADR-030)."""
+
+    def test_whole_file_maps_null_offsets(self) -> None:
+        model = MediaFileMapper.to_model(_create_media_file())
+
+        assert model.start_offset_seconds is None
+        assert model.end_offset_seconds is None
+
+    def test_segment_maps_offset_columns(self) -> None:
+        file = _create_media_file(segment=FileSegment(start_seconds=4740, end_seconds=9480))
+        model = MediaFileMapper.to_model(file)
+
+        assert model.start_offset_seconds == 4740
+        assert model.end_offset_seconds == 9480
+
+    def test_round_trip_segment(self) -> None:
+        original = _create_media_file(
+            segment=FileSegment(start_seconds=0, end_seconds=4740),
+        )
+        restored = MediaFileMapper.to_entity(MediaFileMapper.to_model(original))
+
+        assert restored.segment == original.segment
+        assert restored.is_segment is True
+
+    def test_round_trip_whole_file_has_no_segment(self) -> None:
+        restored = MediaFileMapper.to_entity(MediaFileMapper.to_model(_create_media_file()))
+
+        assert restored.segment is None
+        assert restored.is_segment is False
+
+    def test_update_model_clears_offsets_when_segment_removed(self) -> None:
+        model = MediaFileMapper.to_model(
+            _create_media_file(segment=FileSegment(start_seconds=10, end_seconds=20)),
+        )
+        assert model.start_offset_seconds == 10
+
+        MediaFileMapper.update_model(model, _create_media_file())
+
+        assert model.start_offset_seconds is None
+        assert model.end_offset_seconds is None

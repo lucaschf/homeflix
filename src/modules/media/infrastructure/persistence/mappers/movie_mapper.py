@@ -1,6 +1,7 @@
 """Mapper between Movie domain entity and MovieModel ORM model."""
 
 import json
+from typing import cast
 
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
@@ -285,7 +286,7 @@ def _credits_marker_from_columns(model: MovieModel) -> CreditsMarker | None:
 
     return CreditsMarker(
         start_seconds=model.credits_start_seconds,
-        source=CreditsMarkerSource(model.credits_source),
+        source=CreditsMarkerSource(cast(str, model.credits_source)),
         confidence=model.credits_confidence,
         detected_at=model.credits_detected_at,
     )
