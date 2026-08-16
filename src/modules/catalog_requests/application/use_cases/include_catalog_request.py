@@ -104,7 +104,7 @@ class IncludeCatalogRequestUseCase:
                     CatalogArrivalNotification(
                         recipient_user_id=user_id,
                         title=title,
-                        tmdb_id=request.tmdb_id,
+                        tmdb_id=request.tmdb_id.value,
                         media_id=None,
                         media_type=request.media_type.value,
                     ),

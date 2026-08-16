@@ -39,6 +39,8 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-027](./ADR-027-ocr-image-based-subtitles.md) | OCR de Legendas Baseadas em Imagem (PGS/VOBSUB) para Faixas de Texto Selecionáveis | ✅ Aceito | 2026-07-04 |
 | [ADR-028](./ADR-028-domain-exception-semantics.md) | Semântica de uso da hierarquia de exceções de domínio | ✅ Aceito | 2026-07-07 |
 | [ADR-029](./ADR-029-artwork-mirroring-storage.md) | Mirror de Artwork de Provider via Port de Storage | ✅ Aceito | 2026-07-18 |
+| [ADR-030](./ADR-030-multi-episode-file-segments.md) | Segmentos de Arquivo Multi-Episódio | ✅ Aceito | 2026-08-09 |
+| [ADR-031](./ADR-031-tmdb-id-shared-kernel-value-object.md) | TmdbId como Value Object no Shared Kernel | ✅ Aceito | 2026-08-16 |
 
 ## Como Criar um Novo ADR
 

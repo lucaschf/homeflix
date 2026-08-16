@@ -40,7 +40,7 @@ class CatalogRequestMapper:
 
         return CatalogRequestModel(
             external_id=str(entity.id),
-            tmdb_id=entity.tmdb_id,
+            tmdb_id=entity.tmdb_id.value,
             media_type=entity.media_type.value,
             title=entity.title,
             localized_titles=json.dumps(entity.localized_titles, ensure_ascii=False)
@@ -48,7 +48,9 @@ class CatalogRequestMapper:
             else None,
             poster_url=entity.poster_url.value if entity.poster_url else None,
             requester_user_id=entity.requester_user_id,
-            collection_tmdb_id=entity.collection_tmdb_id,
+            collection_tmdb_id=entity.collection_tmdb_id.value
+            if entity.collection_tmdb_id
+            else None,
             source=entity.source.value,
             notify_on_arrival=entity.notify_on_arrival,
             requested_at=entity.requested_at,
@@ -98,7 +100,9 @@ class CatalogRequestMapper:
         )
         model.poster_url = entity.poster_url.value if entity.poster_url else None
         model.requester_user_id = entity.requester_user_id
-        model.collection_tmdb_id = entity.collection_tmdb_id
+        model.collection_tmdb_id = (
+            entity.collection_tmdb_id.value if entity.collection_tmdb_id else None
+        )
         model.notify_on_arrival = entity.notify_on_arrival
         model.fulfilled_at = entity.fulfilled_at
         return model

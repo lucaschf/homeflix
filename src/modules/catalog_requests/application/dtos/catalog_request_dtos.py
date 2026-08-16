@@ -137,12 +137,14 @@ class CatalogRequestOutput:
         """
         return cls(
             id=str(entity.id),
-            tmdb_id=entity.tmdb_id,
+            tmdb_id=entity.tmdb_id.value,
             media_type=entity.media_type.value,
             title=entity.get_title(lang) if lang is not None else entity.title,
             poster_url=entity.poster_url.value if entity.poster_url else None,
             requester_user_id=entity.requester_user_id,
-            collection_tmdb_id=entity.collection_tmdb_id,
+            collection_tmdb_id=entity.collection_tmdb_id.value
+            if entity.collection_tmdb_id
+            else None,
             source=entity.source.value,
             notify_on_arrival=entity.notify_on_arrival,
             is_fulfilled=entity.is_fulfilled,
