@@ -6,11 +6,12 @@ from pydantic import BaseModel, Field
 
 
 class SubtitleAppearanceRequest(BaseModel):
-    """Partial subtitle-styling update. Any subset of the three knobs."""
+    """Partial subtitle-styling update. Any subset of the knobs."""
 
     color: str | None = None
     background: str | None = None
     font_size: Literal["small", "medium", "large"] | None = None
+    text_edge: Literal["none", "shadow", "outline"] | None = None
 
 
 class UpdatePreferencesRequest(BaseModel):

@@ -32,6 +32,7 @@ class PreferencesMapper:
                 color=model.subtitle_color,
                 background=model.subtitle_background,
                 font_size=model.subtitle_font_size,
+                text_edge=model.subtitle_text_edge,
             ),
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -54,6 +55,7 @@ class PreferencesMapper:
             subtitle_color=entity.subtitle_appearance.color.value,
             subtitle_background=entity.subtitle_appearance.background.value,
             subtitle_font_size=entity.subtitle_appearance.font_size.value,
+            subtitle_text_edge=entity.subtitle_appearance.text_edge.value,
         )
 
     @staticmethod
@@ -75,6 +77,7 @@ class PreferencesMapper:
         model.subtitle_color = entity.subtitle_appearance.color.value
         model.subtitle_background = entity.subtitle_appearance.background.value
         model.subtitle_font_size = entity.subtitle_appearance.font_size.value
+        model.subtitle_text_edge = entity.subtitle_appearance.text_edge.value
         return model
 
 

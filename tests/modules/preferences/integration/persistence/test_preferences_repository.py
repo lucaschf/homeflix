@@ -87,7 +87,11 @@ class TestSQLAlchemyPreferencesRepository:
         repo = SQLAlchemyPreferencesRepository(db_session)
         await repo.save(
             PlaybackPreferences.default_for(_PROFILE_ID).apply_updates(
-                subtitle_appearance={"color": "yellow", "font_size": "large"},
+                subtitle_appearance={
+                    "color": "yellow",
+                    "font_size": "large",
+                    "text_edge": "outline",
+                },
             ),
         )
 
@@ -96,5 +100,6 @@ class TestSQLAlchemyPreferencesRepository:
         assert found is not None
         assert found.subtitle_appearance.color.value == "yellow"
         assert found.subtitle_appearance.font_size.value == "large"
+        assert found.subtitle_appearance.text_edge.value == "outline"
         # Untouched knob kept its default through the DB round-trip.
         assert found.subtitle_appearance.background.value == "rgba(0, 0, 0, 0.75)"

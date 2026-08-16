@@ -25,6 +25,7 @@ class TestDefaultFactory:
         assert prefs.subtitle_appearance.color.value == "#FFFFFF"
         assert prefs.subtitle_appearance.background.value == "rgba(0, 0, 0, 0.75)"
         assert prefs.subtitle_appearance.font_size.value == "medium"
+        assert prefs.subtitle_appearance.text_edge.value == "shadow"
         assert prefs.id is not None
         assert prefs.id.value == _PROFILE_ID.value
 
@@ -92,10 +93,11 @@ class TestSubtitleAppearanceUpdates:
 
         updated = prefs.apply_updates(subtitle_appearance={"color": "yellow"})
 
-        # Only color changed; background and size keep their defaults.
+        # Only color changed; background, size, and edge keep their defaults.
         assert updated.subtitle_appearance.color.value == "yellow"
         assert updated.subtitle_appearance.background.value == "rgba(0, 0, 0, 0.75)"
         assert updated.subtitle_appearance.font_size.value == "medium"
+        assert updated.subtitle_appearance.text_edge.value == "shadow"
         # Immutable per ADR-007 — the original is untouched.
         assert prefs.subtitle_appearance.color.value == "#FFFFFF"
 
@@ -107,11 +109,13 @@ class TestSubtitleAppearanceUpdates:
                 "color": "#00FF00",
                 "background": "rgba(0, 0, 0, 0.5)",
                 "font_size": "large",
+                "text_edge": "outline",
             },
         )
 
         assert updated.subtitle_appearance.color.value == "#00FF00"
         assert updated.subtitle_appearance.font_size.value == "large"
+        assert updated.subtitle_appearance.text_edge.value == "outline"
 
     def test_rejects_invalid_color(self) -> None:
         prefs = PlaybackPreferences.default_for(_PROFILE_ID)
