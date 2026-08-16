@@ -9,6 +9,7 @@ from pydantic import Field, model_validator
 
 from src.building_blocks.domain import AggregateRoot
 from src.modules.watch_progress.domain.value_objects import (
+    PlaybackPosition,
     ProgressId,
     SubtitlePreference,
     WatchableMediaId,
@@ -56,9 +57,9 @@ class WatchProgress(AggregateRoot[ProgressId]):
             )
         return self
 
-    # Position tracking
-    position_seconds: int = Field(ge=0)
-    duration_seconds: int = Field(gt=0)
+    # Position tracking — position + duration bundled so the progress
+    # arithmetic (ratio/percentage/completion) lives on the value object.
+    position: PlaybackPosition
     status: WatchStatus = Field(default=WatchStatus.IN_PROGRESS)
 
     # Track preferences
@@ -69,26 +70,20 @@ class WatchProgress(AggregateRoot[ProgressId]):
     last_watched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
 
-    @staticmethod
-    def _watched_ratio(position_seconds: int, duration_seconds: int | None) -> float:
-        """Fraction of the media watched (0.0+); 0.0 when duration is unknown.
+    @property
+    def position_seconds(self) -> int:
+        """Current playback position in seconds (from the position VO)."""
+        return self.position.position_seconds
 
-        Single source of the position/duration formula shared by
-        ``percentage`` and the completion check so the two never drift.
-        """
-        if not duration_seconds:
-            return 0.0
-        return position_seconds / duration_seconds
-
-    @classmethod
-    def _reaches_completion(cls, position_seconds: int, duration_seconds: int | None) -> bool:
-        """Whether the watched ratio crosses the completion threshold."""
-        return cls._watched_ratio(position_seconds, duration_seconds) >= _COMPLETION_THRESHOLD
+    @property
+    def duration_seconds(self) -> int:
+        """Total media duration in seconds (from the position VO)."""
+        return self.position.duration_seconds
 
     @property
     def percentage(self) -> float:
         """Calculate watch percentage (0-100)."""
-        return min(100.0, self._watched_ratio(self.position_seconds, self.duration_seconds) * 100)
+        return self.position.percentage
 
     @property
     def is_completed(self) -> bool:
@@ -119,15 +114,17 @@ class WatchProgress(AggregateRoot[ProgressId]):
         """
         now = datetime.now(UTC)
         effective_duration = duration_seconds or self.duration_seconds
-        is_complete = self._reaches_completion(position_seconds, effective_duration)
+        new_position = PlaybackPosition(
+            position_seconds=position_seconds,
+            duration_seconds=effective_duration,
+        )
+        is_complete = new_position.reaches_completion(_COMPLETION_THRESHOLD)
 
         updates: dict[str, object] = {
-            "position_seconds": position_seconds,
+            "position": new_position,
             "last_watched_at": now,
         }
 
-        if duration_seconds is not None:
-            updates["duration_seconds"] = duration_seconds
         if audio_track is not None:
             updates["audio_track"] = audio_track
         if subtitle_track is not None:
@@ -169,15 +166,18 @@ class WatchProgress(AggregateRoot[ProgressId]):
             A new WatchProgress instance.
         """
         now = datetime.now(UTC)
-        is_complete = cls._reaches_completion(position_seconds, duration_seconds)
+        position = PlaybackPosition(
+            position_seconds=position_seconds,
+            duration_seconds=duration_seconds,
+        )
+        is_complete = position.reaches_completion(_COMPLETION_THRESHOLD)
 
         return cls(
             id=ProgressId.generate(),
             profile_id=profile_id,
             media_id=media_id,
             media_type=media_type,
-            position_seconds=position_seconds,
-            duration_seconds=duration_seconds,
+            position=position,
             status=WatchStatus.COMPLETED if is_complete else WatchStatus.IN_PROGRESS,
             audio_track=audio_track,
             subtitle_track=subtitle_track,

@@ -11,6 +11,7 @@ from src.modules.watch_progress.domain.services import (
 )
 from src.modules.watch_progress.domain.value_objects import (
     EpisodeCandidate,
+    PlaybackPosition,
     WatchableMediaType,
     WatchStatus,
 )
@@ -29,8 +30,7 @@ def _progress(
         profile_id=_PROFILE_ID,
         media_id=media_id,
         media_type=WatchableMediaType.EPISODE,
-        position_seconds=900,
-        duration_seconds=3600,
+        position=PlaybackPosition(position_seconds=900, duration_seconds=3600),
         status=status,
         last_watched_at=last_watched_at or datetime(2026, 4, 9, tzinfo=UTC),
     )

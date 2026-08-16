@@ -16,7 +16,10 @@ from src.modules.watch_progress.application.ports import (
 )
 from src.modules.watch_progress.application.use_cases import GetContinueWatchingUseCase
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.value_objects import WatchableMediaType
+from src.modules.watch_progress.domain.value_objects import (
+    PlaybackPosition,
+    WatchableMediaType,
+)
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from tests.modules.watch_progress.unit.conftest import (
     WatchProgressUoWMocks,
@@ -44,8 +47,7 @@ def _make_progress(
         profile_id=_PROFILE_ID,
         media_id=media_id,
         media_type=media_type,
-        position_seconds=position,
-        duration_seconds=3600,
+        position=PlaybackPosition(position_seconds=position, duration_seconds=3600),
         status=status,
         last_watched_at=last_watched or datetime(2026, 4, 9, tzinfo=UTC),
     )
