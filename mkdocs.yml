@@ -71,6 +71,7 @@ nav:
   - Funcionalidades: features.md
   - Requisitos: homeflix-requirements.md
   - Roadmap: roadmap.md
+  - Plano de Débito Técnico: tech-debt-remediation-plan.md
   - Standards:
       - standards/api-i18n-guide.md
       - standards/api-production-addons.md
