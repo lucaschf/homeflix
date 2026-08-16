@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from src.building_blocks.domain import AggregateRoot
 from src.modules.catalog_requests.domain.value_objects import (
@@ -12,9 +12,7 @@ from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestSource,
     CatalogRequestStatus,
 )
-from src.shared_kernel.value_objects import (
-    MediaType,  # noqa: TCH001 — runtime for Pydantic
-)
+from src.shared_kernel.value_objects import ImageUrl, MediaType
 
 
 class CatalogRequest(AggregateRoot[CatalogRequestId]):
@@ -81,7 +79,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     # "Em breve" feed renders in the viewer's language; falls back to
     # the English snapshot / ``title`` when a locale is missing.
     localized_titles: dict[str, str] = Field(default_factory=dict)
-    poster_url: str | None = None
+    poster_url: ImageUrl | None = None
     requester_user_id: str | None = None
     collection_tmdb_id: int | None = None
     source: CatalogRequestSource = CatalogRequestSource.HOUSEHOLD
@@ -89,13 +87,26 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     requested_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     fulfilled_at: datetime | None = None
 
+    @field_validator("poster_url", mode="before")
+    @classmethod
+    def _convert_poster_url(cls, v: str | ImageUrl | None) -> ImageUrl | None:
+        """Accept a raw ``str`` at the boundary and normalize to ``ImageUrl``.
+
+        The TMDB snapshot arrives as a plain URL string from the use case;
+        typing the field as ``ImageUrl`` validates it once here and lets the
+        VO flow (with ``.is_remote`` etc.) through the domain (ADR-018).
+        """
+        if v is None or isinstance(v, ImageUrl):
+            return v
+        return ImageUrl(v)
+
     @classmethod
     def create(
         cls,
         tmdb_id: int,
         media_type: MediaType,
         title: str | None = None,
-        poster_url: str | None = None,
+        poster_url: str | ImageUrl | None = None,
         requester_user_id: str | None = None,
         collection_tmdb_id: int | None = None,
         notify_on_arrival: bool = False,
@@ -189,7 +200,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
         self,
         *,
         title: str | None = None,
-        poster_url: str | None = None,
+        poster_url: str | ImageUrl | None = None,
         requester_user_id: str | None = None,
         notify: bool = False,
         localized_titles: dict[str, str] | None = None,
