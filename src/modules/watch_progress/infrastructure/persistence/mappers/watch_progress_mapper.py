@@ -2,6 +2,7 @@
 
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.value_objects import (
+    PlaybackPosition,
     ProgressId,
     SubtitlePreference,
     WatchableMediaId,
@@ -55,8 +56,10 @@ class WatchProgressMapper:
             profile_id=ProfileId(model.profile_id),
             media_id=WatchableMediaId(model.media_id),
             media_type=WatchableMediaType(model.media_type),
-            position_seconds=model.position_seconds,
-            duration_seconds=model.duration_seconds,
+            position=PlaybackPosition(
+                position_seconds=model.position_seconds,
+                duration_seconds=model.duration_seconds,
+            ),
             status=WatchStatus(model.status),
             audio_track=model.audio_track,
             subtitle_track=SubtitlePreference.from_wire(model.subtitle_track),

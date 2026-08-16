@@ -6,6 +6,7 @@ import pytest
 
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.value_objects import (
+    PlaybackPosition,
     ProgressId,
     SubtitlePreference,
     WatchableMediaType,
@@ -33,8 +34,7 @@ def _make_progress(
         profile_id=_PROFILE_ID,
         media_id=media_id,
         media_type=media_type,
-        position_seconds=position,
-        duration_seconds=duration,
+        position=PlaybackPosition(position_seconds=position, duration_seconds=duration),
     )
 
 
@@ -48,8 +48,7 @@ class TestWatchProgressMapperToModel:
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
             media_type=WatchableMediaType.MOVIE,
-            position_seconds=100,
-            duration_seconds=7200,
+            position=PlaybackPosition(position_seconds=100, duration_seconds=7200),
         )
 
         with pytest.raises(ValueError, match="Cannot map entity without ID"):
@@ -75,8 +74,7 @@ class TestWatchProgressMapperToModel:
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
             media_type=WatchableMediaType.MOVIE,
-            position_seconds=100,
-            duration_seconds=7200,
+            position=PlaybackPosition(position_seconds=100, duration_seconds=7200),
             audio_track=1,
             subtitle_track=SubtitlePreference.track(2),
         )
@@ -92,8 +90,7 @@ class TestWatchProgressMapperToModel:
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
             media_type=WatchableMediaType.MOVIE,
-            position_seconds=100,
-            duration_seconds=7200,
+            position=PlaybackPosition(position_seconds=100, duration_seconds=7200),
             subtitle_track=SubtitlePreference.off(),
         )
 
@@ -108,8 +105,7 @@ class TestWatchProgressMapperToModel:
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
             media_type=WatchableMediaType.MOVIE,
-            position_seconds=7200,
-            duration_seconds=7200,
+            position=PlaybackPosition(position_seconds=7200, duration_seconds=7200),
             status="completed",
             completed_at=now,
         )
@@ -219,8 +215,7 @@ class TestWatchProgressMapperUpdateModel:
             profile_id=_PROFILE_ID,
             media_id="mov_abc123def456",
             media_type=WatchableMediaType.MOVIE,
-            position_seconds=6500,
-            duration_seconds=7200,
+            position=PlaybackPosition(position_seconds=6500, duration_seconds=7200),
             status="completed",
             audio_track=1,
             subtitle_track=SubtitlePreference.track(2),
@@ -255,8 +250,7 @@ class TestWatchProgressMapperUpdateModel:
             profile_id=_PROFILE_ID,
             media_id="mov_different000",
             media_type=WatchableMediaType.MOVIE,
-            position_seconds=200,
-            duration_seconds=7200,
+            position=PlaybackPosition(position_seconds=200, duration_seconds=7200),
         )
 
         result = WatchProgressMapper.update_model(model, updated)
