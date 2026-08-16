@@ -29,6 +29,11 @@ Para os requisitos completos (incluindo o que ainda é planejado), veja
 - **Variantes de arquivo** — múltiplas versões do mesmo título (720p/1080p/4K,
   HDR) agrupadas como uma mídia com vários arquivos
   ([ADR-006](adr/ADR-006-media-file-variants.md)).
+- **Arquivos multi-episódio** — o caso inverso das variantes: um único arquivo
+  físico que contém vários episódios (minisséries antigas). Cada episódio aponta
+  para uma janela de tempo `[início, fim)` do arquivo compartilhado, reproduzida
+  clampada via HLS sem cortar o arquivo no disco. Um endpoint admin define os
+  cortes por episódio ([ADR-030](adr/ADR-030-multi-episode-file-segments.md)).
 - **Detecção de abertura (intro)** por frame-hash de vídeo, plugável
   ([ADR-020](adr/ADR-020-pluggable-intro-detector-frame-hash.md)).
 - **Detecção de créditos** por sinais visuais (borda + movimento), por arquivo
@@ -71,11 +76,16 @@ Para os requisitos completos (incluindo o que ainda é planejado), veja
 
 - **Watchlist**, **favoritos** e **listas personalizadas** (com reordenação),
   todos escopo por perfil.
+- **Compartilhamento e follow de listas** — uma lista personalizada pode ser
+  compartilhada por um token opaco; outros perfis passam a segui-la, com o
+  follow idempotente e reversível.
 
 ## Busca e navegação
 
 - **Busca full-text** (SQLite FTS5) sobre campos localizados, com navegação por
   gênero e por ator, ordenados pelo título localizado.
+- **Ordenação na listagem por gênero** — opções de ordenação (por título, ano,
+  data de adição) com paginação por cursor.
 
 ## Multi-usuário e identidade
 
