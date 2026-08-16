@@ -109,6 +109,11 @@ uploads/
 # Generated thumbnails
 thumbnails/
 
+# Mirrored catalog artwork (ADR-029). Runtime durability cache created by the
+# ArtworkMirrorJob under ARTWORK_STORAGE_DIRECTORY (default ./artwork). It is
+# regenerable from the provider, so it must never be committed.
+artwork/
+
 # Alembic versions (keep template)
 backend/src/infrastructure/persistence/migrations/versions/*.py
 !backend/src/infrastructure/persistence/migrations/versions/.gitkeep
