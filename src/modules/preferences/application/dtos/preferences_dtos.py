@@ -23,6 +23,7 @@ class SubtitleAppearanceDto:
     color: str
     background: str
     font_size: str
+    text_edge: str
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class PreferencesOutput:
                 color=appearance.color.value,
                 background=appearance.background.value,
                 font_size=appearance.font_size.value,
+                text_edge=appearance.text_edge.value,
             ),
         )
 

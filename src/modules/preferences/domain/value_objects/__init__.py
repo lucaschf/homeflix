@@ -8,10 +8,14 @@ from src.modules.preferences.domain.value_objects.subtitle_appearance import (
     DEFAULT_SUBTITLE_BACKGROUND,
     DEFAULT_SUBTITLE_COLOR,
     DEFAULT_SUBTITLE_FONT_SIZE,
+    DEFAULT_SUBTITLE_TEXT_EDGE,
     SubtitleAppearance,
 )
 from src.modules.preferences.domain.value_objects.subtitle_font_size import (
     SubtitleFontSize,
+)
+from src.modules.preferences.domain.value_objects.subtitle_text_edge import (
+    SubtitleTextEdge,
 )
 from src.shared_kernel.value_objects.subtitle_mode import SubtitleMode
 
@@ -19,6 +23,7 @@ __all__ = [
     "DEFAULT_SUBTITLE_BACKGROUND",
     "DEFAULT_SUBTITLE_COLOR",
     "DEFAULT_SUBTITLE_FONT_SIZE",
+    "DEFAULT_SUBTITLE_TEXT_EDGE",
     "CssColor",
     "PreferencesId",
     "Quality",
@@ -26,4 +31,5 @@ __all__ = [
     "SubtitleAppearance",
     "SubtitleFontSize",
     "SubtitleMode",
+    "SubtitleTextEdge",
 ]

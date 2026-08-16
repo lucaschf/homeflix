@@ -35,6 +35,7 @@ class PreferencesModel(Base):
         default="rgba(0, 0, 0, 0.75)",
     )
     subtitle_font_size: Mapped[str] = mapped_column(String(10), nullable=False, default="medium")
+    subtitle_text_edge: Mapped[str] = mapped_column(String(10), nullable=False, default="shadow")
 
 
 __all__ = ["PreferencesModel"]
