@@ -34,7 +34,6 @@ from src.modules.media.domain.value_objects.scan_counters import (
 from src.modules.media.domain.value_objects.scan_run_id import ScanRunId
 from src.modules.media.domain.value_objects.season_number import SeasonNumber
 from src.modules.media.domain.value_objects.title import Title
-from src.modules.media.domain.value_objects.tmdb_id import TmdbId
 from src.modules.media.domain.value_objects.video_codec import VideoCodec
 from src.modules.media.domain.value_objects.year import Year
 from src.shared_kernel.value_objects.file_path import FilePath
@@ -47,6 +46,7 @@ from src.shared_kernel.value_objects.media_id import (
     SeriesId,
     parse_media_id,
 )
+from src.shared_kernel.value_objects.tmdb_id import TmdbId
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 __all__ = [

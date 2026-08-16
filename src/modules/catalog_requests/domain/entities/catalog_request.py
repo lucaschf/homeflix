@@ -12,7 +12,7 @@ from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestSource,
     CatalogRequestStatus,
 )
-from src.shared_kernel.value_objects import ImageUrl, MediaType
+from src.shared_kernel.value_objects import ImageUrl, MediaType, TmdbId
 
 
 class CatalogRequest(AggregateRoot[CatalogRequestId]):
@@ -71,7 +71,7 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
 
     id: CatalogRequestId | None = Field(default=None)
 
-    tmdb_id: int
+    tmdb_id: TmdbId
     media_type: MediaType
     title: str | None = None
     # Per-language title snapshot built once at request creation from
@@ -81,11 +81,25 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     localized_titles: dict[str, str] = Field(default_factory=dict)
     poster_url: ImageUrl | None = None
     requester_user_id: str | None = None
-    collection_tmdb_id: int | None = None
+    collection_tmdb_id: TmdbId | None = None
     source: CatalogRequestSource = CatalogRequestSource.HOUSEHOLD
     notify_on_arrival: bool = False
     requested_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     fulfilled_at: datetime | None = None
+
+    @field_validator("tmdb_id", "collection_tmdb_id", mode="before")
+    @classmethod
+    def _convert_tmdb_id(cls, v: int | TmdbId | None) -> TmdbId | None:
+        """Accept a raw ``int`` at the boundary and normalize to ``TmdbId``.
+
+        The TMDB numeric id arrives as a plain ``int`` from the use cases
+        (and the ORM row); typing the fields as ``TmdbId`` validates them
+        once here — enforcing "positive" — and lets the shared VO flow
+        through the domain (ADR-018, ADR-031).
+        """
+        if v is None or isinstance(v, TmdbId):
+            return v
+        return TmdbId(v)
 
     @field_validator("poster_url", mode="before")
     @classmethod
@@ -103,12 +117,12 @@ class CatalogRequest(AggregateRoot[CatalogRequestId]):
     @classmethod
     def create(
         cls,
-        tmdb_id: int,
+        tmdb_id: int | TmdbId,
         media_type: MediaType,
         title: str | None = None,
         poster_url: str | ImageUrl | None = None,
         requester_user_id: str | None = None,
-        collection_tmdb_id: int | None = None,
+        collection_tmdb_id: int | TmdbId | None = None,
         notify_on_arrival: bool = False,
         localized_titles: dict[str, str] | None = None,
     ) -> CatalogRequest:

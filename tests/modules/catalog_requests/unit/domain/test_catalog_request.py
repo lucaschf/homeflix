@@ -4,13 +4,14 @@ from datetime import UTC, datetime
 
 import pytest
 
+from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.catalog_requests.domain.entities import CatalogRequest
 from src.modules.catalog_requests.domain.value_objects import (
     CatalogRequestId,
     CatalogRequestSource,
     CatalogRequestStatus,
 )
-from src.shared_kernel.value_objects import ImageUrl, MediaType
+from src.shared_kernel.value_objects import ImageUrl, MediaType, TmdbId
 
 
 @pytest.mark.unit
@@ -26,11 +27,17 @@ class TestCatalogRequest:
 
         assert isinstance(request.id, CatalogRequestId)
         assert str(request.id).startswith("req_")
-        assert request.tmdb_id == 348
-        assert request.collection_tmdb_id == 8091
+        assert request.tmdb_id == TmdbId(348)
+        assert request.collection_tmdb_id == TmdbId(8091)
         assert request.notify_on_arrival is False
         assert request.is_fulfilled is False
         assert request.fulfilled_at is None
+
+    def test_create_rejects_non_positive_tmdb_id(self) -> None:
+        # The TmdbId VO enforces "positive" at the boundary (ADR-031),
+        # so an invalid id never reaches persistence.
+        with pytest.raises(DomainValidationException, match="positive"):
+            CatalogRequest.create(tmdb_id=0, media_type=MediaType.MOVIE)
 
     def test_enable_notification_sets_flag(self) -> None:
         request = CatalogRequest.create(
