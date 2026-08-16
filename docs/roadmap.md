@@ -1,6 +1,6 @@
 # HomeFlix — Roadmap
 
-> Last updated: 2026-05-31
+> Last updated: 2026-08-16
 
 This roadmap captures **what comes next** after the Phase 1 foundation.
 Items are ordered so each tier builds on the previous one — both in
@@ -15,7 +15,7 @@ patterns are explicitly excluded.
 
 ---
 
-## Shipped (Phases 1–4 + ADR-015 Phases 1–4 + 6.5)
+## Shipped (Phases 1–4 + ADR-015 Phases 1–4 + 6.5 + Phase 7 / ADR-016–031)
 
 ### Phase 1 — Foundation
 
@@ -44,9 +44,16 @@ patterns are explicitly excluded.
 - **3.1 Trickplay (Thumbnail Scrub)** — sprite-sheet generator +
   WebVTT thumbnail track served alongside the HLS playlist; player
   shows thumbnails on seek-bar hover.
+- **3.2 Hardware Transcoding (NVENC/NVDEC)** — ADR-019. Capability
+  detection at startup, configurable encoder selection, HW-accelerated
+  HLS generation with graceful software fallback.
 - **3.3 Skip Intro Detection** — Chromaprint-based fingerprinting,
   cross-episode matching, per-episode intro markers, "Skip Intro"
-  button + manual override editor (`/admin/intros`).
+  button + manual override editor (`/admin/intros`). Later reworked to
+  a pluggable frame-hash detector (ADR-020).
+- **Skip Credits / next-episode** — ADR-021. Per-file credits detector
+  from visual signals (edge + motion), feeding an end-of-episode
+  marker.
 
 ### Phase 4 — Multi-User & Access Control
 
@@ -111,7 +118,35 @@ patterns are explicitly excluded.
   `POST /api/v1/admin/conflicts/sweep` endpoint runs the same pass
   on demand. Settings toggle + "Run sweep now" button in
   homeflix-web. ADR-015 closed.
-- ~132 REST API endpoints across 9 bounded contexts, ~2 940 tests (live count: `grep -rE '@router\.(get|post|put|patch|delete)' src/ | wc -l`).
+
+### Phase 7 — Domain Hardening & Catalog Intelligence (ADR-016 → ADR-031)
+
+Cross-cutting work since Phase 6.5, delivered as a run of small ADRs
+rather than one large phase. Grouped by theme:
+
+- **Domain modeling discipline** — MediaType promoted to a shared
+  Value Object (ADR-016); domain invariants pushed into the domain
+  layer (ADR-017); domain identifiers modeled as Value Objects at layer
+  and BC boundaries (ADR-018); domain-exception usage semantics
+  formalized (ADR-028); `TmdbId` promoted to the shared kernel and
+  adopted in `catalog_requests` (ADR-031). This is the running
+  execution of **2.2 Primitive Obsession**, one BC at a time.
+- **Player & streaming** — hardware transcoding (ADR-019, item 3.2),
+  pluggable intro detector by frame-hash (ADR-020), per-file credits
+  detector (ADR-021), server-authoritative default track selection from
+  per-user preference (ADR-026), and OCR of image-based subtitles
+  (PGS/VOBSUB) into selectable text tracks (ADR-027).
+- **Catalog & metadata** — multi-user subscriptions + fanout on catalog
+  requests (ADR-022), localized metadata as a Value Object (ADR-023),
+  provider-metadata reconciliation moved to the application layer
+  (ADR-025), provider artwork mirrored to a storage port for durability
+  (ADR-029), and multi-episode-per-file segments (ADR-030).
+- **Cross-BC contracts** — published presentation contracts so modules
+  can import each other's read shapes without reaching into internals
+  (ADR-024).
+
+- 145 REST API endpoints across 9 bounded contexts, ~3 340 tests (live
+  count: `grep -rE '@router\.(get|post|put|patch|delete)' src/ | wc -l`).
 
 ---
 
@@ -126,14 +161,16 @@ patterns are explicitly excluded.
 | **Teaches** | Multi-stage builds, containerization, infra as code |
 | **Unlocks** | Reproducible dev env, CI pipeline, easy deployment, GPU passthrough for 3.2 |
 | **Scope** | Dockerfile (backend), docker-compose with SQLite volume, optional PostgreSQL profile, optional GPU runtime profile |
+| **Status** | WIP — draft in PR #104 (`feat/docker-setup`), pending review |
 
-#### 2.2 Primitive Obsession Cleanup
+#### 2.2 Primitive Obsession Cleanup — *in progress*
 
 | | |
 |---|---|
 | **Teaches** | Value Object design, domain modeling discipline |
 | **Unlocks** | Stronger type safety, self-documenting domain |
 | **Scope** | Audit codebase for raw `str`, `int`, `float` that carry domain meaning; extract to Value Objects in `shared_kernel` or module-level `value_objects`. Can be scope-bound to one BC at a time |
+| **Progress** | Framework decided (ADR-018) and applied across `media`. In `catalog_requests`: `poster_url → ImageUrl` (#381) and `tmdb_id → TmdbId` shared-kernel VO (ADR-031, #382). Remaining BCs still hold some raw identifiers — pick up one BC at a time. |
 
 #### 2.4 Subtitle Appearance (fix)
 
@@ -142,17 +179,6 @@ patterns are explicitly excluded.
 | **Teaches** | Browser text rendering pipeline, WebVTT spec, HLS.js internals |
 | **Unlocks** | Readable subtitles with user-chosen colors/size |
 | **Scope** | Investigate why `::cue` and custom overlay both failed; likely requires understanding HLS.js text track lifecycle in depth |
-
-### Phase 3 — Player & Streaming Evolution (remaining)
-
-#### 3.2 Hardware Transcoding (VAAPI / NVENC)
-
-| | |
-|---|---|
-| **Teaches** | FFmpeg hardware acceleration, capability detection, fallback chains |
-| **Unlocks** | 4K HEVC playback without melting the CPU |
-| **Scope** | Detect available HW encoders at startup, prefer HW pipeline in HLS generation, graceful fallback to software |
-| **Depends on** | 2.1 (Docker — GPU passthrough config) |
 
 ### Phase 5 — Observability & Resilience
 
