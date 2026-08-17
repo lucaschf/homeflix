@@ -10,21 +10,25 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.modules.media.application.ports import ProbeResult
-from src.modules.media.infrastructure.streaming._hls_common import primary_audio_index
+from src.modules.media.infrastructure.streaming._hls_common import (
+    _has_endlist,
+    primary_audio_index,
+)
 from src.modules.media.infrastructure.streaming.hardware_acceleration_probe import (
     HardwareAccelerationProbe,
 )
 from src.modules.media.infrastructure.streaming.hls_service import (
     HlsService,
     _append_endlist_atomic,
-    _atomic_write_text,
-    _ensure_vtt_timestamp_map,
-    _has_endlist,
-    _shift_webvtt_to_bucket_local,
 )
 from src.modules.media.infrastructure.streaming.master_playlist_writer import MasterPlaylistWriter
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
 from src.modules.media.infrastructure.streaming.probe_cache_store import ProbeCacheStore
+from src.modules.media.infrastructure.streaming.subtitle_pipeline import (
+    _atomic_write_text,
+    _ensure_vtt_timestamp_map,
+    _shift_webvtt_to_bucket_local,
+)
 from src.modules.media.infrastructure.streaming.transcode_command_builder import (
     TranscodeCommandBuilder,
     _audio_args_for,
@@ -1270,32 +1274,32 @@ class TestHlsServiceEvictIdle:
             runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path), idle_timeout=0.5
         )
         proc = self._make_alive_proc()
-        service._processes["abc"] = [proc]
+        service._proc_mgr._processes["abc"] = [proc]
         # Set last access far in the past
-        service._last_access["abc"] = 0.0  # epoch — definitely > 0.5s ago
+        service._proc_mgr._last_access["abc"] = 0.0  # epoch — definitely > 0.5s ago
 
         evicted = service.evict_idle()
 
         assert evicted == ["abc"]
         proc.kill.assert_called_once()
-        assert "abc" not in service._processes
-        assert "abc" not in service._last_access
+        assert "abc" not in service._proc_mgr._processes
+        assert "abc" not in service._proc_mgr._last_access
 
     def test_should_not_evict_recently_accessed_process(self, tmp_path: Path) -> None:
         service = HlsService(
             runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path), idle_timeout=60.0
         )
         proc = self._make_alive_proc()
-        service._processes["abc"] = [proc]
+        service._proc_mgr._processes["abc"] = [proc]
         # Touch with monotonic now — fresh
-        service._last_access["abc"] = service._last_access.get("abc", 0)
-        service._touch_access("abc")
+        service._proc_mgr._last_access["abc"] = service._proc_mgr._last_access.get("abc", 0)
+        service._proc_mgr.touch("abc")
 
         evicted = service.evict_idle()
 
         assert evicted == []
         proc.kill.assert_not_called()
-        assert "abc" in service._processes
+        assert "abc" in service._proc_mgr._processes
 
     def test_should_evict_only_stale_entries(self, tmp_path: Path) -> None:
         service = HlsService(
@@ -1303,17 +1307,17 @@ class TestHlsServiceEvictIdle:
         )
         stale_proc = self._make_alive_proc()
         fresh_proc = self._make_alive_proc()
-        service._processes["stale"] = [stale_proc]
-        service._processes["fresh"] = [fresh_proc]
-        service._last_access["stale"] = 0.0  # ancient
-        service._touch_access("fresh")  # right now
+        service._proc_mgr._processes["stale"] = [stale_proc]
+        service._proc_mgr._processes["fresh"] = [fresh_proc]
+        service._proc_mgr._last_access["stale"] = 0.0  # ancient
+        service._proc_mgr.touch("fresh")  # right now
 
         evicted = service.evict_idle()
 
         assert evicted == ["stale"]
         stale_proc.kill.assert_called_once()
         fresh_proc.kill.assert_not_called()
-        assert "fresh" in service._processes
+        assert "fresh" in service._proc_mgr._processes
 
     def test_get_file_by_hash_should_touch_access_on_hit(self, tmp_path: Path) -> None:
         service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
@@ -1324,14 +1328,14 @@ class TestHlsServiceEvictIdle:
         result = service.get_file_by_hash("abc", "segment_0000.ts")
 
         assert result is not None
-        assert "abc" in service._last_access
+        assert "abc" in service._proc_mgr._last_access
 
     def test_get_file_by_hash_should_not_touch_access_on_miss(self, tmp_path: Path) -> None:
         service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         result = service.get_file_by_hash("abc", "missing.ts")
 
         assert result is None
-        assert "abc" not in service._last_access
+        assert "abc" not in service._proc_mgr._last_access
 
     def test_get_master_playlist_should_touch_access_on_hit(self, tmp_path: Path) -> None:
         service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
@@ -1342,17 +1346,17 @@ class TestHlsServiceEvictIdle:
         result = service.get_master_playlist("abc")
 
         assert result == "#EXTM3U"
-        assert "abc" in service._last_access
+        assert "abc" in service._proc_mgr._last_access
 
     def test_kill_processes_should_remove_last_access_entry(self, tmp_path: Path) -> None:
         service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
-        service._processes["abc"] = [self._make_alive_proc()]
-        service._touch_access("abc")
+        service._proc_mgr._processes["abc"] = [self._make_alive_proc()]
+        service._proc_mgr.touch("abc")
 
         service._kill_processes("abc")
 
-        assert "abc" not in service._processes
-        assert "abc" not in service._last_access
+        assert "abc" not in service._proc_mgr._processes
+        assert "abc" not in service._proc_mgr._last_access
 
 
 @pytest.mark.unit
@@ -1372,7 +1376,7 @@ class TestHlsServiceWaitForSubtitle:
         service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         event = threading.Event()
         event.set()
-        service._subtitle_events["abc"] = {2: event}
+        service._subtitles._subtitle_events["abc"] = {2: event}
 
         assert service.wait_for_subtitle("abc", 2, timeout=0.0) is True
 
@@ -1381,7 +1385,7 @@ class TestHlsServiceWaitForSubtitle:
 
         service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         # Unset event — wait will time out
-        service._subtitle_events["abc"] = {0: threading.Event()}
+        service._subtitles._subtitle_events["abc"] = {0: threading.Event()}
 
         assert service.wait_for_subtitle("abc", 0, timeout=0.05) is False
 
@@ -1390,7 +1394,7 @@ class TestHlsServiceWaitForSubtitle:
 
         service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         event = threading.Event()
-        service._subtitle_events["abc"] = {0: event}
+        service._subtitles._subtitle_events["abc"] = {0: event}
 
         # Set the event from a worker after a tiny delay so the main
         # thread has a chance to enter the wait first.
@@ -1420,7 +1424,7 @@ class TestHlsServiceExtractOneSubtitle:
 
         service, output_dir = self._make_service(tmp_path)
         event = threading.Event()
-        service._subtitle_events["abc"] = {3: event}
+        service._subtitles._subtitle_events["abc"] = {3: event}
 
         track = _make_subtitle_track(index=3, fmt="srt")
 
@@ -1430,7 +1434,7 @@ class TestHlsServiceExtractOneSubtitle:
             return MagicMock(returncode=0)
 
         with patch("subprocess.run", side_effect=_fake_run):
-            service._extract_one_subtitle(
+            service._subtitles.extract_one(
                 file_path="/movies/test.mkv",
                 output_dir=output_dir,
                 track=track,
@@ -1447,14 +1451,14 @@ class TestHlsServiceExtractOneSubtitle:
 
         service, output_dir = self._make_service(tmp_path)
         event = threading.Event()
-        service._subtitle_events["abc"] = {0: event}
+        service._subtitles._subtitle_events["abc"] = {0: event}
 
         track = _make_subtitle_track(index=0, fmt="srt")
 
         # ffmpeg "succeeds" but never produces the .vtt → route waiters
         # must still wake up so they can fall through to a 404.
         with patch("subprocess.run", return_value=MagicMock(returncode=1)):
-            service._extract_one_subtitle(
+            service._subtitles.extract_one(
                 file_path="/movies/test.mkv",
                 output_dir=output_dir,
                 track=track,
@@ -1470,7 +1474,7 @@ class TestHlsServiceExtractOneSubtitle:
 
         service, output_dir = self._make_service(tmp_path)
         event = threading.Event()
-        service._subtitle_events["abc"] = {1: event}
+        service._subtitles._subtitle_events["abc"] = {1: event}
 
         track = _make_subtitle_track(index=1, fmt="srt")
 
@@ -1478,7 +1482,7 @@ class TestHlsServiceExtractOneSubtitle:
             "subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="ffmpeg", timeout=120),
         ):
-            service._extract_one_subtitle(
+            service._subtitles.extract_one(
                 file_path="/movies/test.mkv",
                 output_dir=output_dir,
                 track=track,
@@ -1493,7 +1497,7 @@ class TestHlsServiceExtractOneSubtitle:
         import threading
 
         service, output_dir = self._make_service(tmp_path)
-        service._subtitle_events["abc"] = {0: threading.Event()}
+        service._subtitles._subtitle_events["abc"] = {0: threading.Event()}
         track = _make_subtitle_track(index=0, fmt="srt")
 
         original_vtt = "WEBVTT\n\n00:00:05.000 --> 00:00:07.000\nhello\n"
@@ -1505,7 +1509,7 @@ class TestHlsServiceExtractOneSubtitle:
             return MagicMock(returncode=0)
 
         with patch("subprocess.run", side_effect=_capture):
-            service._extract_one_subtitle(
+            service._subtitles.extract_one(
                 file_path="/movies/test.mkv",
                 output_dir=output_dir,
                 track=track,
@@ -1534,7 +1538,7 @@ class TestHlsServiceExtractOneSubtitle:
         import threading
 
         service, output_dir = self._make_service(tmp_path)
-        service._subtitle_events["abc"] = {1: threading.Event()}
+        service._subtitles._subtitle_events["abc"] = {1: threading.Event()}
         track = _make_subtitle_track(index=1, fmt="srt")
 
         captured: dict[str, list[str]] = {}
@@ -1549,7 +1553,7 @@ class TestHlsServiceExtractOneSubtitle:
             return MagicMock(returncode=0)
 
         with patch("subprocess.run", side_effect=_capture):
-            service._extract_one_subtitle(
+            service._subtitles.extract_one(
                 file_path="/movies/test.mkv",
                 output_dir=output_dir,
                 track=track,
@@ -1573,7 +1577,7 @@ class TestHlsServiceExtractOneSubtitle:
         from src.shared_kernel.value_objects.file_path import FilePath
 
         service, output_dir = self._make_service(tmp_path)
-        service._subtitle_events["abc"] = {2: threading.Event()}
+        service._subtitles._subtitle_events["abc"] = {2: threading.Event()}
         sidecar = tmp_path / "movie.en.srt"
         sidecar.write_text("1\n00:00:01,000 --> 00:00:02,000\nhello\n")
         track = SubtitleTrack(
@@ -1594,7 +1598,7 @@ class TestHlsServiceExtractOneSubtitle:
             return MagicMock(returncode=0)
 
         with patch("subprocess.run", side_effect=_capture):
-            service._extract_one_subtitle(
+            service._subtitles.extract_one(
                 file_path="/movies/test.mkv",
                 output_dir=output_dir,
                 track=track,
@@ -1618,14 +1622,14 @@ class TestHlsServiceExtractOneSubtitle:
         service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
         proc = MagicMock()
         proc.poll.return_value = None
-        service._processes["abc"] = [proc]
+        service._proc_mgr._processes["abc"] = [proc]
         event = threading.Event()
-        service._subtitle_events["abc"] = {0: event}
+        service._subtitles._subtitle_events["abc"] = {0: event}
 
         service._kill_processes("abc")
 
         assert event.is_set()
-        assert "abc" not in service._subtitle_events
+        assert "abc" not in service._subtitles._subtitle_events
 
 
 @pytest.mark.unit
@@ -1651,8 +1655,8 @@ class TestEvictLru:
         (new_dir / "segment.ts").write_bytes(b"\x00" * 1_000_000)
 
         # Simulate access order: old first, new later
-        service._last_access["old_hash"] = 100.0
-        service._last_access["new_hash"] = 200.0
+        service._proc_mgr._last_access["old_hash"] = 100.0
+        service._proc_mgr._last_access["new_hash"] = 200.0
 
         evicted = service.evict_lru()
 
@@ -1674,10 +1678,10 @@ class TestEvictLru:
         idle_dir.mkdir()
         (idle_dir / "segment.ts").write_bytes(b"\x00" * 1_000_000)
 
-        service._last_access["active"] = 100.0
-        service._last_access["idle"] = 200.0
+        service._proc_mgr._last_access["active"] = 100.0
+        service._proc_mgr._last_access["idle"] = 200.0
         # Mark "active" as having running ffmpeg — should be skipped
-        service._processes["active"] = [MagicMock()]
+        service._proc_mgr._processes["active"] = [MagicMock()]
 
         evicted = service.evict_lru()
 
@@ -1743,7 +1747,7 @@ class TestEvictLru:
         (bucket / "video").mkdir(parents=True)
         (bucket / "master.m3u8").write_text("#EXTM3U\nvideo/playlist.m3u8\n")
         (bucket / "video" / "segment.ts").write_bytes(b"\x00" * 2_000_000)
-        service._last_access["old_hash"] = 100.0
+        service._proc_mgr._last_access["old_hash"] = 100.0
 
         evicted = service.evict_lru()
 
@@ -1763,7 +1767,7 @@ class TestEvictLru:
         bucket.mkdir()
         (bucket / "master.m3u8").write_text("#EXTM3U\nvideo/playlist.m3u8\n")
         (bucket / "segment.ts").write_bytes(b"\x00" * 2_000_000)
-        service._last_access["locked_hash"] = 100.0
+        service._proc_mgr._last_access["locked_hash"] = 100.0
 
         with patch.object(Path, "rename", side_effect=OSError("locked")):
             evicted = service.evict_lru()
