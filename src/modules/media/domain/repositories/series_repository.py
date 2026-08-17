@@ -1,40 +1,56 @@
-"""Series repository interface."""
+"""Series repository interfaces.
+
+``SeriesCatalogRepository`` is the lean catalog port — CRUD, search,
+pagination, episode lookup, stats — the stable core. The job-oriented
+concerns are segregated into role-interfaces (ADR-033):
+:class:`~...scrub_preview_repository.SeriesScrubPreviewRepository`,
+:class:`~...artwork_mirror_repository.SeriesArtworkMirrorRepository`,
+:class:`~...intro_detection_repository.SeriesIntroDetectionRepository`, and
+:class:`~...credits_detection_repository.SeriesCreditsDetectionRepository`.
+
+``SeriesRepository`` is the composite facade the ``MediaUnitOfWork`` exposes
+and the SQLAlchemy adapter implements — a single class against the
+``series`` / ``seasons`` / ``episodes`` tables satisfying every role
+(ADR-033 §Decisão).
+"""
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from datetime import datetime
 
 from src.building_blocks.domain.pagination import PaginatedResult
 from src.modules.media.domain.entities.episode import Episode
-from src.modules.media.domain.entities.season import Season
 from src.modules.media.domain.entities.series import Series
-from src.modules.media.domain.repositories.movie_repository import (
-    CreditsStatusRow,
-    GenreRow,
-    RemoteArtworkRow,
+from src.modules.media.domain.repositories.artwork_mirror_repository import (
+    SeriesArtworkMirrorRepository,
+)
+from src.modules.media.domain.repositories.credits_detection_repository import (
+    SeriesCreditsDetectionRepository,
+)
+from src.modules.media.domain.repositories.intro_detection_repository import (
+    SeriesIntroDetectionRepository,
+)
+from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.modules.media.domain.repositories.scrub_preview_repository import (
+    SeriesScrubPreviewRepository,
 )
 from src.modules.media.domain.value_objects import (
-    ArtworkColumns,
     CatalogSort,
-    CreditsDetectionState,
-    CreditsMarker,
     EpisodeId,
     FilePath,
     Genre,
-    IntroDetectionState,
-    IntroMarker,
-    SeasonId,
     SeriesId,
     Title,
 )
 from src.shared_kernel.value_objects.library_id import LibraryId
 
 
-class SeriesRepository(ABC):
-    """Repository interface for Series aggregate.
+class SeriesCatalogRepository(ABC):
+    """Lean catalog port for the Series aggregate.
 
-    This is a port in the hexagonal architecture pattern.
-    Implementations (adapters) will be in the infrastructure layer.
+    CRUD, search, pagination, episode lookup, and stats — the stable
+    core that every catalog consumer depends on. Job-oriented concerns
+    (artwork mirror, intro detection, credits detection, scrub preview)
+    live in their own role-interfaces (ADR-033).
     """
 
     @abstractmethod
@@ -182,7 +198,7 @@ class SeriesRepository(ABC):
         """List the most recently added series.
 
         Sorted by ``id DESC`` — same justification as
-        ``MovieRepository.list_recently_added``. The home-page
+        ``MovieCatalogRepository.list_recently_added``. The home-page
         carousel consumes a fixed top N, so no cursor or pagination
         metadata is involved.
 
@@ -208,7 +224,7 @@ class SeriesRepository(ABC):
     ) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted series row.
 
-        Same contract as ``MovieRepository.list_genre_rows`` — see
+        Same contract as ``MovieCatalogRepository.list_genre_rows`` — see
         that method for the full description. Used by the catalog
         genres aggregation use case to compute counts and resolve
         localized labels without loading the full series hierarchy.
@@ -232,10 +248,10 @@ class SeriesRepository(ABC):
         defaulting to ``(LOWER(COALESCE(localized[lang].title, title))
         ASC, id ASC)``. For ``year_*`` sorts the series ``start_year``
         is the release-year key. Same contract as
-        ``MovieRepository.list_paginated_by_genre`` — see that method
-        for the full description of the sort-bound cursor format and the
-        genre filter (whole-word LIKE on the comma-separated ``genres``
-        column).
+        ``MovieCatalogRepository.list_paginated_by_genre`` — see that
+        method for the full description of the sort-bound cursor format and
+        the genre filter (whole-word LIKE on the comma-separated
+        ``genres`` column).
         """
         ...
 
@@ -252,7 +268,7 @@ class SeriesRepository(ABC):
     ) -> list[tuple[Series, float]]:
         """Full-text search over title, synopsis, and genres.
 
-        Same contract as ``MovieRepository.search`` — returns
+        Same contract as ``MovieCatalogRepository.search`` — returns
         ``(series, rank)`` tuples ordered by relevance.
         """
         ...
@@ -386,9 +402,9 @@ class SeriesRepository(ABC):
     async def find_episode_by_id(self, episode_id: EpisodeId) -> Episode | None:
         """Return a single episode by external id, detached from its series.
 
-        Used by orchestration code (eager scrub-preview generation) that
-        needs to act on one episode without loading its parent ``Series``
-        and all sibling episodes.
+        Used by orchestration code (eager scrub-preview generation, manual
+        intro/credits edits) that needs to act on one episode without
+        loading its parent ``Series`` and all sibling episodes.
 
         Args:
             episode_id: External id of the episode (epi_xxx).
@@ -400,297 +416,8 @@ class SeriesRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_episodes_missing_scrub_preview(self, limit: int) -> Sequence[Episode]:
-        """Return up to ``limit`` episodes that have no scrub-preview thumbnails yet.
-
-        Returned ``Episode`` aggregates are detached from their parent
-        ``Series``; the backfill job only needs the file path and id to
-        do its work and this avoids loading a full series hierarchy per
-        episode. Soft-deleted episodes are excluded.
-
-        Args:
-            limit: Maximum number of episodes to return.
-
-        Returns:
-            Sequence of episodes whose ``scrub_preview_path`` is null.
-        """
-        ...
-
-    @abstractmethod
-    async def update_episode_scrub_preview_path(
-        self,
-        episode_id: EpisodeId,
-        path: str | None,
-    ) -> bool:
-        """Persist the scrub-preview path for a single episode.
-
-        Provided alongside ``find_episodes_missing_scrub_preview`` so
-        the backfill job can mark items processed without round-tripping
-        the entire ``Series`` aggregate — that round-trip would dominate
-        runtime on series with many episodes.
-
-        Args:
-            episode_id: External id of the episode to update.
-            path: Absolute path to the sprite VTT, or ``None`` to clear.
-
-        Returns:
-            ``True`` if a row was updated, ``False`` if no episode with
-            that id exists.
-        """
-        ...
-
-    @abstractmethod
-    async def find_with_remote_artwork(self, limit: int) -> Sequence[RemoteArtworkRow]:
-        """Return up to ``limit`` series with a still-remote artwork URL.
-
-        Mirror of ``MovieRepository.find_with_remote_artwork`` over
-        series ``poster_path`` / ``backdrop_path`` / ``logo_path``. Season
-        posters and episode stills are handled separately (ADR-029 PR 3).
-        """
-        ...
-
-    @abstractmethod
-    async def update_series_artwork(self, series_id: SeriesId, artwork: ArtworkColumns) -> None:
-        """Set the three artwork columns for one series by external id.
-
-        A targeted column update rather than an aggregate ``save`` so the
-        mirror job never risks persisting the series with its seasons and
-        episodes unloaded. ``artwork`` carries the final value for every
-        column.
-        """
-        ...
-
-    @abstractmethod
-    async def find_seasons_with_remote_poster(self, limit: int) -> Sequence[RemoteArtworkRow]:
-        """Return up to ``limit`` seasons whose poster is still a remote URL.
-
-        ``RemoteArtworkRow.media_id`` is the season external id (``ssn_xxx``)
-        and only ``artwork.poster`` is populated — seasons carry no
-        backdrop/logo column.
-        """
-        ...
-
-    @abstractmethod
-    async def update_season_artwork(self, season_id: SeasonId, artwork: ArtworkColumns) -> None:
-        """Set a single season's poster column by external id.
-
-        Direct column update on the ``seasons`` table — the mirror job
-        never round-trips the ``Series`` aggregate. Only ``artwork.poster``
-        is written; the other fields are ignored (no such columns).
-        """
-        ...
-
-    @abstractmethod
-    async def find_episodes_with_remote_thumbnail(self, limit: int) -> Sequence[RemoteArtworkRow]:
-        """Return up to ``limit`` episodes whose still is still a remote URL.
-
-        ``RemoteArtworkRow.media_id`` is the episode external id
-        (``epi_xxx``) and only ``artwork.still`` is populated — the
-        episode still is its single mirrorable image. Soft-deleted
-        episodes are excluded.
-        """
-        ...
-
-    @abstractmethod
-    async def update_episode_thumbnail(
-        self, episode_id: EpisodeId, artwork: ArtworkColumns
-    ) -> None:
-        """Set a single episode's still (``thumbnail_path``) by external id.
-
-        Direct column update on the ``episodes`` table — no aggregate
-        round-trip. Only ``artwork.still`` is written.
-        """
-        ...
-
-    @abstractmethod
-    async def find_seasons_pending_intro_detection(
-        self,
-        limit: int,
-        *,
-        stale_before: datetime,
-    ) -> Sequence[Season]:
-        """Return seasons whose intro-detection job has not converged yet.
-
-        A season is eligible when it is:
-
-        * ``NOT_STARTED`` — never attempted; or
-        * ``INSUFFICIENT_EPISODES`` *and* its current (non-deleted)
-          episode count exceeds ``intro_detection_attempted_episode_count``
-          — i.e. new episodes landed since the last attempt, so the
-          outcome could now differ. A season whose episode set hasn't
-          grown is NOT retried, so a permanently-small season (e.g. a
-          2-part miniseries) stops monopolising the queue; or
-        * ``IN_PROGRESS`` with ``intro_detection_attempted_at`` older than
-          ``stale_before`` — an orphaned claim (the worker died
-          mid-detection), reclaimed so it self-heals.
-
-        ``COMPLETED``, ``FAILED``, and ``DISABLED`` are excluded;
-        ``FAILED`` and ``DISABLED`` require an explicit operator reset.
-
-        Ordered by ``intro_detection_attempted_at`` ascending with NULLs
-        first, then ``id``, so never-attempted seasons run before any
-        already-attempted one.
-
-        Returned ``Season`` entities have their ``episodes`` collection
-        eagerly loaded (with file variants) so the detection job can
-        iterate file paths without N+1 queries. Soft-deleted seasons
-        and episodes are filtered out.
-
-        Args:
-            limit: Maximum number of seasons to return.
-            stale_before: Cutoff for reclaiming orphaned ``IN_PROGRESS``
-                seasons — those last attempted before this instant are
-                considered abandoned and made eligible again.
-
-        Returns:
-            Sequence of seasons eligible for the next detection tick.
-        """
-        ...
-
-    @abstractmethod
-    async def update_season_intro_detection(
-        self,
-        season_id: SeasonId,
-        state: IntroDetectionState,
-        *,
-        attempted_at: datetime | None = None,
-        attempted_episode_count: int | None = None,
-        error: str | None = None,
-    ) -> bool:
-        """Persist intro-detection job state for a season.
-
-        Direct UPDATE on the ``seasons`` table — analogous to
-        ``update_episode_scrub_preview_path`` — so the detection job can
-        record progress and outcomes without round-tripping the parent
-        ``Series`` aggregate per season. Domain-side state machine
-        validation belongs on the ``Season`` entity; callers are expected
-        to drive transitions via ``with_detection_started`` etc. and pass
-        the resulting state here.
-
-        Args:
-            season_id: External id of the season (sea_xxx).
-            state: New ``IntroDetectionState`` value.
-            attempted_at: When the job ran. Pass ``None`` to leave the
-                column unchanged for transient transitions like
-                ``IN_PROGRESS``.
-            attempted_episode_count: Episode count observed this attempt,
-                used to decide whether an ``INSUFFICIENT_EPISODES`` season
-                is worth retrying later. Pass ``None`` to leave it
-                unchanged (e.g. on the ``IN_PROGRESS`` claim).
-            error: Diagnostic message for ``FAILED`` runs, or ``None`` to
-                clear.
-
-        Returns:
-            ``True`` if a row was updated, ``False`` if no season with
-            that id exists.
-        """
-        ...
-
-    @abstractmethod
-    async def update_episode_intro(
-        self,
-        episode_id: EpisodeId,
-        marker: IntroMarker | None,
-    ) -> bool:
-        """Persist (or clear) the intro marker for a single episode.
-
-        Direct UPDATE on the ``episodes`` table covering all five intro
-        columns at once. The detection job calls this per-episode after
-        cross-correlation; the manual-edit endpoint also uses it to set
-        a ``MANUAL`` marker without rewriting the entire ``Series``
-        aggregate.
-
-        Args:
-            episode_id: External id of the episode (epi_xxx).
-            marker: The marker to persist, or ``None`` to clear all five
-                intro columns.
-
-        Returns:
-            ``True`` if a row was updated, ``False`` if no episode with
-            that id exists.
-        """
-        ...
-
-    @abstractmethod
-    async def clear_auto_intro_markers_for_season(self, season_id: SeasonId) -> int:
-        """Clear AUTO_DETECTED intro markers on a season's episodes.
-
-        Bulk UPDATE that nulls the five intro columns for every episode
-        of the season whose marker source is ``AUTO_DETECTED``. MANUAL
-        markers are left untouched. Used by the re-detect flow so a
-        re-run starts from a clean slate without dropping operator edits.
-
-        Args:
-            season_id: External id of the season (ssn_xxx).
-
-        Returns:
-            The number of episode rows cleared.
-        """
-        ...
-
-    @abstractmethod
-    async def count_episode_credits_states(self) -> dict[str, int]:
-        """Return ``{credits_detection_state: count}`` over non-deleted episodes."""
-        ...
-
-    @abstractmethod
     async def episode_file_size_by_library(self) -> dict[str, int]:
         """Return ``{library_id: total episode primary-file bytes}``."""
-        ...
-
-    @abstractmethod
-    async def list_episode_credits_status(
-        self, state: str | None, limit: int, offset: int
-    ) -> tuple[Sequence[CreditsStatusRow], int]:
-        """Return a page of episode credits-status rows + the total count.
-
-        Rows carry ``series_id``/``season_number``/``episode_number`` so the
-        admin UI can deep-link into the per-episode editor. Newest-marker
-        first, then by series + season + episode.
-        """
-        ...
-
-    @abstractmethod
-    async def find_episodes_pending_credits_detection(self, limit: int) -> Sequence[Episode]:
-        """Return episodes whose credits detection has not run yet.
-
-        Filters for episodes in ``NOT_STARTED`` credits-detection state
-        (per-file, unlike the season-scoped intro detection), with their
-        file variants eager-loaded so the job can read the primary file
-        path without an N+1. Soft-deleted episodes are excluded.
-
-        Args:
-            limit: Maximum number of episodes to return.
-
-        Returns:
-            Sequence of episodes eligible for the next credits tick.
-        """
-        ...
-
-    @abstractmethod
-    async def update_episode_credits(
-        self,
-        episode_id: EpisodeId,
-        marker: CreditsMarker | None,
-        state: CreditsDetectionState,
-    ) -> bool:
-        """Persist the credits marker + detection state for one episode.
-
-        Direct UPDATE of the four credits-marker columns plus
-        ``credits_detection_state`` on the ``episodes`` row, avoiding a
-        round-trip through the ``Series`` aggregate. ``marker=None`` clears
-        the marker columns (used for IN_PROGRESS / NO_CREDITS_FOUND /
-        FAILED transitions and for clearing); a non-null marker writes the
-        onset (used on COMPLETED and manual edits).
-
-        Args:
-            episode_id: External id of the episode (epi_xxx).
-            marker: The marker to persist, or ``None`` to clear it.
-            state: New ``CreditsDetectionState`` value.
-
-        Returns:
-            ``True`` if a row was updated, ``False`` if no episode matched.
-        """
         ...
 
     @abstractmethod
@@ -721,4 +448,20 @@ class SeriesRepository(ABC):
         ...
 
 
-__all__ = ["SeriesRepository"]
+class SeriesRepository(
+    SeriesCatalogRepository,
+    SeriesScrubPreviewRepository,
+    SeriesArtworkMirrorRepository,
+    SeriesIntroDetectionRepository,
+    SeriesCreditsDetectionRepository,
+):
+    """Composite Series repository — the full port over the series tables.
+
+    Unions the lean catalog with every job-oriented role-interface
+    (ADR-033). This is the type the ``MediaUnitOfWork`` exposes as
+    ``.series`` and the SQLAlchemy adapter implements; a consumer that
+    only needs one concern should depend on the narrow role instead.
+    """
+
+
+__all__ = ["SeriesCatalogRepository", "SeriesRepository"]
