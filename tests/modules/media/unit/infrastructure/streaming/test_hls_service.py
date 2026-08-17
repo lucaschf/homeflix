@@ -10,19 +10,27 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.modules.media.application.ports import ProbeResult
+from src.modules.media.infrastructure.streaming._hls_common import primary_audio_index
+from src.modules.media.infrastructure.streaming.hardware_acceleration_probe import (
+    HardwareAccelerationProbe,
+)
 from src.modules.media.infrastructure.streaming.hls_service import (
     HlsService,
     _append_endlist_atomic,
     _atomic_write_text,
-    _audio_args_for,
     _ensure_vtt_timestamp_map,
-    _first_audio_pts,
     _has_endlist,
-    _has_leading_audio_gap,
-    _primary_audio_index,
     _shift_webvtt_to_bucket_local,
 )
+from src.modules.media.infrastructure.streaming.master_playlist_writer import MasterPlaylistWriter
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
+from src.modules.media.infrastructure.streaming.probe_cache_store import ProbeCacheStore
+from src.modules.media.infrastructure.streaming.transcode_command_builder import (
+    TranscodeCommandBuilder,
+    _audio_args_for,
+    _first_audio_pts,
+    _has_leading_audio_gap,
+)
 from src.modules.settings.domain.value_objects import (
     HardwareAccel,
     StreamingConfig,
@@ -112,11 +120,11 @@ class TestPrimaryAudioIndex:
         probe = ProbeResult(
             audio_tracks=[_make_audio_track(index=2), _make_audio_track(index=5)],
         )
-        assert _primary_audio_index(probe) == 2
+        assert primary_audio_index(probe) == 2
 
     def test_should_return_zero_when_no_tracks(self) -> None:
         probe = ProbeResult(audio_tracks=[])
-        assert _primary_audio_index(probe) == 0
+        assert primary_audio_index(probe) == 0
 
 
 @pytest.mark.unit
@@ -396,26 +404,26 @@ class TestHlsServiceBuildAudioCmd:
         # start==0 build shells out to a real ffprobe on the fake path.
         # Default to "no gap"; the gap-specific tests patch it themselves.
         with patch(
-            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            "src.modules.media.infrastructure.streaming.transcode_command_builder._first_audio_pts",
             return_value=None,
         ):
             yield
 
     def test_should_include_input_file(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=1))
+        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=1))
 
         assert "-i" in cmd
         assert "/movies/test.mkv" in cmd
 
     def test_should_map_to_correct_audio_stream(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=2))
+        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=2))
 
         assert "0:a:2" in cmd
 
     def test_should_clamp_duration_to_segment(self, tmp_path: Path) -> None:
         # Alternate-audio track for a segmented episode (ADR-030) ends at the
         # same title boundary as the video track.
-        cmd = HlsService._build_audio_cmd(
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
             "/series/shared.mkv", tmp_path, _make_audio_track(index=1), start=4740, end=9480
         )
 
@@ -423,24 +431,24 @@ class TestHlsServiceBuildAudioCmd:
         assert cmd[cmd.index("-t") + 1] == "4740"
 
     def test_should_not_clamp_duration_without_end(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=1))
+        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=1))
 
         assert "-t" not in cmd
 
     def test_should_disable_video_and_subtitle(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
+        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
 
         assert "-vn" in cmd
         assert "-sn" in cmd
 
     def test_should_use_aac_codec(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
+        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
 
         assert "aac" in cmd
 
     def test_should_omit_seek_flag_when_start_is_zero(self, tmp_path: Path) -> None:
         # Default cold-cache transcode starts at t=0 — no ``-ss``.
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
+        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
 
         assert "-ss" not in cmd
 
@@ -448,7 +456,7 @@ class TestHlsServiceBuildAudioCmd:
         # ``-ss N`` must come BEFORE ``-i`` so ffmpeg does an input
         # seek (fast, keyframe-accurate) rather than decoding from 0
         # and dropping output.
-        cmd = HlsService._build_audio_cmd(
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
             "/movies/test.mkv", tmp_path, _make_audio_track(index=0), start=1800
         )
 
@@ -462,7 +470,7 @@ class TestHlsServiceBuildAudioCmd:
         # Without ``-accurate_seek`` ffmpeg drops to the preceding
         # keyframe but audio starts at exactly ``start`` — the two
         # streams open out of sync by ``start - keyframe_pos``.
-        cmd = HlsService._build_audio_cmd(
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
             "/movies/test.mkv", tmp_path, _make_audio_track(index=0), start=1800
         )
 
@@ -475,7 +483,7 @@ class TestHlsServiceBuildAudioCmd:
         # ``-avoid_negative_ts make_zero`` clamps the per-stream PTS
         # minimum to zero so any residual offset surfaces as a tiny
         # leading silence instead of an audio-leads-video drift.
-        cmd = HlsService._build_audio_cmd(
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
             "/movies/test.mkv", tmp_path, _make_audio_track(index=0), start=1800
         )
 
@@ -487,14 +495,14 @@ class TestHlsServiceBuildAudioCmd:
         # Sync hardening only kicks in for non-zero ``start`` since the
         # legacy cold-cache transcode never hits the keyframe-vs-audio
         # gap (it begins at t=0 of the source).
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
+        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
 
         assert "-accurate_seek" not in cmd
         assert "-avoid_negative_ts" not in cmd
 
     def test_should_copy_aac_lc_stereo_48k_at_start_zero(self, tmp_path: Path) -> None:
         # Already browser-ready audio is remuxed, not re-encoded.
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _aac_lc_stereo_48k(index=1))
+        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _aac_lc_stereo_48k(index=1))
 
         assert cmd[cmd.index("-c:a") + 1] == "copy"
         assert "-ar" not in cmd  # no encode params on the copy path
@@ -502,7 +510,7 @@ class TestHlsServiceBuildAudioCmd:
     def test_should_reencode_when_seeking_even_if_aac_lc(self, tmp_path: Path) -> None:
         # A non-zero start re-encodes audio so it lands at the exact
         # second instead of the nearest packet (A/V sync).
-        cmd = HlsService._build_audio_cmd(
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
             "/movies/test.mkv", tmp_path, _aac_lc_stereo_48k(index=0), start=1800
         )
 
@@ -521,7 +529,7 @@ class TestHlsServiceBuildAudioCmd:
         ids=["not-aac", "surround", "wrong-rate", "he-aac", "unknown-profile"],
     )
     def test_should_reencode_when_not_safe_to_copy(self, tmp_path: Path, track: AudioTrack) -> None:
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, track)
+        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, track)
 
         assert "copy" not in cmd
         assert cmd[cmd.index("-c:a") + 1] == "aac"
@@ -531,10 +539,10 @@ class TestHlsServiceBuildAudioCmd:
         # re-encoded (not copied) so the silence pad can backfill the hole
         # even though it is otherwise copy-eligible AAC-LC stereo 48k.
         with patch(
-            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            "src.modules.media.infrastructure.streaming.transcode_command_builder._first_audio_pts",
             return_value=11.0,
         ):
-            cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _aac_lc_stereo_48k())
+            cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _aac_lc_stereo_48k())
 
         assert "copy" not in cmd
         assert cmd[cmd.index("-c:a") + 1] == "aac"
@@ -578,7 +586,7 @@ class TestLeadingAudioGap:
     def test_first_pts_parses_ffprobe_output(self) -> None:
         completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="11.000000\n")
         with patch(
-            "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
+            "src.modules.media.infrastructure.streaming.transcode_command_builder.subprocess.run",
             return_value=completed,
         ):
             assert _first_audio_pts("/movies/test.mkv", 0) == pytest.approx(11.0)
@@ -586,14 +594,14 @@ class TestLeadingAudioGap:
     def test_first_pts_returns_none_on_empty_output(self) -> None:
         completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
         with patch(
-            "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
+            "src.modules.media.infrastructure.streaming.transcode_command_builder.subprocess.run",
             return_value=completed,
         ):
             assert _first_audio_pts("/movies/test.mkv", 0) is None
 
     def test_first_pts_returns_none_when_ffprobe_missing(self) -> None:
         with patch(
-            "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
+            "src.modules.media.infrastructure.streaming.transcode_command_builder.subprocess.run",
             side_effect=FileNotFoundError,
         ):
             assert _first_audio_pts("/movies/test.mkv", 0) is None
@@ -603,21 +611,21 @@ class TestLeadingAudioGap:
         # must degrade to None (no gap) instead of raising ValueError.
         completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="N/A\n")
         with patch(
-            "src.modules.media.infrastructure.streaming.hls_service.subprocess.run",
+            "src.modules.media.infrastructure.streaming.transcode_command_builder.subprocess.run",
             return_value=completed,
         ):
             assert _first_audio_pts("/movies/test.mkv", 0) is None
 
     def test_gap_detected_above_threshold(self) -> None:
         with patch(
-            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            "src.modules.media.infrastructure.streaming.transcode_command_builder._first_audio_pts",
             return_value=11.0,
         ):
             assert _has_leading_audio_gap("/movies/test.mkv", 0, start=0) is True
 
     def test_no_gap_within_threshold(self) -> None:
         with patch(
-            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            "src.modules.media.infrastructure.streaming.transcode_command_builder._first_audio_pts",
             return_value=0.02,
         ):
             assert _has_leading_audio_gap("/movies/test.mkv", 0, start=0) is False
@@ -625,7 +633,7 @@ class TestLeadingAudioGap:
     def test_no_gap_probe_skipped_when_seeking(self) -> None:
         # A seek bucket lands mid-stream; never probe or treat it as a gap.
         with patch(
-            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            "src.modules.media.infrastructure.streaming.transcode_command_builder._first_audio_pts",
         ) as probe:
             assert _has_leading_audio_gap("/movies/test.mkv", 0, start=1800) is False
             probe.assert_not_called()
@@ -640,7 +648,7 @@ class TestHlsServiceBuildVideoCmd:
         # Keep these hermetic — otherwise each start==0 build spawns a
         # real ffprobe on the fake path. The gap test patches it itself.
         with patch(
-            "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+            "src.modules.media.infrastructure.streaming.transcode_command_builder._first_audio_pts",
             return_value=None,
         ):
             yield
@@ -651,8 +659,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "copy" in cmd
         assert "libx264" not in cmd
@@ -667,8 +675,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "-bsf:v" in cmd
         assert cmd[cmd.index("-bsf:v") + 1] == "h264_mp4toannexb"
@@ -684,8 +692,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
 
         assert "libx264" in cmd
         assert "copy" not in cmd
@@ -696,8 +704,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="hevc"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="hevc"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "libx264" in cmd
 
@@ -709,8 +717,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "-t" not in cmd
 
@@ -722,8 +730,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd(
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd(
                 "/series/shared.mkv", tmp_path, probe, start=4740, end=9480
             )
 
@@ -738,8 +746,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_aac_lc_stereo_48k()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="hevc"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="hevc"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert cmd[cmd.index("-c:a") + 1] == "copy"
         assert "libx264" in cmd  # video still re-encoded
@@ -755,13 +763,13 @@ class TestHlsServiceBuildVideoCmd:
         probe = ProbeResult(audio_tracks=[_aac_lc_stereo_48k()])
 
         with (
-            patch.object(HlsService, "_probe_video_codec", return_value="h264"),
+            patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"),
             patch(
-                "src.modules.media.infrastructure.streaming.hls_service._first_audio_pts",
+                "src.modules.media.infrastructure.streaming.transcode_command_builder._first_audio_pts",
                 return_value=11.0,
             ),
         ):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert cmd[cmd.index("-c:a") + 1] == "aac"
         assert cmd[cmd.index("-af") + 1] == "aresample=async=1:first_pts=0"
@@ -775,10 +783,10 @@ class TestHlsServiceBuildVideoCmd:
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with (
-            patch.object(HlsService, "_probe_video_codec", return_value="hevc"),
-            patch.object(HlsService, "_detect_nvenc", return_value=True),
+            patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="hevc"),
+            patch.object(HardwareAccelerationProbe, "detect_nvenc", return_value=True),
         ):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "h264_nvenc" in cmd
         assert "libx264" not in cmd
@@ -798,10 +806,10 @@ class TestHlsServiceBuildVideoCmd:
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with (
-            patch.object(HlsService, "_probe_video_codec", return_value="hevc"),
-            patch.object(HlsService, "_detect_nvenc", return_value=False),
+            patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="hevc"),
+            patch.object(HardwareAccelerationProbe, "detect_nvenc", return_value=False),
         ):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "libx264" in cmd
         assert "h264_nvenc" not in cmd
@@ -816,10 +824,10 @@ class TestHlsServiceBuildVideoCmd:
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with (
-            patch.object(HlsService, "_probe_video_codec", return_value="hevc"),
-            patch.object(HlsService, "_detect_nvenc", return_value=True) as detect,
+            patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="hevc"),
+            patch.object(HardwareAccelerationProbe, "detect_nvenc", return_value=True) as detect,
         ):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "libx264" in cmd
         assert "h264_nvenc" not in cmd
@@ -834,10 +842,10 @@ class TestHlsServiceBuildVideoCmd:
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with (
-            patch.object(HlsService, "_probe_video_codec", return_value="hevc"),
-            patch.object(HlsService, "_detect_nvenc", return_value=False) as detect,
+            patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="hevc"),
+            patch.object(HardwareAccelerationProbe, "detect_nvenc", return_value=False) as detect,
         ):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "h264_nvenc" in cmd
         detect.assert_not_called()
@@ -852,10 +860,10 @@ class TestHlsServiceBuildVideoCmd:
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with (
-            patch.object(HlsService, "_probe_video_codec", return_value="h264"),
-            patch.object(HlsService, "_detect_nvenc", return_value=True),
+            patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"),
+            patch.object(HardwareAccelerationProbe, "detect_nvenc", return_value=True),
         ):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "copy" in cmd
         assert "h264_nvenc" not in cmd
@@ -868,9 +876,9 @@ class TestHlsServiceBuildVideoCmd:
             cache_dir=str(tmp_path / "cache"),
         )
 
-        with patch.object(HlsService, "_detect_nvenc", return_value=True) as detect:
-            assert service._nvenc_available() is True
-            assert service._nvenc_available() is True
+        with patch.object(HardwareAccelerationProbe, "detect_nvenc", return_value=True) as detect:
+            assert service._hw_probe.nvenc_available() is True
+            assert service._hw_probe.nvenc_available() is True
 
         detect.assert_called_once()
 
@@ -882,8 +890,8 @@ class TestHlsServiceBuildVideoCmd:
             audio_tracks=[_make_audio_track(index=3)],
         )
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "0:a:3" in cmd
 
@@ -894,8 +902,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "-ss" not in cmd
 
@@ -908,8 +916,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
 
         assert "-ss" in cmd
         ss_index = cmd.index("-ss")
@@ -926,8 +934,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
 
         assert "-accurate_seek" in cmd
         accurate_index = cmd.index("-accurate_seek")
@@ -940,8 +948,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
 
         assert "-avoid_negative_ts" in cmd
         idx = cmd.index("-avoid_negative_ts")
@@ -953,8 +961,8 @@ class TestHlsServiceBuildVideoCmd:
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
 
         assert "-accurate_seek" not in cmd
         assert "-avoid_negative_ts" not in cmd
@@ -967,7 +975,7 @@ class TestHlsServiceBuildMasterPlaylist:
     def test_should_write_master_m3u8(self, tmp_path: Path) -> None:
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
-        HlsService._build_master_playlist(tmp_path, probe)
+        MasterPlaylistWriter.write(tmp_path, probe)
 
         master = tmp_path / "master.m3u8"
         assert master.is_file()
@@ -983,7 +991,7 @@ class TestHlsServiceBuildMasterPlaylist:
             ],
         )
 
-        HlsService._build_master_playlist(tmp_path, probe)
+        MasterPlaylistWriter.write(tmp_path, probe)
 
         content = (tmp_path / "master.m3u8").read_text()
         assert "#EXT-X-MEDIA:TYPE=AUDIO" in content
@@ -997,7 +1005,7 @@ class TestHlsServiceBuildMasterPlaylist:
             subtitle_tracks=[_make_subtitle_track(index=0, lang="en", fmt="srt")],
         )
 
-        HlsService._build_master_playlist(tmp_path, probe)
+        MasterPlaylistWriter.write(tmp_path, probe)
 
         content = (tmp_path / "master.m3u8").read_text()
         assert "#EXT-X-MEDIA:TYPE=SUBTITLES" in content
@@ -1009,7 +1017,7 @@ class TestHlsServiceBuildMasterPlaylist:
             subtitle_tracks=[_make_subtitle_track(index=0, lang="en", fmt="pgs")],
         )
 
-        HlsService._build_master_playlist(tmp_path, probe)
+        MasterPlaylistWriter.write(tmp_path, probe)
 
         content = (tmp_path / "master.m3u8").read_text()
         assert 'URI="sub_0/playlist.m3u8"' not in content
@@ -1022,7 +1030,7 @@ class TestHlsServiceBuildMasterPlaylist:
             ],
         )
 
-        HlsService._build_master_playlist(tmp_path, probe)
+        MasterPlaylistWriter.write(tmp_path, probe)
 
         content = (tmp_path / "master.m3u8").read_text()
         assert "FORCED=YES" in content
@@ -1038,7 +1046,7 @@ class TestHlsServiceSaveAndDeserializeProbe:
             subtitle_tracks=[_make_subtitle_track(index=0, lang="en", fmt="srt")],
         )
 
-        HlsService._save_probe_cache(tmp_path, probe)
+        ProbeCacheStore.save(tmp_path, probe)
 
         tracks_file = tmp_path / "tracks.json"
         assert tracks_file.is_file()
@@ -1055,9 +1063,9 @@ class TestHlsServiceSaveAndDeserializeProbe:
             subtitle_tracks=[_make_subtitle_track(index=0, lang="en", fmt="srt")],
         )
 
-        HlsService._save_probe_cache(tmp_path, probe)
+        ProbeCacheStore.save(tmp_path, probe)
         data = json.loads((tmp_path / "tracks.json").read_text())
-        result = HlsService._deserialize_probe(data)
+        result = ProbeCacheStore.deserialize(data)
 
         assert len(result.audio_tracks) == 2
         assert result.audio_tracks[0].title == "English"
@@ -2109,14 +2117,14 @@ class TestMpegtsZeroStart:
             runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
         )
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
-        with patch.object(HlsService, "_probe_video_codec", return_value="h264"):
-            cmd = service._build_video_cmd("/movies/test.mkv", tmp_path, probe)
+        with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
+            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe)
         assert cmd[cmd.index("-muxdelay") + 1] == "0"
         assert cmd[cmd.index("-muxpreload") + 1] == "0"
 
     @pytest.mark.unit
     def test_audio_cmd_zeroes_muxer_offset(self, tmp_path: Path) -> None:
-        cmd = HlsService._build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
+        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
         assert cmd[cmd.index("-muxdelay") + 1] == "0"
         assert cmd[cmd.index("-muxpreload") + 1] == "0"
 
