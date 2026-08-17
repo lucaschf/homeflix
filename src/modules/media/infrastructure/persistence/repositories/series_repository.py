@@ -14,11 +14,11 @@ from src.building_blocks.application.pagination import (
 )
 from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.domain.entities import Episode, Season, Series
-from src.modules.media.domain.repositories import SeriesRepository
-from src.modules.media.domain.repositories.movie_repository import (
+from src.modules.media.domain.repositories import (
     CreditsStatusRow,
     GenreRow,
     RemoteArtworkRow,
+    SeriesRepository,
 )
 from src.modules.media.domain.value_objects import (
     ArtworkColumns,

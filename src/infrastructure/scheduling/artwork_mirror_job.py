@@ -40,7 +40,7 @@ if TYPE_CHECKING:
         MediaUnitOfWork,
         MediaUnitOfWorkFactory,
     )
-    from src.modules.media.domain.repositories.movie_repository import RemoteArtworkRow
+    from src.modules.media.domain.repositories.artwork_mirror_repository import RemoteArtworkRow
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = get_logger()

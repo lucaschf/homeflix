@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from src.building_blocks.infrastructure.errors import GatewayUnavailableException
 from src.infrastructure.scheduling.artwork_mirror_job import ArtworkMirrorJob
 from src.modules.media.application.ports.artwork_downloader_port import DownloadedImage
-from src.modules.media.domain.repositories.movie_repository import RemoteArtworkRow
+from src.modules.media.domain.repositories.artwork_mirror_repository import RemoteArtworkRow
 from src.modules.media.domain.value_objects import ArtworkColumns, ImageUrl
 from src.modules.settings.domain.value_objects import ArtworkMirrorConfig
 

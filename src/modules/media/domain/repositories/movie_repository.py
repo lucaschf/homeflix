@@ -1,4 +1,17 @@
-"""Movie repository interface."""
+"""Movie repository interfaces.
+
+``MovieCatalogRepository`` is the lean catalog port — CRUD, search,
+pagination, variant surgery, stats — the stable core. The job-oriented
+concerns are segregated into role-interfaces (ADR-033):
+:class:`~...scrub_preview_repository.MovieScrubPreviewRepository`,
+:class:`~...artwork_mirror_repository.MovieArtworkMirrorRepository`, and
+:class:`~...credits_detection_repository.MovieCreditsDetectionRepository`.
+
+``MovieRepository`` is the composite facade the ``MediaUnitOfWork`` exposes
+and the SQLAlchemy adapter implements — a single class against the
+``movies`` table satisfying every role (ADR-033 §Decisão). Consumers that
+only need one concern can depend on the narrow role directly.
+"""
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -6,11 +19,17 @@ from dataclasses import dataclass
 
 from src.building_blocks.domain.pagination import PaginatedResult
 from src.modules.media.domain.entities.movie import Movie
+from src.modules.media.domain.repositories.artwork_mirror_repository import (
+    MovieArtworkMirrorRepository,
+)
+from src.modules.media.domain.repositories.credits_detection_repository import (
+    MovieCreditsDetectionRepository,
+)
+from src.modules.media.domain.repositories.scrub_preview_repository import (
+    MovieScrubPreviewRepository,
+)
 from src.modules.media.domain.value_objects import (
-    ArtworkColumns,
     CatalogSort,
-    CreditsDetectionState,
-    CreditsMarker,
     EpisodeId,
     FilePath,
     Genre,
@@ -35,51 +54,13 @@ class GenreRow:
     localized_genres: list[str]
 
 
-@dataclass(frozen=True)
-class CreditsStatusRow:
-    """Lightweight projection of a title's credits-detection status.
+class MovieCatalogRepository(ABC):
+    """Lean catalog port for the Movie aggregate.
 
-    Used by the admin "credits status" listing so it can show every
-    title's state + marker without loading entities and their file
-    variants. Episode-only context (``series_id``/``season_number``/
-    ``episode_number``) is ``None`` for movies; the admin UI uses it to
-    deep-link into the per-episode editor.
-    """
-
-    media_id: str
-    title: str
-    state: str
-    start_seconds: int | None
-    source: str | None
-    confidence: float | None
-    series_id: str | None = None
-    season_number: int | None = None
-    episode_number: int | None = None
-
-
-@dataclass(frozen=True)
-class RemoteArtworkRow:
-    """Lightweight projection of a title's artwork references.
-
-    Used by the artwork-mirror job (ADR-029) to find titles whose
-    poster/backdrop/logo is still a remote provider URL and update just
-    those columns directly — without loading the aggregate, which a full
-    ``save`` would risk persisting with unloaded children (file variants,
-    seasons). ``media_id`` is the external id (``mov_xxx`` / ``ser_xxx``);
-    ``artwork`` carries the three references as ``ImageUrl`` values, so
-    ``.is_remote`` is available without re-parsing strings. Reused for
-    both movies and series (same three columns).
-    """
-
-    media_id: str
-    artwork: ArtworkColumns
-
-
-class MovieRepository(ABC):
-    """Repository interface for Movie aggregate.
-
-    This is a port in the hexagonal architecture pattern.
-    Implementations (adapters) will be in the infrastructure layer.
+    CRUD, search, pagination, variant surgery, and stats — the stable
+    core that every catalog consumer depends on. Job-oriented concerns
+    (artwork mirror, credits detection, scrub preview) live in their own
+    role-interfaces (ADR-033).
     """
 
     @abstractmethod
@@ -605,113 +586,8 @@ class MovieRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_missing_scrub_preview(self, limit: int) -> Sequence[Movie]:
-        """Return up to ``limit`` movies that have no scrub-preview thumbnails yet.
-
-        Used by the periodic backfill job to throttle work — every tick
-        picks at most ``limit`` movies and generates their sprites,
-        which keeps CPU bounded on large catalogs. Soft-deleted rows
-        are excluded; movies without a primary file are included so the
-        caller can decide to skip them.
-
-        Args:
-            limit: Maximum number of movies to return. Caller controls
-                CPU/IO budget by tuning this with the run interval.
-
-        Returns:
-            Sequence of movies whose ``scrub_preview_path`` is null.
-        """
-        ...
-
-    @abstractmethod
-    async def find_with_remote_artwork(self, limit: int) -> Sequence[RemoteArtworkRow]:
-        """Return up to ``limit`` movies with a still-remote artwork URL.
-
-        A row is returned when any of ``poster_path`` / ``backdrop_path``
-        / ``logo_path`` is still an ``http(s)`` provider URL (not yet
-        mirrored). Soft-deleted rows are excluded and results are ordered
-        by id so the mirror job makes steady forward progress.
-        """
-        ...
-
-    @abstractmethod
-    async def update_movie_artwork(self, movie_id: MovieId, artwork: ArtworkColumns) -> None:
-        """Set the three artwork columns directly (mirror job).
-
-        A targeted column update rather than an aggregate ``save`` so the
-        mirror job never risks persisting the movie with unloaded file
-        variants. ``artwork`` carries the final value for every column
-        (the mirrored local reference where one was produced, the
-        original value otherwise).
-        """
-        ...
-
-    @abstractmethod
-    async def count_credits_states(self) -> dict[str, int]:
-        """Return ``{credits_detection_state: count}`` over non-deleted movies."""
-        ...
-
-    @abstractmethod
     async def total_file_size_by_library(self) -> dict[str, int]:
         """Return ``{library_id: total primary-file bytes}`` over movies."""
-        ...
-
-    @abstractmethod
-    async def list_credits_status(
-        self, state: str | None, limit: int, offset: int
-    ) -> tuple[Sequence[CreditsStatusRow], int]:
-        """Return a page of movie credits-status rows + the total count.
-
-        Args:
-            state: Filter by ``credits_detection_state``, or ``None`` for all.
-            limit: Page size.
-            offset: Page offset.
-
-        Returns:
-            ``(rows, total)`` — newest-marker-first, then by title.
-        """
-        ...
-
-    @abstractmethod
-    async def find_pending_credits_detection(self, limit: int) -> Sequence[Movie]:
-        """Return up to ``limit`` movies whose credits detection has not run.
-
-        Filters for ``credits_detection_state == NOT_STARTED`` with
-        file variants eager-loaded (the job needs ``primary_file``).
-        Soft-deleted rows excluded; sorted ``id ASC`` for steady forward
-        progress across ticks.
-
-        Args:
-            limit: Maximum number of movies to return.
-
-        Returns:
-            Sequence of movies eligible for the next credits tick.
-        """
-        ...
-
-    @abstractmethod
-    async def update_movie_credits(
-        self,
-        movie_id: MovieId,
-        marker: CreditsMarker | None,
-        state: CreditsDetectionState,
-    ) -> bool:
-        """Persist the credits marker + detection state for one movie.
-
-        Direct UPDATE of the four credits-marker columns plus
-        ``credits_detection_state`` on the ``movies`` row. ``marker=None``
-        clears the marker columns (IN_PROGRESS / NO_CREDITS_FOUND /
-        FAILED / clear); a non-null marker writes the onset (COMPLETED /
-        manual edit).
-
-        Args:
-            movie_id: External id of the movie (mov_xxx).
-            marker: The marker to persist, or ``None`` to clear it.
-            state: New ``CreditsDetectionState`` value.
-
-        Returns:
-            ``True`` if a row was updated, ``False`` if no movie matched.
-        """
         ...
 
     @abstractmethod
@@ -745,4 +621,19 @@ class MovieRepository(ABC):
         ...
 
 
-__all__ = ["GenreRow", "MovieRepository"]
+class MovieRepository(
+    MovieCatalogRepository,
+    MovieScrubPreviewRepository,
+    MovieArtworkMirrorRepository,
+    MovieCreditsDetectionRepository,
+):
+    """Composite Movie repository — the full port over the ``movies`` table.
+
+    Unions the lean catalog with every job-oriented role-interface
+    (ADR-033). This is the type the ``MediaUnitOfWork`` exposes as
+    ``.movies`` and the SQLAlchemy adapter implements; a consumer that
+    only needs one concern should depend on the narrow role instead.
+    """
+
+
+__all__ = ["GenreRow", "MovieCatalogRepository", "MovieRepository"]

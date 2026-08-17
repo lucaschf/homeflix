@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
-    from src.modules.media.domain.repositories.movie_repository import CreditsStatusRow
+    from src.modules.media.domain.repositories.credits_detection_repository import CreditsStatusRow
 
 _MOVIE = "movie"
 
