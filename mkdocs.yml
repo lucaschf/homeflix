@@ -117,3 +117,5 @@ nav:
       - adr/ADR-029-artwork-mirroring-storage.md
       - adr/ADR-030-multi-episode-file-segments.md
       - adr/ADR-031-tmdb-id-shared-kernel-value-object.md
+      - adr/ADR-032-decompose-media-into-subdomains.md
+      - adr/ADR-033-repository-interface-segregation.md

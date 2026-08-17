@@ -41,6 +41,8 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-029](./ADR-029-artwork-mirroring-storage.md) | Mirror de Artwork de Provider via Port de Storage | ✅ Aceito | 2026-07-18 |
 | [ADR-030](./ADR-030-multi-episode-file-segments.md) | Segmentos de Arquivo Multi-Episódio | ✅ Aceito | 2026-08-09 |
 | [ADR-031](./ADR-031-tmdb-id-shared-kernel-value-object.md) | TmdbId como Value Object no Shared Kernel | ✅ Aceito | 2026-08-16 |
+| [ADR-032](./ADR-032-decompose-media-into-subdomains.md) | Decompor o módulo `media` em subdomínios | ✅ Aceito | 2026-08-16 |
+| [ADR-033](./ADR-033-repository-interface-segregation.md) | Interface Segregation em Repositórios | ✅ Aceito | 2026-08-16 |
 
 ## Como Criar um Novo ADR
 
