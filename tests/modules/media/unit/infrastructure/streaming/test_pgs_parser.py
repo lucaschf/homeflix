@@ -8,7 +8,10 @@ import struct
 
 import pytest
 
-from src.modules.media.infrastructure.streaming.pgs_parser import parse_pgs
+from src.modules.media.infrastructure.streaming.pgs_parser import (
+    _decode_rle,
+    parse_pgs,
+)
 
 _SEG_PDS = 0x14
 _SEG_ODS = 0x15
@@ -112,3 +115,64 @@ class TestParsePgs:
     def test_non_pgs_stream_raises(self) -> None:
         with pytest.raises(ValueError, match="Not a PGS stream"):
             parse_pgs(b"NOTPGSDATA___________")
+
+
+@pytest.mark.unit
+class TestDecodeRle:
+    """Per-branch coverage of the PGS run-length decoder.
+
+    Real PGS subtitles are dominated by runs, not literal pixels — the
+    integration builder above only exercises the literal + end-of-line
+    path, so these cover every run-length branch explicitly.
+    """
+
+    def test_literal_pixels(self) -> None:
+        # Non-zero bytes are single pixels of that palette index.
+        assert list(_decode_rle(bytes([0x01, 0x02]), width=2, height=1)) == [1, 2]
+
+    def test_end_of_line_pads_to_row_boundary(self) -> None:
+        # 0x00 0x00 after one literal pads the rest of the 3-wide row with 0.
+        out = _decode_rle(bytes([0x05, 0x00, 0x00, 0x07]), width=3, height=2)
+        assert list(out) == [5, 0, 0, 7, 0, 0]
+
+    def test_short_run_background(self) -> None:
+        # 0x00 <len> with neither 0x40 nor 0x80: run of `len` zeros.
+        assert list(_decode_rle(bytes([0x00, 0x03]), width=3, height=1)) == [0, 0, 0]
+
+    def test_short_run_coloured(self) -> None:
+        # 0x80 set: the byte after carries the colour index. 0x83 -> len 3.
+        out = _decode_rle(bytes([0x00, 0x83, 0x05]), width=3, height=1)
+        assert list(out) == [5, 5, 5]
+
+    def test_extended_length_run(self) -> None:
+        # 0x40 set: length spans two bytes (low 6 bits << 8 | next). 300 zeros
+        # into a 400-wide buffer.
+        second = 0x40 | ((300 >> 8) & 0x3F)  # 0x41
+        low = 300 & 0xFF  # 0x2C
+        out = _decode_rle(bytes([0x00, second, low]), width=400, height=1)
+        assert out[:300] == bytearray(300)
+        assert len(out) == 400
+
+    def test_extended_length_coloured_run(self) -> None:
+        # 0x40 | 0x80: two-byte length AND a trailing colour byte. 100 px of 7.
+        second = 0x40 | 0x80 | ((100 >> 8) & 0x3F)  # 0xC0
+        low = 100 & 0xFF  # 0x64
+        out = _decode_rle(bytes([0x00, second, low, 0x07]), width=100, height=1)
+        assert list(out) == [7] * 100
+
+    def test_run_overflowing_buffer_is_clamped(self) -> None:
+        # A run longer than width*height clamps rather than overrunning.
+        out = _decode_rle(bytes([0x00, 0x8A, 0x03]), width=2, height=1)  # len 10, colour 3
+        assert list(out) == [3, 3]
+
+    def test_mixed_literal_run_and_eol(self) -> None:
+        out = _decode_rle(
+            bytes([0x09, 0x00, 0x82, 0x04, 0x00, 0x00, 0x08]),  # px9, run(2x4), eol, px8
+            width=4,
+            height=2,
+        )
+        assert list(out) == [9, 4, 4, 0, 8, 0, 0, 0]
+
+    def test_truncated_run_header_stops_cleanly(self) -> None:
+        # A lone 0x00 with no following byte just ends the loop.
+        assert list(_decode_rle(bytes([0x02, 0x00]), width=2, height=1)) == [2, 0]
