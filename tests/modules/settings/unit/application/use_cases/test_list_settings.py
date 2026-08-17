@@ -77,7 +77,7 @@ class TestListSettings:
             id=SettingKey.INTRO_DETECTION,
             value=IntroDetectionConfig(enabled=True, min_confidence=0.9),
             source=SettingSource.ADMIN,
-            updated_by_user_id="usr_admin",
+            updated_by_user_id="usr_admin0000000",
         )
         use_case = ListSettingsUseCase(_FakeUoWFactory(_FakeRepo(rows=[row])))
 
@@ -85,7 +85,7 @@ class TestListSettings:
 
         intro = next(d for d in details if d.key == "intro_detection")
         assert intro.source == "admin"
-        assert intro.updated_by_user_id == "usr_admin"
+        assert intro.updated_by_user_id == "usr_admin0000000"
         assert intro.updated_at is not None
         assert intro.value["min_confidence"] == 0.9
         assert intro.value["enabled"] is True
@@ -95,7 +95,7 @@ class TestListSettings:
             id=SettingKey.SCHEDULER,
             value=SchedulerConfig(enabled=False, reconcile_interval_minutes=99),
             source=SettingSource.ADMIN,
-            updated_by_user_id="usr_admin",
+            updated_by_user_id="usr_admin0000000",
         )
         use_case = ListSettingsUseCase(_FakeUoWFactory(_FakeRepo(rows=[scheduler_row])))
 

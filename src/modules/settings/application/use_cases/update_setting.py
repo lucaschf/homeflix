@@ -72,7 +72,9 @@ class UpdateSettingUseCase:
             key=persisted.id.value,
             value=persisted.value.model_dump(mode="json"),
             source=persisted.source.value,
-            updated_by_user_id=persisted.updated_by_user_id,
+            updated_by_user_id=(
+                persisted.updated_by_user_id.value if persisted.updated_by_user_id else None
+            ),
             updated_at=persisted.updated_at.isoformat() if persisted.updated_at else None,
         )
 

@@ -12,7 +12,7 @@ from tests.modules.notifications.unit.conftest import make_notifications_uow_moc
 
 def _make_notification() -> Notification:
     return Notification.create(
-        recipient_user_id="usr_alice",
+        recipient_user_id="usr_alice0000000",
         kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
         title="Alien",
     )
@@ -33,7 +33,7 @@ class TestMarkNotificationReadUseCase:
         result = await use_case.execute(
             MarkNotificationReadInput(
                 notification_id=str(existing.id),
-                recipient_user_id="usr_alice",
+                recipient_user_id="usr_alice0000000",
             ),
         )
 
@@ -52,7 +52,7 @@ class TestMarkNotificationReadUseCase:
         result = await use_case.execute(
             MarkNotificationReadInput(
                 notification_id=str(existing.id),
-                recipient_user_id="usr_alice",
+                recipient_user_id="usr_alice0000000",
             ),
         )
 
@@ -72,6 +72,6 @@ class TestMarkNotificationReadUseCase:
             await use_case.execute(
                 MarkNotificationReadInput(
                     notification_id="nfy_abcdefghij12",
-                    recipient_user_id="usr_bob",
+                    recipient_user_id="usr_bob000000000",
                 ),
             )

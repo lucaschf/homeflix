@@ -61,12 +61,13 @@ class TestSettingWithUpdates:
         updated = original.with_updates(
             value=updated_value,
             source=SettingSource.ADMIN,
-            updated_by_user_id="usr_admin",
+            updated_by_user_id="usr_admin0000000",
         )
 
         assert updated.value.min_confidence == 0.9
         assert updated.source is SettingSource.ADMIN
-        assert updated.updated_by_user_id == "usr_admin"
+        assert updated.updated_by_user_id is not None
+        assert updated.updated_by_user_id.value == "usr_admin0000000"
         assert updated.updated_at >= original.updated_at
 
     def test_with_updates_rejects_mismatched_value_type(self) -> None:

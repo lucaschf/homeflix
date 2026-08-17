@@ -11,7 +11,7 @@ from tests.modules.notifications.unit.conftest import make_notifications_uow_moc
 
 def _make_notification(title: str = "Alien") -> Notification:
     return Notification.create(
-        recipient_user_id="usr_alice",
+        recipient_user_id="usr_alice0000000",
         kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
         title=title,
     )
@@ -30,13 +30,13 @@ class TestListUserNotificationsUseCase:
         use_case = ListUserNotificationsUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(
-            ListUserNotificationsInput(recipient_user_id="usr_alice"),
+            ListUserNotificationsInput(recipient_user_id="usr_alice0000000"),
         )
 
         assert len(result.items) == 2
         assert result.unread_count == 2
         mocks.notifications.list_for_user.assert_awaited_once_with(
-            recipient_user_id="usr_alice",
+            recipient_user_id="usr_alice0000000",
             unread_only=False,
             limit=50,
         )
@@ -50,14 +50,14 @@ class TestListUserNotificationsUseCase:
 
         await use_case.execute(
             ListUserNotificationsInput(
-                recipient_user_id="usr_alice",
+                recipient_user_id="usr_alice0000000",
                 unread_only=True,
                 limit=10,
             ),
         )
 
         mocks.notifications.list_for_user.assert_awaited_once_with(
-            recipient_user_id="usr_alice",
+            recipient_user_id="usr_alice0000000",
             unread_only=True,
             limit=10,
         )
@@ -74,7 +74,7 @@ class TestListUserNotificationsUseCase:
 
         result = await use_case.execute(
             ListUserNotificationsInput(
-                recipient_user_id="usr_alice",
+                recipient_user_id="usr_alice0000000",
                 unread_only=False,
             ),
         )

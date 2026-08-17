@@ -84,7 +84,7 @@ class TestUpdateSetting:
                 value=SchedulerConfig(enabled=False, reconcile_interval_minutes=10).model_dump(
                     mode="json"
                 ),
-                acting_admin_id="usr_admin",
+                acting_admin_id="usr_admin0000000",
             ),
         )
 
@@ -92,7 +92,8 @@ class TestUpdateSetting:
         persisted = repo.upserts[0]
         assert persisted.id is SettingKey.SCHEDULER
         assert persisted.source is SettingSource.ADMIN
-        assert persisted.updated_by_user_id == "usr_admin"
+        assert persisted.updated_by_user_id is not None
+        assert persisted.updated_by_user_id.value == "usr_admin0000000"
         assert isinstance(persisted.value, SchedulerConfig)
         assert persisted.value.enabled is False
         assert persisted.value.reconcile_interval_minutes == 10
@@ -111,7 +112,7 @@ class TestUpdateSetting:
             UpdateSettingInput(
                 key=SettingKey.INTRO_DETECTION.value,
                 value=IntroDetectionConfig(min_confidence=0.85).model_dump(mode="json"),
-                acting_admin_id="usr_admin",
+                acting_admin_id="usr_admin0000000",
             ),
         )
 
@@ -135,7 +136,7 @@ class TestUpdateSetting:
                 value=SchedulerConfig(enabled=False, reconcile_interval_minutes=30).model_dump(
                     mode="json"
                 ),
-                acting_admin_id="usr_admin",
+                acting_admin_id="usr_admin0000000",
             ),
         )
 
@@ -156,7 +157,7 @@ class TestUpdateSetting:
                 UpdateSettingInput(
                     key=SettingKey.INTRO_DETECTION.value,
                     value={"min_confidence": 5.0},  # out of [0, 1]
-                    acting_admin_id="usr_admin",
+                    acting_admin_id="usr_admin0000000",
                 ),
             )
 
@@ -175,7 +176,7 @@ class TestUpdateSetting:
                 UpdateSettingInput(
                     key="nonexistent",
                     value={},
-                    acting_admin_id="usr_admin",
+                    acting_admin_id="usr_admin0000000",
                 ),
             )
 

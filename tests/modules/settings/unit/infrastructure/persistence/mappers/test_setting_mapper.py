@@ -49,7 +49,7 @@ class TestSettingMapper:
                 "frame_hash": {"hash_distance_threshold": 8, "frame_sample_fps": 2.0},
             },
             source="admin",
-            updated_by_user_id="usr_alice",
+            updated_by_user_id="usr_alice0000000",
         )
         model.created_at = now
         model.updated_at = now
@@ -63,7 +63,8 @@ class TestSettingMapper:
         assert entity.value.algorithm.value == "frame_hash"
         assert entity.value.chromaprint.max_hash_hamming == 10
         assert entity.source is SettingSource.ADMIN
-        assert entity.updated_by_user_id == "usr_alice"
+        assert entity.updated_by_user_id is not None
+        assert entity.updated_by_user_id.value == "usr_alice0000000"
         assert entity.created_at == now
         assert entity.updated_at == now
 
@@ -73,7 +74,7 @@ class TestSettingMapper:
             id=SettingKey.AVATAR,
             value=AvatarConfig(max_size_mb=5, size_pixels=512),
             source=SettingSource.ADMIN,
-            updated_by_user_id="usr_admin",
+            updated_by_user_id="usr_admin0000000",
         )
         model = SettingMapper.to_model(original)
         model.created_at = now
@@ -101,7 +102,7 @@ class TestSettingMapper:
             id=SettingKey.SCHEDULER,
             value=SchedulerConfig(enabled=False, reconcile_interval_minutes=20),
             source=SettingSource.ADMIN,
-            updated_by_user_id="usr_admin",
+            updated_by_user_id="usr_admin0000000",
         )
 
         SettingMapper.update_model(model, updated_entity)
@@ -112,4 +113,4 @@ class TestSettingMapper:
             "reconcile_interval_minutes": 20,
         }
         assert model.source == "admin"
-        assert model.updated_by_user_id == "usr_admin"
+        assert model.updated_by_user_id == "usr_admin0000000"

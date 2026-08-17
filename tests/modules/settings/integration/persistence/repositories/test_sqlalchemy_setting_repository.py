@@ -41,7 +41,7 @@ class TestSQLAlchemySettingRepository:
             id=SettingKey.SCHEDULER,
             value=SchedulerConfig(enabled=False, reconcile_interval_minutes=15),
             source=SettingSource.ADMIN,
-            updated_by_user_id="usr_admin",
+            updated_by_user_id="usr_admin0000000",
         )
         await repo.upsert(admin_edit)
 
@@ -53,7 +53,8 @@ class TestSQLAlchemySettingRepository:
         assert only.value.enabled is False
         assert only.value.reconcile_interval_minutes == 15
         assert only.source is SettingSource.ADMIN
-        assert only.updated_by_user_id == "usr_admin"
+        assert only.updated_by_user_id is not None
+        assert only.updated_by_user_id.value == "usr_admin0000000"
 
     async def test_upsert_preserves_polymorphic_value_type(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemySettingRepository(db_session)

@@ -52,7 +52,7 @@ class TestRuntimeSettingsIntegration:
                 id=SettingKey.SCHEDULER,
                 value=SchedulerConfig(enabled=False, reconcile_interval_minutes=42),
                 source=SettingSource.ADMIN,
-                updated_by_user_id="usr_admin",
+                updated_by_user_id="usr_admin0000000",
             ),
         )
 

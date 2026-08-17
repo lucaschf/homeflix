@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Self
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 
 from src.building_blocks.domain.entity import AggregateRoot
 from src.modules.settings.domain.value_objects import (
@@ -13,6 +13,7 @@ from src.modules.settings.domain.value_objects import (
     SettingSource,
     vo_type_for,
 )
+from src.shared_kernel.value_objects import UserId  # — runtime for Pydantic
 
 
 class Setting(AggregateRoot[SettingKey]):
@@ -42,7 +43,7 @@ class Setting(AggregateRoot[SettingKey]):
         ...     id=SettingKey.INTRO_DETECTION,
         ...     value=IntroDetectionConfig(enabled=True),
         ...     source=SettingSource.ADMIN,
-        ...     updated_by_user_id="usr_abc123",
+        ...     updated_by_user_id="usr_abc123abcd00",
         ... )
         >>> updated = setting.with_updates(
         ...     value=setting.value.with_updates(min_confidence=0.85),
@@ -52,7 +53,15 @@ class Setting(AggregateRoot[SettingKey]):
     id: SettingKey
     value: ConfigVO
     source: SettingSource
-    updated_by_user_id: str | None = None
+    updated_by_user_id: UserId | None = None
+
+    @field_validator("updated_by_user_id", mode="before")
+    @classmethod
+    def _convert_updated_by(cls, v: str | UserId | None) -> UserId | None:
+        """Accept a raw ``usr_xxx`` string (or ``None``) and validate the id."""
+        if v is None or isinstance(v, UserId):
+            return v
+        return UserId(v)
 
     @model_validator(mode="after")
     def _validate_value_matches_key(self) -> Self:
