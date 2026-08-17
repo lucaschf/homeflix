@@ -3,14 +3,12 @@
 import pytest
 
 from src.modules.identity.application.dtos.identity_dtos import UpdateUserRoleInput
+from src.modules.identity.application.errors import UserNotFoundException
 from src.modules.identity.application.use_cases.update_user_role import (
     UpdateUserRoleUseCase,
 )
 from src.modules.identity.domain.entities.user import User
-from src.modules.identity.domain.errors import (
-    CannotDemoteLastAdminError,
-    UserNotFoundException,
-)
+from src.modules.identity.domain.errors import CannotDemoteLastAdminError
 from src.modules.identity.domain.value_objects.email import Email
 from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.shared_kernel.value_objects.user_id import UserId

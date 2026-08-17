@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from fastapi import Depends, Request
 
 from src.config.settings import get_settings
-from src.modules.identity.domain.errors import (
+from src.modules.identity.application.errors import (
     NoActiveProfileSelectedError,
     NoActiveSessionError,
 )

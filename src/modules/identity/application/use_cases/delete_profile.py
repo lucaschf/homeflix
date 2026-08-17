@@ -1,13 +1,13 @@
 """DeleteProfileUseCase."""
 
 from src.modules.identity.application.dtos.identity_dtos import DeleteProfileInput
-from src.modules.identity.application.ports import AvatarStoragePort
-from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
-from src.modules.identity.domain.errors import (
+from src.modules.identity.application.errors import (
     CannotDeleteLastProfileError,
     ProfileNotFoundException,
     ProfileOwnershipViolation,
 )
+from src.modules.identity.application.ports import AvatarStoragePort
+from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 

@@ -25,7 +25,7 @@ from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyAccessTokenDataba
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.settings import get_settings
-from src.modules.identity.domain.errors import NoActiveSessionError
+from src.modules.identity.application.errors import NoActiveSessionError
 from src.modules.identity.infrastructure.auth.user_manager import UserManager
 from src.modules.identity.infrastructure.persistence.models.access_token_model import (
     AccessTokenModel,

@@ -6,8 +6,8 @@ from src.modules.identity.application.dtos.identity_dtos import (
     UpdateUserRoleInput,
     UserSummary,
 )
+from src.modules.identity.application.errors import UserNotFoundException
 from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
-from src.modules.identity.domain.errors import UserNotFoundException
 from src.modules.identity.domain.services import AdminQuorum
 from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.shared_kernel.value_objects.user_id import UserId

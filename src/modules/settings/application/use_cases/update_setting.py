@@ -13,10 +13,10 @@ from src.modules.settings.domain.value_objects import (
 )
 
 if TYPE_CHECKING:
+    from src.modules.settings.application.ports import RuntimeSettingsInvalidatorPort
     from src.modules.settings.application.unit_of_work import (
         SettingsUnitOfWorkFactory,
     )
-    from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 
 class UpdateSettingUseCase:
@@ -45,7 +45,7 @@ class UpdateSettingUseCase:
     def __init__(
         self,
         uow_factory: SettingsUnitOfWorkFactory,
-        runtime_settings: RuntimeSettings,
+        runtime_settings: RuntimeSettingsInvalidatorPort,
     ) -> None:
         self._uow_factory = uow_factory
         self._runtime_settings = runtime_settings

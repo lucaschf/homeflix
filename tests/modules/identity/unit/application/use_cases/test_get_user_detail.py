@@ -6,6 +6,7 @@ from src.modules.identity.application.dtos.identity_dtos import (
     CreateProfileInput,
     GetUserDetailInput,
 )
+from src.modules.identity.application.errors import UserNotFoundException
 from src.modules.identity.application.use_cases.create_profile import (
     CreateProfileUseCase,
 )
@@ -13,7 +14,6 @@ from src.modules.identity.application.use_cases.get_user_detail import (
     GetUserDetailUseCase,
 )
 from src.modules.identity.domain.entities.user import User
-from src.modules.identity.domain.errors import UserNotFoundException
 from src.modules.identity.domain.value_objects.email import Email
 from src.shared_kernel.value_objects.user_id import UserId
 
