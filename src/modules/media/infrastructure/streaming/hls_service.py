@@ -789,7 +789,9 @@ class HlsService(HlsPlaylistPort):
                 audio_dir = output_dir / f"audio_{track.index}"
                 audio_dir.mkdir()
                 cmd = with_ffmpeg_threads(
-                    self._cmd_builder.build_audio_cmd(safe_path, audio_dir, track, bucket_start, end),
+                    self._cmd_builder.build_audio_cmd(
+                        safe_path, audio_dir, track, bucket_start, end
+                    ),
                     ffmpeg_threads,
                 )
                 _logger.info(

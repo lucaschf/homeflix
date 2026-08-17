@@ -410,13 +410,17 @@ class TestHlsServiceBuildAudioCmd:
             yield
 
     def test_should_include_input_file(self, tmp_path: Path) -> None:
-        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=1))
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _make_audio_track(index=1)
+        )
 
         assert "-i" in cmd
         assert "/movies/test.mkv" in cmd
 
     def test_should_map_to_correct_audio_stream(self, tmp_path: Path) -> None:
-        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=2))
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _make_audio_track(index=2)
+        )
 
         assert "0:a:2" in cmd
 
@@ -431,24 +435,32 @@ class TestHlsServiceBuildAudioCmd:
         assert cmd[cmd.index("-t") + 1] == "4740"
 
     def test_should_not_clamp_duration_without_end(self, tmp_path: Path) -> None:
-        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=1))
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _make_audio_track(index=1)
+        )
 
         assert "-t" not in cmd
 
     def test_should_disable_video_and_subtitle(self, tmp_path: Path) -> None:
-        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _make_audio_track(index=0)
+        )
 
         assert "-vn" in cmd
         assert "-sn" in cmd
 
     def test_should_use_aac_codec(self, tmp_path: Path) -> None:
-        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _make_audio_track(index=0)
+        )
 
         assert "aac" in cmd
 
     def test_should_omit_seek_flag_when_start_is_zero(self, tmp_path: Path) -> None:
         # Default cold-cache transcode starts at t=0 — no ``-ss``.
-        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _make_audio_track(index=0)
+        )
 
         assert "-ss" not in cmd
 
@@ -495,14 +507,18 @@ class TestHlsServiceBuildAudioCmd:
         # Sync hardening only kicks in for non-zero ``start`` since the
         # legacy cold-cache transcode never hits the keyframe-vs-audio
         # gap (it begins at t=0 of the source).
-        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _make_audio_track(index=0)
+        )
 
         assert "-accurate_seek" not in cmd
         assert "-avoid_negative_ts" not in cmd
 
     def test_should_copy_aac_lc_stereo_48k_at_start_zero(self, tmp_path: Path) -> None:
         # Already browser-ready audio is remuxed, not re-encoded.
-        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _aac_lc_stereo_48k(index=1))
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _aac_lc_stereo_48k(index=1)
+        )
 
         assert cmd[cmd.index("-c:a") + 1] == "copy"
         assert "-ar" not in cmd  # no encode params on the copy path
@@ -542,7 +558,9 @@ class TestHlsServiceBuildAudioCmd:
             "src.modules.media.infrastructure.streaming.transcode_command_builder._first_audio_pts",
             return_value=11.0,
         ):
-            cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _aac_lc_stereo_48k())
+            cmd = TranscodeCommandBuilder.build_audio_cmd(
+                "/movies/test.mkv", tmp_path, _aac_lc_stereo_48k()
+            )
 
         assert "copy" not in cmd
         assert cmd[cmd.index("-c:a") + 1] == "aac"
@@ -693,7 +711,9 @@ class TestHlsServiceBuildVideoCmd:
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
-            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+            cmd = service._cmd_builder.build_video_cmd(
+                "/movies/test.mkv", tmp_path, probe, start=1800
+            )
 
         assert "libx264" in cmd
         assert "copy" not in cmd
@@ -917,7 +937,9 @@ class TestHlsServiceBuildVideoCmd:
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
-            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+            cmd = service._cmd_builder.build_video_cmd(
+                "/movies/test.mkv", tmp_path, probe, start=1800
+            )
 
         assert "-ss" in cmd
         ss_index = cmd.index("-ss")
@@ -935,7 +957,9 @@ class TestHlsServiceBuildVideoCmd:
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
-            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+            cmd = service._cmd_builder.build_video_cmd(
+                "/movies/test.mkv", tmp_path, probe, start=1800
+            )
 
         assert "-accurate_seek" in cmd
         accurate_index = cmd.index("-accurate_seek")
@@ -949,7 +973,9 @@ class TestHlsServiceBuildVideoCmd:
         probe = ProbeResult(audio_tracks=[_make_audio_track()])
 
         with patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"):
-            cmd = service._cmd_builder.build_video_cmd("/movies/test.mkv", tmp_path, probe, start=1800)
+            cmd = service._cmd_builder.build_video_cmd(
+                "/movies/test.mkv", tmp_path, probe, start=1800
+            )
 
         assert "-avoid_negative_ts" in cmd
         idx = cmd.index("-avoid_negative_ts")
@@ -2124,7 +2150,9 @@ class TestMpegtsZeroStart:
 
     @pytest.mark.unit
     def test_audio_cmd_zeroes_muxer_offset(self, tmp_path: Path) -> None:
-        cmd = TranscodeCommandBuilder.build_audio_cmd("/movies/test.mkv", tmp_path, _make_audio_track(index=0))
+        cmd = TranscodeCommandBuilder.build_audio_cmd(
+            "/movies/test.mkv", tmp_path, _make_audio_track(index=0)
+        )
         assert cmd[cmd.index("-muxdelay") + 1] == "0"
         assert cmd[cmd.index("-muxpreload") + 1] == "0"
 
