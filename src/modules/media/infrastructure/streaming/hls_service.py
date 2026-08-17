@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import logging
 import re
 import shutil
@@ -49,34 +48,36 @@ from src.modules.media.application.ports.hls_playlist_port import (
     HlsCacheStats,
     HlsPlaylistPort,
 )
-from src.modules.media.application.ports.media_probe_port import ProbeResult
-from src.modules.media.domain.services.track_naming import (
-    TrackVersion,
-    audio_version_labels,
-    render_version_token,
-    subtitle_version_labels,
+from src.modules.media.infrastructure.streaming._hls_common import (
+    BROWSER_SAFE_CODECS,
+    primary_audio_index,
 )
 from src.modules.media.infrastructure.streaming._subprocess import (
-    HW_ACCEL_NVENC,
-    HW_ACCEL_OFF,
     SUBPROCESS_TEXT_KWARGS,
     with_ffmpeg_threads,
 )
+from src.modules.media.infrastructure.streaming.hardware_acceleration_probe import (
+    HardwareAccelerationProbe,
+)
+from src.modules.media.infrastructure.streaming.master_playlist_writer import MasterPlaylistWriter
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
+from src.modules.media.infrastructure.streaming.probe_cache_store import ProbeCacheStore
 from src.modules.media.infrastructure.streaming.subtitle_ocr_surfacing import (
     attach_ocr_subtitles,
 )
+from src.modules.media.infrastructure.streaming.transcode_command_builder import (
+    TranscodeCommandBuilder,
+)
 
 if TYPE_CHECKING:
+    from src.modules.media.application.ports.media_probe_port import ProbeResult
     from src.modules.media.application.ports.runtime_config_ports import HlsRuntimeConfigPort
-    from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
+    from src.shared_kernel.value_objects.tracks import SubtitleTrack
 
 _logger = logging.getLogger(__name__)
 
-_SEGMENT_DURATION = 10  # seconds per segment
 _POLL_INTERVAL = 0.5  # seconds between readiness checks
 _POLL_TIMEOUT = 120  # max seconds to wait for first segment
-_BROWSER_SAFE_CODECS = {"h264"}
 
 # Number of segments ffmpeg must produce before ensure_playlist returns.
 # The transcode always starts at t=0, so one segment is enough to give
@@ -97,165 +98,6 @@ _VIDEO_DIR = "video"
 # path and is awaiting deletion. The eviction scan skips (and retries
 # cleaning) these so they are never mistaken for a real bucket.
 _EVICTING_PREFIX = ".evicting-"
-
-# Wall-clock cap for the one-time NVENC functional probe. Deliberately
-# generous: the probe is the process's first CUDA call, so it absorbs the
-# cold driver / context init, which was measured at ~20s on a cold but
-# perfectly working GPU. Cutting this to a few seconds would time out
-# that cold init and make AUTO mode fall back to software on a host that
-# actually has a usable encoder — the exact false negative this feature
-# exists to avoid. The cost (a longer first play once per process on a
-# hung driver) fits inside the 120s first-segment budget.
-_NVENC_PROBE_TIMEOUT = 30
-
-# -- Module helpers -----------------------------------------------------------
-
-
-def _primary_audio_index(probe: ProbeResult) -> int:
-    """Get the index of the primary audio track (first one, always index 0)."""
-    return probe.audio_tracks[0].index if probe.audio_tracks else 0
-
-
-# A leading audio offset above this many seconds is treated as a gap that
-# must be padded with silence (see ``_first_audio_pts``). The threshold is
-# generous — normal muxing jitter is a few milliseconds, so anything past a
-# quarter-second is a real hole at the head of the track, not noise.
-_AUDIO_LEADING_GAP_THRESHOLD = 0.25
-
-
-def _first_audio_pts(file_path: str, audio_index: int) -> float | None:
-    """Return the PTS (seconds) of the first packet of one audio stream.
-
-    Some source files carry an audio track whose first sample lands well
-    after t=0 (e.g. an 11-second silent hole at the head of the stream).
-    Muxed into HLS from t=0, the leading segments then declare an audio
-    stream that has *no* frames yet, and hls.js — which needs the audio
-    codec from the first fragment — stalls forever on that phantom track
-    instead of ever appending a buffer. Detecting the offset lets the
-    caller pad it with silence and keep the copy fast-path off files that
-    would otherwise ship an empty-audio first segment.
-
-    Args:
-        file_path: Absolute path to the source video file.
-        audio_index: Stream index *within the audio streams* (the ``N`` in
-            ffmpeg's ``0:a:N``), matching how the transcode maps it.
-
-    Returns:
-        The first packet's presentation timestamp in seconds, or ``None``
-        if ffprobe fails or reports no readable timestamp (caller then
-        assumes no gap).
-    """
-    try:
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-select_streams",
-                f"a:{audio_index}",
-                "-read_intervals",
-                "%+#1",
-                "-show_entries",
-                "packet=pts_time",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                file_path,
-            ],
-            **SUBPROCESS_TEXT_KWARGS,
-            check=False,
-            timeout=10,
-        )
-    except Exception:
-        return None
-    raw = result.stdout.strip().splitlines()
-    if not raw:
-        return None
-    try:
-        return float(raw[0])
-    except ValueError:
-        return None
-
-
-def _has_leading_audio_gap(file_path: str, audio_index: int, start: int) -> bool:
-    """Whether a mapped audio stream begins meaningfully after t=0.
-
-    Only meaningful for the initial (``start == 0``) bucket — a seek
-    bucket lands mid-stream where audio already exists and normalises its
-    own timestamps, so we skip the probe there and never treat it as a
-    gap. See :func:`_first_audio_pts` for why the gap matters.
-    """
-    if start != 0:
-        return False
-    pts = _first_audio_pts(file_path, audio_index)
-    return pts is not None and pts > _AUDIO_LEADING_GAP_THRESHOLD
-
-
-def _manifest_track_name(language: str, version: TrackVersion | None) -> str:
-    """Compose a fallback ``NAME=`` for a manifest rendition.
-
-    The manifest can't carry structured data and isn't localized, so we
-    use the language code plus a short version token (e.g. "PT",
-    "PT · Herbert Richers", "PT · 5.1"). Clients should prefer the
-    structured ``/tracks`` payload and localize it themselves.
-    """
-    base = language.upper()
-    token = render_version_token(version)
-    return f"{base} · {token}" if token else base
-
-
-def _audio_args_for(
-    track: AudioTrack | None,
-    start: int,
-    leading_gap: bool = False,
-) -> list[str]:
-    """Pick the ffmpeg audio args for one HLS track: copy or re-encode.
-
-    Re-encoding every audio track to AAC stereo 48 kHz is wasted work
-    when the source already *is* browser-playable AAC. We remux with
-    ``-c:a copy`` only when the track is unambiguously safe to drop into
-    MPEG-TS untouched:
-
-    - **AAC-LC** — the one AAC profile MSE/hls.js decode everywhere;
-      HE-AAC (SBR/PS) is excluded because browser support is spotty.
-    - **stereo** — multichannel must be downmixed to 2.0 for the player.
-    - **48 kHz** — matches the rate the re-encode path normalises to, so
-      a copied stream is byte-for-byte what a transcode would have
-      targeted.
-    - **start == 0** — a non-zero resume offset re-encodes the video with
-      ``-accurate_seek``; copying the audio there would land it at the
-      nearest packet instead of the exact second and drift out of sync.
-    - **no leading gap** — a track whose first sample lands after t=0
-      (``leading_gap``) must be re-encoded so the silence filter below
-      can backfill the hole; copying would preserve it and ship an
-      empty-audio first segment that stalls hls.js.
-
-    Anything else (unknown profile/rate, non-AAC, surround, mid-stream
-    seek, leading gap) falls back to the safe AAC re-encode.
-
-    On the re-encode path for an initial (``start == 0``) bucket we add
-    ``aresample=async=1:first_pts=0``. It pads any leading offset with
-    silence so the audio starts at t=0 and the first HLS segment carries
-    decodable frames — without it, a file whose audio begins late (a real
-    silent intro) yields a first segment with a declared-but-empty audio
-    stream, and hls.js hangs on "preparing" forever. It is a no-op for a
-    track that already starts at zero. The seek path (``start > 0``)
-    already normalises timestamps via ``-avoid_negative_ts make_zero`` and
-    is left untouched.
-    """
-    if (
-        track is not None
-        and start == 0
-        and not leading_gap
-        and track.codec == "aac"
-        and track.is_stereo
-        and track.sample_rate == 48000
-        and (track.profile or "").strip().upper() == "LC"
-    ):
-        return ["-c:a", "copy"]
-    args = ["-c:a", "aac", "-ac", "2", "-ar", "48000"]
-    if start == 0:
-        args += ["-af", "aresample=async=1:first_pts=0"]
-    return args
 
 
 class HlsService(HlsPlaylistPort):
@@ -288,6 +130,11 @@ class HlsService(HlsPlaylistPort):
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._probe = probe_service or MediaProbeService()
         self._runtime_settings = runtime_settings
+        # Extracted collaborators (pure — no locks/threads/process state).
+        self._hw_probe = HardwareAccelerationProbe(runtime_settings)
+        self._cmd_builder = TranscodeCommandBuilder(self._hw_probe)
+        self._probe_cache = ProbeCacheStore(self._cache_dir)
+        self._master_writer = MasterPlaylistWriter()
         self._processes: dict[str, list[subprocess.Popen[bytes]]] = {}
         # path_hash → monotonic timestamp of the most recent activity
         # (playlist request OR segment fetch). The eviction loop reads
@@ -300,9 +147,6 @@ class HlsService(HlsPlaylistPort):
         self._subtitle_events: dict[str, dict[int, threading.Event]] = {}
         self._lock = threading.Lock()
         self._idle_timeout = idle_timeout
-        # Memoised result of the one-time NVENC functional probe (None
-        # until first transcode in AUTO mode forces the check).
-        self._nvenc_probe: bool | None = None
         if enable_eviction:
             self._start_eviction_thread()
 
@@ -594,14 +438,7 @@ class HlsService(HlsPlaylistPort):
 
     def get_cached_tracks(self, path_hash: str) -> dict[str, Any] | None:
         """Get cached probe result from tracks.json."""
-        tracks_file = self._cache_dir / path_hash / "tracks.json"
-        if not tracks_file.is_file():
-            return None
-        try:
-            data: dict[str, Any] = json.loads(tracks_file.read_text(encoding="utf-8"))
-            return data
-        except (OSError, json.JSONDecodeError):
-            return None
+        return self._probe_cache.get_cached_tracks(path_hash)
 
     async def ensure_playlist(self, file_path: str, start: int = 0, end: int | None = None) -> str:
         """Start generation and wait until the first segments are ready.
@@ -674,11 +511,11 @@ class HlsService(HlsPlaylistPort):
         init, NVDEC capability, transient GPU contention) recovers on the
         libx264 path, whereas a software failure would just repeat.
         """
-        if not self._use_nvenc():
+        if not self._hw_probe.use_nvenc():
             return False
         if start > 0:
             return True
-        return self._probe_video_codec(file_path) not in _BROWSER_SAFE_CODECS
+        return self._hw_probe.probe_video_codec(file_path) not in BROWSER_SAFE_CODECS
 
     async def _generate_and_wait(
         self,
@@ -731,7 +568,7 @@ class HlsService(HlsPlaylistPort):
         """
         path_hash = self.get_path_hash(file_path)
         cached = self.get_cached_tracks(path_hash)
-        base = self._deserialize_probe(cached) if cached else self._probe.probe(file_path)
+        base = self._probe_cache.deserialize(cached) if cached else self._probe.probe(file_path)
         return attach_ocr_subtitles(
             base, file_path, self._runtime_settings.subtitle_ocr_snapshot_sync()
         )
@@ -926,7 +763,7 @@ class HlsService(HlsPlaylistPort):
                 shutil.rmtree(output_dir, ignore_errors=True)
 
             output_dir.mkdir(parents=True, exist_ok=True)
-            self._save_probe_cache(output_dir, probe_result)
+            self._probe_cache.save(output_dir, probe_result)
 
             procs: list[subprocess.Popen[bytes]] = []
 
@@ -934,7 +771,7 @@ class HlsService(HlsPlaylistPort):
             video_dir = output_dir / _VIDEO_DIR
             video_dir.mkdir()
             cmd = with_ffmpeg_threads(
-                self._build_video_cmd(
+                self._cmd_builder.build_video_cmd(
                     safe_path, video_dir, probe_result, bucket_start, force_software, end
                 ),
                 ffmpeg_threads,
@@ -945,14 +782,16 @@ class HlsService(HlsPlaylistPort):
             )
 
             # 2. Additional audio tracks (audio-only HLS)
-            primary_audio_idx = _primary_audio_index(probe_result)
+            primary_audio_idx = primary_audio_index(probe_result)
             for track in probe_result.audio_tracks:
                 if track.index == primary_audio_idx:
                     continue
                 audio_dir = output_dir / f"audio_{track.index}"
                 audio_dir.mkdir()
                 cmd = with_ffmpeg_threads(
-                    self._build_audio_cmd(safe_path, audio_dir, track, bucket_start, end),
+                    self._cmd_builder.build_audio_cmd(
+                        safe_path, audio_dir, track, bucket_start, end
+                    ),
                     ffmpeg_threads,
                 )
                 _logger.info(
@@ -973,7 +812,7 @@ class HlsService(HlsPlaylistPort):
             # so racing them against playback start is safe. Uses ``probe_view``
             # so surfaced OCR text tracks (ADR-027) get a ``sub_N`` rendition
             # matching ``text_subs``.
-            self._build_master_playlist(output_dir, probe_view)
+            self._master_writer.write(output_dir, probe_view)
 
             # 4. Pre-create per-subtitle readiness events. They MUST be
             # registered before _start_generation returns so the file
@@ -1055,324 +894,6 @@ class HlsService(HlsPlaylistPort):
             _logger.info("Sealed HLS playlist with ENDLIST: %s", playlist_path)
         except OSError:
             _logger.exception("Failed to append ENDLIST to %s", playlist_path)
-
-    # -- Private: FFmpeg commands ----------------------------------------------
-
-    @staticmethod
-    def _probe_video_codec(file_path: str) -> str | None:
-        """Detect video codec using ffprobe."""
-        try:
-            result = subprocess.run(
-                [
-                    "ffprobe",
-                    "-v",
-                    "error",
-                    "-select_streams",
-                    "v:0",
-                    "-show_entries",
-                    "stream=codec_name",
-                    "-of",
-                    "default=noprint_wrappers=1:nokey=1",
-                    file_path,
-                ],
-                **SUBPROCESS_TEXT_KWARGS,
-                check=False,
-                timeout=10,
-            )
-            codec = result.stdout.strip().lower()
-            return codec if codec else None
-        except Exception:
-            return None
-
-    @staticmethod
-    def _detect_nvenc() -> bool:
-        """Functionally probe whether ``h264_nvenc`` can actually encode.
-
-        The encoder being *listed* by ffmpeg is not enough — a host can
-        ship an ffmpeg with NVENC compiled in while lacking the GPU,
-        driver, or a free encode session. We run a sub-second throwaway
-        encode of a synthetic source through CUDA so AUTO mode only
-        commits to NVENC when the full decode→encode path works.
-
-        Returns ``True`` only on a clean (exit 0) probe encode.
-        """
-        try:
-            result = subprocess.run(
-                [
-                    "ffmpeg",
-                    "-hide_banner",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "color=c=black:s=256x256:r=10",
-                    "-t",
-                    "0.2",
-                    "-c:v",
-                    "h264_nvenc",
-                    "-f",
-                    "null",
-                    "-",
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-                timeout=_NVENC_PROBE_TIMEOUT,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return False
-        return result.returncode == 0
-
-    def _nvenc_available(self) -> bool:
-        """Return the memoised NVENC functional-probe result.
-
-        Probed at most once per service instance — the first transcode
-        in AUTO mode pays the ~1s cold-start CUDA init, every later call
-        reads the cached boolean.
-        """
-        if self._nvenc_probe is None:
-            self._nvenc_probe = self._detect_nvenc()
-            _logger.info("NVENC functional probe result: %s", self._nvenc_probe)
-        return self._nvenc_probe
-
-    def _use_nvenc(self) -> bool:
-        """Decide whether this transcode should use NVENC.
-
-        Honours the persisted ``hw_accel`` knob: ``off`` forces
-        software, ``nvenc`` forces hardware (a broken encoder then
-        surfaces as a transcode failure rather than silently falling
-        back), and ``auto`` defers to the cached functional probe.
-        """
-        mode = self._runtime_settings.streaming_snapshot_sync().hw_accel
-        if mode == HW_ACCEL_OFF:
-            return False
-        if mode == HW_ACCEL_NVENC:
-            return True
-        return self._nvenc_available()
-
-    def _build_video_cmd(
-        self,
-        file_path: str,
-        output_dir: Path,
-        probe: ProbeResult,
-        start: int = 0,
-        force_software: bool = False,
-        end: int | None = None,
-    ) -> list[str]:
-        """Build FFmpeg command for video + default audio.
-
-        Transcodes (or remuxes, for already-H.264 sources) from the
-        ``start`` second of the file. ``-ss`` is placed BEFORE ``-i``
-        so ffmpeg does an input seek — fast and keyframe-accurate —
-        and the resulting segments carry timestamps starting near zero
-        in bucket-local time. Bucket-local timestamps are why the
-        frontend computes ``video.currentTime = saved - bucket_start``
-        instead of ``video.currentTime = saved`` (which would only
-        work with ``-copyts`` / source-time preserved, a path the
-        prior attempts at this refactor never landed reliably).
-
-        When ``start > 0`` we also emit ``-accurate_seek`` and
-        ``-avoid_negative_ts make_zero``. The first forces ffmpeg to
-        decode-and-drop frames between the preceding keyframe and the
-        exact requested second; without it, video opens at the
-        keyframe while audio opens at ``start`` and the two streams
-        play out of sync by that gap. The second clamps the minimum
-        PTS to zero across streams so any residual offset surfaces as
-        a tiny silence prefix instead of an audio-leads-video drift.
-
-        The H.264 ``-c:v copy`` fast path is bypassed for non-zero
-        ``start`` because copying skips the decode pass that
-        ``-accurate_seek`` relies on to drop pre-target frames — the
-        copied video would land at the preceding keyframe while the
-        re-encoded audio lands at the exact ``start``, recreating the
-        same 1-3s gap the seek flag was meant to close.
-
-        When a transcode is required and ``hw_accel`` resolves to NVENC,
-        the whole pipeline runs on the GPU: ``-hwaccel cuda`` decodes
-        with NVDEC, ``scale_cuda=format=nv12`` does the 10-bit→8-bit
-        conversion in VRAM, and ``h264_nvenc`` encodes — keeping the CPU
-        almost idle and staying well above real-time on 4K HEVC. The
-        software ``libx264`` path is the fallback.
-        """
-        codec = self._probe_video_codec(file_path)
-        needs_transcode = codec not in _BROWSER_SAFE_CODECS or start > 0
-
-        hwaccel_input_args: list[str] = []
-        vf_args: list[str] = []
-
-        if needs_transcode and self._use_nvenc() and not force_software:
-            _logger.info("Source codec %s — transcoding via NVENC (start=%d)", codec, start)
-            # Full-GPU pipeline: NVDEC decode → scale_cuda (10→8 bit in
-            # VRAM) → NVENC encode. ``spatial_aq`` redistributes bits to
-            # flat regions, which is what keeps sky/fog gradients from
-            # banding. ``-cq 19`` is constant-quality VBR (``-b:v 0``).
-            hwaccel_input_args = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
-            vf_args = ["-vf", "scale_cuda=format=nv12"]
-            video_args = [
-                "-c:v",
-                "h264_nvenc",
-                "-preset",
-                "p5",
-                "-tune",
-                "hq",
-                "-rc",
-                "vbr",
-                "-cq",
-                "19",
-                "-b:v",
-                "0",
-                "-spatial_aq",
-                "1",
-            ]
-        elif needs_transcode:
-            _logger.info("Source codec %s — transcoding via libx264 (start=%d)", codec, start)
-            # ``superfast`` (not ``ultrafast``) is the floor here: ultrafast
-            # disables CABAC and adaptive quantization, which is exactly what
-            # collapses smooth gradients (sky, fog) into visible macroblocks
-            # on HEVC/10-bit sources re-encoded to H.264. superfast turns both
-            # back on for a moderate CPU cost while staying real-time on 4K.
-            # ``-pix_fmt yuv420p`` forces a clean 8-bit output so 10-bit
-            # sources (yuv420p10le) downconvert through swscale's dithering
-            # instead of producing an unplayable High 10 stream.
-            video_args = [
-                "-c:v",
-                "libx264",
-                "-preset",
-                "superfast",
-                "-crf",
-                "20",
-                "-pix_fmt",
-                "yuv420p",
-            ]
-        else:
-            _logger.info("Source codec %s — copying", codec)
-            # H.264 inside MP4/MKV is AVCC (length-prefixed NALs) with
-            # SPS/PPS only in container extradata. The HLS muxer does not
-            # reliably auto-insert the Annex-B conversion the bare mpegts
-            # muxer applies, so sources that don't repeat parameter sets
-            # in-band lose them in the .ts segments — the browser decodes
-            # zero frames (black video, audio fine). h264_mp4toannexb
-            # converts to Annex-B and writes SPS/PPS in-band; it is a
-            # no-op for streams already in Annex-B form.
-            video_args = ["-c:v", "copy", "-bsf:v", "h264_mp4toannexb"]
-
-        primary_idx = _primary_audio_index(probe)
-        audio_map = f"0:a:{primary_idx}"
-        primary_track = probe.audio_tracks[0] if probe.audio_tracks else None
-        leading_gap = _has_leading_audio_gap(file_path, primary_idx, start)
-        audio_args = _audio_args_for(primary_track, start, leading_gap)
-
-        seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
-        ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
-        # Clamp the encode to a sub-range when this title occupies only part
-        # of a shared physical file (ADR-030). ``-t`` is an output option, so
-        # with the input seek above it measures from ``start``: the emitted
-        # stream is exactly ``[start, end)`` source seconds.
-        duration_args = ["-t", str(end - start)] if end is not None else []
-
-        return [
-            "ffmpeg",
-            *hwaccel_input_args,
-            *seek_args,
-            "-i",
-            file_path,
-            "-map",
-            "0:v:0",
-            "-map",
-            audio_map,
-            "-sn",
-            *vf_args,
-            *video_args,
-            *audio_args,
-            *ts_normalize_args,
-            *duration_args,
-            # Zero the MPEG-TS muxer's ~1.4s initial offset so the first
-            # segment PTS starts at ~0, keeping the video / audio / subtitle
-            # timelines aligned (the WebVTT X-TIMESTAMP-MAP anchors to MPEGTS:0).
-            "-muxdelay",
-            "0",
-            "-muxpreload",
-            "0",
-            "-hls_time",
-            str(_SEGMENT_DURATION),
-            "-hls_list_size",
-            "0",
-            "-hls_playlist_type",
-            "event",
-            # temp_file: write each segment to .ts.tmp and rename to .ts
-            # only after it's fully written. Prevents the player from
-            # racing the encoder and grabbing partial bytes.
-            "-hls_flags",
-            "temp_file",
-            "-hls_segment_filename",
-            str(output_dir / "segment_%04d.ts"),
-            "-loglevel",
-            "error",
-            "-y",
-            str(output_dir / "playlist.m3u8"),
-        ]
-
-    @staticmethod
-    def _build_audio_cmd(
-        file_path: str,
-        output_dir: Path,
-        track: AudioTrack,
-        start: int = 0,
-        end: int | None = None,
-    ) -> list[str]:
-        """Build FFmpeg command for audio-only HLS track.
-
-        ``-ss`` placed before ``-i`` when ``start > 0`` — same input-seek
-        rationale as ``_build_video_cmd``. The alternate-audio playlist
-        is consumed independently by the player; even though there is
-        no video stream here, we still match the video pipeline's
-        ``-accurate_seek`` / ``-avoid_negative_ts make_zero`` so a
-        switch from primary to alternate audio at a non-zero bucket
-        lands on the same source-time second.
-
-        Like the primary audio in ``_build_video_cmd``, a browser-ready
-        AAC-LC stereo 48 kHz source is remuxed with ``-c:a copy`` instead
-        of re-encoded; see :func:`_audio_args_for`.
-        """
-        seek_args = ["-ss", str(start), "-accurate_seek"] if start > 0 else []
-        ts_normalize_args = ["-avoid_negative_ts", "make_zero"] if start > 0 else []
-        # Clamp to the same sub-range as the video track (ADR-030) so an
-        # alternate-audio playlist ends at the title boundary, not the file's.
-        duration_args = ["-t", str(end - start)] if end is not None else []
-        leading_gap = _has_leading_audio_gap(file_path, track.index, start)
-        return [
-            "ffmpeg",
-            *seek_args,
-            "-i",
-            file_path,
-            "-map",
-            f"0:a:{track.index}",
-            "-vn",
-            "-sn",
-            *_audio_args_for(track, start, leading_gap),
-            *ts_normalize_args,
-            *duration_args,
-            # Zero the MPEG-TS muxer's ~1.4s initial offset so the first
-            # segment PTS starts at ~0, keeping the video / audio / subtitle
-            # timelines aligned (the WebVTT X-TIMESTAMP-MAP anchors to MPEGTS:0).
-            "-muxdelay",
-            "0",
-            "-muxpreload",
-            "0",
-            "-hls_time",
-            str(_SEGMENT_DURATION),
-            "-hls_list_size",
-            "0",
-            "-hls_playlist_type",
-            "event",
-            "-hls_flags",
-            "temp_file",
-            "-hls_segment_filename",
-            str(output_dir / "segment_%04d.ts"),
-            "-loglevel",
-            "error",
-            "-y",
-            str(output_dir / "playlist.m3u8"),
-        ]
 
     # -- Private: subtitle extraction ------------------------------------------
 
@@ -1492,155 +1013,6 @@ class HlsService(HlsPlaylistPort):
             _logger.warning("Extraction timed out for %s", log_label)
             return False
         return True
-
-    # -- Private: master playlist ----------------------------------------------
-
-    @staticmethod
-    def _build_master_playlist(output_dir: Path, probe: ProbeResult) -> None:
-        """Generate master.m3u8 with audio renditions and subtitle tracks."""
-        lines = ["#EXTM3U", "#EXT-X-VERSION:3"]
-
-        has_alt_audio = len(probe.audio_tracks) > 1
-        audio_group = 'AUDIO="audio"' if has_alt_audio else ""
-        text_subs = [s for s in probe.all_subtitles if s.is_text_based]
-        sub_group = 'SUBTITLES="subs"' if text_subs else ""
-
-        audio_versions = audio_version_labels(probe.audio_tracks)
-        sub_versions = subtitle_version_labels(text_subs)
-
-        primary_idx = _primary_audio_index(probe)
-        if has_alt_audio:
-            for track in probe.audio_tracks:
-                is_primary = track.index == primary_idx
-                name = _manifest_track_name(track.language.value, audio_versions.get(track.index))
-                if is_primary:
-                    lines.append(
-                        f'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",'
-                        f'NAME="{name}",LANGUAGE="{track.language.value}",'
-                        f"DEFAULT=YES,AUTOSELECT=YES"
-                    )
-                else:
-                    lines.append(
-                        f'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",'
-                        f'NAME="{name}",LANGUAGE="{track.language.value}",'
-                        f"DEFAULT=NO,AUTOSELECT=NO,"
-                        f'URI="audio_{track.index}/playlist.m3u8"'
-                    )
-
-        for sub in text_subs:
-            sub_name = _manifest_track_name(sub.language.value, sub_versions.get(sub.index))
-            is_forced = "YES" if sub.is_forced else "NO"
-            lines.append(
-                f'#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",'
-                f'NAME="{sub_name}",LANGUAGE="{sub.language.value}",'
-                f"DEFAULT=NO,AUTOSELECT=NO,FORCED={is_forced},"
-                f'URI="sub_{sub.index}/playlist.m3u8"'
-            )
-
-        groups = ",".join(filter(None, [audio_group, sub_group]))
-        stream_inf = "#EXT-X-STREAM-INF:BANDWIDTH=5000000"
-        if groups:
-            stream_inf += f",{groups}"
-        lines.append(stream_inf)
-        lines.append("video/playlist.m3u8")
-
-        master_path = output_dir / "master.m3u8"
-        master_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        _logger.info("Master playlist written to %s", master_path)
-
-    # -- Private: probe cache --------------------------------------------------
-
-    @staticmethod
-    def _save_probe_cache(output_dir: Path, probe: ProbeResult) -> None:
-        """Save probe result as JSON for the tracks API."""
-        data = {
-            "resolution": probe.resolution,
-            "audio_tracks": [
-                {
-                    "index": t.index,
-                    "language": t.language.value,
-                    "codec": t.codec,
-                    "channels": t.channels,
-                    "title": t.title,
-                    "is_default": t.is_default,
-                    "bitrate": t.bitrate,
-                    "sample_rate": t.sample_rate,
-                    "profile": t.profile,
-                }
-                for t in probe.audio_tracks
-            ],
-            "subtitle_tracks": [
-                {
-                    "index": t.index,
-                    "language": t.language.value,
-                    "format": t.format,
-                    "title": t.title,
-                    "is_default": t.is_default,
-                    "is_forced": t.is_forced,
-                    "is_external": t.is_external,
-                    "is_image_based": t.is_image_based,
-                }
-                for t in probe.all_subtitles
-            ],
-        }
-        (output_dir / "tracks.json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    @staticmethod
-    def _deserialize_probe(data: dict[str, Any]) -> ProbeResult:
-        """Reconstruct ProbeResult from cached JSON."""
-        from src.shared_kernel.value_objects.language_code import LanguageCode
-        from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
-
-        audio = [
-            AudioTrack(
-                index=t["index"],
-                language=LanguageCode(t["language"]),
-                codec=t["codec"],
-                channels=t["channels"],
-                title=t.get("title"),
-                is_default=t["is_default"],
-                bitrate=t.get("bitrate"),
-                sample_rate=t.get("sample_rate"),
-                profile=t.get("profile"),
-            )
-            for t in data.get("audio_tracks", [])
-        ]
-        subs = [
-            SubtitleTrack(
-                index=t["index"],
-                language=LanguageCode(t["language"]),
-                format=t["format"],
-                title=t.get("title"),
-                is_default=t.get("is_default", False),
-                is_forced=t.get("is_forced", False),
-                is_external=t.get("is_external", False),
-            )
-            for t in data.get("subtitle_tracks", [])
-            if not t.get("is_external", False)
-        ]
-        ext = [
-            SubtitleTrack(
-                index=t["index"],
-                language=LanguageCode(t["language"]),
-                format=t["format"],
-                title=t.get("title"),
-                is_default=t.get("is_default", False),
-                is_forced=t.get("is_forced", False),
-                is_external=True,
-                file_path=None,
-            )
-            for t in data.get("subtitle_tracks", [])
-            if t.get("is_external", False)
-        ]
-        return ProbeResult(
-            audio_tracks=audio,
-            subtitle_tracks=subs,
-            external_subtitles=ext,
-            resolution=data.get("resolution"),
-        )
 
     # -- Private: validation ---------------------------------------------------
 
