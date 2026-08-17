@@ -10,6 +10,10 @@ from src.modules.identity.application.dtos.identity_dtos import (
     CreateProfileInput,
     DeleteAdminUserInput,
 )
+from src.modules.identity.application.errors import (
+    CannotDeleteSelfError,
+    UserNotFoundException,
+)
 from src.modules.identity.application.use_cases.create_profile import (
     CreateProfileUseCase,
 )
@@ -17,11 +21,7 @@ from src.modules.identity.application.use_cases.delete_admin_user import (
     DeleteAdminUserUseCase,
 )
 from src.modules.identity.domain.entities.user import User
-from src.modules.identity.domain.errors import (
-    CannotDeleteSelfError,
-    CannotDemoteLastAdminError,
-    UserNotFoundException,
-)
+from src.modules.identity.domain.errors import CannotDemoteLastAdminError
 from src.modules.identity.domain.value_objects.email import Email
 from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.shared_kernel.integration_events import UserDeletedEvent

@@ -4,11 +4,11 @@ import logging
 
 from src.building_blocks.application.event_bus import EventBus
 from src.modules.identity.application.dtos.identity_dtos import DeleteAdminUserInput
-from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
-from src.modules.identity.domain.errors import (
+from src.modules.identity.application.errors import (
     CannotDeleteSelfError,
     UserNotFoundException,
 )
+from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
 from src.modules.identity.domain.services import AdminQuorum
 from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.shared_kernel.integration_events import UserDeletedEvent

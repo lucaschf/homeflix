@@ -6,16 +6,16 @@ from src.modules.identity.application.dtos.identity_dtos import (
     CreateProfileInput,
     SwitchProfileInput,
 )
+from src.modules.identity.application.errors import (
+    NoActiveSessionError,
+    ProfileNotFoundException,
+    ProfileOwnershipViolation,
+)
 from src.modules.identity.application.use_cases.create_profile import (
     CreateProfileUseCase,
 )
 from src.modules.identity.application.use_cases.switch_profile import (
     SwitchProfileUseCase,
-)
-from src.modules.identity.domain.errors import (
-    NoActiveSessionError,
-    ProfileNotFoundException,
-    ProfileOwnershipViolation,
 )
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId

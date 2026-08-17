@@ -4,12 +4,12 @@ from src.modules.identity.application.dtos.identity_dtos import (
     ProfileOutput,
     UpdateProfileInput,
 )
-from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
-from src.modules.identity.application.use_cases._to_output import profile_to_output
-from src.modules.identity.domain.errors import (
+from src.modules.identity.application.errors import (
     ProfileNotFoundException,
     ProfileOwnershipViolation,
 )
+from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
+from src.modules.identity.application.use_cases._to_output import profile_to_output
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId

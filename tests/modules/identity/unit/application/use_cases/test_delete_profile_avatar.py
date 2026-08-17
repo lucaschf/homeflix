@@ -6,15 +6,15 @@ from src.modules.identity.application.dtos.identity_dtos import (
     CreateProfileInput,
     DeleteProfileAvatarInput,
 )
+from src.modules.identity.application.errors import (
+    ProfileNotFoundException,
+    ProfileOwnershipViolation,
+)
 from src.modules.identity.application.use_cases.create_profile import (
     CreateProfileUseCase,
 )
 from src.modules.identity.application.use_cases.delete_profile_avatar import (
     DeleteProfileAvatarUseCase,
-)
-from src.modules.identity.domain.errors import (
-    ProfileNotFoundException,
-    ProfileOwnershipViolation,
 )
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId

@@ -3,12 +3,12 @@
 import pytest
 
 from src.modules.identity.application.dtos.identity_dtos import CreateAdminUserInput
+from src.modules.identity.application.errors import UserEmailAlreadyExistsError
 from src.modules.identity.application.ports import PasswordHasherPort
 from src.modules.identity.application.use_cases.create_admin_user import (
     CreateAdminUserUseCase,
 )
 from src.modules.identity.domain.entities.user import User
-from src.modules.identity.domain.errors import UserEmailAlreadyExistsError
 from src.modules.identity.domain.value_objects.email import Email
 from src.modules.identity.domain.value_objects.user_role import UserRole
 
