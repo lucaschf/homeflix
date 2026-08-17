@@ -68,7 +68,7 @@ def admin_intro_row() -> Setting:
         id=SettingKey.INTRO_DETECTION,
         value=IntroDetectionConfig(enabled=True, min_confidence=0.9),
         source=SettingSource.ADMIN,
-        updated_by_user_id="usr_admin",
+        updated_by_user_id="usr_admin0000000",
     )
 
 

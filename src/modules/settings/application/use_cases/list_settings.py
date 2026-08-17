@@ -49,7 +49,9 @@ def _to_detail(setting: Setting) -> SettingDetail:
         key=setting.id.value,
         value=setting.value.model_dump(mode="json"),
         source=setting.source.value,
-        updated_by_user_id=setting.updated_by_user_id,
+        updated_by_user_id=(
+            setting.updated_by_user_id.value if setting.updated_by_user_id else None
+        ),
         updated_at=setting.updated_at.isoformat() if setting.updated_at else None,
     )
 

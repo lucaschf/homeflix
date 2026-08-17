@@ -17,7 +17,7 @@ class SQLAlchemyNotificationRepository(NotificationRepository):
 
     Example:
         >>> repo = SQLAlchemyNotificationRepository(session)
-        >>> rows = await repo.list_for_user("usr_alice", limit=20)
+        >>> rows = await repo.list_for_user("usr_alice0000000", limit=20)
     """
 
     def __init__(self, session: AsyncSession) -> None:

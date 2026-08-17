@@ -20,7 +20,7 @@ class TestCreateNotificationUseCase:
 
         result = await use_case.execute(
             CreateNotificationInput(
-                recipient_user_id="usr_alice",
+                recipient_user_id="usr_alice0000000",
                 kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
                 title="Alien chegou ao catálogo",
                 payload={
@@ -31,7 +31,7 @@ class TestCreateNotificationUseCase:
             ),
         )
 
-        assert result.recipient_user_id == "usr_alice"
+        assert result.recipient_user_id == "usr_alice0000000"
         assert result.kind == "catalog_request_fulfilled"
         assert result.title == "Alien chegou ao catálogo"
         assert result.payload["tmdb_id"] == 348

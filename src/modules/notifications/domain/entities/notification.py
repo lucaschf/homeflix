@@ -5,13 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from src.building_blocks.domain import AggregateRoot
 from src.modules.notifications.domain.value_objects import (
     NotificationId,
     NotificationKind,
 )
+from src.shared_kernel.value_objects import UserId  # — runtime for Pydantic
 from src.shared_kernel.value_objects.media_type import MediaType
 
 _PAYLOAD_MEDIA_TYPE_KEY = "media_type"
@@ -47,7 +48,7 @@ class Notification(AggregateRoot[NotificationId]):
 
     Example:
         >>> n = Notification.create(
-        ...     recipient_user_id="usr_alice",
+        ...     recipient_user_id="usr_alice0000000",
         ...     kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
         ...     title="Alien chegou ao catálogo",
         ...     body="O filme que você solicitou já está disponível.",
@@ -58,12 +59,23 @@ class Notification(AggregateRoot[NotificationId]):
 
     id: NotificationId | None = Field(default=None)
 
-    recipient_user_id: str
+    recipient_user_id: UserId
     kind: NotificationKind
     title: str
     body: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     read_at: datetime | None = None
+
+    @field_validator("recipient_user_id", mode="before")
+    @classmethod
+    def _convert_recipient(cls, v: str | UserId) -> UserId:
+        """Accept a raw ``usr_xxx`` string at the boundary and validate it once.
+
+        The recipient is the addressing key for the whole inbox; typing it as
+        ``UserId`` validates the prefixed-external-id format on write instead
+        of trusting an unchecked string (ADR-002, ADR-018).
+        """
+        return v if isinstance(v, UserId) else UserId(v)
 
     @model_validator(mode="after")
     def _validate_payload_media_type(self) -> Notification:
@@ -87,7 +99,7 @@ class Notification(AggregateRoot[NotificationId]):
     @classmethod
     def create(
         cls,
-        recipient_user_id: str,
+        recipient_user_id: str | UserId,
         kind: NotificationKind,
         title: str,
         body: str | None = None,

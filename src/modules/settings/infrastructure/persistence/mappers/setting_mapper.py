@@ -32,7 +32,9 @@ class SettingMapper:
             key=entity.id.value,
             value_json=entity.value.model_dump(mode="json"),
             source=entity.source.value,
-            updated_by_user_id=entity.updated_by_user_id,
+            updated_by_user_id=(
+                entity.updated_by_user_id.value if entity.updated_by_user_id else None
+            ),
         )
 
     @staticmethod
@@ -68,7 +70,9 @@ class SettingMapper:
         """
         model.value_json = entity.value.model_dump(mode="json")
         model.source = entity.source.value
-        model.updated_by_user_id = entity.updated_by_user_id
+        model.updated_by_user_id = (
+            entity.updated_by_user_id.value if entity.updated_by_user_id else None
+        )
         return model
 
 

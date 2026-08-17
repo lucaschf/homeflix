@@ -20,12 +20,12 @@ class TestMarkAllNotificationsReadUseCase:
         use_case = MarkAllNotificationsReadUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(
-            MarkAllNotificationsReadInput(recipient_user_id="usr_alice"),
+            MarkAllNotificationsReadInput(recipient_user_id="usr_alice0000000"),
         )
 
         assert result.marked_read == 4
         mocks.notifications.mark_all_read_for_user.assert_awaited_once_with(
-            "usr_alice",
+            "usr_alice0000000",
         )
 
     @pytest.mark.asyncio
@@ -37,7 +37,7 @@ class TestMarkAllNotificationsReadUseCase:
         use_case = MarkAllNotificationsReadUseCase(uow_factory=mocks.factory)
 
         result = await use_case.execute(
-            MarkAllNotificationsReadInput(recipient_user_id="usr_alice"),
+            MarkAllNotificationsReadInput(recipient_user_id="usr_alice0000000"),
         )
 
         assert result.marked_read == 0

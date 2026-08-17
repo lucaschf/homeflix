@@ -124,7 +124,7 @@ class NotificationOutput:
         """Build the DTO from a domain ``Notification`` aggregate."""
         return cls(
             id=str(entity.id),
-            recipient_user_id=entity.recipient_user_id,
+            recipient_user_id=entity.recipient_user_id.value,
             kind=entity.kind.value,
             title=entity.title,
             body=entity.body,

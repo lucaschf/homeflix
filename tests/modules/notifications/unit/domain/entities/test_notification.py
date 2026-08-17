@@ -19,7 +19,7 @@ class TestNotification:
 
     def test_create_generates_id_and_defaults(self) -> None:
         notification = Notification.create(
-            recipient_user_id="usr_alice",
+            recipient_user_id="usr_alice0000000",
             kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
             title="Alien chegou ao catálogo",
         )
@@ -32,7 +32,7 @@ class TestNotification:
 
     def test_create_carries_payload(self) -> None:
         notification = Notification.create(
-            recipient_user_id="usr_alice",
+            recipient_user_id="usr_alice0000000",
             kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
             title="Alien",
             payload={"tmdb_id": 348, "media_id": "mov_abc", "media_type": "movie"},
@@ -43,7 +43,7 @@ class TestNotification:
 
     def test_mark_read_stamps_timestamp(self) -> None:
         notification = Notification.create(
-            recipient_user_id="usr_alice",
+            recipient_user_id="usr_alice0000000",
             kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
             title="Alien",
         )
@@ -55,7 +55,7 @@ class TestNotification:
 
     def test_mark_read_respects_explicit_timestamp(self) -> None:
         notification = Notification.create(
-            recipient_user_id="usr_alice",
+            recipient_user_id="usr_alice0000000",
             kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
             title="Alien",
         )
@@ -73,7 +73,7 @@ class TestNotificationPayloadMediaType:
     @pytest.mark.parametrize("value", [MediaType.MOVIE, MediaType.SERIES, "movie", "series"])
     def test_accepts_valid_media_type(self, value: object) -> None:
         notification = Notification.create(
-            recipient_user_id="usr_alice",
+            recipient_user_id="usr_alice0000000",
             kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
             title="Alien",
             payload={"media_type": value},
@@ -84,7 +84,7 @@ class TestNotificationPayloadMediaType:
     def test_rejects_unknown_media_type(self) -> None:
         with pytest.raises(DomainValidationException, match="media_type"):
             Notification.create(
-                recipient_user_id="usr_alice",
+                recipient_user_id="usr_alice0000000",
                 kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
                 title="Alien",
                 payload={"media_type": "film"},
@@ -92,7 +92,7 @@ class TestNotificationPayloadMediaType:
 
     def test_payload_without_media_type_is_allowed(self) -> None:
         notification = Notification.create(
-            recipient_user_id="usr_alice",
+            recipient_user_id="usr_alice0000000",
             kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
             title="Alien",
             payload={"tmdb_id": 348},

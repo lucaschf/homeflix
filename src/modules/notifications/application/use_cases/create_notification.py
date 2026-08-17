@@ -21,7 +21,7 @@ class CreateNotificationUseCase:
     Example:
         >>> uc = CreateNotificationUseCase(uow_factory)
         >>> out = await uc.execute(CreateNotificationInput(
-        ...     recipient_user_id="usr_alice",
+        ...     recipient_user_id="usr_alice0000000",
         ...     kind=NotificationKind.CATALOG_REQUEST_FULFILLED,
         ...     title="Alien chegou ao catálogo",
         ...     payload={"tmdb_id": 348, "media_type": "movie",

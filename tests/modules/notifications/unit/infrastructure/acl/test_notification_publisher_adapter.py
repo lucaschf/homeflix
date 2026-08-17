@@ -23,7 +23,7 @@ class TestNotificationPublisherAdapter:
 
         await adapter.publish_catalog_arrival(
             CatalogArrivalNotification(
-                recipient_user_id="usr_alice",
+                recipient_user_id="usr_alice0000000",
                 title="Alien",
                 tmdb_id=348,
                 media_id=MovieId("mov_abcabcabcabc"),
@@ -34,7 +34,7 @@ class TestNotificationPublisherAdapter:
         create_uc.execute.assert_awaited_once()
         called_input = create_uc.execute.await_args.args[0]
         assert isinstance(called_input, CreateNotificationInput)
-        assert called_input.recipient_user_id == "usr_alice"
+        assert called_input.recipient_user_id == "usr_alice0000000"
         assert called_input.kind == NotificationKind.CATALOG_REQUEST_FULFILLED
         assert called_input.title == "Alien"
         assert called_input.payload == {
