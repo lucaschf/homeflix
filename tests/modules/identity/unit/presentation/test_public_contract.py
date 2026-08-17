@@ -7,11 +7,29 @@ import pytest
 class TestIdentityPublicContract:
     """``identity.presentation.public`` is the sanctioned cross-BC surface."""
 
-    def test_exposes_resolve_profile_id(self) -> None:
+    def test_exposes_the_sanctioned_surface(self) -> None:
         from src.modules.identity.presentation import public
 
-        assert public.__all__ == ["resolve_profile_id"]
+        # The published surface is resolve_profile_id + the route guards
+        # (ADR-024). Nothing else from identity may be imported cross-BC.
+        assert public.__all__ == [
+            "AuthenticatedUser",
+            "authenticated_admin",
+            "authenticated_user",
+            "resolve_profile_id",
+        ]
         assert callable(public.resolve_profile_id)
+        assert callable(public.authenticated_admin)
+        assert callable(public.authenticated_user)
+
+    def test_guards_are_the_infrastructure_ones(self) -> None:
+        from src.modules.identity.infrastructure import auth
+        from src.modules.identity.presentation import public
+
+        # Re-exports the real guards — no fork.
+        assert public.authenticated_admin is auth.authenticated_admin
+        assert public.authenticated_user is auth.authenticated_user
+        assert public.AuthenticatedUser is auth.AuthenticatedUser
 
     def test_resolve_profile_id_is_the_canonical_dependency(self) -> None:
         from src.modules.identity.presentation import dependencies, public

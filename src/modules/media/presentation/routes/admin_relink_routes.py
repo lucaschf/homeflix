@@ -31,7 +31,7 @@ from fastapi import APIRouter, Depends
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
+from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.admin_relink_dtos import (
     FlagMovieEnrichmentReviewInput,
     FlagSeriesEnrichmentReviewInput,

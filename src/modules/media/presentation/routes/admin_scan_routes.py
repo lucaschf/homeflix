@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
+from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.scan_run_dtos import (
     GetScanRunInput,
     ListScanRunsInput,

@@ -24,7 +24,7 @@ from src.modules.catalog_requests.application.use_cases import (
 from src.modules.catalog_requests.application.use_cases.list_catalog_request_feed import (
     ListCatalogRequestFeedInput,
 )
-from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_user
+from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_user
 from src.shared_kernel.value_objects import MediaType
 
 router = APIRouter(prefix="/api/v1/catalog-requests", tags=["Catalog Requests"])

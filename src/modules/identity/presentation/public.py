@@ -30,6 +30,22 @@ module lets ``identity`` refactor its internal ``dependencies.py`` freely
 without rippling into four other bounded contexts.
 """
 
+from src.modules.identity.infrastructure.auth import (
+    AuthenticatedUser,
+    authenticated_admin,
+    authenticated_user,
+)
 from src.modules.identity.presentation.dependencies import resolve_profile_id
 
-__all__ = ["resolve_profile_id"]
+# The route guards are the other half of the published contract: every
+# authenticated route in every BC needs "who is the caller" (and "is the
+# caller an admin"). They live in ``infrastructure/auth`` because they are
+# FastAPI ``Depends`` chains, but they are re-exported here so consumers
+# import the sanctioned surface rather than reaching into identity's
+# internals — keeping identity free to refactor the auth wiring (ADR-024).
+__all__ = [
+    "AuthenticatedUser",
+    "authenticated_admin",
+    "authenticated_user",
+    "resolve_profile_id",
+]

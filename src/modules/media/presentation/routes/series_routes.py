@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.building_blocks.presentation import Pagination, api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
+from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.intro_dtos import (
     ClearEpisodeIntroInput,
     ResetSeasonIntroDetectionInput,

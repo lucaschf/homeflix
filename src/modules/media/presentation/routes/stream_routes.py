@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.config.containers import ApplicationContainer
 from src.infrastructure.scheduling import ThumbnailBackfillJob
-from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
+from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput
 from src.modules.media.application.dtos.series_dtos import (
     EpisodeOutput,

@@ -19,7 +19,7 @@ from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE, MAX_PA
 from src.building_blocks.presentation import api_list, api_single
 from src.building_blocks.presentation.responses import Pagination
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
+from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.conflict_dtos import (
     BulkMarkDistinctInput,
     ListConflictsInput,

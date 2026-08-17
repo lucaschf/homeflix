@@ -17,7 +17,7 @@ from src.modules.catalog_requests.application.use_cases import (
     IncludeCatalogRequestUseCase,
     ListAdminCatalogRequestsUseCase,
 )
-from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
+from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_admin
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin — Catalog Requests"])
 
