@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_user
+from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_user
 from src.modules.notifications.application.dtos import (
     ListUserNotificationsInput,
     MarkAllNotificationsReadInput,

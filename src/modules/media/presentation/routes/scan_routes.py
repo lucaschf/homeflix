@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
+from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput
 from src.modules.media.application.ports.library_lookup_port import LibraryLookupPort
 from src.modules.media.application.use_cases.scan_media_directories import (

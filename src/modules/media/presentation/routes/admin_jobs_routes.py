@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.infrastructure.auth import AuthenticatedUser, authenticated_admin
+from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.job_dtos import ListJobRunsInput, TriggerJobInput
 from src.modules.media.application.use_cases.list_job_runs import ListJobRunsUseCase
 from src.modules.media.application.use_cases.list_jobs import ListJobsUseCase
