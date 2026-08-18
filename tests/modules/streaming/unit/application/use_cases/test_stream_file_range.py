@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.modules.media.application.ports.file_streamer_port import FileStreamerPort
-from src.modules.media.application.use_cases.stream_file_range import (
+from src.modules.streaming.application.ports.file_streamer_port import FileStreamerPort
+from src.modules.streaming.application.use_cases.stream_file_range import (
     StreamFileRangeInput,
     StreamFileRangeUseCase,
 )

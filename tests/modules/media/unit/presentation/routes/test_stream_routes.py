@@ -16,12 +16,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.stream_dtos import (
     HlsFileOutput,
-    RangeStreamOutput,
     TrackListOutput,
 )
 from src.modules.media.presentation.routes import stream_routes as mod
@@ -305,33 +304,3 @@ class TestClearMovieHlsCache:
 
         assert result.status_code == 204
         clear_uc.execute.assert_awaited_once()
-
-
-class TestStreamMovie:
-    async def test_wraps_range_output_in_streaming_response(self, tmp_path: Path) -> None:
-        video = tmp_path / "movie.mp4"
-        video.write_bytes(b"\x00")
-        movie_uc = AsyncMock()
-        movie_uc.execute.return_value = _movie(file_path=str(video))
-
-        async def _body() -> object:
-            yield b"chunk"
-
-        stream_uc = AsyncMock()
-        stream_uc.execute.return_value = RangeStreamOutput(
-            status_code=206,
-            media_type="video/mp4",
-            headers={"Content-Range": "bytes 0-4/5"},
-            body=_body(),
-        )
-
-        result = await mod.stream_movie(
-            "mov_aaaaaaaaaaaa",
-            _request(range_header="bytes=0-"),
-            profile_id="prf_aaaaaaaaaaaa",
-            movie_uc=movie_uc,
-            stream_uc=stream_uc,
-        )
-
-        assert isinstance(result, StreamingResponse)
-        assert result.status_code == 206

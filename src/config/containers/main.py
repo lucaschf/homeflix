@@ -17,6 +17,7 @@ from src.config.containers.media import MediaContainer
 from src.config.containers.notifications import NotificationsContainer
 from src.config.containers.preferences import PreferencesContainer
 from src.config.containers.settings import SettingsContainer
+from src.config.containers.streaming import StreamingContainer
 from src.config.containers.watch_progress import WatchProgressContainer
 from src.config.settings import Settings
 from src.infrastructure.health import DatabaseProbe, FilesystemProbe
@@ -234,6 +235,15 @@ class ApplicationContainer(containers.DeclarativeContainer):
         LibraryContainer,
         session_factory=infrastructure.session_factory,
         media_uow_factory=media.media_unit_of_work_factory,
+    )
+
+    # Streaming (ADR-032 slice 4.1) composed after Media so its cross-BC
+    # catalog lookup adapter reuses media's catalog use cases (preserving
+    # the per-profile library ACL) via the MediaPlaybackLookupPort seam.
+    streaming = providers.Container(
+        StreamingContainer,
+        get_movie_by_id=media.get_movie_by_id,
+        get_series_by_id=media.get_series_by_id,
     )
 
     # Identity ships its container before the consumer BCs (watch_progress,

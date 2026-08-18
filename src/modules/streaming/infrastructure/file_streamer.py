@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from src.modules.media.application.ports.file_streamer_port import FileStreamerPort
+from src.modules.streaming.application.ports.file_streamer_port import FileStreamerPort
 
 _CHUNK_SIZE = 1024 * 1024  # 1 MB — matches the previous in-route size.
 

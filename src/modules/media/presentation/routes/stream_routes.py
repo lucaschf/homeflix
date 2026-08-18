@@ -17,7 +17,7 @@ from typing import Any
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.config.containers import ApplicationContainer
@@ -47,10 +47,6 @@ from src.modules.media.application.use_cases.get_series_by_id import GetSeriesBy
 from src.modules.media.application.use_cases.serve_hls_file import (
     ServeHlsFileInput,
     ServeHlsFileUseCase,
-)
-from src.modules.media.application.use_cases.stream_file_range import (
-    StreamFileRangeInput,
-    StreamFileRangeUseCase,
 )
 from src.modules.media.presentation.dependencies import resolve_profile_id
 
@@ -411,51 +407,6 @@ async def clear_movie_hls_cache(
     return Response(status_code=204)
 
 
-# -- Direct streaming (fallback for MP4/WebM) ---------------------------------
-
-
-@router.get("/movie/{movie_id}")
-@inject
-async def stream_movie(
-    movie_id: str,
-    request: Request,
-    profile_id: str = Depends(resolve_profile_id),
-    movie_uc: GetMovieByIdUseCase = Depends(
-        Provide[ApplicationContainer.media.get_movie_by_id],
-    ),
-    stream_uc: StreamFileRangeUseCase = Depends(
-        Provide[ApplicationContainer.media.stream_file_range],
-    ),
-) -> StreamingResponse:
-    """Direct stream a movie file with Range support (MP4/WebM only)."""
-    movie = await movie_uc.execute(GetMovieByIdInput(profile_id=profile_id, movie_id=movie_id))
-    file_path = _require_file(movie.file_path)
-    return await _stream_range(stream_uc, file_path, request.headers.get("range"))
-
-
-@router.get("/episode/{series_id}/{season_number}/{episode_number}")
-@inject
-async def stream_episode(
-    series_id: str,
-    season_number: int,
-    episode_number: int,
-    request: Request,
-    profile_id: str = Depends(resolve_profile_id),
-    series_uc: GetSeriesByIdUseCase = Depends(
-        Provide[ApplicationContainer.media.get_series_by_id],
-    ),
-    stream_uc: StreamFileRangeUseCase = Depends(
-        Provide[ApplicationContainer.media.stream_file_range],
-    ),
-) -> StreamingResponse:
-    """Direct stream an episode file with Range support."""
-    file_path = await _find_episode_file(
-        series_uc, profile_id, series_id, season_number, episode_number
-    )
-    file_path = _require_file(file_path)
-    return await _stream_range(stream_uc, file_path, request.headers.get("range"))
-
-
 # -- Helpers -------------------------------------------------------------------
 
 
@@ -491,23 +442,6 @@ async def _serve_master(
         content=output.rewritten_content,
         media_type="application/vnd.apple.mpegurl",
         headers={"Cache-Control": "no-cache"},
-    )
-
-
-async def _stream_range(
-    use_case: StreamFileRangeUseCase,
-    file_path: str,
-    range_header: str | None,
-) -> StreamingResponse:
-    """Run the range-streaming use case and build a StreamingResponse."""
-    output = await use_case.execute(
-        StreamFileRangeInput(file_path=file_path, range_header=range_header),
-    )
-    return StreamingResponse(
-        output.body,
-        status_code=output.status_code,
-        media_type=output.media_type,
-        headers=output.headers,
     )
 
 
