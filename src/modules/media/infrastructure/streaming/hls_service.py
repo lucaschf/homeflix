@@ -27,20 +27,24 @@ Scrub-preview sprites used to live in ``thumbnails/`` here too. They
 are now persisted next to each media file by ``ThumbnailBackfillJob``
 and served by the id-based ``/scrub-preview/`` routes — this service
 no longer touches them.
+
+``HlsService`` is a thin orchestrator: process handles, subtitle
+readiness, and the on-disk cache are owned by three collaborators
+(:class:`FfmpegProcessManager`, :class:`SubtitlePipeline`,
+:class:`HlsCacheStore`) that all share ONE reentrant lock. The two
+operations that mutate more than one collaborator atomically —
+``_kill_processes`` and ``_start_generation`` — hold that lock while
+driving the collaborators, which is what the reentrancy buys.
 """
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
-import re
 import shutil
 import subprocess
 import threading
 import time
-import uuid
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -49,22 +53,27 @@ from src.modules.media.application.ports.hls_playlist_port import (
     HlsPlaylistPort,
 )
 from src.modules.media.infrastructure.streaming._hls_common import (
+    _VIDEO_DIR,
     BROWSER_SAFE_CODECS,
     primary_audio_index,
 )
 from src.modules.media.infrastructure.streaming._subprocess import (
-    SUBPROCESS_TEXT_KWARGS,
     with_ffmpeg_threads,
+)
+from src.modules.media.infrastructure.streaming.ffmpeg_process_manager import (
+    FfmpegProcessManager,
 )
 from src.modules.media.infrastructure.streaming.hardware_acceleration_probe import (
     HardwareAccelerationProbe,
 )
+from src.modules.media.infrastructure.streaming.hls_cache_store import HlsCacheStore
 from src.modules.media.infrastructure.streaming.master_playlist_writer import MasterPlaylistWriter
 from src.modules.media.infrastructure.streaming.media_probe_service import MediaProbeService
 from src.modules.media.infrastructure.streaming.probe_cache_store import ProbeCacheStore
 from src.modules.media.infrastructure.streaming.subtitle_ocr_surfacing import (
     attach_ocr_subtitles,
 )
+from src.modules.media.infrastructure.streaming.subtitle_pipeline import SubtitlePipeline
 from src.modules.media.infrastructure.streaming.transcode_command_builder import (
     TranscodeCommandBuilder,
 )
@@ -90,14 +99,6 @@ _MIN_SEGMENTS_FRESH = 1
 # next segment fail and the player rebuffer when they resume.
 _DEFAULT_IDLE_TIMEOUT = 30.0
 _EVICTION_INTERVAL = 10.0
-
-
-_VIDEO_DIR = "video"
-
-# Prefix marking a bucket dir that has been renamed out of the live cache
-# path and is awaiting deletion. The eviction scan skips (and retries
-# cleaning) these so they are never mistaken for a real bucket.
-_EVICTING_PREFIX = ".evicting-"
 
 
 class HlsService(HlsPlaylistPort):
@@ -135,18 +136,15 @@ class HlsService(HlsPlaylistPort):
         self._cmd_builder = TranscodeCommandBuilder(self._hw_probe)
         self._probe_cache = ProbeCacheStore(self._cache_dir)
         self._master_writer = MasterPlaylistWriter()
-        self._processes: dict[str, list[subprocess.Popen[bytes]]] = {}
-        # path_hash → monotonic timestamp of the most recent activity
-        # (playlist request OR segment fetch). The eviction loop reads
-        # this to decide which ffmpeg processes are idle.
-        self._last_access: dict[str, float] = {}
-        # path_hash → {subtitle_index: Event}. Set when a subtitle's
-        # background extraction finishes (success or failure). The file
-        # route uses these to block its response until the requested
-        # subtitle is on disk, instead of returning a premature 404.
-        self._subtitle_events: dict[str, dict[int, threading.Event]] = {}
-        self._lock = threading.Lock()
-        self._idle_timeout = idle_timeout
+        # ONE reentrant lock shared across every collaborator that guards
+        # process/subtitle state. Reentrancy lets the orchestrator hold it
+        # while a collaborator method re-acquires it — the invariant that
+        # keeps _kill_processes and _start_generation single atomic
+        # critical sections after the split.
+        self._lock = threading.RLock()
+        self._proc_mgr = FfmpegProcessManager(self._lock, idle_timeout)
+        self._subtitles = SubtitlePipeline(self._lock, self._cache_dir, runtime_settings)
+        self._cache_store = HlsCacheStore(self._cache_dir, runtime_settings, self._proc_mgr)
         if enable_eviction:
             self._start_eviction_thread()
 
@@ -169,168 +167,38 @@ class HlsService(HlsPlaylistPort):
             except Exception:
                 _logger.exception("HLS eviction loop error")
 
-    def _touch_access(self, path_hash: str) -> None:
-        """Record that this cache bucket was just used."""
-        with self._lock:
-            self._last_access[path_hash] = time.monotonic()
-
     def evict_idle(self) -> list[str]:
         """Kill ffmpeg processes that haven't seen activity recently.
 
         Returns the list of evicted path_hashes (useful for tests).
         """
         now = time.monotonic()
-        with self._lock:
-            stale = [
-                ph
-                for ph, last in self._last_access.items()
-                if now - last > self._idle_timeout and ph in self._processes
-            ]
+        stale = self._proc_mgr.stale_hashes(now)
         evicted: list[str] = []
         for path_hash in stale:
-            idle_for = now - self._last_access.get(path_hash, now)
+            idle_for = now - self._proc_mgr.access_time(path_hash, now)
             _logger.info("Evicting idle ffmpeg for %s (idle %.0fs)", path_hash, idle_for)
             self._kill_processes(path_hash)
-            with self._lock:
-                self._last_access.pop(path_hash, None)
             evicted.append(path_hash)
         return evicted
 
     def evict_lru(self) -> list[str]:
-        """Delete the least-recently-used cache buckets until total size is within the limit.
-
-        Scans all subdirectories under ``cache_dir``, sums their sizes,
-        and deletes the ones with the oldest ``_last_access`` timestamp
-        (or oldest filesystem mtime if the hash isn't tracked in memory)
-        until the total drops below ``max_cache_size_mb``.
-
-        Active buckets (those with running ffmpeg processes) are skipped
-        to avoid deleting segments a player is currently reading.
+        """Delete least-recently-used cache buckets until within the size limit.
 
         Returns the list of evicted path_hashes (useful for tests).
         """
-        max_cache_bytes = (
-            self._runtime_settings.streaming_snapshot_sync().hls_cache_max_size_mb * 1024 * 1024
-        )
-        if max_cache_bytes <= 0:
-            return []
-
-        # Scan disk: collect (path_hash, size_bytes, last_access_time)
-        buckets: list[tuple[str, int, float]] = []
-        total_size = 0
-        for entry in self._cache_dir.iterdir():
-            if not entry.is_dir():
-                continue
-            if entry.name.startswith(_EVICTING_PREFIX):
-                # Leftover from a prior cleanup whose delete was blocked
-                # (locked file). Retry it now and never count it as a bucket.
-                shutil.rmtree(entry, ignore_errors=True)
-                continue
-            path_hash = entry.name
-            size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
-            total_size += size
-            # Prefer in-memory access time; fall back to directory mtime
-            with self._lock:
-                access_time = self._last_access.get(path_hash, entry.stat().st_mtime)
-            buckets.append((path_hash, size, access_time))
-
-        if total_size <= max_cache_bytes:
-            return []
-
-        # Sort by access time ascending — oldest first
-        buckets.sort(key=lambda b: b[2])
-
-        evicted: list[str] = []
-        for path_hash, size, _ in buckets:
-            if total_size <= max_cache_bytes:
-                break
-            # Don't evict buckets with active ffmpeg processes
-            with self._lock:
-                if path_hash in self._processes:
-                    continue
-            bucket_path = self._cache_dir / path_hash
-            _logger.info(
-                "LRU evicting cache bucket %s (%.1f MB)",
-                path_hash,
-                size / (1024 * 1024),
-            )
-            if not self._remove_bucket_dir(bucket_path):
-                # A locked file blocked the atomic rename — the bucket is
-                # still fully intact. Leave it and retry next sweep rather
-                # than risk a partial delete; the cache stays briefly over
-                # budget, which is harmless.
-                continue
-            with self._lock:
-                self._last_access.pop(path_hash, None)
-            total_size -= size
-            evicted.append(path_hash)
-        return evicted
-
-    def _remove_bucket_dir(self, bucket_path: Path) -> bool:
-        """Remove a bucket directory without ever exposing a partial state.
-
-        Renames the bucket out of the live cache path in a single atomic
-        ``rename`` and only then deletes the renamed copy best-effort. A
-        reader therefore sees the bucket either fully present or fully
-        gone — never half-deleted. This is what closes the whole class of
-        partial-eviction zombies: a momentarily locked file (an AV scan
-        or the Windows indexer holding a segment) can no longer strand a
-        bucket with, say, its ``master.m3u8`` deleted but its nested
-        playlists intact, a state ``ensure_playlist`` would treat as
-        complete and then 404 on forever.
-
-        Args:
-            bucket_path: The live bucket directory to remove.
-
-        Returns:
-            ``True`` if the bucket left the live path (rename succeeded,
-            or it was already gone); ``False`` if a lock blocked the
-            rename and the bucket is still fully intact — the caller
-            should treat that as "not evicted" and retry on a later sweep.
-        """
-        if not bucket_path.exists():
-            return True
-        trash = bucket_path.with_name(f"{_EVICTING_PREFIX}{bucket_path.name}")
-        # A leftover trash dir from a previous blocked cleanup would make
-        # the rename target already exist; clear it first (best-effort).
-        if trash.exists():
-            shutil.rmtree(trash, ignore_errors=True)
-        try:
-            bucket_path.rename(trash)
-        except OSError:
-            return False
-        shutil.rmtree(trash, ignore_errors=True)
-        return True
+        return self._cache_store.evict_lru()
 
     # -- Public API ------------------------------------------------------------
 
     def get_path_hash(self, file_path: str, start: int = 0, end: int | None = None) -> str:
         """Get the hash key for a source file at a given start offset.
 
-        Args:
-            file_path: Absolute path to the source video file.
-            start: Source-time second the playback session starts from,
-                honoured exactly so a forward seek (e.g. Skip Intro) can
-                anchor a fresh encode at the target second instead of
-                snapping onto a coarser bucket. Callers that want cache
-                reuse across nearby positions (the resume flow) quantise
-                ``start`` themselves before calling. ``0`` (the default)
-                hashes the file path alone, keeping pre-existing cache
-                directories valid after upgrade.
-            end: Source-time second the encode is clamped to end at, for a
-                title that occupies only a sub-range of a shared physical
-                file (ADR-030). ``None`` (the default) encodes to the end
-                of the file. Folded into the hash so two episodes sharing
-                one file get distinct buckets.
-
-        Returns:
-            Hex MD5 digest uniquely identifying the cache bucket. The
-            seek-ahead and resume flows on cold cache rely on this
-            being deterministic so the same offset always re-attaches
-            to the same on-disk bucket.
+        Delegates to :class:`HlsCacheStore`. See its docstring for the
+        exact bucket-keying contract (deterministic, legacy-compatible at
+        ``start=0``/``end=None``).
         """
-        key = file_path if start == 0 and end is None else f"{file_path}:{start}:{end}"
-        return hashlib.md5(key.encode()).hexdigest()
+        return self._cache_store.get_path_hash(file_path, start, end)
 
     def get_file_by_hash(self, path_hash: str, relative_path: str) -> Path | None:
         """Get any file from cache by hash + relative path.
@@ -339,58 +207,11 @@ class HlsService(HlsPlaylistPort):
         Touches the access timestamp on hit so the eviction loop knows
         the cache is still being consumed by a player.
         """
-        cache_root = (self._cache_dir / path_hash).resolve()
-        target = (cache_root / relative_path).resolve()
-
-        try:
-            target.relative_to(cache_root)
-        except ValueError:
-            return None
-
-        if not target.is_file():
-            return None
-        self._touch_access(path_hash)
-        return target
+        return self._cache_store.get_file_by_hash(path_hash, relative_path)
 
     def is_complete(self, path_hash: str) -> bool:
-        """Check if every playlist in the bucket has been sealed with ENDLIST.
-
-        A bucket is "complete" only when every nested ``playlist.m3u8``
-        (video, alternate audios, subtitle wrappers) carries the
-        ``#EXT-X-ENDLIST`` tag. The encode-watcher writes the tag on
-        clean ffmpeg exit; subtitle wrappers are emitted with the tag
-        baked in. Checking ALL playlists prevents the next session from
-        skipping regeneration when the video encode finished cleanly
-        but an alternate-audio encode was killed mid-flight.
-        """
-        bucket = self._cache_dir / path_hash
-        if not bucket.is_dir():
-            return False
-
-        flat = bucket / "playlist.m3u8"
-        nested_video_dir = bucket / _VIDEO_DIR
-        if flat.is_file() and not nested_video_dir.is_dir():
-            return _has_endlist(flat)
-
-        # The bucket is only reusable if the root master.m3u8 that
-        # get_master_playlist actually serves is present and non-empty.
-        # Without this guard a bucket whose nested playlists are sealed
-        # but whose master was lost — e.g. a partial rmtree that skipped
-        # a momentarily-locked file during LRU eviction — looks
-        # "complete", short-circuits regeneration in ensure_playlist, and
-        # then 404s forever on the missing master. Treating it as
-        # incomplete makes the next request regenerate and self-heal.
-        master = bucket / "master.m3u8"
-        try:
-            if not master.is_file() or master.stat().st_size == 0:
-                return False
-        except OSError:
-            return False
-
-        playlists = list(bucket.glob("*/playlist.m3u8"))
-        if not playlists:
-            return False
-        return all(_has_endlist(p) for p in playlists)
+        """Check if every playlist in the bucket has been sealed with ENDLIST."""
+        return self._cache_store.is_complete(path_hash)
 
     def get_master_playlist(self, path_hash: str) -> str | None:
         """Get master playlist content, falling back to legacy flat playlist.
@@ -398,16 +219,7 @@ class HlsService(HlsPlaylistPort):
         Touches access time on hit so the player attaching to a still-warm
         cache resets the idle timer immediately.
         """
-        for name in ("master.m3u8", "playlist.m3u8"):
-            path = self._cache_dir / path_hash / name
-            if path.is_file():
-                try:
-                    content = path.read_text(encoding="utf-8")
-                except OSError:
-                    continue
-                self._touch_access(path_hash)
-                return content
-        return None
+        return self._cache_store.get_master_playlist(path_hash)
 
     def wait_for_subtitle(
         self,
@@ -417,24 +229,11 @@ class HlsService(HlsPlaylistPort):
     ) -> bool:
         """Block until a specific subtitle has finished extracting.
 
-        Args:
-            path_hash: Cache bucket hash returned by ``get_path_hash``.
-            sub_index: Track index used to build ``sub_<index>/`` on disk.
-            timeout: Max seconds to block. Should be longer than the
-                worst-case ffmpeg subtitle extraction so the player gets
-                the .vtt instead of a 404.
-
-        Returns:
-            ``True`` if the readiness event fired (extraction is done),
-            or if the subtitle isn't being tracked at all (caller should
-            fall through to a normal filesystem lookup). ``False`` only
-            when the timeout elapsed before extraction completed.
+        Delegates to :class:`SubtitlePipeline`. Returns ``True`` when the
+        readiness event fires or the subtitle isn't tracked; ``False``
+        only on timeout.
         """
-        with self._lock:
-            event = self._subtitle_events.get(path_hash, {}).get(sub_index)
-        if event is None:
-            return True
-        return event.wait(timeout)
+        return self._subtitles.wait_for_subtitle(path_hash, sub_index, timeout)
 
     def get_cached_tracks(self, path_hash: str) -> dict[str, Any] | None:
         """Get cached probe result from tracks.json."""
@@ -467,7 +266,7 @@ class HlsService(HlsPlaylistPort):
         # Touch immediately so the eviction loop never kills a process
         # that the user just asked for, even if no segments have been
         # served yet (e.g. while waiting for ffmpeg to start).
-        self._touch_access(path_hash)
+        self._proc_mgr.touch(path_hash)
 
         if self.is_complete(path_hash):
             return path_hash
@@ -549,7 +348,7 @@ class HlsService(HlsPlaylistPort):
                 except OSError:
                     pass
 
-            main_proc = self._get_main_process(path_hash)
+            main_proc = self._proc_mgr.get_main_process(path_hash)
             if main_proc and main_proc.poll() is not None:
                 self._handle_generation_failure(path_hash, main_proc)
 
@@ -584,74 +383,17 @@ class HlsService(HlsPlaylistPort):
             self._kill_processes(path_hash)
             shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
         else:
-            with self._lock:
-                for path_hash in list(self._processes):
-                    self._kill_processes(path_hash)
+            for path_hash in self._proc_mgr.active_hashes():
+                self._kill_processes(path_hash)
             shutil.rmtree(self._cache_dir, ignore_errors=True)
             self._cache_dir.mkdir(parents=True, exist_ok=True)
-            self._touch_last_cleared_marker()
+            self._cache_store.touch_last_cleared_marker()
 
     def get_cache_stats(self) -> HlsCacheStats:
-        """Return total bytes on disk + the configured ceiling + last clear.
-
-        The walk visits every file under the cache root and sums
-        ``st_size``. Cheap enough for an admin survey — the same
-        approach already runs inside ``evict_lru`` whenever the
-        cache fills up — but not something to hammer; the admin
-        page polls on demand only.
-        """
-        total = 0
-        if self._cache_dir.exists():
-            for entry in self._cache_dir.rglob("*"):
-                if entry.is_file():
-                    try:
-                        total += entry.stat().st_size
-                    except OSError:
-                        # File raced with eviction / clear; skip.
-                        continue
-        max_bytes = (
-            self._runtime_settings.streaming_snapshot_sync().hls_cache_max_size_mb * 1024 * 1024
-        )
-        return HlsCacheStats(
-            size_bytes=total,
-            max_bytes=max_bytes,
-            last_cleared_at=self._read_last_cleared_marker(),
-        )
-
-    # -- Last-cleared marker --------------------------------------------------
-    #
-    # A small zero-byte file at ``<cache_dir>/.last_cleared`` whose
-    # mtime captures when ``clear_cache`` was last called with
-    # ``file_path=None``. Cheaper than wiring a new table and
-    # survives restarts (in-memory state would not).
-
-    def _last_cleared_marker_path(self) -> Path:
-        return self._cache_dir / ".last_cleared"
-
-    def _touch_last_cleared_marker(self) -> None:
-        marker = self._last_cleared_marker_path()
-        try:
-            marker.parent.mkdir(parents=True, exist_ok=True)
-            marker.touch(exist_ok=True)
-        except OSError:
-            # Don't let a marker write error mask a successful clear.
-            pass
-
-    def _read_last_cleared_marker(self) -> datetime | None:
-        marker = self._last_cleared_marker_path()
-        try:
-            ts = marker.stat().st_mtime
-        except OSError:
-            return None
-        return datetime.fromtimestamp(ts, tz=UTC)
+        """Return total bytes on disk + the configured ceiling + last clear."""
+        return self._cache_store.get_cache_stats()
 
     # -- Private: process management -------------------------------------------
-
-    def _get_main_process(self, path_hash: str) -> subprocess.Popen[bytes] | None:
-        """Get the main (video) FFmpeg process for a generation, if any."""
-        with self._lock:
-            procs = self._processes.get(path_hash, [])
-        return procs[0] if procs else None
 
     def _kill_processes(self, path_hash: str) -> None:
         """Kill all running FFmpeg processes for a path hash.
@@ -659,15 +401,18 @@ class HlsService(HlsPlaylistPort):
         Also releases any waiters parked on subtitle readiness events for
         this bucket so they don't block their full timeout after we've
         already torn down the cache.
+
+        Atomic across both collaborators: the shared reentrant lock is
+        held while the process registry is popped/killed and the subtitle
+        pipeline releases its waiters, so no concurrent generation can
+        interleave between the two.
         """
         with self._lock:
-            for proc in self._processes.pop(path_hash, []):
+            procs = self._proc_mgr.pop(path_hash)
+            for proc in procs:
                 if proc.poll() is None:
                     proc.kill()
-            self._last_access.pop(path_hash, None)
-            events = self._subtitle_events.pop(path_hash, {})
-        for event in events.values():
-            event.set()
+            self._subtitles.release(path_hash)
 
     def _handle_generation_failure(
         self,
@@ -751,10 +496,9 @@ class HlsService(HlsPlaylistPort):
             if self.is_complete(path_hash):
                 return path_hash
 
-            running = [p for p in self._processes.get(path_hash, []) if p.poll() is None]
-            if running:
+            if self._proc_mgr.running_procs(path_hash):
                 return path_hash
-            self._processes.pop(path_hash, None)
+            self._proc_mgr.discard(path_hash)
 
             # Clean stale cache
             output_dir = self._cache_dir / path_hash
@@ -817,13 +561,9 @@ class HlsService(HlsPlaylistPort):
             # 4. Pre-create per-subtitle readiness events. They MUST be
             # registered before _start_generation returns so the file
             # route can find them the instant the player picks a track.
-            if text_subs:
-                self._subtitle_events[path_hash] = {
-                    sub.index: threading.Event() for sub in text_subs
-                }
+            self._subtitles.register(path_hash, [sub.index for sub in text_subs])
 
-            self._processes[path_hash] = procs
-            self._last_access[path_hash] = time.monotonic()
+            self._proc_mgr.register(path_hash, procs)
 
         # 5. Extract each subtitle in its own background thread. Running
         # them in parallel (instead of one big serial thread) means a
@@ -831,7 +571,7 @@ class HlsService(HlsPlaylistPort):
         # every other track that happens to be earlier in the list.
         for sub in text_subs:
             threading.Thread(
-                target=self._extract_one_subtitle,
+                target=self._subtitles.extract_one,
                 args=(safe_path, output_dir, sub, path_hash, bucket_start),
                 daemon=True,
                 name=f"hls-sub-{path_hash[:8]}-{sub.index}",
@@ -895,125 +635,6 @@ class HlsService(HlsPlaylistPort):
         except OSError:
             _logger.exception("Failed to append ENDLIST to %s", playlist_path)
 
-    # -- Private: subtitle extraction ------------------------------------------
-
-    def _extract_one_subtitle(
-        self,
-        file_path: str,
-        output_dir: Path,
-        track: SubtitleTrack,
-        path_hash: str,
-        start: int = 0,
-    ) -> None:
-        """Extract a single text-based subtitle to WebVTT.
-
-        Runs ffmpeg synchronously and signals the readiness Event for
-        this track in ``self._subtitle_events`` from a ``finally``
-        block, so any route handler waiting on it always unblocks (even
-        on ffmpeg failure or timeout) and gets a chance to respond —
-        typically with a 404 if extraction never produced a file.
-
-        Subtitle cues are emitted in the same timeline as the HLS
-        stream that wraps them. ffmpeg is invoked WITHOUT ``-ss`` so
-        the full subtitle stream is written in source-time — that
-        cmd-line worked uniformly across MKV/MP4/SRT demuxers; using
-        ``-ss N`` instead produced container-dependent results
-        (cues either late by ``N`` seconds or compressed to bucket
-        start by ``-avoid_negative_ts``). After the extraction
-        succeeds the post-processor ``_shift_webvtt_to_bucket_local``
-        subtracts ``start`` from every cue, clamping negatives to
-        zero, so cue at source-K lands at bucket-local ``K - start``.
-        """
-        try:
-            sub_dir = output_dir / f"sub_{track.index}"
-            sub_dir.mkdir(exist_ok=True)
-            vtt_path = sub_dir / "sub.vtt"
-
-            cmd_and_label = self._build_subtitle_extract_cmd(track, file_path, vtt_path)
-            if cmd_and_label is None:
-                return
-            cmd, log_label = cmd_and_label
-            if not self._run_subtitle_ffmpeg(cmd, log_label):
-                return
-
-            if vtt_path.is_file():
-                if start > 0:
-                    _shift_webvtt_to_bucket_local(vtt_path, start)
-                _ensure_vtt_timestamp_map(vtt_path)
-                _write_subtitle_playlist(sub_dir)
-                _logger.info("Extracted %s to %s (start=%d)", log_label, vtt_path, start)
-            else:
-                _logger.warning("Failed to extract %s", log_label)
-        finally:
-            with self._lock:
-                event = self._subtitle_events.get(path_hash, {}).get(track.index)
-            if event is not None:
-                event.set()
-
-    def _build_subtitle_extract_cmd(
-        self,
-        track: SubtitleTrack,
-        file_path: str,
-        vtt_path: Path,
-    ) -> tuple[list[str], str] | None:
-        """Build the ffmpeg argv + log label for a single subtitle track.
-
-        Returns ``None`` when the track is unusable (external sidecar
-        with no resolved file path). The cmd is wrapped through
-        ``with_ffmpeg_threads`` so the global cap applies uniformly.
-        """
-        ffmpeg_threads = self._runtime_settings.streaming_snapshot_sync().ffmpeg_threads
-        if track.is_external:
-            if track.file_path is None:
-                return None
-            cmd = with_ffmpeg_threads(
-                [
-                    "ffmpeg",
-                    "-i",
-                    track.file_path.value,
-                    "-c:s",
-                    "webvtt",
-                    "-loglevel",
-                    "error",
-                    "-y",
-                    str(vtt_path),
-                ],
-                ffmpeg_threads,
-            )
-            return cmd, f"external subtitle {track.file_path.value}"
-        cmd = with_ffmpeg_threads(
-            [
-                "ffmpeg",
-                "-i",
-                file_path,
-                "-map",
-                f"0:s:{track.index}",
-                "-c:s",
-                "webvtt",
-                "-loglevel",
-                "error",
-                "-y",
-                str(vtt_path),
-            ],
-            ffmpeg_threads,
-        )
-        return cmd, f"subtitle track {track.index}"
-
-    @staticmethod
-    def _run_subtitle_ffmpeg(cmd: list[str], log_label: str) -> bool:
-        """Run a subtitle ffmpeg cmd, returning True iff it didn't time out."""
-        try:
-            subprocess.run(
-                cmd,
-                **SUBPROCESS_TEXT_KWARGS,
-                check=False,
-                timeout=120,
-            )
-        except subprocess.TimeoutExpired:
-            _logger.warning("Extraction timed out for %s", log_label)
-            return False
-        return True
-
     # -- Private: validation ---------------------------------------------------
 
     @staticmethod
@@ -1024,29 +645,6 @@ class HlsService(HlsPlaylistPort):
             msg = f"Source file not found: {file_path}"
             raise FileNotFoundError(msg)
         return resolved
-
-
-def _write_subtitle_playlist(sub_dir: Path) -> None:
-    """Write a simple HLS playlist wrapping a single VTT file."""
-    playlist = sub_dir / "playlist.m3u8"
-    playlist.write_text(
-        "#EXTM3U\n"
-        "#EXT-X-VERSION:3\n"
-        "#EXT-X-TARGETDURATION:99999\n"
-        "#EXT-X-PLAYLIST-TYPE:VOD\n"
-        "#EXTINF:99999,\n"
-        "sub.vtt\n"
-        "#EXT-X-ENDLIST\n",
-        encoding="utf-8",
-    )
-
-
-def _has_endlist(playlist_path: Path) -> bool:
-    """Return ``True`` iff the playlist file exists and contains ``#EXT-X-ENDLIST``."""
-    try:
-        return "#EXT-X-ENDLIST" in playlist_path.read_text(encoding="utf-8")
-    except OSError:
-        return False
 
 
 def _append_endlist_atomic(playlist_path: Path) -> None:
@@ -1068,129 +666,6 @@ def _append_endlist_atomic(playlist_path: Path) -> None:
     tmp_path = playlist_path.with_name(playlist_path.name + ".endlist.tmp")
     tmp_path.write_text(content, encoding="utf-8")
     tmp_path.replace(playlist_path)
-
-
-# Matches WebVTT cue timestamps in either ``mm:ss.fff`` (under one hour)
-# or ``hh:mm:ss.fff`` shape, so the post-processor can shift cues
-# regardless of which form ffmpeg picked when writing the file.
-_VTT_TIMESTAMP_RE = re.compile(r"(?:(?P<h>\d+):)?(?P<m>\d{2}):(?P<s>\d{2})\.(?P<ms>\d{3})")
-
-
-def _shift_one_timestamp(match: re.Match[str], shift_seconds: int) -> str:
-    """Return the WebVTT timestamp in ``match`` shifted back by ``shift_seconds``.
-
-    Negatives clamp to zero so a cue that straddled the bucket
-    boundary collapses to ``00:00:00.000`` (start == end → the player
-    skips it) instead of producing an invalid VTT line.
-    """
-    h = int(match.group("h") or 0)
-    m = int(match.group("m"))
-    s = int(match.group("s"))
-    ms = int(match.group("ms"))
-    total_ms = ((h * 60 + m) * 60 + s) * 1000 + ms - shift_seconds * 1000
-    if total_ms < 0:
-        total_ms = 0
-    new_h, rem = divmod(total_ms, 3_600_000)
-    new_m, rem = divmod(rem, 60_000)
-    new_s, new_ms = divmod(rem, 1_000)
-    return f"{new_h:02d}:{new_m:02d}:{new_s:02d}.{new_ms:03d}"
-
-
-# Windows refuses os.replace onto a file another handle has open (a
-# player fetching the .vtt, or an AV/indexer scanning a fresh write),
-# raising PermissionError. The lock is transient, so retry briefly.
-_VTT_REPLACE_ATTEMPTS = 5
-_VTT_REPLACE_BACKOFF = 0.1  # seconds, scaled by attempt number
-
-
-def _atomic_write_text(dest: Path, content: str) -> None:
-    """Atomically write ``content`` onto ``dest``, retrying a locked replace.
-
-    The unique temp name keeps two concurrent writers from clobbering
-    each other's temp (``WinError 2``); the retry rides out a momentary
-    open handle on the destination (``WinError 5``). Best-effort — gives
-    up and cleans the temp after a few attempts.
-    """
-    tmp_path = dest.with_name(f"{dest.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        tmp_path.write_text(content, encoding="utf-8")
-    except OSError:
-        _logger.exception("Failed to write temp for %s", dest)
-        return
-    for attempt in range(_VTT_REPLACE_ATTEMPTS):
-        try:
-            tmp_path.replace(dest)
-            return
-        except PermissionError:
-            if attempt == _VTT_REPLACE_ATTEMPTS - 1:
-                _logger.warning(
-                    "Could not replace %s after %d tries (file locked)",
-                    dest,
-                    _VTT_REPLACE_ATTEMPTS,
-                )
-            else:
-                time.sleep(_VTT_REPLACE_BACKOFF * (attempt + 1))
-        except OSError:
-            _logger.exception("Failed to replace %s", dest)
-            break
-    tmp_path.unlink(missing_ok=True)
-
-
-def _shift_webvtt_to_bucket_local(vtt_path: Path, shift_seconds: int) -> None:
-    """Subtract ``shift_seconds`` from every cue timestamp in the VTT.
-
-    The extracted subtitle carries source-time cue timestamps; on a
-    non-zero bucket start the player runs a bucket-local clock and
-    every cue would otherwise fire ``shift_seconds`` seconds after
-    the spoken line. Shift everything once on disk so hls.js can map
-    cues to the active manifest's timeline without further help.
-    """
-    if shift_seconds <= 0:
-        return
-    if not vtt_path.is_file():
-        return
-    try:
-        content = vtt_path.read_text(encoding="utf-8")
-    except OSError:
-        _logger.exception("Failed to read VTT for shifting: %s", vtt_path)
-        return
-
-    def _replace(m: re.Match[str]) -> str:
-        return _shift_one_timestamp(m, shift_seconds)
-
-    new_content = _VTT_TIMESTAMP_RE.sub(_replace, content)
-    _atomic_write_text(vtt_path, new_content)
-
-
-_VTT_TIMESTAMP_MAP = "X-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000"
-
-
-def _ensure_vtt_timestamp_map(vtt_path: Path) -> None:
-    """Insert the HLS ``X-TIMESTAMP-MAP`` header into a standalone WebVTT.
-
-    The video segments start at MPEG-TS PTS 0 (muxdelay/muxpreload
-    zeroed), so cues anchored to ``LOCAL`` 0 line up with the video
-    clock. Without this header hls.js falls back to the muxer's old
-    ~1.4 s start offset and renders subtitles a second or two early.
-    Idempotent and best-effort — runs after any bucket-local shift so it
-    never rewrites the map's own ``00:00:00.000``.
-    """
-    if not vtt_path.is_file():
-        return
-    try:
-        content = vtt_path.read_text(encoding="utf-8")
-    except OSError:
-        _logger.exception("Failed to read VTT for timestamp map: %s", vtt_path)
-        return
-    if "X-TIMESTAMP-MAP" in content:
-        return
-    # ffmpeg writes "WEBVTT\n\n<cues>"; the map must sit on the line
-    # right after the WEBVTT signature, before the blank line + cues.
-    head, _, rest = content.partition("\n")
-    if "WEBVTT" not in head:
-        return
-    new_content = f"{head}\n{_VTT_TIMESTAMP_MAP}\n{rest}"
-    _atomic_write_text(vtt_path, new_content)
 
 
 __all__ = ["HlsService"]
