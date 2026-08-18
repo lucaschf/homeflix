@@ -304,5 +304,3 @@ class TestClearMovieHlsCache:
 
         assert result.status_code == 204
         clear_uc.execute.assert_awaited_once()
-
-

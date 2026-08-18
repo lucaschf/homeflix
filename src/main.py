@@ -61,10 +61,10 @@ from src.modules.notifications.presentation.routes import notification_router
 from src.modules.preferences.presentation.routes.preferences_routes import (
     router as preferences_router,
 )
+from src.modules.settings.presentation.routes import admin_settings_router
 from src.modules.streaming.presentation.routes.direct_stream_routes import (
     router as direct_stream_router,
 )
-from src.modules.settings.presentation.routes import admin_settings_router
 from src.modules.watch_progress.presentation.routes import progress_router
 
 
