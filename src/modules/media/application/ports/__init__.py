@@ -23,7 +23,6 @@ from src.modules.media.application.ports.file_scanner_port import (
     MediaType,
     ScannedFile,
 )
-from src.modules.media.application.ports.file_streamer_port import FileStreamerPort
 from src.modules.media.application.ports.hls_playlist_port import (
     HlsCacheStats,
     HlsPlaylistPort,
@@ -96,7 +95,6 @@ __all__ = [
     "DownloadedImage",
     "EpisodeMediaRef",
     "EpisodeMetadata",
-    "FileStreamerPort",
     "FileSystemScanner",
     "HlsCacheStats",
     "HlsPlaylistPort",

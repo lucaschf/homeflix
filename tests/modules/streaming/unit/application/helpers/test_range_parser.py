@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.modules.media.application.streaming.range_parser import (
+from src.modules.streaming.application.helpers.range_parser import (
     ByteRange,
     parse_range_header,
 )

@@ -146,7 +146,6 @@ from src.modules.media.application.use_cases.serve_hls_file import ServeHlsFileU
 from src.modules.media.application.use_cases.set_credits_marker import SetCreditsMarkerUseCase
 from src.modules.media.application.use_cases.set_episode_intro import SetEpisodeIntroUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
-from src.modules.media.application.use_cases.stream_file_range import StreamFileRangeUseCase
 from src.modules.media.application.use_cases.sweep_interrupted_job_runs import (
     SweepInterruptedJobRunsUseCase,
 )
@@ -192,7 +191,6 @@ from src.modules.media.infrastructure.streaming import (
     MediaProbeService,
     TesseractPgsOcrService,
 )
-from src.modules.media.infrastructure.streaming.file_streamer import LocalFileStreamer
 from src.modules.media.infrastructure.streaming.now_playing_registry import (
     NowPlayingRegistry,
 )
@@ -550,8 +548,6 @@ class MediaContainer(containers.DeclarativeContainer):
         runtime_settings=runtime_settings,
     )
 
-    file_streamer = providers.Factory(LocalFileStreamer)
-
     # Local-disk storage for mirrored catalog artwork (ADR-029).
     # Singleton so the proxy route and the mirror job share one
     # instance (it is stateless apart from the root path).
@@ -610,11 +606,6 @@ class MediaContainer(containers.DeclarativeContainer):
     get_hls_cache_stats = providers.Factory(
         GetHlsCacheStatsUseCase,
         hls=hls_service,
-    )
-
-    stream_file_range = providers.Factory(
-        StreamFileRangeUseCase,
-        file_streamer=file_streamer,
     )
 
     # =========================================================================

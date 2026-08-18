@@ -61,6 +61,9 @@ from src.modules.notifications.presentation.routes import notification_router
 from src.modules.preferences.presentation.routes.preferences_routes import (
     router as preferences_router,
 )
+from src.modules.streaming.presentation.routes.direct_stream_routes import (
+    router as direct_stream_router,
+)
 from src.modules.settings.presentation.routes import admin_settings_router
 from src.modules.watch_progress.presentation.routes import progress_router
 
@@ -110,6 +113,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.media.presentation.routes.scan_routes",
     "src.modules.media.presentation.routes.series_routes",
     "src.modules.media.presentation.routes.stream_routes",
+    "src.modules.streaming.presentation.routes.direct_stream_routes",
     "src.modules.media.presentation.routes.tmdb_lookup_routes",
     "src.modules.watch_progress.presentation.routes.progress_routes",
     "src.modules.collections.presentation.routes.watchlist_routes",
@@ -513,6 +517,7 @@ def create_app() -> FastAPI:
     app.include_router(scan_router)
     app.include_router(series_router)
     app.include_router(stream_router)
+    app.include_router(direct_stream_router)
     app.include_router(tmdb_lookup_router)
     app.include_router(progress_router)
     app.include_router(watchlist_router)

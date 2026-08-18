@@ -17,7 +17,6 @@ from src.modules.media.domain.services.track_naming import (
 from src.modules.media.domain.services.track_selector import TrackSelector
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
     from pathlib import Path
 
     from src.modules.media.application.ports.media_probe_port import ProbeResult
@@ -63,22 +62,6 @@ class TrackListOutput:
 
     audio_tracks: list[dict[str, object]]
     subtitle_tracks: list[dict[str, object]]
-
-
-@dataclass(frozen=True)
-class RangeStreamOutput:
-    """Byte-range streaming response pieces.
-
-    ``body`` is the async generator of chunks to stream; the route
-    wraps it in a FastAPI ``StreamingResponse`` with the provided
-    status code and headers so response construction stays in
-    presentation.
-    """
-
-    status_code: int
-    media_type: str
-    headers: dict[str, str]
-    body: AsyncIterator[bytes]
 
 
 def _version_dict(version: TrackVersion | None) -> dict[str, str] | None:
@@ -165,7 +148,6 @@ def serialize_tracks(
 __all__ = [
     "HlsFileOutput",
     "HlsPlaylistOutput",
-    "RangeStreamOutput",
     "TrackListOutput",
     "serialize_tracks",
 ]

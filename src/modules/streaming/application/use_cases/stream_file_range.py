@@ -3,9 +3,9 @@
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from src.modules.media.application.dtos.stream_dtos import RangeStreamOutput
-from src.modules.media.application.ports.file_streamer_port import FileStreamerPort
-from src.modules.media.application.streaming.range_parser import ByteRange, parse_range_header
+from src.modules.streaming.application.dtos.range_stream_dtos import RangeStreamOutput
+from src.modules.streaming.application.helpers.range_parser import ByteRange, parse_range_header
+from src.modules.streaming.application.ports.file_streamer_port import FileStreamerPort
 
 _DEFAULT_MEDIA_TYPE = "video/mp4"
 
