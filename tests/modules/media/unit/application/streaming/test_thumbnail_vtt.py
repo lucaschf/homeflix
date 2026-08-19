@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.modules.media.application.streaming.thumbnail_vtt import (
+from src.modules.streaming.application.streaming.thumbnail_vtt import (
     DEFAULT_COLUMNS,
     DEFAULT_INTERVAL_SECONDS,
     DEFAULT_TILE_HEIGHT,

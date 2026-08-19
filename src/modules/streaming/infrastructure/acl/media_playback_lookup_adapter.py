@@ -13,13 +13,16 @@ from typing import TYPE_CHECKING
 
 from src.modules.media.application.dtos.movie_dtos import GetMovieByIdInput
 from src.modules.media.application.dtos.series_dtos import GetSeriesByIdInput
+from src.modules.media.domain.value_objects import EpisodeId, MovieId
 from src.modules.streaming.application.ports.media_lookup_port import (
     EpisodePlaybackInfo,
     MediaPlaybackLookupPort,
+    MediaSourceInfo,
     MoviePlaybackInfo,
 )
 
 if TYPE_CHECKING:
+    from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.application.use_cases.get_movie_by_id import (
         GetMovieByIdUseCase,
     )
@@ -35,9 +38,11 @@ class MediaPlaybackLookupAdapter(MediaPlaybackLookupPort):
         self,
         get_movie_by_id: GetMovieByIdUseCase,
         get_series_by_id: GetSeriesByIdUseCase,
+        media_uow_factory: MediaUnitOfWorkFactory,
     ) -> None:
         self._get_movie_by_id = get_movie_by_id
         self._get_series_by_id = get_series_by_id
+        self._media_uow_factory = media_uow_factory
 
     async def find_movie(self, profile_id: str, movie_id: str) -> MoviePlaybackInfo:
         """Fetch the movie via the catalog use case and project it."""
@@ -82,6 +87,45 @@ class MediaPlaybackLookupAdapter(MediaPlaybackLookupPort):
                     )
             break
         return None
+
+    async def find_movie_source(self, movie_id: str) -> MediaSourceInfo | None:
+        """Read the movie's file + title directly (operator-scoped, no ACL)."""
+        async with self._media_uow_factory() as uow:
+            movie = await uow.movies.find_by_id(MovieId(movie_id))
+        if movie is None or movie.primary_file is None:
+            return None
+        return MediaSourceInfo(
+            media_id=str(movie.id),
+            title=movie.title.value,
+            file_path=movie.primary_file.file_path.value,
+        )
+
+    async def find_episode_source(self, episode_id: str) -> MediaSourceInfo | None:
+        """Read the episode's file + composed label (operator-scoped, no ACL)."""
+        async with self._media_uow_factory() as uow:
+            series = await uow.series.find_by_episode_id(EpisodeId(episode_id))
+        episode = None
+        if series is not None:
+            episode = next(
+                (
+                    e
+                    for season in series.seasons
+                    for e in season.episodes
+                    if e.id is not None and str(e.id) == episode_id
+                ),
+                None,
+            )
+        if series is None or episode is None or episode.primary_file is None:
+            return None
+        label = (
+            f"{series.title.value} "
+            f"S{episode.season_number.value:02d}E{episode.episode_number.value:02d}"
+        )
+        return MediaSourceInfo(
+            media_id=str(episode.id),
+            title=label,
+            file_path=episode.primary_file.file_path.value,
+        )
 
 
 __all__ = ["MediaPlaybackLookupAdapter"]

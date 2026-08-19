@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.modules.media.domain.services.track_selector import TrackSelector
+from src.shared_kernel.track_selection.track_selector import TrackSelector
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.subtitle_mode import SubtitleMode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack

@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.modules.media.application.ports.now_playing_port import NowPlayingSession
-from src.modules.media.application.use_cases.get_now_playing import (
+from src.modules.streaming.application.ports.now_playing_port import NowPlayingSession
+from src.modules.streaming.application.use_cases.get_now_playing import (
     GetNowPlayingUseCase,
 )
 

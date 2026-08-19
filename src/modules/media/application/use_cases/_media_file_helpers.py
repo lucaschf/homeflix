@@ -5,8 +5,8 @@ from src.modules.media.application.dtos.media_file_dtos import (
     MediaFileOutput,
     SubtitleTrackOutput,
 )
-from src.modules.media.domain.services.track_selector import TrackSelector
 from src.modules.media.domain.value_objects import MediaFile
+from src.shared_kernel.track_selection.track_selector import TrackSelector
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 
 

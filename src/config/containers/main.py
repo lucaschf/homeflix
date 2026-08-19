@@ -39,9 +39,11 @@ from src.modules.library.infrastructure.persistence.sqlalchemy_unit_of_work impo
 from src.modules.media.application.use_cases.list_jobs import ListJobsUseCase
 from src.modules.media.application.use_cases.trigger_job import TriggerJobUseCase
 from src.modules.media.infrastructure.acl import (
+    HlsCacheStatsAdapter,
     LibraryHealthAdapter,
     ProfileLibraryAccessAdapter,
     ProgressLookupAdapter,
+    ScrubPreviewLocatorAdapter,
     TmdbLocalizedTitleAdapter,
 )
 from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
@@ -226,7 +228,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
         preferences_uow_factory=_preferences_uow_factory_for_media,
         tmdb_api_key=config.provided.tmdb_api_key,
         supported_locales=config.provided.supported_locales,
-        hls_cache_directory=config.provided.hls_cache_directory,
         artwork_storage_directory=config.provided.artwork_storage_directory,
         runtime_settings=settings.runtime_settings,
     )
@@ -237,13 +238,41 @@ class ApplicationContainer(containers.DeclarativeContainer):
         media_uow_factory=media.media_unit_of_work_factory,
     )
 
-    # Streaming (ADR-032 slice 4.1) composed after Media so its cross-BC
-    # catalog lookup adapter reuses media's catalog use cases (preserving
-    # the per-profile library ACL) via the MediaPlaybackLookupPort seam.
+    # Streaming (ADR-032) composed after Media so its cross-BC catalog
+    # lookup adapter reuses media's catalog use cases (preserving the
+    # per-profile library ACL) via the MediaPlaybackLookupPort seam, and
+    # its admin OCR source lookups read the media UoW directly.
     streaming = providers.Container(
         StreamingContainer,
+        session_factory=infrastructure.session_factory,
+        runtime_settings=settings.runtime_settings,
+        hls_cache_directory=config.provided.hls_cache_directory,
         get_movie_by_id=media.get_movie_by_id,
         get_series_by_id=media.get_series_by_id,
+        media_uow_factory=media.media_unit_of_work_factory,
+        identity_uow_factory=_identity_uow_factory_for_profile_library_access,
+        preferences_uow_factory=_preferences_uow_factory_for_media,
+    )
+
+    # Reverse seams (ADR-032): Media consumes three things now owned by the
+    # Streaming BC — the shared ffprobe service (scan + segments), the
+    # scrub-preview locator (scan re-link, via a media-side ACL adapter),
+    # and the HLS cache-stats read port (admin overview, via a media-side
+    # ACL adapter delegating to Streaming's use case). Wired by overriding
+    # Media's placeholder Dependencies after StreamingContainer is composed
+    # so the mutual Media<->Streaming wiring stays acyclic.
+    media.media_probe_service.override(streaming.media_probe_service)
+    media.scrub_preview_locator.override(
+        providers.Factory(
+            ScrubPreviewLocatorAdapter,
+            locator=streaming.scrub_preview_locator,
+        )
+    )
+    media.hls_cache_stats.override(
+        providers.Factory(
+            HlsCacheStatsAdapter,
+            get_hls_cache_stats=streaming.get_hls_cache_stats,
+        )
     )
 
     # Identity ships its container before the consumer BCs (watch_progress,
@@ -319,7 +348,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         ThumbnailBackfillJob,
         media_uow_factory=media.media_unit_of_work_factory,
         runtime_settings=settings.runtime_settings,
-        thumbnail_service=media.thumbnail_generation_service,
+        thumbnail_service=streaming.thumbnail_generation_service,
     )
 
     artwork_mirror_job = providers.Singleton(
@@ -358,9 +387,10 @@ class ApplicationContainer(containers.DeclarativeContainer):
     subtitle_ocr_job = providers.Singleton(
         SubtitleOcrBackfillJob,
         media_uow_factory=media.media_unit_of_work_factory,
+        streaming_uow_factory=streaming.streaming_unit_of_work_factory,
         runtime_settings=settings.runtime_settings,
-        ocr_service=media.subtitle_ocr_service,
-        probe_service=media.media_probe_service,
+        ocr_service=streaming.subtitle_ocr_service,
+        probe_service=streaming.media_probe_service,
     )
 
 

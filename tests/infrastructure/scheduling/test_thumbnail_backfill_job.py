@@ -26,8 +26,8 @@ from src.modules.media.domain.value_objects import (
     SeriesId,
     Title,
 )
-from src.modules.media.infrastructure.streaming.thumbnail_service import ThumbnailResult
 from src.modules.settings.domain.value_objects import ThumbnailBackfillConfig
+from src.modules.streaming.infrastructure.streaming.thumbnail_service import ThumbnailResult
 
 if TYPE_CHECKING:
     from pathlib import Path

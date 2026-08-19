@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 from fastapi import HTTPException
 
-from src.modules.media.presentation.routes.stream_routes import _scrub_preview_files
+from src.modules.streaming.presentation.routes.hls_routes import _scrub_preview_files
 
 if TYPE_CHECKING:
     from pathlib import Path

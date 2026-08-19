@@ -9,9 +9,7 @@ from src.building_blocks.domain.events import DomainEvent
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput, ScanMediaOutput
 from src.modules.media.application.ports import (
     FileSystemScanner,
-    MediaProbePort,
     MediaType,
-    ProbeResult,
     ScannedFile,
     ScrubPreviewLocatorPort,
     VariantDetectorPort,
@@ -33,6 +31,7 @@ from src.modules.media.domain.value_objects import (
     Title,
     Year,
 )
+from src.shared_kernel.media_probe.media_probe_port import MediaProbePort, ProbeResult
 from src.shared_kernel.value_objects.image_url import ImageUrl
 
 # Aliased to avoid colliding with the scanner port's ``MediaType``

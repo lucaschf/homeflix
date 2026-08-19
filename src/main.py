@@ -42,8 +42,6 @@ from src.modules.media.presentation.routes import (
     admin_relink_router,
     admin_scan_router,
     admin_segments_router,
-    admin_subtitle_ocr_router,
-    admin_system_router,
     artwork_router,
     catalog_router,
     collection_router,
@@ -54,7 +52,6 @@ from src.modules.media.presentation.routes import (
     scan_router,
     search_router,
     series_router,
-    stream_router,
     tmdb_lookup_router,
 )
 from src.modules.notifications.presentation.routes import notification_router
@@ -62,8 +59,12 @@ from src.modules.preferences.presentation.routes.preferences_routes import (
     router as preferences_router,
 )
 from src.modules.settings.presentation.routes import admin_settings_router
-from src.modules.streaming.presentation.routes.direct_stream_routes import (
-    router as direct_stream_router,
+from src.modules.streaming.presentation.routes import (
+    admin_now_playing_router,
+    admin_subtitle_ocr_router,
+    admin_system_router,
+    direct_stream_router,
+    hls_router,
 )
 from src.modules.watch_progress.presentation.routes import progress_router
 
@@ -100,8 +101,9 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.media.presentation.routes.admin_relink_routes",
     "src.modules.media.presentation.routes.admin_scan_routes",
     "src.modules.media.presentation.routes.admin_segments_routes",
-    "src.modules.media.presentation.routes.admin_subtitle_ocr_routes",
-    "src.modules.media.presentation.routes.admin_system_routes",
+    "src.modules.streaming.presentation.routes.admin_subtitle_ocr_routes",
+    "src.modules.streaming.presentation.routes.admin_system_routes",
+    "src.modules.streaming.presentation.routes.admin_now_playing_routes",
     "src.modules.media.presentation.routes.artwork_routes",
     "src.modules.media.presentation.routes.catalog_routes",
     "src.modules.media.presentation.routes.collection_routes",
@@ -112,7 +114,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.media.presentation.routes.people_routes",
     "src.modules.media.presentation.routes.scan_routes",
     "src.modules.media.presentation.routes.series_routes",
-    "src.modules.media.presentation.routes.stream_routes",
+    "src.modules.streaming.presentation.routes.hls_routes",
     "src.modules.streaming.presentation.routes.direct_stream_routes",
     "src.modules.media.presentation.routes.tmdb_lookup_routes",
     "src.modules.watch_progress.presentation.routes.progress_routes",
@@ -516,8 +518,9 @@ def create_app() -> FastAPI:
     app.include_router(people_router)
     app.include_router(scan_router)
     app.include_router(series_router)
-    app.include_router(stream_router)
+    app.include_router(hls_router)
     app.include_router(direct_stream_router)
+    app.include_router(admin_now_playing_router)
     app.include_router(tmdb_lookup_router)
     app.include_router(progress_router)
     app.include_router(watchlist_router)

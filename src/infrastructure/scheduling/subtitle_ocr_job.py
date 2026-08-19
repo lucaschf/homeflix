@@ -35,27 +35,28 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.config.logging import get_logger
-from src.modules.media.application.ports.subtitle_ocr_port import SubtitleOcrOptions
-from src.modules.media.application.services.subtitle_ocr_paths import (
+from src.modules.streaming.application.ports.subtitle_ocr_port import SubtitleOcrOptions
+from src.modules.streaming.application.services.subtitle_ocr_paths import (
     OCR_DONE_MARKER,
     ocr_subtitle_output_dir,
 )
-from src.modules.media.application.services.subtitle_ocr_processor import (
+from src.modules.streaming.application.services.subtitle_ocr_processor import (
     FileOcrReport,
     SubtitleOcrProcessor,
 )
-from src.modules.media.domain.entities.subtitle_ocr_run import SubtitleOcrRun
-from src.modules.media.domain.value_objects.subtitle_ocr_outcome import SubtitleOcrOutcome
+from src.modules.streaming.domain.entities.subtitle_ocr_run import SubtitleOcrRun
+from src.modules.streaming.domain.value_objects.subtitle_ocr_outcome import SubtitleOcrOutcome
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from src.modules.media.application.ports.media_probe_port import MediaProbePort
-    from src.modules.media.application.ports.subtitle_ocr_port import SubtitleOcrPort
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities import Episode, Movie, Series
     from src.modules.settings.domain.value_objects import SubtitleOcrConfig
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
+    from src.modules.streaming.application.ports.subtitle_ocr_port import SubtitleOcrPort
+    from src.modules.streaming.application.unit_of_work import StreamingUnitOfWorkFactory
+    from src.shared_kernel.media_probe.media_probe_port import MediaProbePort
 
 _logger = get_logger()
 
@@ -82,8 +83,10 @@ class SubtitleOcrBackfillJob:
 
     Args:
         media_uow_factory: Builds fresh media UoWs per query. The job
-            opens a short-lived UoW to list media / record a run, then
-            does OCR (slow, off-session) without holding a DB session.
+            opens a short-lived UoW to list media, then does OCR (slow,
+            off-session) without holding a DB session.
+        streaming_uow_factory: Builds fresh streaming UoWs to append the
+            ``subtitle_ocr_runs`` audit rows (owned by the Streaming BC).
         runtime_settings: Snapshot facade for :class:`SubtitleOcrConfig`
             (and streaming ``ffmpeg_threads``).
         ocr_service: The OCR engine (:class:`SubtitleOcrPort`).
@@ -93,11 +96,13 @@ class SubtitleOcrBackfillJob:
     def __init__(
         self,
         media_uow_factory: MediaUnitOfWorkFactory,
+        streaming_uow_factory: StreamingUnitOfWorkFactory,
         runtime_settings: RuntimeSettings,
         ocr_service: SubtitleOcrPort,
         probe_service: MediaProbePort,
     ) -> None:
         self._media_uow_factory = media_uow_factory
+        self._streaming_uow_factory = streaming_uow_factory
         self._runtime_settings = runtime_settings
         self._ocr_service = ocr_service
         self._processor = SubtitleOcrProcessor(probe_service, ocr_service)
@@ -261,7 +266,7 @@ class SubtitleOcrBackfillJob:
             finished_at=datetime.now(UTC),
         )
         try:
-            async with self._media_uow_factory() as uow:
+            async with self._streaming_uow_factory() as uow:
                 await uow.subtitle_ocr_runs.add(run)
         except Exception:
             _logger.exception("[subtitle-ocr] failed to record run")

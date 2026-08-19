@@ -38,7 +38,7 @@ from src.modules.media.application.ports.credits_detector_port import (
     CreditsSignal,
     DetectedCredits,
 )
-from src.modules.media.infrastructure.streaming._subprocess import (
+from src.modules.streaming.infrastructure.streaming._subprocess import (
     SUBPROCESS_TEXT_KWARGS,
     with_ffmpeg_threads,
 )

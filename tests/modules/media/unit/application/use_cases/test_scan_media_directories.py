@@ -6,9 +6,7 @@ import pytest
 
 from src.modules.media.application.dtos.scan_dtos import ScanMediaInput, ScanMediaOutput
 from src.modules.media.application.ports import (
-    MediaProbePort,
     MediaType,
-    ProbeResult,
     ScannedFile,
 )
 from src.modules.media.application.use_cases.scan_media_directories import (
@@ -24,6 +22,7 @@ from src.modules.media.domain.value_objects import (
     Title,
 )
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
+from src.shared_kernel.media_probe.media_probe_port import MediaProbePort, ProbeResult
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.image_url import ImageUrl
 from src.shared_kernel.value_objects.language_code import LanguageCode

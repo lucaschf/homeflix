@@ -1,29 +1,33 @@
-"""Unit tests for the streaming route handlers.
+"""Unit tests for the HLS streaming route handlers.
 
-The routes are deliberately thin: resolve the movie/episode, validate the
-file, hand the path to a streaming use case, and map the returned DTO onto
-a FastAPI response. These tests call the handler coroutines directly with
-mocked use cases (mirroring ``test_admin_subtitle_ocr_routes``) so the
-presentation branches — status mapping, response wiring, the eager-backfill
-trigger, and the episode segment-translation math — are covered without
-FFmpeg, disk, auth, or a live ASGI stack.
+The routes are deliberately thin: resolve the movie/episode through the
+``MediaPlaybackLookupPort``, validate the file, hand the path to a
+streaming use case, and map the returned DTO onto a FastAPI response.
+These tests call the handler coroutines directly with mocked ports/use
+cases so the presentation branches — status mapping, response wiring, the
+eager-backfill trigger, and the episode segment-translation math — are
+covered without FFmpeg, disk, auth, or a live ASGI stack.
 """
 
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
 from fastapi.responses import FileResponse, Response
 
 from src.building_blocks.application.errors import ResourceNotFoundException
-from src.modules.media.application.dtos.stream_dtos import (
+from src.modules.streaming.application.dtos.stream_dtos import (
     HlsFileOutput,
     TrackListOutput,
 )
-from src.modules.media.presentation.routes import stream_routes as mod
+from src.modules.streaming.application.ports.media_lookup_port import (
+    EpisodePlaybackInfo,
+    MoviePlaybackInfo,
+)
+from src.modules.streaming.presentation.routes import hls_routes as mod
 
 pytestmark = pytest.mark.unit
 
@@ -51,8 +55,8 @@ def _movie(
     *,
     file_path: str | None,
     scrub_preview_path: str | None = "/prev/sprite.vtt",
-) -> object:
-    return SimpleNamespace(
+) -> MoviePlaybackInfo:
+    return MoviePlaybackInfo(
         file_path=file_path,
         scrub_preview_path=scrub_preview_path,
         title="The Movie",
@@ -66,33 +70,32 @@ def _movie(
 def _episode(
     *,
     file_path: str | None,
-    episode_number: int = 1,
     scrub_preview_path: str | None = "/prev/e.vtt",
     segment_start_seconds: int | None = None,
     segment_end_seconds: int | None = None,
-) -> object:
-    return SimpleNamespace(
-        id="epi_aaaaaaaaaaaa",
+) -> EpisodePlaybackInfo:
+    return EpisodePlaybackInfo(
+        episode_id="epi_aaaaaaaaaaaa",
         file_path=file_path,
-        episode_number=episode_number,
         scrub_preview_path=scrub_preview_path,
-        segment_start_seconds=segment_start_seconds,
-        segment_end_seconds=segment_end_seconds,
         title="Pilot",
         duration_seconds=1400,
+        segment_start_seconds=segment_start_seconds,
+        segment_end_seconds=segment_end_seconds,
+        series_title="The Series",
     )
 
 
-def _series(*, season_number: int = 1, episodes: list[object] | None = None) -> object:
-    return SimpleNamespace(
-        title="The Series",
-        seasons=[
-            SimpleNamespace(
-                season_number=season_number,
-                episodes=episodes if episodes is not None else [_episode(file_path="/s/e.mkv")],
-            )
-        ],
-    )
+def _lookup_movie(movie: MoviePlaybackInfo) -> MagicMock:
+    lookup = MagicMock()
+    lookup.find_movie = AsyncMock(return_value=movie)
+    return lookup
+
+
+def _lookup_episode(episode: EpisodePlaybackInfo | None) -> MagicMock:
+    lookup = MagicMock()
+    lookup.find_episode = AsyncMock(return_value=episode)
+    return lookup
 
 
 class TestHlsFile:
@@ -146,8 +149,7 @@ class TestMovieHlsPlaylist:
     async def test_serves_master_and_fires_backfill_when_no_preview(self, tmp_path: Path) -> None:
         video = tmp_path / "movie.mkv"
         video.write_bytes(b"\x00")
-        movie_uc = AsyncMock()
-        movie_uc.execute.return_value = _movie(file_path=str(video), scrub_preview_path=None)
+        lookup = _lookup_movie(_movie(file_path=str(video), scrub_preview_path=None))
         hls_uc = AsyncMock()
         hls_uc.execute.return_value = SimpleNamespace(rewritten_content="#EXTM3U:master")
         backfill = SimpleNamespace(process_movie_by_id=AsyncMock(return_value=True))
@@ -158,7 +160,7 @@ class TestMovieHlsPlaylist:
                 _request(),
                 start=0,
                 profile_id="prf_aaaaaaaaaaaa",
-                movie_uc=movie_uc,
+                media_lookup=lookup,
                 hls_uc=hls_uc,
                 backfill_job=backfill,
             )
@@ -173,8 +175,7 @@ class TestMovieHlsPlaylist:
     async def test_does_not_fire_backfill_when_preview_exists(self, tmp_path: Path) -> None:
         video = tmp_path / "movie.mkv"
         video.write_bytes(b"\x00")
-        movie_uc = AsyncMock()
-        movie_uc.execute.return_value = _movie(file_path=str(video))  # preview present
+        lookup = _lookup_movie(_movie(file_path=str(video)))  # preview present
         hls_uc = AsyncMock()
         hls_uc.execute.return_value = SimpleNamespace(rewritten_content="#EXTM3U")
         backfill = SimpleNamespace(process_movie_by_id=AsyncMock(return_value=True))
@@ -184,7 +185,7 @@ class TestMovieHlsPlaylist:
             _request(),
             start=0,
             profile_id="prf_aaaaaaaaaaaa",
-            movie_uc=movie_uc,
+            media_lookup=lookup,
             hls_uc=hls_uc,
             backfill_job=backfill,
         )
@@ -193,15 +194,14 @@ class TestMovieHlsPlaylist:
         backfill.process_movie_by_id.assert_not_awaited()
 
     async def test_404_when_movie_file_missing_on_disk(self) -> None:
-        movie_uc = AsyncMock()
-        movie_uc.execute.return_value = _movie(file_path="/nope/ghost.mkv")
+        lookup = _lookup_movie(_movie(file_path="/nope/ghost.mkv"))
         with pytest.raises(HTTPException) as exc_info:
             await mod.movie_hls_playlist(
                 "mov_aaaaaaaaaaaa",
                 _request(),
                 start=0,
                 profile_id="prf_aaaaaaaaaaaa",
-                movie_uc=movie_uc,
+                media_lookup=lookup,
                 hls_uc=AsyncMock(),
                 backfill_job=SimpleNamespace(process_movie_by_id=AsyncMock()),
             )
@@ -210,8 +210,7 @@ class TestMovieHlsPlaylist:
 
 class TestEpisodeHlsPlaylist:
     async def test_404_when_episode_absent_from_series(self) -> None:
-        series_uc = AsyncMock()
-        series_uc.execute.return_value = _series(episodes=[])  # season present, no episodes
+        lookup = _lookup_episode(None)  # series present, no such episode
         with pytest.raises(HTTPException) as exc_info:
             await mod.episode_hls_playlist(
                 "ser_aaaaaaaaaaaa",
@@ -220,7 +219,7 @@ class TestEpisodeHlsPlaylist:
                 _request(),
                 start=0,
                 profile_id="prf_aaaaaaaaaaaa",
-                series_uc=series_uc,
+                media_lookup=lookup,
                 hls_uc=AsyncMock(),
                 backfill_job=SimpleNamespace(process_episode_by_id=AsyncMock()),
             )
@@ -236,12 +235,10 @@ class TestEpisodeHlsPlaylist:
         video.write_bytes(b"\x00")
         ep = _episode(
             file_path=str(video),
-            episode_number=1,
             segment_start_seconds=600,
             segment_end_seconds=1800,
         )
-        series_uc = AsyncMock()
-        series_uc.execute.return_value = _series(episodes=[ep])
+        lookup = _lookup_episode(ep)
         hls_uc = AsyncMock()
         hls_uc.execute.return_value = SimpleNamespace(rewritten_content="#EXTM3U")
 
@@ -252,7 +249,7 @@ class TestEpisodeHlsPlaylist:
             _request(),
             start=120,
             profile_id="prf_aaaaaaaaaaaa",
-            series_uc=series_uc,
+            media_lookup=lookup,
             hls_uc=hls_uc,
             backfill_job=SimpleNamespace(process_episode_by_id=AsyncMock()),
         )
@@ -267,8 +264,7 @@ class TestMovieTracks:
     async def test_serializes_track_list_output(self, tmp_path: Path) -> None:
         video = tmp_path / "movie.mkv"
         video.write_bytes(b"\x00")
-        movie_uc = AsyncMock()
-        movie_uc.execute.return_value = _movie(file_path=str(video))
+        lookup = _lookup_movie(_movie(file_path=str(video)))
         tracks_uc = AsyncMock()
         tracks_uc.execute.return_value = TrackListOutput(
             audio_tracks=[{"index": 0, "language": "eng"}],
@@ -278,7 +274,7 @@ class TestMovieTracks:
         result = await mod.movie_tracks(
             "mov_aaaaaaaaaaaa",
             profile_id="prf_aaaaaaaaaaaa",
-            movie_uc=movie_uc,
+            media_lookup=lookup,
             tracks_uc=tracks_uc,
         )
 
@@ -290,15 +286,14 @@ class TestMovieTracks:
 
 class TestClearMovieHlsCache:
     async def test_returns_204(self) -> None:
-        movie_uc = AsyncMock()
-        movie_uc.execute.return_value = _movie(file_path="/movies/m.mkv")
+        lookup = _lookup_movie(_movie(file_path="/movies/m.mkv"))
         clear_uc = AsyncMock()
 
         result = await mod.clear_movie_hls_cache(
             "mov_aaaaaaaaaaaa",
             _admin=SimpleNamespace(),
             profile_id="prf_aaaaaaaaaaaa",
-            movie_uc=movie_uc,
+            media_lookup=lookup,
             clear_uc=clear_uc,
         )
 

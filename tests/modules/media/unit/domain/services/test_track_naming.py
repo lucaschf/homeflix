@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.modules.media.domain.services.track_naming import (
+from src.shared_kernel.track_selection.track_naming import (
     TrackVersion,
     audio_version_labels,
     detect_studio,

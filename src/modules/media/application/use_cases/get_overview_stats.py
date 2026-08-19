@@ -5,7 +5,9 @@ from src.modules.media.application.dtos.overview_stats_dtos import (
     LastScanSnapshot,
     OverviewStatsOutput,
 )
-from src.modules.media.application.ports import HlsPlaylistPort
+from src.modules.media.application.ports.hls_cache_stats_read_port import (
+    HlsCacheStatsReadPort,
+)
 from src.modules.media.application.ports.identity_user_count_port import (
     IdentityUserCountPort,
 )
@@ -35,12 +37,12 @@ class GetOverviewStatsUseCase:
         media_uow_factory: MediaUnitOfWorkFactory,
         user_count: IdentityUserCountPort,
         list_movies_needing_review: ListMoviesNeedingReviewUseCase,
-        hls_playlist: HlsPlaylistPort,
+        hls_cache_stats: HlsCacheStatsReadPort,
     ) -> None:
         self._media_uow_factory = media_uow_factory
         self._user_count = user_count
         self._list_review = list_movies_needing_review
-        self._hls = hls_playlist
+        self._hls = hls_cache_stats
 
     async def execute(self) -> OverviewStatsOutput:
         """Read every card's underlying datum and pack the response."""
@@ -56,7 +58,7 @@ class GetOverviewStatsUseCase:
 
         review = await self._list_review.execute()
         review_count = len(review.movies)
-        cache_stats = self._hls.get_cache_stats()
+        cache_stats = self._hls.get_stats()
 
         last_scan = None
         if recent_scans:

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from src.config.logging import get_logger
 from src.modules.media.domain.value_objects import EpisodeId, ImageUrl, MovieId
-from src.modules.media.infrastructure.streaming.thumbnail_service import (
+from src.modules.streaming.infrastructure.streaming.thumbnail_service import (
     ThumbnailGenerationService,
     ThumbnailResult,
     scrub_preview_output_dir,

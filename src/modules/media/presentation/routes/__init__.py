@@ -24,12 +24,6 @@ from src.modules.media.presentation.routes.admin_scan_routes import (
 from src.modules.media.presentation.routes.admin_segments_routes import (
     router as admin_segments_router,
 )
-from src.modules.media.presentation.routes.admin_subtitle_ocr_routes import (
-    router as admin_subtitle_ocr_router,
-)
-from src.modules.media.presentation.routes.admin_system_routes import (
-    router as admin_system_router,
-)
 from src.modules.media.presentation.routes.artwork_routes import router as artwork_router
 from src.modules.media.presentation.routes.catalog_routes import router as catalog_router
 from src.modules.media.presentation.routes.collection_routes import router as collection_router
@@ -40,7 +34,6 @@ from src.modules.media.presentation.routes.people_routes import router as people
 from src.modules.media.presentation.routes.scan_routes import router as scan_router
 from src.modules.media.presentation.routes.search_routes import router as search_router
 from src.modules.media.presentation.routes.series_routes import router as series_router
-from src.modules.media.presentation.routes.stream_routes import router as stream_router
 from src.modules.media.presentation.routes.tmdb_lookup_routes import (
     router as tmdb_lookup_router,
 )
@@ -54,8 +47,6 @@ __all__ = [
     "admin_relink_router",
     "admin_scan_router",
     "admin_segments_router",
-    "admin_subtitle_ocr_router",
-    "admin_system_router",
     "artwork_router",
     "catalog_router",
     "collection_router",
@@ -66,6 +57,5 @@ __all__ = [
     "scan_router",
     "search_router",
     "series_router",
-    "stream_router",
     "tmdb_lookup_router",
 ]

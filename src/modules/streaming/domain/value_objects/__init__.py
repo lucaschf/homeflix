@@ -1,0 +1,1 @@
+"""Streaming domain value objects."""

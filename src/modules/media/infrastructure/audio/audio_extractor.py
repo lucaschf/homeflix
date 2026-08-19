@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from src.modules.media.infrastructure.streaming._subprocess import (
+from src.modules.streaming.infrastructure.streaming._subprocess import (
     SUBPROCESS_TEXT_KWARGS,
     with_ffmpeg_threads,
 )
