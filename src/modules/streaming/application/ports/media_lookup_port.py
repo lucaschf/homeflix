@@ -43,6 +43,26 @@ class MoviePlaybackInfo:
 
 
 @dataclass(frozen=True)
+class MediaSourceInfo:
+    """Operator-scoped source projection of a movie or episode.
+
+    Used by the manual subtitle-OCR trigger, which is admin-only and so
+    resolves the physical file directly (no per-profile library ACL).
+
+    Attributes:
+        media_id: Canonical external id of the resolved movie/episode.
+        title: Display label — the movie title, or the
+            ``"{series} S01E02"`` style label for an episode.
+        file_path: Absolute path to the primary video file, or ``None``
+            when the title has no playable file.
+    """
+
+    media_id: str
+    title: str
+    file_path: str | None
+
+
+@dataclass(frozen=True)
 class EpisodePlaybackInfo:
     """Playback projection of a single episode for the stream routes.
 
@@ -119,9 +139,42 @@ class MediaPlaybackLookupPort(ABC):
         """
         ...
 
+    @abstractmethod
+    async def find_movie_source(self, movie_id: str) -> MediaSourceInfo | None:
+        """Return the operator-scoped source projection for a movie.
+
+        No profile ACL is applied — the caller (manual OCR trigger) is
+        admin-only.
+
+        Args:
+            movie_id: External movie id (``mov_xxx``).
+
+        Returns:
+            The :class:`MediaSourceInfo`, or ``None`` when the movie does
+            not exist or has no primary file.
+        """
+        ...
+
+    @abstractmethod
+    async def find_episode_source(self, episode_id: str) -> MediaSourceInfo | None:
+        """Return the operator-scoped source projection for an episode.
+
+        No profile ACL is applied — the caller (manual OCR trigger) is
+        admin-only.
+
+        Args:
+            episode_id: External episode id (``epi_xxx``).
+
+        Returns:
+            The :class:`MediaSourceInfo`, or ``None`` when the episode does
+            not exist or has no primary file.
+        """
+        ...
+
 
 __all__ = [
     "EpisodePlaybackInfo",
     "MediaPlaybackLookupPort",
+    "MediaSourceInfo",
     "MoviePlaybackInfo",
 ]

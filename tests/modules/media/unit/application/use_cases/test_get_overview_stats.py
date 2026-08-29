@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.modules.media.application.ports.hls_playlist_port import HlsCacheStats
+from src.modules.media.application.ports.hls_cache_stats_read_port import HlsCacheStatsView
 from src.modules.media.application.use_cases.get_overview_stats import (
     GetOverviewStatsUseCase,
 )
@@ -59,7 +59,7 @@ class TestGetOverviewStatsUseCase:
         review_uc = AsyncMock()
         review_uc.execute.return_value = MagicMock(movies=[1, 2, 3])  # 3-row list
         hls = MagicMock()
-        hls.get_cache_stats.return_value = HlsCacheStats(
+        hls.get_stats.return_value = HlsCacheStatsView(
             size_bytes=100,
             max_bytes=1000,
             last_cleared_at=None,
@@ -73,7 +73,7 @@ class TestGetOverviewStatsUseCase:
             ),
             user_count=_user_count_port(users_count=4),
             list_movies_needing_review=review_uc,
-            hls_playlist=hls,
+            hls_cache_stats=hls,
         ).execute()
 
         assert result.movies_count == 42
@@ -90,7 +90,7 @@ class TestGetOverviewStatsUseCase:
         review_uc = AsyncMock()
         review_uc.execute.return_value = MagicMock(movies=[])
         hls = MagicMock()
-        hls.get_cache_stats.return_value = HlsCacheStats(
+        hls.get_stats.return_value = HlsCacheStatsView(
             size_bytes=0,
             max_bytes=1000,
             last_cleared_at=None,
@@ -104,7 +104,7 @@ class TestGetOverviewStatsUseCase:
             ),
             user_count=_user_count_port(users_count=1),
             list_movies_needing_review=review_uc,
-            hls_playlist=hls,
+            hls_cache_stats=hls,
         ).execute()
 
         assert result.last_scan is None

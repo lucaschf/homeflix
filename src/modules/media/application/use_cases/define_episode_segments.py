@@ -19,7 +19,6 @@ from src.modules.media.application.dtos.segment_dtos import (
     DefineEpisodeSegmentsOutput,
     EpisodeSegmentSpec,
 )
-from src.modules.media.application.ports.media_probe_port import MediaProbePort
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.value_objects import (
     Duration,
@@ -29,6 +28,7 @@ from src.modules.media.domain.value_objects import (
     Resolution,
     SeriesId,
 )
+from src.shared_kernel.media_probe.media_probe_port import MediaProbePort
 
 
 class DefineEpisodeSegmentsUseCase:

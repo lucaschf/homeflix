@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.building_blocks.application.errors import ResourceNotFoundException
-from src.modules.media.application.ports.hls_playlist_port import HlsPlaylistPort
-from src.modules.media.application.use_cases.serve_hls_file import (
+from src.modules.streaming.application.ports.hls_playlist_port import HlsPlaylistPort
+from src.modules.streaming.application.use_cases.serve_hls_file import (
     ServeHlsFileInput,
     ServeHlsFileUseCase,
 )

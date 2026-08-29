@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.modules.media.application.ports.hls_playlist_port import HlsPlaylistPort
-from src.modules.media.application.use_cases.clear_hls_cache_global import (
+from src.modules.streaming.application.ports.hls_playlist_port import HlsPlaylistPort
+from src.modules.streaming.application.use_cases.clear_hls_cache_global import (
     ClearHlsCacheGlobalUseCase,
 )
 

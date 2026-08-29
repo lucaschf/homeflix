@@ -13,9 +13,6 @@ from src.modules.media.infrastructure.persistence.models.movie import MovieModel
 from src.modules.media.infrastructure.persistence.models.scan_run import ScanRunModel
 from src.modules.media.infrastructure.persistence.models.season import SeasonModel
 from src.modules.media.infrastructure.persistence.models.series import SeriesModel
-from src.modules.media.infrastructure.persistence.models.subtitle_ocr_run import (
-    SubtitleOcrRunModel,
-)
 
 __all__ = [
     "EpisodeModel",
@@ -27,5 +24,4 @@ __all__ = [
     "ScanRunModel",
     "SeasonModel",
     "SeriesModel",
-    "SubtitleOcrRunModel",
 ]

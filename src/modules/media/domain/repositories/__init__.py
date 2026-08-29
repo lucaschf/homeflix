@@ -34,9 +34,6 @@ from src.modules.media.domain.repositories.series_repository import (
     SeriesCatalogRepository,
     SeriesRepository,
 )
-from src.modules.media.domain.repositories.subtitle_ocr_run_repository import (
-    SubtitleOcrRunRepository,
-)
 
 __all__ = [
     "CreditsStatusRow",
@@ -57,5 +54,4 @@ __all__ = [
     "SeriesIntroDetectionRepository",
     "SeriesRepository",
     "SeriesScrubPreviewRepository",
-    "SubtitleOcrRunRepository",
 ]

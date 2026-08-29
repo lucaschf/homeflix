@@ -5,11 +5,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.modules.media.application.ports.hls_playlist_port import (
+from src.modules.streaming.application.ports.hls_playlist_port import (
     HlsCacheStats,
     HlsPlaylistPort,
 )
-from src.modules.media.application.use_cases.get_hls_cache_stats import (
+from src.modules.streaming.application.use_cases.get_hls_cache_stats import (
     GetHlsCacheStatsUseCase,
 )
 

@@ -15,9 +15,6 @@ from src.modules.media.infrastructure.persistence.repositories.scan_run_reposito
 from src.modules.media.infrastructure.persistence.repositories.series_repository import (
     SQLAlchemySeriesRepository,
 )
-from src.modules.media.infrastructure.persistence.repositories.subtitle_ocr_run_repository import (
-    SqlAlchemySubtitleOcrRunRepository,
-)
 
 __all__ = [
     "SQLAlchemyMovieRepository",
@@ -25,5 +22,4 @@ __all__ = [
     "SqlAlchemyIntroDetectionRunRepository",
     "SqlAlchemyMediaConflictRepository",
     "SqlAlchemyScanRunRepository",
-    "SqlAlchemySubtitleOcrRunRepository",
 ]

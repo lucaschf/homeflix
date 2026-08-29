@@ -10,9 +10,6 @@ from dependency_injector import containers, providers
 from src.modules.media.application.event_handlers import OnMediaCreatedHandler
 from src.modules.media.application.services.job_run_service import JobRunService
 from src.modules.media.application.services.scan_run_service import ScanRunService
-from src.modules.media.application.services.subtitle_ocr_processor import (
-    SubtitleOcrProcessor,
-)
 from src.modules.media.application.use_cases.add_file_variant import AddFileVariantUseCase
 from src.modules.media.application.use_cases.bulk_enrich_metadata import (
     BulkEnrichMetadataUseCase,
@@ -24,10 +21,6 @@ from src.modules.media.application.use_cases.clear_credits_marker import (
     ClearCreditsMarkerUseCase,
 )
 from src.modules.media.application.use_cases.clear_episode_intro import ClearEpisodeIntroUseCase
-from src.modules.media.application.use_cases.clear_hls_cache import ClearHlsCacheUseCase
-from src.modules.media.application.use_cases.clear_hls_cache_global import (
-    ClearHlsCacheGlobalUseCase,
-)
 from src.modules.media.application.use_cases.define_episode_segments import (
     DefineEpisodeSegmentsUseCase,
 )
@@ -48,18 +41,11 @@ from src.modules.media.application.use_cases.flag_movie_enrichment_review import
 from src.modules.media.application.use_cases.flag_series_enrichment_review import (
     FlagSeriesEnrichmentReviewUseCase,
 )
-from src.modules.media.application.use_cases.generate_hls_playlist import (
-    GenerateHlsPlaylistUseCase,
-)
 from src.modules.media.application.use_cases.get_collection_by_tmdb_id import (
     GetCollectionByTmdbIdUseCase,
 )
 from src.modules.media.application.use_cases.get_featured_media import GetFeaturedMediaUseCase
-from src.modules.media.application.use_cases.get_file_tracks import GetFileTracksUseCase
 from src.modules.media.application.use_cases.get_file_variants import GetFileVariantsUseCase
-from src.modules.media.application.use_cases.get_hls_cache_stats import (
-    GetHlsCacheStatsUseCase,
-)
 from src.modules.media.application.use_cases.get_intro_detection_run import (
     GetIntroDetectionRunUseCase,
 )
@@ -70,7 +56,6 @@ from src.modules.media.application.use_cases.get_movie_by_id import GetMovieById
 from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
     GetMovieTmdbSuggestionsUseCase,
 )
-from src.modules.media.application.use_cases.get_now_playing import GetNowPlayingUseCase
 from src.modules.media.application.use_cases.get_overview_stats import (
     GetOverviewStatsUseCase,
 )
@@ -81,9 +66,6 @@ from src.modules.media.application.use_cases.get_scan_run import GetScanRunUseCa
 from src.modules.media.application.use_cases.get_series_by_id import GetSeriesByIdUseCase
 from src.modules.media.application.use_cases.get_series_tmdb_suggestions import (
     GetSeriesTmdbSuggestionsUseCase,
-)
-from src.modules.media.application.use_cases.get_subtitle_ocr_run import (
-    GetSubtitleOcrRunUseCase,
 )
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.application.use_cases.list_conflicts import ListConflictsUseCase
@@ -114,9 +96,6 @@ from src.modules.media.application.use_cases.list_series import ListSeriesUseCas
 from src.modules.media.application.use_cases.list_series_needing_review import (
     ListSeriesNeedingReviewUseCase,
 )
-from src.modules.media.application.use_cases.list_subtitle_ocr_runs import (
-    ListSubtitleOcrRunsUseCase,
-)
 from src.modules.media.application.use_cases.promote_movie_to_series import (
     PromoteMovieToSeriesUseCase,
 )
@@ -132,9 +111,6 @@ from src.modules.media.application.use_cases.reset_season_intro_detection import
 from src.modules.media.application.use_cases.resolve_media_conflict import (
     ResolveMediaConflictUseCase,
 )
-from src.modules.media.application.use_cases.run_subtitle_ocr_for_media import (
-    RunSubtitleOcrForMediaUseCase,
-)
 from src.modules.media.application.use_cases.scan_media_directories import (
     ScanMediaDirectoriesUseCase,
 )
@@ -142,7 +118,6 @@ from src.modules.media.application.use_cases.search_catalog import SearchCatalog
 from src.modules.media.application.use_cases.search_tmdb_titles import (
     SearchTmdbTitlesUseCase,
 )
-from src.modules.media.application.use_cases.serve_hls_file import ServeHlsFileUseCase
 from src.modules.media.application.use_cases.set_credits_marker import SetCreditsMarkerUseCase
 from src.modules.media.application.use_cases.set_episode_intro import SetEpisodeIntroUseCase
 from src.modules.media.application.use_cases.set_primary_file import SetPrimaryFileUseCase
@@ -165,12 +140,6 @@ from src.modules.media.infrastructure.acl.identity_user_count_adapter import (
 from src.modules.media.infrastructure.acl.library_lookup_adapter import (
     LibraryLookupAdapter,
 )
-from src.modules.media.infrastructure.acl.profile_playback_preference_adapter import (
-    ProfilePlaybackPreferenceAdapter,
-)
-from src.modules.media.infrastructure.acl.profile_summary_adapter import (
-    ProfileSummaryAdapter,
-)
 from src.modules.media.infrastructure.audio import (
     AudioExtractor,
     ChromaprintIntroDetector,
@@ -186,20 +155,6 @@ from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import
     SqlAlchemyMediaUnitOfWorkFactory,
 )
 from src.modules.media.infrastructure.storage import LocalArtworkStorage
-from src.modules.media.infrastructure.streaming import (
-    HlsService,
-    MediaProbeService,
-    TesseractPgsOcrService,
-)
-from src.modules.media.infrastructure.streaming.now_playing_registry import (
-    NowPlayingRegistry,
-)
-from src.modules.media.infrastructure.streaming.scrub_preview_locator import (
-    FilesystemScrubPreviewLocator,
-)
-from src.modules.media.infrastructure.streaming.thumbnail_service import (
-    ThumbnailGenerationService,
-)
 from src.modules.media.infrastructure.video import (
     CreditsDetector,
     FrameHasher,
@@ -262,11 +217,15 @@ class MediaContainer(containers.DeclarativeContainer):
     # to pick the default audio track at read time.
     preferences_uow_factory = providers.Dependency[Any]()
 
-    # Must be wired from parent container (Settings.hls_cache_directory).
-    # Only the filesystem path remains in ``.env``; ``ffmpeg_threads``
-    # and ``hls_cache_max_size_mb`` moved to ``StreamingConfig`` in
-    # ADR-013 phase 3 and are read from ``RuntimeSettings``.
-    hls_cache_directory = providers.Dependency[str](default="./hls_cache")
+    # Wired at the composition root from the Streaming BC (ADR-032): the
+    # ffprobe-backed probe service (shared, one instance) used by the scan
+    # and segment use cases, the media-side scrub-preview locator ACL
+    # adapter used by the scan, and the HLS cache-stats read port used by
+    # the admin overview aggregator. Overridden after StreamingContainer is
+    # composed so the mutual media<->streaming wiring stays acyclic.
+    media_probe_service = providers.Dependency[Any]()
+    scrub_preview_locator = providers.Dependency[Any]()
+    hls_cache_stats = providers.Dependency[Any]()
 
     # Artwork mirror directory (ADR-029), wired from
     # ``Settings.artwork_storage_directory`` at the composition root.
@@ -452,30 +411,6 @@ class MediaContainer(containers.DeclarativeContainer):
 
     variant_detector = providers.Factory(VariantDetector)
 
-    media_probe_service = providers.Singleton(MediaProbeService)
-
-    subtitle_ocr_service = providers.Singleton(TesseractPgsOcrService)
-
-    hls_service = providers.Singleton(
-        HlsService,
-        runtime_settings=runtime_settings,
-        cache_dir=hls_cache_directory,
-        probe_service=media_probe_service,
-        enable_eviction=True,
-    )
-
-    # In-memory registry of active playback sessions (admin now-playing).
-    # Singleton — one ffmpeg fleet / cache, one source of truth. Written
-    # by the streaming use cases (observationally), read by GetNowPlaying.
-    now_playing_registry = providers.Singleton(NowPlayingRegistry)
-
-    # Resolves watching profiles' display names via the identity UoW
-    # (ADR-009 ACL), for the now-playing "who" column.
-    profile_summary = providers.Singleton(
-        ProfileSummaryAdapter,
-        identity_uow_factory=identity_uow_factory,
-    )
-
     # Cross-BC read ports (ADR-009 ACL): the scan flow resolves a
     # library's paths and the overview reads the users count without
     # importing the Library / Identity Unit of Work above the adapter.
@@ -486,27 +421,6 @@ class MediaContainer(containers.DeclarativeContainer):
     identity_user_count = providers.Singleton(
         IdentityUserCountAdapter,
         identity_uow_factory=identity_uow_factory,
-    )
-    playback_preference = providers.Singleton(
-        ProfilePlaybackPreferenceAdapter,
-        preferences_uow_factory=preferences_uow_factory,
-    )
-
-    # Singleton because ``ThumbnailGenerationService`` is stateless apart
-    # from the runtime config it reads per call; sharing one instance
-    # across the eager fire-and-forget path (``stream_routes``) and the
-    # periodic ``ThumbnailBackfillJob`` keeps configuration in one place.
-    thumbnail_generation_service = providers.Singleton(
-        ThumbnailGenerationService,
-        runtime_settings=runtime_settings,
-    )
-
-    # Re-links scrub previews that already exist on disk (e.g. after a DB
-    # reset) during a scan, so the scanner can populate scrub_preview_path
-    # without waiting for the backfill job to regenerate the sprites.
-    scrub_preview_locator = providers.Singleton(
-        FilesystemScrubPreviewLocator,
-        runtime_settings=runtime_settings,
     )
 
     # Audio analysis primitives — shared by the periodic intro detection
@@ -561,51 +475,12 @@ class MediaContainer(containers.DeclarativeContainer):
     artwork_image_downloader = providers.Singleton(HttpxArtworkDownloader)
 
     # =========================================================================
-    # Use Cases — Streaming
+    # Use Cases — Library usage (admin overview)
     # =========================================================================
-
-    generate_hls_playlist = providers.Factory(
-        GenerateHlsPlaylistUseCase,
-        hls=hls_service,
-        now_playing=now_playing_registry,
-    )
-
-    serve_hls_file = providers.Factory(
-        ServeHlsFileUseCase,
-        hls=hls_service,
-        now_playing=now_playing_registry,
-    )
-
-    get_now_playing = providers.Factory(
-        GetNowPlayingUseCase,
-        now_playing=now_playing_registry,
-        profile_summary=profile_summary,
-    )
 
     get_library_usage = providers.Factory(
         GetLibraryUsageUseCase,
         uow_factory=media_unit_of_work_factory,
-    )
-
-    get_file_tracks = providers.Factory(
-        GetFileTracksUseCase,
-        hls=hls_service,
-        playback_preference=playback_preference,
-    )
-
-    clear_hls_cache = providers.Factory(
-        ClearHlsCacheUseCase,
-        hls=hls_service,
-    )
-
-    clear_hls_cache_global = providers.Factory(
-        ClearHlsCacheGlobalUseCase,
-        hls=hls_service,
-    )
-
-    get_hls_cache_stats = providers.Factory(
-        GetHlsCacheStatsUseCase,
-        hls=hls_service,
     )
 
     # =========================================================================
@@ -740,30 +615,6 @@ class MediaContainer(containers.DeclarativeContainer):
         media_uow_factory=media_unit_of_work_factory,
     )
 
-    list_subtitle_ocr_runs = providers.Factory(
-        ListSubtitleOcrRunsUseCase,
-        media_uow_factory=media_unit_of_work_factory,
-    )
-
-    get_subtitle_ocr_run = providers.Factory(
-        GetSubtitleOcrRunUseCase,
-        media_uow_factory=media_unit_of_work_factory,
-    )
-
-    subtitle_ocr_processor = providers.Singleton(
-        SubtitleOcrProcessor,
-        probe_service=media_probe_service,
-        ocr_service=subtitle_ocr_service,
-    )
-
-    run_subtitle_ocr_for_media = providers.Factory(
-        RunSubtitleOcrForMediaUseCase,
-        media_uow_factory=media_unit_of_work_factory,
-        processor=subtitle_ocr_processor,
-        ocr_service=subtitle_ocr_service,
-        config=runtime_settings,
-    )
-
     sweep_interrupted_scan_runs = providers.Factory(
         SweepInterruptedScanRunsUseCase,
         media_uow_factory=media_unit_of_work_factory,
@@ -809,7 +660,7 @@ class MediaContainer(containers.DeclarativeContainer):
         media_uow_factory=media_unit_of_work_factory,
         user_count=identity_user_count,
         list_movies_needing_review=list_movies_needing_review,
-        hls_playlist=hls_service,
+        hls_cache_stats=hls_cache_stats,
     )
 
     get_movie_tmdb_suggestions = providers.Factory(

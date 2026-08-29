@@ -41,6 +41,7 @@ async def _init_engine(
         import src.modules.collections.infrastructure.persistence.models
         import src.modules.identity.infrastructure.persistence.models
         import src.modules.media.infrastructure.persistence.models
+        import src.modules.streaming.infrastructure.persistence.models
         import src.modules.watch_progress.infrastructure.persistence.models  # noqa: F401
         from src.infrastructure.persistence.base import Base
 

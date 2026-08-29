@@ -8,25 +8,25 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.building_blocks.application.errors import ResourceNotFoundException
-from src.modules.media.application.dtos.subtitle_ocr_run_dtos import (
+from src.modules.streaming.application.dtos.subtitle_ocr_run_dtos import (
     GetSubtitleOcrRunInput,
     ListSubtitleOcrRunsInput,
 )
-from src.modules.media.application.use_cases.get_subtitle_ocr_run import (
+from src.modules.streaming.application.use_cases.get_subtitle_ocr_run import (
     GetSubtitleOcrRunUseCase,
 )
-from src.modules.media.application.use_cases.list_subtitle_ocr_runs import (
+from src.modules.streaming.application.use_cases.list_subtitle_ocr_runs import (
     ListSubtitleOcrRunsUseCase,
 )
-from src.modules.media.domain.entities.subtitle_ocr_run import (
+from src.modules.streaming.domain.entities.subtitle_ocr_run import (
     SubtitleOcrRun,
     SubtitleTrackOcrResult,
 )
-from src.modules.media.domain.value_objects.subtitle_ocr_outcome import (
+from src.modules.streaming.domain.value_objects.subtitle_ocr_outcome import (
     SubtitleOcrOutcome,
     SubtitleTrackOutcome,
 )
-from src.modules.media.domain.value_objects.subtitle_ocr_run_id import SubtitleOcrRunId
+from src.modules.streaming.domain.value_objects.subtitle_ocr_run_id import SubtitleOcrRunId
 
 
 def _run() -> SubtitleOcrRun:
@@ -71,7 +71,7 @@ class TestSubtitleOcrRunUseCases:
     async def test_list_projects_runs_to_output(self) -> None:
         run = _run()
         uow = _uow(runs=[run])
-        use_case = ListSubtitleOcrRunsUseCase(media_uow_factory=MagicMock(return_value=uow))
+        use_case = ListSubtitleOcrRunsUseCase(uow_factory=MagicMock(return_value=uow))
 
         rows = await use_case.execute(ListSubtitleOcrRunsInput(media_kind="movie"))
 
@@ -87,7 +87,7 @@ class TestSubtitleOcrRunUseCases:
     async def test_get_returns_run_when_found(self) -> None:
         run = _run()
         uow = _uow(found=run)
-        use_case = GetSubtitleOcrRunUseCase(media_uow_factory=MagicMock(return_value=uow))
+        use_case = GetSubtitleOcrRunUseCase(uow_factory=MagicMock(return_value=uow))
 
         output = await use_case.execute(GetSubtitleOcrRunInput(run_id=str(run.id)))
 
@@ -98,7 +98,7 @@ class TestSubtitleOcrRunUseCases:
     @pytest.mark.asyncio
     async def test_get_raises_when_not_found(self) -> None:
         uow = _uow(found=None)
-        use_case = GetSubtitleOcrRunUseCase(media_uow_factory=MagicMock(return_value=uow))
+        use_case = GetSubtitleOcrRunUseCase(uow_factory=MagicMock(return_value=uow))
 
         with pytest.raises(ResourceNotFoundException):
             await use_case.execute(GetSubtitleOcrRunInput(run_id=str(SubtitleOcrRunId.generate())))

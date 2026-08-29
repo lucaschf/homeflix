@@ -17,7 +17,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.modules.media.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
+from src.modules.streaming.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
 
 _logger = logging.getLogger(__name__)
 

@@ -5,19 +5,19 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.modules.media.application.ports.media_probe_port import ProbeResult
-from src.modules.media.application.ports.subtitle_ocr_port import (
+from src.modules.streaming.application.ports.subtitle_ocr_port import (
     OcrTrackResult,
     SubtitleOcrOptions,
     SubtitleOcrPort,
 )
-from src.modules.media.application.services.subtitle_ocr_processor import (
+from src.modules.streaming.application.services.subtitle_ocr_processor import (
     SubtitleOcrProcessor,
 )
-from src.modules.media.domain.value_objects.subtitle_ocr_outcome import (
+from src.modules.streaming.domain.value_objects.subtitle_ocr_outcome import (
     SubtitleOcrOutcome,
     SubtitleTrackOutcome,
 )
+from src.shared_kernel.media_probe.media_probe_port import ProbeResult
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import SubtitleTrack
 

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from PIL import Image
 
-from src.modules.media.infrastructure.streaming._subprocess import with_ffmpeg_threads
+from src.modules.streaming.infrastructure.streaming._subprocess import with_ffmpeg_threads
 
 if TYPE_CHECKING:
     from src.modules.media.application.ports.runtime_config_ports import StreamingConfigPort

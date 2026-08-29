@@ -3,15 +3,15 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.modules.media.infrastructure.acl.profile_playback_preference_adapter import (
-    ProfilePlaybackPreferenceAdapter,
-)
 from src.modules.preferences.domain.entities import PlaybackPreferences
 from src.modules.preferences.infrastructure.persistence.repositories import (
     SQLAlchemyPreferencesRepository,
 )
 from src.modules.preferences.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyPreferencesUnitOfWorkFactory,
+)
+from src.modules.streaming.infrastructure.acl.profile_playback_preference_adapter import (
+    ProfilePlaybackPreferenceAdapter,
 )
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.profile_id import ProfileId

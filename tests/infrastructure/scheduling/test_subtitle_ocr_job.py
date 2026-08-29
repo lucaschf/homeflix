@@ -18,19 +18,19 @@ from src.infrastructure.scheduling.subtitle_ocr_job import (
     OCR_DONE_MARKER,
     SubtitleOcrBackfillJob,
 )
-from src.modules.media.application.ports.media_probe_port import ProbeResult
-from src.modules.media.application.ports.subtitle_ocr_port import (
+from src.modules.settings.domain.value_objects import StreamingConfig, SubtitleOcrConfig
+from src.modules.streaming.application.ports.subtitle_ocr_port import (
     OcrTrackResult,
     SubtitleOcrPort,
 )
-from src.modules.media.domain.value_objects.subtitle_ocr_outcome import (
+from src.modules.streaming.domain.value_objects.subtitle_ocr_outcome import (
     SubtitleOcrOutcome,
     SubtitleTrackOutcome,
 )
-from src.modules.media.infrastructure.streaming.subtitle_ocr_service import (
+from src.modules.streaming.infrastructure.streaming.subtitle_ocr_service import (
     ocr_subtitle_output_dir,
 )
-from src.modules.settings.domain.value_objects import StreamingConfig, SubtitleOcrConfig
+from src.shared_kernel.media_probe.media_probe_port import ProbeResult
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import SubtitleTrack
 
@@ -121,8 +121,13 @@ def _recorded_runs(uow: AsyncMock) -> list:
 
 
 def _make_job(uow: AsyncMock, config: SubtitleOcrConfig, probe: MagicMock, ocr: MagicMock):
+    # One mock UoW backs both factories: it exposes movies/series (media
+    # side, for discovery) and subtitle_ocr_runs (streaming side, for the
+    # audit append), so the recorded-runs assertions keep reading it.
+    factory = MagicMock(return_value=uow)
     return SubtitleOcrBackfillJob(
-        media_uow_factory=MagicMock(return_value=uow),
+        media_uow_factory=factory,
+        streaming_uow_factory=factory,
         runtime_settings=_runtime_settings(config),
         ocr_service=ocr,
         probe_service=probe,

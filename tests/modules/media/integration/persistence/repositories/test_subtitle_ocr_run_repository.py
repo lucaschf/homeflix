@@ -5,15 +5,15 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.modules.media.domain.entities.subtitle_ocr_run import (
+from src.modules.streaming.domain.entities.subtitle_ocr_run import (
     SubtitleOcrRun,
     SubtitleTrackOcrResult,
 )
-from src.modules.media.domain.value_objects.subtitle_ocr_outcome import (
+from src.modules.streaming.domain.value_objects.subtitle_ocr_outcome import (
     SubtitleOcrOutcome,
     SubtitleTrackOutcome,
 )
-from src.modules.media.infrastructure.persistence.repositories.subtitle_ocr_run_repository import (
+from src.modules.streaming.infrastructure.persistence.repositories.subtitle_ocr_run_repository import (
     SqlAlchemySubtitleOcrRunRepository,
 )
 

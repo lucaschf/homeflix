@@ -15,7 +15,6 @@ from src.modules.media.domain.repositories import (
     MovieRepository,
     ScanRunRepository,
     SeriesRepository,
-    SubtitleOcrRunRepository,
 )
 
 
@@ -35,7 +34,6 @@ class MediaUnitOfWork(UnitOfWork):
     series: SeriesRepository
     scan_runs: ScanRunRepository
     intro_detection_runs: IntroDetectionRunRepository
-    subtitle_ocr_runs: SubtitleOcrRunRepository
     media_conflicts: MediaConflictRepository
     job_runs: JobRunRepository
 

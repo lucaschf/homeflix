@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.modules.media.presentation.routes import admin_subtitle_ocr_routes as mod
+from src.modules.streaming.presentation.routes import admin_subtitle_ocr_routes as mod
 
 
 async def _drain() -> None:

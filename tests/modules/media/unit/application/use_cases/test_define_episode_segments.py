@@ -13,7 +13,6 @@ from src.modules.media.application.dtos.segment_dtos import (
     DefineEpisodeSegmentsInput,
     EpisodeSegmentSpec,
 )
-from src.modules.media.application.ports.media_probe_port import ProbeResult
 from src.modules.media.application.use_cases.define_episode_segments import (
     DefineEpisodeSegmentsUseCase,
 )
@@ -25,6 +24,7 @@ from src.modules.media.domain.value_objects import (
     Resolution,
     Title,
 )
+from src.shared_kernel.media_probe.media_probe_port import ProbeResult
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
 _LIBRARY_ID = "lib_test12345678"
