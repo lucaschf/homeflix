@@ -1,13 +1,5 @@
 """Media application ports (interfaces for infrastructure and external BCs)."""
 
-from src.modules.media.application.ports.artwork_downloader_port import (
-    ArtworkDownloaderPort,
-    DownloadedImage,
-)
-from src.modules.media.application.ports.artwork_storage_port import (
-    ArtworkStoragePort,
-    StoredArtwork,
-)
 from src.modules.media.application.ports.catalog_request_lookup_port import (
     CatalogRequestLookupPort,
     CatalogRequestStatus,
@@ -29,20 +21,6 @@ from src.modules.media.application.ports.intro_detector_port import (
     IntroDetectionResult,
     IntroDetectorPort,
     IntroDetectorTuning,
-)
-from src.modules.media.application.ports.metadata_provider_port import (
-    CollectionDetailMetadata,
-    CollectionMetadata,
-    CollectionPartMetadata,
-    CreditPerson,
-    EpisodeMetadata,
-    LocalizedFields,
-    LocalizedTextFields,
-    MediaMetadata,
-    MetadataProvider,
-    PersonMetadata,
-    SearchCandidate,
-    SeasonMetadata,
 )
 from src.modules.media.application.ports.profile_library_access_port import (
     ProfileLibraryAccessPort,
@@ -67,32 +45,19 @@ from src.modules.media.application.ports.variant_detector_port import (
 )
 
 __all__ = [
-    "ArtworkDownloaderPort",
-    "ArtworkStoragePort",
     "CatalogRequestLookupPort",
     "CatalogRequestStatus",
-    "CollectionDetailMetadata",
-    "CollectionMetadata",
-    "CollectionPartMetadata",
-    "CreditPerson",
     "CreditsDetectorPort",
     "CreditsDetectorTuning",
     "CreditsSignal",
     "DetectedCredits",
     "DetectedIntro",
-    "DownloadedImage",
     "EpisodeMediaRef",
-    "EpisodeMetadata",
     "FileSystemScanner",
     "IntroDetectionResult",
     "IntroDetectorPort",
     "IntroDetectorTuning",
-    "LocalizedFields",
-    "LocalizedTextFields",
-    "MediaMetadata",
     "MediaType",
-    "MetadataProvider",
-    "PersonMetadata",
     "ProfileLibraryAccessPort",
     "ProgressLookupPort",
     "ProgressSummary",
@@ -102,8 +67,5 @@ __all__ = [
     "SchedulerInspectorPort",
     "SchedulerSnapshot",
     "ScrubPreviewLocatorPort",
-    "SearchCandidate",
-    "SeasonMetadata",
-    "StoredArtwork",
     "VariantDetectorPort",
 ]

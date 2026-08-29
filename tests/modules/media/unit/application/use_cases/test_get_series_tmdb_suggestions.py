@@ -8,12 +8,15 @@ from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.admin_relink_dtos import (
     GetSeriesTmdbSuggestionsInput,
 )
-from src.modules.media.application.ports import MetadataProvider, SearchCandidate
 from src.modules.media.application.use_cases.get_series_tmdb_suggestions import (
     GetSeriesTmdbSuggestionsUseCase,
 )
 from src.modules.media.domain.entities import Series
 from src.modules.media.domain.value_objects import SeriesId
+from src.modules.metadata.application.ports.metadata_provider_port import (
+    MetadataProvider,
+    SearchCandidate,
+)
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
 _LIBRARY_ID = "lib_test12345678"

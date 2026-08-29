@@ -15,13 +15,12 @@ from src.building_blocks.infrastructure.errors import (
     GatewayTimeoutException,
     GatewayUnavailableException,
 )
-from src.modules.media.domain.value_objects import ContentRating
-from src.modules.media.infrastructure.metadata.tmdb_client import (
+from src.modules.metadata.infrastructure.tmdb_client import (
     TmdbClient,
     _parse_retry_after,
     _safe_int,
 )
-from src.shared_kernel.value_objects import MediaType
+from src.shared_kernel.value_objects import ContentRating, MediaType
 
 
 def _build_response(

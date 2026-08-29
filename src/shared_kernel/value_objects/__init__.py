@@ -1,5 +1,6 @@
 """Shared value objects used across multiple modules."""
 
+from src.shared_kernel.value_objects.content_rating import ContentRating
 from src.shared_kernel.value_objects.episode_composite_id import EpisodeCompositeId
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.image_url import ImageUrl
@@ -24,6 +25,7 @@ from src.shared_kernel.value_objects.user_id import UserId
 
 __all__ = [
     "AudioTrack",
+    "ContentRating",
     "EpisodeCompositeId",
     "EpisodeId",
     "FilePath",

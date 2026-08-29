@@ -18,7 +18,7 @@ from dependency_injector import providers
 from fastapi import FastAPI  # noqa: TCH002 — used by runtime fixture annotations
 from httpx import AsyncClient  # noqa: TCH002 — used by runtime fixture annotations
 
-from src.modules.media.application.ports.artwork_storage_port import (
+from src.modules.metadata.application.ports.artwork_storage_port import (
     ArtworkStoragePort,
     StoredArtwork,
 )
@@ -47,9 +47,9 @@ class _FakeArtworkStorage(ArtworkStoragePort):
 async def storage(app: FastAPI) -> AsyncGenerator[_FakeArtworkStorage, None]:
     """Override the media container's artwork storage with a fake."""
     fake = _FakeArtworkStorage()
-    app.state.container.media.artwork_storage.override(providers.Object(fake))
+    app.state.container.metadata.artwork_storage.override(providers.Object(fake))
     yield fake
-    app.state.container.media.artwork_storage.reset_override()
+    app.state.container.metadata.artwork_storage.reset_override()
 
 
 class TestGetArtwork:

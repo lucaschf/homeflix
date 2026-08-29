@@ -22,9 +22,10 @@ from typing import TYPE_CHECKING
 
 from src.building_blocks.infrastructure.errors import GatewayException
 from src.config.logging import get_logger
-from src.modules.media.domain.value_objects import ArtworkColumns, ArtworkKey
-from src.modules.media.domain.value_objects.artwork_key import (
+from src.modules.media.domain.value_objects import ArtworkColumns
+from src.modules.metadata.domain.value_objects.artwork_key import (
     SUPPORTED_ARTWORK_CONTENT_TYPES,
+    ArtworkKey,
 )
 from src.shared_kernel.value_objects.image_url import ImageUrl
 from src.shared_kernel.value_objects.media_id import EpisodeId, MovieId, SeasonId, SeriesId
@@ -32,15 +33,15 @@ from src.shared_kernel.value_objects.media_id import EpisodeId, MovieId, SeasonI
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
 
-    from src.modules.media.application.ports.artwork_downloader_port import (
-        ArtworkDownloaderPort,
-    )
-    from src.modules.media.application.ports.artwork_storage_port import ArtworkStoragePort
     from src.modules.media.application.unit_of_work import (
         MediaUnitOfWork,
         MediaUnitOfWorkFactory,
     )
     from src.modules.media.domain.repositories.artwork_mirror_repository import RemoteArtworkRow
+    from src.modules.metadata.application.ports.artwork_downloader_port import (
+        ArtworkDownloaderPort,
+    )
+    from src.modules.metadata.application.ports.artwork_storage_port import ArtworkStoragePort
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = get_logger()

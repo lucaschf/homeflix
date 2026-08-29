@@ -19,9 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse, Response
 
 from src.config.containers import ApplicationContainer
-from src.modules.media.application.ports.artwork_downloader_port import ALLOWED_ARTWORK_HOSTS
-from src.modules.media.application.ports.artwork_storage_port import ArtworkStoragePort
-from src.modules.media.domain.value_objects.artwork_key import ARTWORK_KEY_PATTERN
+from src.modules.metadata.application.ports.artwork_downloader_port import ALLOWED_ARTWORK_HOSTS
+from src.modules.metadata.application.ports.artwork_storage_port import ArtworkStoragePort
+from src.modules.metadata.domain.value_objects.artwork_key import ARTWORK_KEY_PATTERN
 
 router = APIRouter(prefix="/api/v1/artwork", tags=["Artwork"])
 
@@ -57,7 +57,7 @@ async def get_artwork(
         Query(description="Remote origin URL to fall back to when not yet mirrored"),
     ] = None,
     storage: ArtworkStoragePort = Depends(
-        Provide[ApplicationContainer.media.artwork_storage],
+        Provide[ApplicationContainer.metadata.artwork_storage],
     ),
 ) -> Response:
     """Serve a mirrored artwork object, or fall back to its origin.

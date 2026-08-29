@@ -42,18 +42,17 @@ from src.modules.media.presentation.routes import (
     admin_relink_router,
     admin_scan_router,
     admin_segments_router,
-    artwork_router,
     catalog_router,
     collection_router,
     enrichment_router,
     featured_router,
     movie_router,
-    people_router,
     scan_router,
     search_router,
     series_router,
     tmdb_lookup_router,
 )
+from src.modules.metadata.presentation.routes import artwork_router, person_bio_router
 from src.modules.notifications.presentation.routes import notification_router
 from src.modules.preferences.presentation.routes.preferences_routes import (
     router as preferences_router,
@@ -104,14 +103,14 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.streaming.presentation.routes.admin_subtitle_ocr_routes",
     "src.modules.streaming.presentation.routes.admin_system_routes",
     "src.modules.streaming.presentation.routes.admin_now_playing_routes",
-    "src.modules.media.presentation.routes.artwork_routes",
+    "src.modules.metadata.presentation.routes.artwork_routes",
     "src.modules.media.presentation.routes.catalog_routes",
     "src.modules.media.presentation.routes.collection_routes",
     "src.modules.media.presentation.routes.search_routes",
     "src.modules.media.presentation.routes.enrichment_routes",
     "src.modules.media.presentation.routes.featured_routes",
     "src.modules.media.presentation.routes.movie_routes",
-    "src.modules.media.presentation.routes.people_routes",
+    "src.modules.metadata.presentation.routes.person_bio_routes",
     "src.modules.media.presentation.routes.scan_routes",
     "src.modules.media.presentation.routes.series_routes",
     "src.modules.streaming.presentation.routes.hls_routes",
@@ -515,7 +514,7 @@ def create_app() -> FastAPI:
     app.include_router(enrichment_router)
     app.include_router(featured_router)
     app.include_router(movie_router)
-    app.include_router(people_router)
+    app.include_router(person_bio_router)
     app.include_router(scan_router)
     app.include_router(series_router)
     app.include_router(hls_router)

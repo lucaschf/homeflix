@@ -9,7 +9,7 @@ side.
 """
 
 from src.modules.catalog_requests.application.ports import LocalizedTitleProviderPort
-from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
+from src.modules.metadata.infrastructure.tmdb_client import TmdbClient
 from src.shared_kernel.value_objects import MediaType
 
 

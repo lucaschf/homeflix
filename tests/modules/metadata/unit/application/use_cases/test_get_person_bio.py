@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.modules.media.application.ports.metadata_provider_port import PersonMetadata
-from src.modules.media.application.use_cases.get_person_bio import (
+from src.modules.metadata.application.ports.metadata_provider_port import PersonMetadata
+from src.modules.metadata.application.use_cases.get_person_bio import (
     GetPersonBioInput,
     GetPersonBioUseCase,
     PersonBioOutput,

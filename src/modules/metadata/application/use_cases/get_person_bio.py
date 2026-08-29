@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from src.modules.media.application.ports import MetadataProvider
+from src.modules.metadata.application.ports.metadata_provider_port import MetadataProvider
 
 
 @dataclass(frozen=True)

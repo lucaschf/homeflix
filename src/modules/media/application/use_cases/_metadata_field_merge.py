@@ -21,7 +21,6 @@ field-by-field source-preference between stored and provider values.
 from collections.abc import Callable
 from typing import Any
 
-from src.modules.media.application.ports import MediaMetadata
 from src.modules.media.application.use_cases._localized_metadata_helpers import (
     merge_media_localized,
 )
@@ -35,6 +34,7 @@ from src.modules.media.domain.value_objects import (
     Title,
     TmdbId,
 )
+from src.modules.metadata.application.ports.metadata_provider_port import MediaMetadata
 
 # Fields shared by movie and series that are filled only when the entity left
 # them empty (unless ``OVERWRITE``), keyed ``provider_attr: (entity_attr,

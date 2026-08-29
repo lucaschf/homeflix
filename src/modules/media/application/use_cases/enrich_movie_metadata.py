@@ -8,11 +8,6 @@ from src.modules.media.application.dtos.enrichment_dtos import (
     EnrichMediaInput,
     EnrichMediaOutput,
 )
-from src.modules.media.application.ports import (
-    CollectionMetadata,
-    MediaMetadata,
-    MetadataProvider,
-)
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._metadata_field_merge import (
     COMMON_FILL_IF_EMPTY,
@@ -26,6 +21,11 @@ from src.modules.media.domain.value_objects import (
     MovieId,
     Title,
     Year,
+)
+from src.modules.metadata.application.ports.metadata_provider_port import (
+    CollectionMetadata,
+    MediaMetadata,
+    MetadataProvider,
 )
 from src.shared_kernel.integration_events import MediaEnrichedEvent
 from src.shared_kernel.value_objects.media_type import MediaType

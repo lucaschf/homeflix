@@ -9,12 +9,15 @@ replaces the stored overrides outright; ``FILL_IF_EMPTY`` overlays the
 provider's locales on the existing ones (:meth:`LocalizedMetadata.merge`).
 """
 
-from src.modules.media.application.ports import LocalizedTextFields, MediaMetadata
 from src.modules.media.domain.value_objects.localized_metadata import (
     LocalizedFields,
     LocalizedMetadata,
 )
 from src.modules.media.domain.value_objects.merge_policy import MergePolicy
+from src.modules.metadata.application.ports.metadata_provider_port import (
+    LocalizedTextFields,
+    MediaMetadata,
+)
 
 
 def _resolved(

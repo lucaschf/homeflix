@@ -11,15 +11,17 @@ from src.modules.media.application.dtos.collection_dtos import (
 from src.modules.media.application.ports import (
     CatalogRequestLookupPort,
     CatalogRequestStatus,
-    CollectionDetailMetadata,
-    CollectionPartMetadata,
-    MetadataProvider,
 )
 from src.modules.media.application.use_cases.get_collection_by_tmdb_id import (
     GetCollectionByTmdbIdUseCase,
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import TmdbId
+from src.modules.metadata.application.ports.metadata_provider_port import (
+    CollectionDetailMetadata,
+    CollectionPartMetadata,
+    MetadataProvider,
+)
 from tests.modules.media.unit.conftest import (
     FakeProfileLibraryAccessPort,
     make_media_uow_mock,

@@ -20,7 +20,7 @@ import mimetypes
 from pathlib import Path
 
 from src.config.logging import get_logger
-from src.modules.media.application.ports.artwork_storage_port import (
+from src.modules.metadata.application.ports.artwork_storage_port import (
     ArtworkStoragePort,
     StoredArtwork,
 )

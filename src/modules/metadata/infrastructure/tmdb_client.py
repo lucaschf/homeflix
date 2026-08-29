@@ -14,7 +14,7 @@ from src.building_blocks.infrastructure.errors import (
     GatewayTimeoutException,
     GatewayUnavailableException,
 )
-from src.modules.media.application.ports import (
+from src.modules.metadata.application.ports.metadata_provider_port import (
     CollectionDetailMetadata,
     CollectionMetadata,
     CollectionPartMetadata,
@@ -28,8 +28,7 @@ from src.modules.media.application.ports import (
     SearchCandidate,
     SeasonMetadata,
 )
-from src.modules.media.domain.value_objects import ContentRating
-from src.shared_kernel.value_objects import MediaType
+from src.shared_kernel.value_objects import ContentRating, MediaType
 
 _MAX_CAST = 15
 

@@ -6,13 +6,6 @@ import pytest
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.enrichment_dtos import EnrichMediaInput
-from src.modules.media.application.ports import (
-    CollectionMetadata,
-    CreditPerson,
-    LocalizedFields,
-    MediaMetadata,
-    MetadataProvider,
-)
 from src.modules.media.application.use_cases.enrich_movie_metadata import (
     EnrichMovieMetadataUseCase,
     _clean_title,
@@ -20,6 +13,13 @@ from src.modules.media.application.use_cases.enrich_movie_metadata import (
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import ContentRating, TmdbId
 from src.modules.media.domain.value_objects.cast_member import CastMember
+from src.modules.metadata.application.ports.metadata_provider_port import (
+    CollectionMetadata,
+    CreditPerson,
+    LocalizedFields,
+    MediaMetadata,
+    MetadataProvider,
+)
 from src.shared_kernel.integration_events import MediaEnrichedEvent
 from tests.modules.media.unit.conftest import MediaUoWMocks, make_media_uow_mock
 

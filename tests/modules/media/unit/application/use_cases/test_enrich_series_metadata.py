@@ -6,15 +6,6 @@ import pytest
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.enrichment_dtos import EnrichMediaInput
-from src.modules.media.application.ports import (
-    CreditPerson,
-    EpisodeMetadata,
-    LocalizedFields,
-    LocalizedTextFields,
-    MediaMetadata,
-    MetadataProvider,
-    SeasonMetadata,
-)
 from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
     _clean_series_title,
@@ -32,6 +23,15 @@ from src.modules.media.domain.value_objects import (
     Title,
     TmdbId,
     Year,
+)
+from src.modules.metadata.application.ports.metadata_provider_port import (
+    CreditPerson,
+    EpisodeMetadata,
+    LocalizedFields,
+    LocalizedTextFields,
+    MediaMetadata,
+    MetadataProvider,
+    SeasonMetadata,
 )
 from tests.modules.media.unit.conftest import make_media_uow_mock
 

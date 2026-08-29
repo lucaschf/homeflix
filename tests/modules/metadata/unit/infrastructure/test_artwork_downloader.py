@@ -21,7 +21,7 @@ from src.building_blocks.infrastructure.errors import (
     GatewayTimeoutException,
     GatewayUnavailableException,
 )
-from src.modules.media.infrastructure.metadata.artwork_downloader import (
+from src.modules.metadata.infrastructure.artwork_downloader import (
     HttpxArtworkDownloader,
 )
 

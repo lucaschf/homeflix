@@ -8,7 +8,7 @@ from dependency_injector import providers
 from fastapi import FastAPI
 from httpx import AsyncClient
 
-from src.modules.media.application.ports import SearchCandidate
+from src.modules.metadata.application.ports.metadata_provider_port import SearchCandidate
 from tests.modules.media.e2e.conftest import SeededUser
 
 LOGIN_PATH = "/api/v1/auth/cookie/login"

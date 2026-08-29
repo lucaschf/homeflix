@@ -8,12 +8,15 @@ from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos.admin_relink_dtos import (
     GetMovieTmdbSuggestionsInput,
 )
-from src.modules.media.application.ports import MetadataProvider, SearchCandidate
 from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
     GetMovieTmdbSuggestionsUseCase,
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import MovieId
+from src.modules.metadata.application.ports.metadata_provider_port import (
+    MetadataProvider,
+    SearchCandidate,
+)
 from tests.modules.media.unit.conftest import make_media_uow_mock
 
 _LIBRARY_ID = "lib_test12345678"

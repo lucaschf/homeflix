@@ -9,12 +9,6 @@ from src.modules.media.application.dtos.enrichment_dtos import (
     EnrichMediaInput,
     EnrichMediaOutput,
 )
-from src.modules.media.application.ports import (
-    EpisodeMetadata,
-    MediaMetadata,
-    MetadataProvider,
-    SeasonMetadata,
-)
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._localized_metadata_helpers import (
     merge_text_localized,
@@ -34,6 +28,12 @@ from src.modules.media.domain.value_objects import (
     SeriesId,
     Title,
     Year,
+)
+from src.modules.metadata.application.ports.metadata_provider_port import (
+    EpisodeMetadata,
+    MediaMetadata,
+    MetadataProvider,
+    SeasonMetadata,
 )
 from src.shared_kernel.integration_events import MediaEnrichedEvent
 from src.shared_kernel.value_objects.media_type import MediaType

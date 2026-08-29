@@ -7,10 +7,10 @@ import pytest
 from src.modules.media.application.dtos.tmdb_lookup_dtos import (
     SearchTmdbTitlesInput,
 )
-from src.modules.media.application.ports import SearchCandidate
 from src.modules.media.application.use_cases.search_tmdb_titles import (
     SearchTmdbTitlesUseCase,
 )
+from src.modules.metadata.application.ports.metadata_provider_port import SearchCandidate
 
 
 def _empty_uow_factory() -> MagicMock:

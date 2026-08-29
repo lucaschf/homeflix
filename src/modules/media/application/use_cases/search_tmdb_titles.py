@@ -20,8 +20,11 @@ from src.modules.media.application.dtos.tmdb_lookup_dtos import (
 )
 
 if TYPE_CHECKING:
-    from src.modules.media.application.ports import MetadataProvider, SearchCandidate
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+    from src.modules.metadata.application.ports.metadata_provider_port import (
+        MetadataProvider,
+        SearchCandidate,
+    )
 
 
 # TMDB URL example: https://www.themoviedb.org/movie/603-the-matrix

@@ -24,7 +24,7 @@ from src.building_blocks.infrastructure.errors import (
     GatewayUnavailableException,
 )
 from src.config.logging import get_logger
-from src.modules.media.application.ports.artwork_downloader_port import (
+from src.modules.metadata.application.ports.artwork_downloader_port import (
     ALLOWED_ARTWORK_HOSTS,
     ArtworkDownloaderPort,
     DownloadedImage,

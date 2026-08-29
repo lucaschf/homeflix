@@ -4,13 +4,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.modules.media.application.ports import MetadataProvider
 from src.modules.media.application.use_cases.get_related_series import (
     GetRelatedSeriesInput,
     GetRelatedSeriesUseCase,
 )
 from src.modules.media.domain.entities import Series
 from src.modules.media.domain.value_objects import SeriesId, TmdbId
+from src.modules.metadata.application.ports.metadata_provider_port import MetadataProvider
 from tests.modules.media.unit.conftest import (
     FakeProfileLibraryAccessPort,
     make_media_uow_mock,

@@ -2,12 +2,10 @@
 
 from src.modules.media.domain.value_objects.air_date import AirDate
 from src.modules.media.domain.value_objects.artwork_columns import ArtworkColumns
-from src.modules.media.domain.value_objects.artwork_key import ArtworkKey
 from src.modules.media.domain.value_objects.cast_member import CastMember
 from src.modules.media.domain.value_objects.catalog_sort import CatalogSort
 from src.modules.media.domain.value_objects.collection import Collection
 from src.modules.media.domain.value_objects.conflict_candidate import ConflictCandidate
-from src.modules.media.domain.value_objects.content_rating import ContentRating
 from src.modules.media.domain.value_objects.credits_detection_state import CreditsDetectionState
 from src.modules.media.domain.value_objects.credits_marker import CreditsMarker, CreditsMarkerSource
 from src.modules.media.domain.value_objects.duration import Duration
@@ -36,6 +34,7 @@ from src.modules.media.domain.value_objects.season_number import SeasonNumber
 from src.modules.media.domain.value_objects.title import Title
 from src.modules.media.domain.value_objects.video_codec import VideoCodec
 from src.modules.media.domain.value_objects.year import Year
+from src.shared_kernel.value_objects.content_rating import ContentRating
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.image_url import ImageUrl
 from src.shared_kernel.value_objects.media_id import (
@@ -52,7 +51,6 @@ from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
 __all__ = [
     "AirDate",
     "ArtworkColumns",
-    "ArtworkKey",
     "AudioTrack",
     "CastMember",
     "CatalogSort",
