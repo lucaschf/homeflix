@@ -6,6 +6,20 @@
 > é quase toda **estrutural e concentrada no módulo `media`** (39.8k LOC,
 > ~10× o próximo).
 
+## Status (atualizado)
+
+| Onda | Estado | Notas |
+|------|--------|-------|
+| 0 — Quick wins | ✅ concluída | type-safety (53→ menos `type:ignore`), testes RLE-PGS + FrameHasher, `UserId` VO |
+| 1 — Higiene arquitetural | ✅ concluída | auth guards ADR-024, settings port, split de erros identity, test-gaps |
+| 2 — ADRs | ✅ concluída | ADR-032 (decompor `media`) + ADR-033 (ISP repos) |
+| 3 — Enablers | ✅ concluída | ISP repos (role-interfaces) + `hls_service` 1824→671 LOC |
+| 4.1 — Extrair streaming | ✅ concluída | módulo `streaming` (HLS/probe/thumbnail/now-playing/OCR); `MediaPlaybackLookupPort`; smoke ok |
+| 4.2 — Extrair metadata | ✅ concluída | módulo `metadata` (TMDB provider + artwork); enrichment ficou no catálogo consumindo o provider port |
+| 4.3 — Playback-markers read-model | ⏸️ **adiada** | única fatia com migration de schema + backfill no DB real; maior risco, menor payoff — adiada por decisão explícita |
+| 5.1 — Splits de container | ✅ concluída | via 4.1/4.2 (`StreamingContainer`/`MetadataContainer`); `media.py` 919→727 LOC |
+| 5.2 — God-files restantes | 🔄 em andamento | `tmdb_client`/`movie_repository`/`series_repository` (Extract-Class) |
+
 ## Princípios de sequência
 
 1. **Ganhos baratos e seguros primeiro** — momentum e redução de risco latente.
