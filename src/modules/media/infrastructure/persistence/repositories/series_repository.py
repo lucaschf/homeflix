@@ -879,6 +879,26 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         result = await self._session.execute(stmt)
         return [SeasonMapper.to_entity(model) for model in result.scalars().all()]
 
+    async def find_season_for_intro_detection(self, season_id: SeasonId) -> Season | None:
+        """Load one season by id with the detector's eager-loading shape.
+
+        Mirrors the ``selectinload`` chain used by the pending query so
+        the operator-triggered run iterates episode file paths without
+        N+1 queries. No eligibility filter — the caller decides whether
+        the season should run.
+        """
+        stmt = (
+            select(SeasonModel)
+            .where(
+                SeasonModel.external_id == str(season_id),
+                SeasonModel.deleted_at.is_(None),
+            )
+            .options(selectinload(SeasonModel.episodes).selectinload(EpisodeModel.file_variants))
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalars().first()
+        return SeasonMapper.to_entity(model) if model is not None else None
+
     async def update_season_intro_detection(
         self,
         season_id: SeasonId,

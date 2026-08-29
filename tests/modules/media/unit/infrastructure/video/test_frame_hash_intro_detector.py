@@ -147,3 +147,52 @@ class TestFrameHashIntroDetector:
 
         assert result.analyzed_count == 0
         assert correlator.correlate.call_args.args[0] == []
+
+
+@pytest.mark.unit
+class TestFrameHashIntroDetectorProgress:
+    """The progress callback must fire once per episode, in order."""
+
+    def test_reports_progress_for_every_episode(self) -> None:
+        hasher = MagicMock()
+        hasher.hash_episode.return_value = np.array([1, 2, 3], dtype=np.uint64)
+        detector = FrameHashIntroDetector(frame_hasher=hasher)
+        refs = [
+            EpisodeMediaRef(episode_id=EpisodeId.generate(), file_path=f"/s01e{i:02d}.mkv")
+            for i in (1, 2, 3)
+        ]
+        seen: list[tuple[int, int, EpisodeId]] = []
+
+        detector.detect(refs, FrameHashTuning(), lambda *args: seen.append(args))
+
+        assert [(done, total) for done, total, _ in seen] == [(1, 3), (2, 3), (3, 3)]
+        assert [episode_id for _, _, episode_id in seen] == [r.episode_id for r in refs]
+
+    def test_reports_progress_for_episodes_that_failed_to_hash(self) -> None:
+        """A dropped episode still advances the counter.
+
+        Otherwise progress would stall on an unreadable file and read as
+        a wedged run.
+        """
+        hasher = MagicMock()
+        hasher.hash_episode.side_effect = [None, np.array([1, 2], dtype=np.uint64)]
+        detector = FrameHashIntroDetector(frame_hasher=hasher)
+        refs = [
+            EpisodeMediaRef(episode_id=EpisodeId.generate(), file_path=f"/s01e{i:02d}.mkv")
+            for i in (1, 2)
+        ]
+        seen: list[int] = []
+
+        detector.detect(refs, FrameHashTuning(), lambda done, _t, _e: seen.append(done))
+
+        assert seen == [1, 2]
+
+    def test_works_without_a_callback(self) -> None:
+        hasher = MagicMock()
+        hasher.hash_episode.return_value = np.array([1, 2, 3], dtype=np.uint64)
+        detector = FrameHashIntroDetector(frame_hasher=hasher)
+        refs = [EpisodeMediaRef(episode_id=EpisodeId.generate(), file_path="/s01e01.mkv")]
+
+        result = detector.detect(refs, FrameHashTuning())
+
+        assert result.analyzed_count == 1

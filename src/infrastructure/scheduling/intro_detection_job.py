@@ -21,6 +21,10 @@ missing binary, unreadable codec) are quietly excluded from the
 detection pool by the detector — the job is best-effort by design — and
 the detector reports how many episodes it actually analysed so the job
 can tell "found nothing" apart from "not enough material".
+
+``run_for_season`` is the operator-triggered entry point: it drives one
+named season through the same pipeline right away, without waiting for
+the next tick or competing with the batch for a queue slot.
 """
 
 from __future__ import annotations
@@ -31,7 +35,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from src.config.logging import get_logger
-from src.modules.media.application.ports import EpisodeMediaRef
+from src.modules.media.application.ports import EpisodeMediaRef, IntroDetectionProgress
 from src.modules.media.domain.entities.intro_detection_run import (
     EpisodeDetectionResult,
     IntroDetectionRun,
@@ -146,6 +150,36 @@ class IntroDetectionJob:
             seasons_failed=failed,
             batch_size=config.batch_size,
         )
+
+    async def run_for_season(self, season_id: SeasonId) -> IntroDetectionState:
+        """Process one named season now, bypassing the pending queue.
+
+        Backs the admin "detect now" action: the season is driven
+        through the exact same pipeline a tick would use (same claim,
+        same detector, same audit row), so the result is
+        indistinguishable from a scheduled run apart from its timing.
+        Eligibility is not re-checked here — the caller asked for this
+        season explicitly.
+
+        Args:
+            season_id: External id of the season to process.
+
+        Returns:
+            The state the season was transitioned to, or ``FAILED`` when
+            the season no longer exists.
+        """
+        config = await self._runtime_settings.intro_detection()
+        async with self._media_uow_factory() as uow:
+            season = await uow.series.find_season_for_intro_detection(season_id)
+
+        if season is None:
+            _logger.warning(
+                "[intro-detection] season vanished before its manual run",
+                season_id=str(season_id),
+            )
+            return IntroDetectionState.FAILED
+
+        return await self._process_season(season, config)
 
     async def _process_season(
         self,
@@ -266,7 +300,20 @@ class IntroDetectionJob:
             raise RuntimeError(f"no intro detector registered for algorithm {config.algorithm}")
 
         tuning = _build_tuning(config)
-        result = await asyncio.to_thread(detector.detect, refs, tuning)
+        episode_numbers = _episode_numbers_by_id(candidates)
+        _logger.info(
+            "[intro-detection] analysing episodes",
+            **log_ctx,
+            episode_count=len(refs),
+            algorithm=config.algorithm.value,
+            analysis_window_seconds=config.analysis_window_seconds,
+        )
+        result = await asyncio.to_thread(
+            detector.detect,
+            refs,
+            tuning,
+            _build_progress_logger(log_ctx, episode_numbers),
+        )
 
         if result.analyzed_count < _MIN_EPISODES_FOR_DETECTION:
             await self._mark_state(
@@ -286,7 +333,9 @@ class IntroDetectionJob:
                 analyzed_count=result.analyzed_count,
             )
 
-        episode_results = _build_episode_results(result.markers, candidates, config.min_confidence)
+        episode_results = _build_episode_results(
+            result.markers, episode_numbers, config.min_confidence
+        )
         persisted_count = await self._persist_detections(result.markers, config.min_confidence)
         await self._mark_state(
             season_id,
@@ -453,9 +502,40 @@ def _build_media_refs(episodes: list[Episode]) -> list[EpisodeMediaRef]:
     return refs
 
 
+def _episode_numbers_by_id(episodes: list[Episode]) -> dict[EpisodeId, int]:
+    """Map each episode's id to its number, for log + audit labelling."""
+    return {ep.id: ep.episode_number.value for ep in episodes if ep.id is not None}
+
+
+def _build_progress_logger(
+    log_ctx: dict[str, str | int],
+    episode_numbers: Mapping[EpisodeId, int],
+) -> IntroDetectionProgress:
+    """Build the per-episode progress callback handed to the detector.
+
+    Detection is minutes-long and silent by nature; this turns it into
+    one line per episode so an operator can watch a run advance instead
+    of guessing whether it wedged. Emitted through structlog on purpose:
+    the detectors' own stdlib loggers have no handler configured, so
+    anything below WARNING there is discarded.
+
+    Runs on the detector's worker thread — keep it to logging.
+    """
+
+    def _log(done: int, total: int, episode_id: EpisodeId) -> None:
+        _logger.info(
+            "[intro-detection] episode analysed",
+            **log_ctx,
+            episode_number=episode_numbers.get(episode_id, 0),
+            progress=f"{done}/{total}",
+        )
+
+    return _log
+
+
 def _build_episode_results(
     markers: Mapping[EpisodeId, DetectedIntro],
-    candidates: list[Episode],
+    episode_numbers: Mapping[EpisodeId, int],
     min_confidence: float,
 ) -> list[EpisodeDetectionResult]:
     """Build the per-episode audit detail from the detector's markers.
@@ -464,11 +544,10 @@ def _build_episode_results(
     records exactly which detections were saved vs dropped — the answer
     to "detected but nothing showed up".
     """
-    number_by_id = {ep.id: ep.episode_number.value for ep in candidates if ep.id is not None}
     results = [
         EpisodeDetectionResult(
             episode_id=str(episode_id),
-            episode_number=number_by_id.get(episode_id, 0),
+            episode_number=episode_numbers.get(episode_id, 0),
             start_seconds=detected.start_seconds,
             end_seconds=detected.end_seconds,
             confidence=detected.confidence,

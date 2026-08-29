@@ -319,9 +319,10 @@ async def clear_episode_intro(
 @inject
 async def reset_season_intro_detection(
     season_id: str,
+    run_now: bool = False,
     _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: ResetSeasonIntroDetectionUseCase = Depends(
-        Provide[ApplicationContainer.media.reset_season_intro_detection],
+        Provide[ApplicationContainer.reset_season_intro_detection],
     ),
 ) -> dict[str, Any]:
     """Requeue one season for automatic intro detection.
@@ -330,9 +331,15 @@ async def reset_season_intro_detection(
     reprocesses it, and clears AUTO_DETECTED markers (MANUAL ones are
     kept). Use after switching the detection algorithm or re-tuning —
     a season already ``COMPLETED`` would otherwise never re-run.
+
+    Pass ``run_now=true`` to start detection for this season straight
+    away instead of waiting for the tick. The run happens in the
+    background — the response only reports whether it was launched
+    (``detection_started``); poll the season or the run history for the
+    result. A season already being detected reports ``false``.
     """
     result = await use_case.execute(
-        ResetSeasonIntroDetectionInput(season_id=season_id),
+        ResetSeasonIntroDetectionInput(season_id=season_id, run_now=run_now),
     )
     return api_single("intro_detection_reset", _dataclass_to_dict(result))
 

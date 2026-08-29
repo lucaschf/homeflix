@@ -104,9 +104,6 @@ from src.modules.media.application.use_cases.remove_file_variant import RemoveFi
 from src.modules.media.application.use_cases.reset_credits_detection import (
     ResetCreditsDetectionUseCase,
 )
-from src.modules.media.application.use_cases.reset_season_intro_detection import (
-    ResetSeasonIntroDetectionUseCase,
-)
 from src.modules.media.application.use_cases.resolve_media_conflict import (
     ResolveMediaConflictUseCase,
 )
@@ -365,11 +362,6 @@ class MediaContainer(containers.DeclarativeContainer):
         ClearEpisodeIntroUseCase,
         uow_factory=media_unit_of_work_factory,
         event_bus=event_bus,
-    )
-
-    reset_season_intro_detection = providers.Factory(
-        ResetSeasonIntroDetectionUseCase,
-        uow_factory=media_unit_of_work_factory,
     )
 
     set_credits_marker = providers.Factory(

@@ -14,7 +14,7 @@ be swapped at runtime — without touching the job.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from src.modules.media.domain.value_objects import EpisodeId
@@ -113,6 +113,17 @@ class IntroDetectionResult:
     analyzed_count: int
 
 
+IntroDetectionProgress = Callable[[int, int, EpisodeId], None]
+"""Called once per episode as the detector works through the season.
+
+Receives ``(done, total, episode_id)`` where ``done`` counts every
+episode the detector has finished with — including ones it had to drop
+— so the caller can render progress without knowing the pipeline.
+Analysing a season is minutes-long work; without this the orchestrator
+cannot tell "still decoding episode 3" from "wedged".
+"""
+
+
 class IntroDetectorPort(ABC):
     """Locate a season's shared opening sequence from episode media."""
 
@@ -121,6 +132,7 @@ class IntroDetectorPort(ABC):
         self,
         episodes: Sequence[EpisodeMediaRef],
         tuning: IntroDetectorTuning,
+        on_progress: IntroDetectionProgress | None = None,
     ) -> IntroDetectionResult:
         """Analyse a season's episodes and return one marker per match.
 
@@ -138,6 +150,9 @@ class IntroDetectorPort(ABC):
                 admin-panel edits to take effect on the next tick
                 without re-constructing the detector. Implementations
                 may receive a technique-specific subclass.
+            on_progress: Optional callback invoked after each episode is
+                processed, so a caller can report progress during a long
+                run. Implementations must tolerate ``None``.
 
         Returns:
             An :class:`IntroDetectionResult` whose ``markers`` may be
@@ -151,6 +166,7 @@ class IntroDetectorPort(ABC):
 __all__ = [
     "DetectedIntro",
     "EpisodeMediaRef",
+    "IntroDetectionProgress",
     "IntroDetectionResult",
     "IntroDetectorPort",
     "IntroDetectorTuning",

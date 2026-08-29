@@ -15,9 +15,13 @@ from src.modules.media.application.ports.file_scanner_port import (
     MediaType,
     ScannedFile,
 )
+from src.modules.media.application.ports.intro_detection_runner_port import (
+    IntroDetectionRunnerPort,
+)
 from src.modules.media.application.ports.intro_detector_port import (
     DetectedIntro,
     EpisodeMediaRef,
+    IntroDetectionProgress,
     IntroDetectionResult,
     IntroDetectorPort,
     IntroDetectorTuning,
@@ -54,7 +58,9 @@ __all__ = [
     "DetectedIntro",
     "EpisodeMediaRef",
     "FileSystemScanner",
+    "IntroDetectionProgress",
     "IntroDetectionResult",
+    "IntroDetectionRunnerPort",
     "IntroDetectorPort",
     "IntroDetectorTuning",
     "MediaType",

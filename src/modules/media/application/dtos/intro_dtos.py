@@ -41,9 +41,13 @@ class ResetSeasonIntroDetectionInput:
 
     Attributes:
         season_id: External id of the season (ssn_xxx).
+        run_now: Start detection for the season immediately instead of
+            leaving it for the next scheduled tick. Off by default so
+            the plain requeue keeps its original semantics.
     """
 
     season_id: str
+    run_now: bool = False
 
 
 @dataclass(frozen=True)
@@ -53,9 +57,13 @@ class ResetSeasonIntroDetectionOutput:
     Attributes:
         markers_cleared: Auto-detected episode markers removed. MANUAL
             markers are preserved.
+        detection_started: Whether a detection run was launched for the
+            season right away. ``False`` when ``run_now`` was not asked
+            for, or when a run for this season was already in flight.
     """
 
     markers_cleared: int
+    detection_started: bool = False
 
 
 @dataclass(frozen=True)
