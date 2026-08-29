@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
-from src.modules.media.application.use_cases.get_person_bio import (
+from src.modules.metadata.application.use_cases.get_person_bio import (
     GetPersonBioInput,
     GetPersonBioUseCase,
 )
@@ -22,7 +22,7 @@ async def get_person(
     tmdb_id: int,
     lang: str = "en-US",
     use_case: GetPersonBioUseCase = Depends(
-        Provide[ApplicationContainer.media.get_person_bio],
+        Provide[ApplicationContainer.metadata.get_person_bio],
     ),
 ) -> dict[str, Any]:
     """Fetch biographical metadata for a TMDB person.

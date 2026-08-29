@@ -7,7 +7,7 @@ import hashlib
 import pytest
 
 from src.building_blocks.domain.errors import DomainValidationException
-from src.modules.media.domain.value_objects.artwork_key import ArtworkKey
+from src.modules.metadata.domain.value_objects.artwork_key import ArtworkKey
 
 
 class TestForContent:
@@ -60,7 +60,7 @@ class TestForContent:
         assert str(a) != str(b)
 
     def test_should_produce_a_key_matching_the_route_charset(self) -> None:
-        from src.modules.media.domain.value_objects.artwork_key import ARTWORK_KEY_PATTERN
+        from src.modules.metadata.domain.value_objects.artwork_key import ARTWORK_KEY_PATTERN
 
         key = ArtworkKey.for_content(b"x", content_type="image/jpeg", source_url="https://x/y.jpg")
 

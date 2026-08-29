@@ -12,7 +12,7 @@ from pathlib import Path  # noqa: TCH003 — used by runtime fixture annotations
 
 import pytest
 
-from src.modules.media.infrastructure.storage.local_artwork_storage import (
+from src.modules.metadata.infrastructure.local_artwork_storage import (
     LocalArtworkStorage,
 )
 

@@ -13,12 +13,6 @@ from src.modules.media.application.dtos.admin_relink_dtos import (
     PromoteMovieToSeriesInput,
 )
 from src.modules.media.application.dtos.enrichment_dtos import EnrichMediaOutput
-from src.modules.media.application.ports import (
-    EpisodeMetadata,
-    MediaMetadata,
-    MetadataProvider,
-    SeasonMetadata,
-)
 from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
 )
@@ -27,6 +21,12 @@ from src.modules.media.application.use_cases.promote_movie_to_series import (
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import MovieId
+from src.modules.metadata.application.ports.metadata_provider_port import (
+    EpisodeMetadata,
+    MediaMetadata,
+    MetadataProvider,
+    SeasonMetadata,
+)
 from src.shared_kernel.integration_events import MoviePromotedToSeriesEvent
 from tests.modules.media.unit.conftest import make_media_uow_mock
 

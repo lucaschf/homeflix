@@ -12,7 +12,6 @@ from src.modules.media.application.dtos.admin_relink_dtos import (
     PromoteMovieToSeriesOutput,
 )
 from src.modules.media.application.dtos.enrichment_dtos import EnrichMediaInput
-from src.modules.media.application.ports import MediaMetadata, MetadataProvider
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases.enrich_series_metadata import (
     EnrichSeriesMetadataUseCase,
@@ -29,6 +28,10 @@ from src.modules.media.domain.value_objects import (
     Title,
     TmdbId,
     Year,
+)
+from src.modules.metadata.application.ports.metadata_provider_port import (
+    MediaMetadata,
+    MetadataProvider,
 )
 from src.shared_kernel.integration_events import MoviePromotedToSeriesEvent
 

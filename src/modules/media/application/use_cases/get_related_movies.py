@@ -3,13 +3,13 @@
 from dataclasses import dataclass
 
 from src.modules.media.application.dtos.movie_dtos import MovieSummaryOutput
-from src.modules.media.application.ports import MetadataProvider
 from src.modules.media.application.ports.profile_library_access_port import (
     ProfileLibraryAccessPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._movie_summary_helpers import to_movie_summary
 from src.modules.media.domain.value_objects import MovieId
+from src.modules.metadata.application.ports.metadata_provider_port import MetadataProvider
 
 
 @dataclass(frozen=True)

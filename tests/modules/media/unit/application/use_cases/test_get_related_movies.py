@@ -4,13 +4,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.modules.media.application.ports import MetadataProvider
 from src.modules.media.application.use_cases.get_related_movies import (
     GetRelatedMoviesInput,
     GetRelatedMoviesUseCase,
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import MovieId, TmdbId
+from src.modules.metadata.application.ports.metadata_provider_port import MetadataProvider
 from tests.modules.media.unit.conftest import (
     FakeProfileLibraryAccessPort,
     make_media_uow_mock,

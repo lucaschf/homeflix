@@ -59,7 +59,6 @@ from src.modules.media.application.use_cases.get_movie_tmdb_suggestions import (
 from src.modules.media.application.use_cases.get_overview_stats import (
     GetOverviewStatsUseCase,
 )
-from src.modules.media.application.use_cases.get_person_bio import GetPersonBioUseCase
 from src.modules.media.application.use_cases.get_related_movies import GetRelatedMoviesUseCase
 from src.modules.media.application.use_cases.get_related_series import GetRelatedSeriesUseCase
 from src.modules.media.application.use_cases.get_scan_run import GetScanRunUseCase
@@ -147,14 +146,9 @@ from src.modules.media.infrastructure.audio import (
 )
 from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
 from src.modules.media.infrastructure.file_system.variant_detector import VariantDetector
-from src.modules.media.infrastructure.metadata.artwork_downloader import (
-    HttpxArtworkDownloader,
-)
-from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
 from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyMediaUnitOfWorkFactory,
 )
-from src.modules.media.infrastructure.storage import LocalArtworkStorage
 from src.modules.media.infrastructure.video import (
     CreditsDetector,
     FrameHasher,
@@ -226,11 +220,6 @@ class MediaContainer(containers.DeclarativeContainer):
     media_probe_service = providers.Dependency[Any]()
     scrub_preview_locator = providers.Dependency[Any]()
     hls_cache_stats = providers.Dependency[Any]()
-
-    # Artwork mirror directory (ADR-029), wired from
-    # ``Settings.artwork_storage_directory`` at the composition root.
-    # Bootstrap filesystem path, same style as ``hls_cache_directory``.
-    artwork_storage_directory = providers.Dependency[str](default="./artwork")
 
     # RuntimeSettings facade — needed by HlsService, AudioExtractor,
     # ThumbnailGenerationService for streaming config + by
@@ -462,18 +451,6 @@ class MediaContainer(containers.DeclarativeContainer):
         runtime_settings=runtime_settings,
     )
 
-    # Local-disk storage for mirrored catalog artwork (ADR-029).
-    # Singleton so the proxy route and the mirror job share one
-    # instance (it is stateless apart from the root path).
-    artwork_storage = providers.Singleton(
-        LocalArtworkStorage,
-        root_directory=artwork_storage_directory,
-    )
-
-    # Downloads still-remote provider artwork for the mirror job (ADR-029).
-    # Singleton so one pooled httpx client is shared across ticks.
-    artwork_image_downloader = providers.Singleton(HttpxArtworkDownloader)
-
     # =========================================================================
     # Use Cases — Library usage (admin overview)
     # =========================================================================
@@ -507,19 +484,13 @@ class MediaContainer(containers.DeclarativeContainer):
     # Infrastructure — Metadata Providers
     # =========================================================================
 
-    # Must be wired from parent container (Settings.tmdb_api_key)
-    tmdb_api_key = providers.Dependency[str](default="")
-
-    # Wired from parent container (Settings.supported_locales). Drives
-    # which non-English translations the TMDB client overlays during
-    # enrichment — adding a language is a config change, not a code edit.
-    supported_locales = providers.Dependency[list[str]](default=["en", "pt-BR"])
-
-    tmdb_client = providers.Singleton(
-        TmdbClient,
-        api_key=tmdb_api_key,
-        supported_locales=supported_locales,
-    )
+    # Wired at the composition root from the Metadata BC (ADR-032): the
+    # TMDB gateway (``MetadataProvider``) the enrichment / relink /
+    # suggestion use cases orchestrate. Media consumes the provider port
+    # published by the Metadata module — the Core-depends-on-Supporting
+    # provider-contract dependency — same cross-container wiring as
+    # ``library`` receiving ``media.media_unit_of_work_factory``.
+    tmdb_client = providers.Dependency[Any]()
 
     # =========================================================================
     # Use Cases — Enrichment
@@ -545,11 +516,6 @@ class MediaContainer(containers.DeclarativeContainer):
         metadata_provider=tmdb_client,
         catalog_request_lookup=catalog_request_lookup,
         profile_library_access=profile_library_access,
-    )
-
-    get_person_bio = providers.Factory(
-        GetPersonBioUseCase,
-        metadata_provider=tmdb_client,
     )
 
     enrich_series_metadata = providers.Factory(

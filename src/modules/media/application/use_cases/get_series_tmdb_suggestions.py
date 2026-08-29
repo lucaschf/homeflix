@@ -6,9 +6,12 @@ from src.modules.media.application.dtos.admin_relink_dtos import (
     GetSeriesTmdbSuggestionsOutput,
     TmdbSuggestionOutput,
 )
-from src.modules.media.application.ports import MetadataProvider, SearchCandidate
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.value_objects import SeriesId
+from src.modules.metadata.application.ports.metadata_provider_port import (
+    MetadataProvider,
+    SearchCandidate,
+)
 
 
 class GetSeriesTmdbSuggestionsUseCase:

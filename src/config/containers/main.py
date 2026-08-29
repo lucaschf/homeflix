@@ -14,6 +14,7 @@ from src.config.containers.identity import IdentityContainer
 from src.config.containers.infrastructure import InfrastructureContainer
 from src.config.containers.library import LibraryContainer
 from src.config.containers.media import MediaContainer
+from src.config.containers.metadata import MetadataContainer
 from src.config.containers.notifications import NotificationsContainer
 from src.config.containers.preferences import PreferencesContainer
 from src.config.containers.settings import SettingsContainer
@@ -46,13 +47,13 @@ from src.modules.media.infrastructure.acl import (
     ScrubPreviewLocatorAdapter,
     TmdbLocalizedTitleAdapter,
 )
-from src.modules.media.infrastructure.metadata.tmdb_client import TmdbClient
 from src.modules.media.infrastructure.scheduling.scheduler_controller import (
     LibraryScanSchedulerController,
 )
 from src.modules.media.infrastructure.scheduling.scheduler_inspector import (
     LibraryScanSchedulerInspector,
 )
+from src.modules.metadata.infrastructure.tmdb_client import TmdbClient
 from src.modules.preferences.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyPreferencesUnitOfWorkFactory,
 )
@@ -215,6 +216,19 @@ class ApplicationContainer(containers.DeclarativeContainer):
         localized_title_provider=_localized_title_provider_adapter,
     )
 
+    # Metadata / Enrichment provider BC (ADR-032): the TMDB gateway plus
+    # artwork mirror storage/download and the pure person-bio lookup.
+    # Composed before Media so Media's enrichment / relink / suggestion
+    # use cases can consume its published ``tmdb_client`` provider via
+    # cross-container wiring (the Core-depends-on-Supporting provider
+    # contract). Metadata takes no dependency on other BCs.
+    metadata = providers.Container(
+        MetadataContainer,
+        tmdb_api_key=config.provided.tmdb_api_key,
+        supported_locales=config.provided.supported_locales,
+        artwork_storage_directory=config.provided.artwork_storage_directory,
+    )
+
     media = providers.Container(
         MediaContainer,
         session_factory=infrastructure.session_factory,
@@ -226,9 +240,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         library_health=_library_health_adapter,
         identity_uow_factory=_identity_uow_factory_for_profile_library_access,
         preferences_uow_factory=_preferences_uow_factory_for_media,
-        tmdb_api_key=config.provided.tmdb_api_key,
-        supported_locales=config.provided.supported_locales,
-        artwork_storage_directory=config.provided.artwork_storage_directory,
+        tmdb_client=metadata.tmdb_client,
         runtime_settings=settings.runtime_settings,
     )
 
@@ -355,8 +367,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
         ArtworkMirrorJob,
         media_uow_factory=media.media_unit_of_work_factory,
         runtime_settings=settings.runtime_settings,
-        downloader=media.artwork_image_downloader,
-        storage=media.artwork_storage,
+        downloader=metadata.artwork_downloader,
+        storage=metadata.artwork_storage,
     )
 
     intro_detection_job = providers.Singleton(

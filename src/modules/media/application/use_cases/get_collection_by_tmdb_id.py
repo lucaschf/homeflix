@@ -15,14 +15,16 @@ if TYPE_CHECKING:
     from src.modules.media.application.ports import (
         CatalogRequestLookupPort,
         CatalogRequestStatus,
-        CollectionPartMetadata,
-        MetadataProvider,
     )
     from src.modules.media.application.ports.profile_library_access_port import (
         ProfileLibraryAccessPort,
     )
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities.movie import Movie
+    from src.modules.metadata.application.ports.metadata_provider_port import (
+        CollectionPartMetadata,
+        MetadataProvider,
+    )
 
 
 class GetCollectionByTmdbIdUseCase:
