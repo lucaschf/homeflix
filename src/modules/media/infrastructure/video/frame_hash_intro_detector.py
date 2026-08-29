@@ -21,6 +21,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from src.modules.media.application.ports.intro_detector_port import (
+    IntroDetectionProgress,
     IntroDetectionResult,
     IntroDetectorPort,
     IntroDetectorTuning,
@@ -69,14 +70,23 @@ class FrameHashIntroDetector(IntroDetectorPort):
         self,
         episodes: Sequence[EpisodeMediaRef],
         tuning: IntroDetectorTuning,
+        on_progress: IntroDetectionProgress | None = None,
     ) -> IntroDetectionResult:
-        """Hash every episode's frames, then correlate the survivors."""
+        """Hash every episode's frames, then correlate the survivors.
+
+        Decoding dominates the runtime, so ``on_progress`` fires after
+        each episode — the correlation that follows is comparatively
+        instant.
+        """
         frame_tuning = _as_frame_hash_tuning(tuning)
         hashed: list[tuple[EpisodeId, np.ndarray]] = []
-        for episode in episodes:
+        total = len(episodes)
+        for done, episode in enumerate(episodes, start=1):
             hashes = self._hash_one(episode, frame_tuning)
             if hashes is not None and len(hashes) > 0:
                 hashed.append((episode.episode_id, hashes))
+            if on_progress is not None:
+                on_progress(done, total, episode.episode_id)
         markers = self._correlator.correlate(hashed, frame_tuning)
         return IntroDetectionResult(markers=markers, analyzed_count=len(hashed))
 

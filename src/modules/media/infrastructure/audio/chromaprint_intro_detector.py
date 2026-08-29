@@ -21,6 +21,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from src.modules.media.application.ports.intro_detector_port import (
+    IntroDetectionProgress,
     IntroDetectionResult,
     IntroDetectorPort,
     IntroDetectorTuning,
@@ -76,10 +77,20 @@ class ChromaprintIntroDetector(IntroDetectorPort):
         self,
         episodes: Sequence[EpisodeMediaRef],
         tuning: IntroDetectorTuning,
+        on_progress: IntroDetectionProgress | None = None,
     ) -> IntroDetectionResult:
-        """Fingerprint every episode, then correlate the survivors."""
+        """Fingerprint every episode, then correlate the survivors.
+
+        Extraction dominates the runtime, so ``on_progress`` fires after
+        each episode — the correlation that follows is comparatively
+        instant.
+        """
         chroma_tuning = _as_chromaprint_tuning(tuning)
-        fingerprints = self._fingerprint_all(episodes, chroma_tuning.analysis_window_seconds)
+        fingerprints = self._fingerprint_all(
+            episodes,
+            chroma_tuning.analysis_window_seconds,
+            on_progress,
+        )
         markers = self._correlator.correlate(fingerprints, chroma_tuning)
         return IntroDetectionResult(markers=markers, analyzed_count=len(fingerprints))
 
@@ -87,13 +98,17 @@ class ChromaprintIntroDetector(IntroDetectorPort):
         self,
         episodes: Sequence[EpisodeMediaRef],
         window_seconds: int,
+        on_progress: IntroDetectionProgress | None = None,
     ) -> list[EpisodeFingerprint]:
         """Extract + fingerprint each episode, dropping the failures."""
         results: list[EpisodeFingerprint] = []
-        for episode in episodes:
+        total = len(episodes)
+        for done, episode in enumerate(episodes, start=1):
             fingerprint = self._fingerprint_one(episode, window_seconds)
             if fingerprint is not None:
                 results.append(fingerprint)
+            if on_progress is not None:
+                on_progress(done, total, episode.episode_id)
         return results
 
     def _fingerprint_one(

@@ -621,3 +621,62 @@ class TestIntroDetectionJobRunForSeason:
         assert outcome == IntroDetectionState.FAILED
         detector.detect.assert_not_called()
         uow.series.update_season_intro_detection.assert_not_awaited()
+
+
+@pytest.mark.unit
+class TestIntroDetectionJobProgressLogging:
+    """The job must turn the detector's progress into visible log lines."""
+
+    @pytest.mark.asyncio
+    async def test_logs_a_line_per_episode_analysed(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[season])
+
+        detector = _make_detector()
+
+        def _detect(refs, _tuning, on_progress=None):
+            total = len(refs)
+            for done, ref in enumerate(refs, start=1):
+                if on_progress is not None:
+                    on_progress(done, total, ref.episode_id)
+            return IntroDetectionResult(markers={}, analyzed_count=total)
+
+        detector.detect.side_effect = _detect
+
+        job = IntroDetectionJob(
+            media_uow_factory=MagicMock(return_value=uow),
+            intro_detectors=_registry(detector),
+            runtime_settings=_make_runtime_settings(),
+        )
+        await job.run()
+
+        out = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
+        assert "analysing episodes" in out
+        assert "episode analysed" in out
+        assert "progress=1/2" in out
+        assert "progress=2/2" in out
+        # Episode numbers are resolved, not left as raw ids.
+        assert "episode_number=1" in out
+        assert "episode_number=2" in out
+
+    @pytest.mark.asyncio
+    async def test_passes_a_callback_the_detector_may_ignore(self) -> None:
+        """Detectors that ignore the callback must still work."""
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[season])
+        detector = _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=2))
+
+        job = IntroDetectionJob(
+            media_uow_factory=MagicMock(return_value=uow),
+            intro_detectors=_registry(detector),
+            runtime_settings=_make_runtime_settings(),
+        )
+        await job.run()
+
+        assert callable(detector.detect.call_args.args[2])
