@@ -18,6 +18,9 @@ from src.building_blocks.infrastructure.errors import (
 from src.modules.metadata.infrastructure.tmdb_client import (
     TmdbClient,
     _parse_retry_after,
+)
+from src.modules.metadata.infrastructure.tmdb_response_mapper import (
+    TmdbResponseMapper,
     _safe_int,
 )
 from src.shared_kernel.value_objects import ContentRating, MediaType
@@ -79,6 +82,11 @@ def _make_client(get_responses: list[MagicMock] | MagicMock | None = None) -> Tm
         mock_http.get = AsyncMock()
     client._client = mock_http
     return client
+
+
+def _make_mapper(supported_locales: tuple[str, ...] = ("en", "pt-BR")) -> TmdbResponseMapper:
+    """Build a TmdbResponseMapper for the pure payload → DTO shaping tests."""
+    return TmdbResponseMapper(supported_locales=supported_locales)
 
 
 def _movie_details(tmdb_id: int = 27205, title: str = "Inception") -> dict[str, Any]:
@@ -235,7 +243,7 @@ class TestParseContentRating:
                 },
             ],
         }
-        assert _make_client()._parse_content_rating(data) == ContentRating("14")
+        assert _make_mapper().parse_content_rating(data) == ContentRating("14")
 
     def test_should_fallback_to_us(self) -> None:
         data: dict[str, Any] = {
@@ -246,16 +254,16 @@ class TestParseContentRating:
                 },
             ],
         }
-        assert _make_client()._parse_content_rating(data) == ContentRating("PG-13")
+        assert _make_mapper().parse_content_rating(data) == ContentRating("PG-13")
 
     def test_should_return_none_when_empty(self) -> None:
-        assert _make_client()._parse_content_rating({"results": []}) is None
+        assert _make_mapper().parse_content_rating({"results": []}) is None
 
     def test_should_return_none_when_missing_key(self) -> None:
-        assert _make_client()._parse_content_rating({}) is None
+        assert _make_mapper().parse_content_rating({}) is None
 
     def test_should_handle_invalid_results_type(self) -> None:
-        assert _make_client()._parse_content_rating({"results": "bad"}) is None
+        assert _make_mapper().parse_content_rating({"results": "bad"}) is None
 
     def test_should_skip_empty_certifications(self) -> None:
         data: dict[str, Any] = {
@@ -270,20 +278,20 @@ class TestParseContentRating:
                 },
             ],
         }
-        assert _make_client()._parse_content_rating(data) == ContentRating("R")
+        assert _make_mapper().parse_content_rating(data) == ContentRating("R")
 
     def test_jurisdiction_order_is_config_driven(self) -> None:
         # A newly supported locale's certification body is respected
         # without editing the gateway: es-ES → ES wins over the US
         # fallback (vs the old hardcoded BR-then-US).
-        client = TmdbClient(api_key="test-key", supported_locales=("en", "es-ES"))
+        mapper = _make_mapper(("en", "es-ES"))
         data: dict[str, Any] = {
             "results": [
                 {"iso_3166_1": "US", "release_dates": [{"certification": "PG-13"}]},
                 {"iso_3166_1": "ES", "release_dates": [{"certification": "12"}]},
             ],
         }
-        assert client._parse_content_rating(data) == ContentRating("12")
+        assert mapper.parse_content_rating(data) == ContentRating("12")
 
     def test_returns_none_when_no_preferred_country_matches(self) -> None:
         # Default prefs [BR, US]; payload only has FR → nothing selected.
@@ -292,19 +300,19 @@ class TestParseContentRating:
                 {"iso_3166_1": "FR", "release_dates": [{"certification": "12"}]},
             ],
         }
-        assert _make_client()._parse_content_rating(data) is None
+        assert _make_mapper().parse_content_rating(data) is None
 
     def test_region_parsed_by_content_not_position(self) -> None:
         # A script subtag (zh-Hant-TW) must not be mistaken for the region:
         # TW is the region, so a TW certification is selected over US.
-        client = TmdbClient(api_key="test-key", supported_locales=("en", "zh-Hant-TW"))
+        mapper = _make_mapper(("en", "zh-Hant-TW"))
         data: dict[str, Any] = {
             "results": [
                 {"iso_3166_1": "US", "release_dates": [{"certification": "PG-13"}]},
                 {"iso_3166_1": "TW", "release_dates": [{"certification": "0+"}]},
             ],
         }
-        assert client._parse_content_rating(data) == ContentRating("0+")
+        assert mapper.parse_content_rating(data) == ContentRating("0+")
 
 
 @pytest.mark.unit
@@ -314,14 +322,14 @@ class TestParseSeriesContentRating:
     def test_jurisdiction_order_is_config_driven(self) -> None:
         # Series selection is config-driven too (parity with movie): a
         # configured locale's region wins over the US fallback.
-        client = TmdbClient(api_key="test-key", supported_locales=("en", "es-ES"))
+        mapper = _make_mapper(("en", "es-ES"))
         data: dict[str, Any] = {
             "results": [
                 {"iso_3166_1": "US", "rating": "TV-14"},
                 {"iso_3166_1": "ES", "rating": "12"},
             ],
         }
-        assert client._parse_series_content_rating(data) == ContentRating("12")
+        assert mapper.parse_series_content_rating(data) == ContentRating("12")
 
     def test_should_prefer_br(self) -> None:
         data: dict[str, Any] = {
@@ -330,17 +338,17 @@ class TestParseSeriesContentRating:
                 {"iso_3166_1": "BR", "rating": "18"},
             ],
         }
-        assert _make_client()._parse_series_content_rating(data) == ContentRating("18")
+        assert _make_mapper().parse_series_content_rating(data) == ContentRating("18")
 
     def test_should_fallback_to_us(self) -> None:
         data: dict[str, Any] = {"results": [{"iso_3166_1": "US", "rating": "TV-14"}]}
-        assert _make_client()._parse_series_content_rating(data) == ContentRating("TV-14")
+        assert _make_mapper().parse_series_content_rating(data) == ContentRating("TV-14")
 
     def test_should_return_none_when_empty(self) -> None:
-        assert _make_client()._parse_series_content_rating({}) is None
+        assert _make_mapper().parse_series_content_rating({}) is None
 
     def test_should_handle_invalid_results_type(self) -> None:
-        assert _make_client()._parse_series_content_rating({"results": "bad"}) is None
+        assert _make_mapper().parse_series_content_rating({"results": "bad"}) is None
 
 
 @pytest.mark.unit
@@ -353,7 +361,7 @@ class TestParseTrailer:
                 {"site": "YouTube", "type": "Trailer", "key": "abc", "official": True},
             ],
         }
-        assert TmdbClient._parse_trailer(videos) == "https://www.youtube.com/watch?v=abc"
+        assert TmdbResponseMapper.parse_trailer(videos) == "https://www.youtube.com/watch?v=abc"
 
     def test_should_prefer_trailer_over_teaser(self) -> None:
         videos: dict[str, Any] = {
@@ -362,7 +370,7 @@ class TestParseTrailer:
                 {"site": "YouTube", "type": "Trailer", "key": "trailer", "official": False},
             ],
         }
-        assert TmdbClient._parse_trailer(videos) == "https://www.youtube.com/watch?v=trailer"
+        assert TmdbResponseMapper.parse_trailer(videos) == "https://www.youtube.com/watch?v=trailer"
 
     def test_should_prefer_official_trailer(self) -> None:
         videos: dict[str, Any] = {
@@ -371,7 +379,9 @@ class TestParseTrailer:
                 {"site": "YouTube", "type": "Trailer", "key": "official", "official": True},
             ],
         }
-        assert TmdbClient._parse_trailer(videos) == "https://www.youtube.com/watch?v=official"
+        assert (
+            TmdbResponseMapper.parse_trailer(videos) == "https://www.youtube.com/watch?v=official"
+        )
 
     def test_should_skip_non_youtube(self) -> None:
         videos: dict[str, Any] = {
@@ -379,13 +389,13 @@ class TestParseTrailer:
                 {"site": "Vimeo", "type": "Trailer", "key": "xyz", "official": True},
             ],
         }
-        assert TmdbClient._parse_trailer(videos) is None
+        assert TmdbResponseMapper.parse_trailer(videos) is None
 
     def test_should_return_none_when_empty(self) -> None:
-        assert TmdbClient._parse_trailer({"results": []}) is None
+        assert TmdbResponseMapper.parse_trailer({"results": []}) is None
 
     def test_should_handle_invalid_results_type(self) -> None:
-        assert TmdbClient._parse_trailer({"results": "bad"}) is None
+        assert TmdbResponseMapper.parse_trailer({"results": "bad"}) is None
 
     def test_should_skip_videos_without_key(self) -> None:
         videos: dict[str, Any] = {
@@ -393,7 +403,7 @@ class TestParseTrailer:
                 {"site": "YouTube", "type": "Trailer", "key": "", "official": True},
             ],
         }
-        assert TmdbClient._parse_trailer(videos) is None
+        assert TmdbResponseMapper.parse_trailer(videos) is None
 
 
 @pytest.mark.unit
@@ -648,52 +658,52 @@ class TestParseCast:
     """Tests for _parse_cast."""
 
     def test_should_sort_by_order(self) -> None:
-        client = _make_client()
+        mapper = _make_mapper()
         cast_data: list[dict[str, object]] = [
             {"name": "Second", "character": "B", "order": 1, "id": 2},
             {"name": "First", "character": "A", "order": 0, "id": 1},
         ]
 
-        result = client._parse_cast(cast_data)
+        result = mapper.parse_cast(cast_data)
 
         assert result[0].name == "First"
         assert result[1].name == "Second"
 
     def test_should_limit_to_max_cast(self) -> None:
-        client = _make_client()
+        mapper = _make_mapper()
         cast_data: list[dict[str, object]] = [
             {"name": f"Actor{i}", "character": f"Char{i}", "order": i, "id": i} for i in range(25)
         ]
 
-        result = client._parse_cast(cast_data)
+        result = mapper.parse_cast(cast_data)
 
         assert len(result) == 15
 
     def test_should_skip_entries_without_name(self) -> None:
-        client = _make_client()
+        mapper = _make_mapper()
         cast_data: list[dict[str, object]] = [
             {"character": "A", "order": 0, "id": 1},
             {"name": "Real Actor", "character": "B", "order": 1, "id": 2},
         ]
 
-        result = client._parse_cast(cast_data)
+        result = mapper.parse_cast(cast_data)
 
         assert len(result) == 1
         assert result[0].name == "Real Actor"
 
     def test_should_use_character_as_role(self) -> None:
-        client = _make_client()
+        mapper = _make_mapper()
         cast_data: list[dict[str, object]] = [
             {"name": "Actor", "character": "Cobb", "order": 0, "id": 1},
         ]
 
-        result = client._parse_cast(cast_data)
+        result = mapper.parse_cast(cast_data)
 
         assert result[0].role == "Cobb"
 
     def test_should_return_empty_for_no_cast(self) -> None:
-        client = _make_client()
-        assert client._parse_cast([]) == []
+        mapper = _make_mapper()
+        assert mapper.parse_cast([]) == []
 
 
 @pytest.mark.unit
@@ -701,13 +711,13 @@ class TestParseCrew:
     """Tests for _parse_crew."""
 
     def test_should_separate_directors_and_writers(self) -> None:
-        client = _make_client()
+        mapper = _make_mapper()
         crew: list[dict[str, object]] = [
             {"name": "Director One", "job": "Director", "department": "Directing", "id": 1},
             {"name": "Writer One", "job": "Writer", "department": "Writing", "id": 2},
         ]
 
-        directors, writers = client._parse_crew(crew)
+        directors, writers = mapper.parse_crew(crew)
 
         assert len(directors) == 1
         assert directors[0].name == "Director One"
@@ -715,34 +725,34 @@ class TestParseCrew:
         assert writers[0].name == "Writer One"
 
     def test_should_dedupe_by_name(self) -> None:
-        client = _make_client()
+        mapper = _make_mapper()
         crew: list[dict[str, object]] = [
             {"name": "Same Person", "job": "Director", "department": "Directing", "id": 1},
             {"name": "Same Person", "job": "Director", "department": "Directing", "id": 1},
         ]
 
-        directors, _ = client._parse_crew(crew)
+        directors, _ = mapper.parse_crew(crew)
 
         assert len(directors) == 1
 
     def test_should_skip_non_director_non_writer(self) -> None:
-        client = _make_client()
+        mapper = _make_mapper()
         crew: list[dict[str, object]] = [
             {"name": "Producer", "job": "Producer", "department": "Production", "id": 1},
         ]
 
-        directors, writers = client._parse_crew(crew)
+        directors, writers = mapper.parse_crew(crew)
 
         assert directors == []
         assert writers == []
 
     def test_should_skip_entries_without_name(self) -> None:
-        client = _make_client()
+        mapper = _make_mapper()
         crew: list[dict[str, object]] = [
             {"job": "Director", "department": "Directing", "id": 1},
         ]
 
-        directors, _ = client._parse_crew(crew)
+        directors, _ = mapper.parse_crew(crew)
 
         assert directors == []
 
@@ -1841,11 +1851,11 @@ class TestPickBestLogoUrl:
     parser only operates on the returned ``logos`` array.
     """
 
-    def _client(self) -> TmdbClient:
-        return TmdbClient(api_key="test-key")
+    def _mapper(self) -> TmdbResponseMapper:
+        return TmdbResponseMapper()
 
     def test_prefers_exact_language_match(self) -> None:
-        url = self._client()._pick_best_logo_url(
+        url = self._mapper().pick_best_logo_url(
             [
                 {"iso_639_1": "en", "file_path": "/en.png"},
                 {"iso_639_1": "pt-BR", "file_path": "/ptbr.png"},
@@ -1860,7 +1870,7 @@ class TestPickBestLogoUrl:
         # Search for ``pt-PT`` should fall back to the ``pt-BR`` logo
         # (same base ``pt``) when no exact match exists, before
         # English or language-neutral.
-        url = self._client()._pick_best_logo_url(
+        url = self._mapper().pick_best_logo_url(
             [
                 {"iso_639_1": "en", "file_path": "/en.png"},
                 {"iso_639_1": "pt-BR", "file_path": "/ptbr.png"},
@@ -1871,7 +1881,7 @@ class TestPickBestLogoUrl:
         assert url.endswith("/ptbr.png")
 
     def test_falls_back_to_english(self) -> None:
-        url = self._client()._pick_best_logo_url(
+        url = self._mapper().pick_best_logo_url(
             [
                 {"iso_639_1": "fr", "file_path": "/fr.png"},
                 {"iso_639_1": "en", "file_path": "/en.png"},
@@ -1882,7 +1892,7 @@ class TestPickBestLogoUrl:
         assert url.endswith("/en.png")
 
     def test_falls_back_to_language_neutral(self) -> None:
-        url = self._client()._pick_best_logo_url(
+        url = self._mapper().pick_best_logo_url(
             [
                 {"iso_639_1": "ja", "file_path": "/ja.png"},
                 {"iso_639_1": None, "file_path": "/neutral.png"},
@@ -1893,7 +1903,7 @@ class TestPickBestLogoUrl:
         assert url.endswith("/neutral.png")
 
     def test_falls_back_to_first_logo_when_nothing_else_matches(self) -> None:
-        url = self._client()._pick_best_logo_url(
+        url = self._mapper().pick_best_logo_url(
             [{"iso_639_1": "ja", "file_path": "/ja.png"}],
             "pt-BR",
         )
@@ -1901,10 +1911,10 @@ class TestPickBestLogoUrl:
         assert url.endswith("/ja.png")
 
     def test_returns_none_when_list_empty(self) -> None:
-        assert self._client()._pick_best_logo_url([], "pt-BR") is None
+        assert self._mapper().pick_best_logo_url([], "pt-BR") is None
 
     def test_returns_none_when_list_is_none(self) -> None:
-        assert self._client()._pick_best_logo_url(None, "pt-BR") is None
+        assert self._mapper().pick_best_logo_url(None, "pt-BR") is None
 
 
 @pytest.mark.unit
