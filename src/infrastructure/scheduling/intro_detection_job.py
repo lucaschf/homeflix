@@ -21,6 +21,10 @@ missing binary, unreadable codec) are quietly excluded from the
 detection pool by the detector — the job is best-effort by design — and
 the detector reports how many episodes it actually analysed so the job
 can tell "found nothing" apart from "not enough material".
+
+``run_for_season`` is the operator-triggered entry point: it drives one
+named season through the same pipeline right away, without waiting for
+the next tick or competing with the batch for a queue slot.
 """
 
 from __future__ import annotations
@@ -146,6 +150,36 @@ class IntroDetectionJob:
             seasons_failed=failed,
             batch_size=config.batch_size,
         )
+
+    async def run_for_season(self, season_id: SeasonId) -> IntroDetectionState:
+        """Process one named season now, bypassing the pending queue.
+
+        Backs the admin "detect now" action: the season is driven
+        through the exact same pipeline a tick would use (same claim,
+        same detector, same audit row), so the result is
+        indistinguishable from a scheduled run apart from its timing.
+        Eligibility is not re-checked here — the caller asked for this
+        season explicitly.
+
+        Args:
+            season_id: External id of the season to process.
+
+        Returns:
+            The state the season was transitioned to, or ``FAILED`` when
+            the season no longer exists.
+        """
+        config = await self._runtime_settings.intro_detection()
+        async with self._media_uow_factory() as uow:
+            season = await uow.series.find_season_for_intro_detection(season_id)
+
+        if season is None:
+            _logger.warning(
+                "[intro-detection] season vanished before its manual run",
+                season_id=str(season_id),
+            )
+            return IntroDetectionState.FAILED
+
+        return await self._process_season(season, config)
 
     async def _process_season(
         self,

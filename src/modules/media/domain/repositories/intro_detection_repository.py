@@ -70,6 +70,27 @@ class SeriesIntroDetectionRepository(ABC):
         ...
 
     @abstractmethod
+    async def find_season_for_intro_detection(self, season_id: SeasonId) -> Season | None:
+        """Load a single season ready to be handed to the detector.
+
+        Same shape as one row of
+        :meth:`find_seasons_pending_intro_detection` (episodes and their
+        file variants eagerly loaded, soft-deleted rows filtered out) but
+        addressed by id and with no eligibility filter: the operator-
+        triggered "detect now" path decides for itself whether the
+        season should run, so a ``COMPLETED`` or ``FAILED`` season is
+        still returned here.
+
+        Args:
+            season_id: External id of the season (ssn_xxx).
+
+        Returns:
+            The season with its episodes loaded, or ``None`` when no live
+            season with that id exists.
+        """
+        ...
+
+    @abstractmethod
     async def update_season_intro_detection(
         self,
         season_id: SeasonId,

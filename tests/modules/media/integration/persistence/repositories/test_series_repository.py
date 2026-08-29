@@ -1736,6 +1736,56 @@ class TestFindSeasonsPendingIntroDetection:
 
 
 @pytest.mark.integration
+class TestFindSeasonForIntroDetection:
+    """Tests for find_season_for_intro_detection."""
+
+    async def test_returns_the_season_with_episodes_and_files_loaded(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _series_with_intro(detection_state=IntroDetectionState.COMPLETED)
+        await repo.save(series)
+        season_id = series.seasons[0].id
+
+        found = await repo.find_season_for_intro_detection(season_id)  # type: ignore[arg-type]
+
+        assert found is not None
+        assert found.id == season_id
+        assert len(found.episodes) == 1
+        assert found.episodes[0].primary_file is not None
+
+    async def test_ignores_the_eligibility_filter(self, db_session: AsyncSession) -> None:
+        """A FAILED season is off the queue but still fetchable by id.
+
+        The operator-triggered run decides for itself whether to
+        reprocess; the queue's exclusions must not block it.
+        """
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _series_with_intro(
+            detection_state=IntroDetectionState.FAILED,
+            detection_error="boom",
+        )
+        await repo.save(series)
+        season_id = series.seasons[0].id
+
+        pending = await repo.find_seasons_pending_intro_detection(
+            limit=10, stale_before=datetime.now(UTC)
+        )
+        found = await repo.find_season_for_intro_detection(season_id)  # type: ignore[arg-type]
+
+        assert pending == []
+        assert found is not None
+
+    async def test_returns_none_for_an_unknown_season(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+
+        found = await repo.find_season_for_intro_detection(SeasonId.generate())
+
+        assert found is None
+
+
+@pytest.mark.integration
 class TestUpdateSeasonIntroDetection:
     """Tests for update_season_intro_detection direct UPDATE."""
 

@@ -38,6 +38,9 @@ from src.modules.library.infrastructure.persistence.sqlalchemy_unit_of_work impo
     SqlAlchemyLibraryUnitOfWorkFactory,
 )
 from src.modules.media.application.use_cases.list_jobs import ListJobsUseCase
+from src.modules.media.application.use_cases.reset_season_intro_detection import (
+    ResetSeasonIntroDetectionUseCase,
+)
 from src.modules.media.application.use_cases.trigger_job import TriggerJobUseCase
 from src.modules.media.infrastructure.acl import (
     HlsCacheStatsAdapter,
@@ -46,6 +49,9 @@ from src.modules.media.infrastructure.acl import (
     ProgressLookupAdapter,
     ScrubPreviewLocatorAdapter,
     TmdbLocalizedTitleAdapter,
+)
+from src.modules.media.infrastructure.scheduling.intro_detection_runner import (
+    BackgroundIntroDetectionRunner,
 )
 from src.modules.media.infrastructure.scheduling.scheduler_controller import (
     LibraryScanSchedulerController,
@@ -381,6 +387,20 @@ class ApplicationContainer(containers.DeclarativeContainer):
             },
         ),
         runtime_settings=settings.runtime_settings,
+    )
+
+    # Lives here rather than in MediaContainer because the operator
+    # "detect now" path drives the same job singleton the scheduler
+    # ticks, and that singleton is composed at this level.
+    intro_detection_runner = providers.Singleton(
+        BackgroundIntroDetectionRunner,
+        job=intro_detection_job,
+    )
+
+    reset_season_intro_detection = providers.Factory(
+        ResetSeasonIntroDetectionUseCase,
+        uow_factory=media.media_unit_of_work_factory,
+        detection_runner=intro_detection_runner,
     )
 
     credits_detection_job = providers.Singleton(

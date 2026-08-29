@@ -554,3 +554,70 @@ class TestIntroDetectionJob:
         uow.intro_detection_runs.add.assert_awaited_once()
         run = uow.intro_detection_runs.add.await_args.args[0]
         assert run.series_title == "Test Series"
+
+
+@pytest.mark.unit
+class TestIntroDetectionJobRunForSeason:
+    """Tests for the operator-triggered single-season entry point."""
+
+    @pytest.mark.asyncio
+    async def test_detects_the_named_season_without_touching_the_queue(self) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[])
+        uow.series.find_season_for_intro_detection = AsyncMock(return_value=season)
+        markers = {
+            ep.id: DetectedIntro(start_seconds=5.0, end_seconds=65.0, confidence=0.9)
+            for ep in episodes
+            if ep.id is not None
+        }
+        detector = _make_detector(result=IntroDetectionResult(markers=markers, analyzed_count=2))
+
+        job = IntroDetectionJob(
+            media_uow_factory=MagicMock(return_value=uow),
+            intro_detectors=_registry(detector),
+            runtime_settings=_make_runtime_settings(),
+        )
+        outcome = await job.run_for_season(season.id)  # type: ignore[arg-type]
+
+        assert outcome == IntroDetectionState.COMPLETED
+        uow.series.find_seasons_pending_intro_detection.assert_not_awaited()
+        uow.series.find_season_for_intro_detection.assert_awaited_once_with(season.id)
+        assert uow.series.update_episode_intro.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_records_an_audit_run_like_a_scheduled_tick(self) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[])
+        uow.series.find_season_for_intro_detection = AsyncMock(return_value=season)
+
+        job = IntroDetectionJob(
+            media_uow_factory=MagicMock(return_value=uow),
+            intro_detectors=_registry(_make_detector()),
+            runtime_settings=_make_runtime_settings(),
+        )
+        await job.run_for_season(season.id)  # type: ignore[arg-type]
+
+        uow.intro_detection_runs.add.assert_awaited_once()
+        run = uow.intro_detection_runs.add.await_args.args[0]
+        assert run.season_id == str(season.id)
+
+    @pytest.mark.asyncio
+    async def test_reports_failed_when_the_season_vanished(self) -> None:
+        uow = _build_uow(pending_seasons=[])
+        uow.series.find_season_for_intro_detection = AsyncMock(return_value=None)
+        detector = _make_detector()
+
+        job = IntroDetectionJob(
+            media_uow_factory=MagicMock(return_value=uow),
+            intro_detectors=_registry(detector),
+            runtime_settings=_make_runtime_settings(),
+        )
+        outcome = await job.run_for_season(SeasonId.generate())
+
+        assert outcome == IntroDetectionState.FAILED
+        detector.detect.assert_not_called()
+        uow.series.update_season_intro_detection.assert_not_awaited()
