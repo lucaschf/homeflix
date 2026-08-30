@@ -75,6 +75,10 @@ dmypy.json
 *.db
 *.sqlite
 *.sqlite3
+# Manual snapshots taken before risky migrations — *.db does not match
+# them because the timestamp/label comes after the extension.
+*.db.bak*
+*.db.*-bak
 
 # =============================================================================
 # Environment
