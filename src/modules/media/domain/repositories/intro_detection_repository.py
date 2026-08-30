@@ -142,10 +142,36 @@ class SeriesIntroDetectionRepository(ABC):
         a ``MANUAL`` marker without rewriting the entire ``Series``
         aggregate.
 
+        Clearing (``marker=None``) also drops the "no intro" flag, so
+        the episode returns to pending rather than staying absent.
+
         Args:
             episode_id: External id of the episode (epi_xxx).
-            marker: The marker to persist, or ``None`` to clear all five
-                intro columns.
+            marker: The marker to persist, or ``None`` to reset the
+                episode's intro state entirely.
+
+        Returns:
+            ``True`` if a row was updated, ``False`` if no episode with
+            that id exists.
+        """
+        ...
+
+    @abstractmethod
+    async def mark_episode_intro_absent(
+        self,
+        episode_id: EpisodeId,
+        marked_at: datetime,
+    ) -> bool:
+        """Record that an episode has no opening sequence at all.
+
+        Direct UPDATE that stamps ``intro_absent_at`` and clears the
+        marker columns in one statement, keeping the two mutually
+        exclusive states consistent without round-tripping the
+        ``Series`` aggregate.
+
+        Args:
+            episode_id: External id of the episode (epi_xxx).
+            marked_at: When the operator recorded the verdict.
 
         Returns:
             ``True`` if a row was updated, ``False`` if no episode with

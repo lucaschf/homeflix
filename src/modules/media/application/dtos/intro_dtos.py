@@ -36,6 +36,17 @@ class ClearEpisodeIntroInput:
 
 
 @dataclass(frozen=True)
+class MarkEpisodeIntroAbsentInput:
+    """Input for ``MarkEpisodeIntroAbsentUseCase``.
+
+    Attributes:
+        episode_id: External id of the episode (epi_xxx).
+    """
+
+    episode_id: str
+
+
+@dataclass(frozen=True)
 class ResetSeasonIntroDetectionInput:
     """Input for ``ResetSeasonIntroDetectionUseCase``.
 
@@ -90,6 +101,7 @@ class IntroMarkerOutput:
 __all__ = [
     "ClearEpisodeIntroInput",
     "IntroMarkerOutput",
+    "MarkEpisodeIntroAbsentInput",
     "ResetSeasonIntroDetectionInput",
     "ResetSeasonIntroDetectionOutput",
     "SetEpisodeIntroInput",

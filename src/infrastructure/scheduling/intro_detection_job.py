@@ -5,8 +5,8 @@ Each tick:
 1. Pulls a small batch of seasons whose ``intro_detection_state`` is
    ``NOT_STARTED`` or ``INSUFFICIENT_EPISODES``.
 2. For each season, marks it ``IN_PROGRESS``, then in turn:
-   * skips episodes that already carry a ``MANUAL`` marker (operators
-     opt out of automatic detection by editing the marker manually);
+   * skips episodes a human already settled — a ``MANUAL`` marker, or
+     a confirmation that the episode has no intro at all;
    * hands the remaining episodes' file references to the configured
      intro detector, which owns its own analysis pipeline (audio
      fingerprinting, frame hashing, …);
@@ -259,7 +259,7 @@ class IntroDetectionJob:
         config: IntroDetectionConfig,
     ) -> _RunMetrics:
         episode_count = len(season.episodes)
-        candidates = [ep for ep in season.episodes if not _has_manual_marker(ep)]
+        candidates = [ep for ep in season.episodes if not _is_operator_settled(ep)]
         candidate_count = len(candidates)
         if candidate_count < _MIN_EPISODES_FOR_DETECTION:
             await self._mark_state(
@@ -268,7 +268,7 @@ class IntroDetectionJob:
                 attempted_episode_count=episode_count,
             )
             _logger.info(
-                "[intro-detection] season skipped: not enough non-MANUAL episodes",
+                "[intro-detection] season skipped: not enough undecided episodes",
                 **log_ctx,
                 total_episodes=len(season.episodes),
                 candidate_count=candidate_count,
@@ -577,8 +577,16 @@ def _build_auto_marker(detected: DetectedIntro) -> IntroMarker:
     )
 
 
-def _has_manual_marker(episode: Episode) -> bool:
-    """Return ``True`` when the episode's intro was set manually."""
+def _is_operator_settled(episode: Episode) -> bool:
+    """Return ``True`` when a human already settled this episode's intro.
+
+    Covers both deliberate verdicts: a ``MANUAL`` marker, and a
+    confirmation that the episode has no opening sequence at all.
+    Re-running detection over either would silently overwrite the
+    operator's decision on the next tick.
+    """
+    if episode.intro_absent_at is not None:
+        return True
     return episode.intro is not None and episode.intro.is_manual
 
 

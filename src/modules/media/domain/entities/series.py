@@ -188,6 +188,23 @@ class Series(AggregateRoot[SeriesId]):
         )
 
     @property
+    def intro_resolved_count(self) -> int:
+        """Return the number of episodes whose intro question is settled.
+
+        Counts episodes with a marker *plus* those confirmed to have no
+        opening sequence. This is the coverage number the admin UI
+        should track: ``intro_marked_count`` alone can never reach the
+        episode total on a series where some episodes genuinely have no
+        intro, so such a series would read as forever incomplete.
+
+        Returns:
+            The count of episodes that no longer need review.
+        """
+        return sum(
+            1 for season in self.seasons for episode in season.episodes if episode.intro_resolved
+        )
+
+    @property
     def is_ongoing(self) -> bool:
         """Check if the series is still ongoing.
 

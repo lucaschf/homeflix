@@ -941,11 +941,14 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         episode_id: EpisodeId,
         marker: IntroMarker | None,
     ) -> bool:
-        """Direct UPDATE of the 5 intro columns on the episodes row.
+        """Direct UPDATE of the intro columns on the episodes row.
 
         Used by the auto-detection job and the manual-edit endpoint to
-        avoid round-tripping the parent ``Series`` aggregate. Passing
-        ``None`` clears all five columns atomically.
+        avoid round-tripping the parent ``Series`` aggregate. Every
+        write also settles ``intro_absent_at``: persisting a marker
+        drops the "no intro" verdict it contradicts, and passing
+        ``None`` resets the episode to pending rather than leaving it
+        flagged as absent.
         """
         if marker is None:
             values: dict[str, Any] = {
@@ -954,6 +957,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 "intro_source": None,
                 "intro_confidence": None,
                 "intro_detected_at": None,
+                "intro_absent_at": None,
             }
         else:
             values = {
@@ -962,6 +966,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 "intro_source": marker.source.value,
                 "intro_confidence": marker.confidence,
                 "intro_detected_at": marker.detected_at,
+                "intro_absent_at": None,
             }
 
         stmt = (
@@ -971,6 +976,30 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 EpisodeModel.deleted_at.is_(None),
             )
             .values(**values)
+        )
+        result = await self._session.execute(stmt)
+        return bool(result.rowcount)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
+
+    async def mark_episode_intro_absent(
+        self,
+        episode_id: EpisodeId,
+        marked_at: datetime,
+    ) -> bool:
+        """Stamp the absent flag and clear the marker in one statement."""
+        stmt = (
+            update(EpisodeModel)
+            .where(
+                EpisodeModel.external_id == str(episode_id),
+                EpisodeModel.deleted_at.is_(None),
+            )
+            .values(
+                intro_absent_at=marked_at,
+                intro_start_seconds=None,
+                intro_end_seconds=None,
+                intro_source=None,
+                intro_confidence=None,
+                intro_detected_at=None,
+            )
         )
         result = await self._session.execute(stmt)
         return bool(result.rowcount)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult

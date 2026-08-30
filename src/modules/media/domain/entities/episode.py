@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime  # noqa: TCH003 — needed at runtime by Pydantic
 from typing import Self
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
-from src.building_blocks.domain import DomainEntity
+from src.building_blocks.domain import DomainEntity, utc_now
 from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixin
 from src.modules.media.domain.rule_codes import MediaRuleCodes
@@ -19,6 +20,7 @@ from src.modules.media.domain.value_objects import (
     EpisodeNumber,
     ImageUrl,
     IntroMarker,
+    IntroStatus,
     LocalizedField,
     LocalizedMetadata,
     MediaFile,
@@ -76,8 +78,13 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
     # Metadata
     air_date: AirDate | None = None
 
-    # Skip-intro support
+    # Skip-intro support. ``intro`` holds the span when there is one;
+    # ``intro_absent_at`` records that someone confirmed there is none.
+    # The timestamp doubles as the flag, so the two fields cover the
+    # three states (pending / marked / absent) without a bare boolean —
+    # read them through ``intro_status`` rather than pairwise.
     intro: IntroMarker | None = None
+    intro_absent_at: datetime | None = None
 
     # Skip-credits support (per-file detection; credits run to the end)
     credits: CreditsMarker | None = None
@@ -91,6 +98,38 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
         if v is None:
             return None
         return EpisodeId(v) if isinstance(v, str) else v
+
+    @model_validator(mode="after")
+    def _validate_intro_state(self) -> Self:
+        """Reject the one combination the three intro states exclude.
+
+        An episode cannot both carry an intro span and be flagged as
+        having no intro. The ``with_*`` mutators keep the pair
+        consistent; this guards entities built directly (mappers,
+        tests) from persisting a contradiction.
+        """
+        if self.intro is not None and self.intro_absent_at is not None:
+            raise ValueError("intro and intro_absent_at cannot both be set")
+        return self
+
+    @property
+    def intro_status(self) -> IntroStatus:
+        """Where this episode stands on having its intro resolved."""
+        if self.intro is not None:
+            return IntroStatus.MARKED
+        if self.intro_absent_at is not None:
+            return IntroStatus.ABSENT
+        return IntroStatus.PENDING
+
+    @property
+    def intro_resolved(self) -> bool:
+        """Whether the intro question is settled, marked or absent.
+
+        Coverage counts this rather than "has a marker", so an episode
+        that genuinely has no opening sequence stops holding its series
+        below full coverage forever.
+        """
+        return self.intro_status is not IntroStatus.PENDING
 
     # ── localized accessors ────────────────────────────────────────────
 
@@ -125,20 +164,44 @@ class Episode(FileVariantMixin, DomainEntity[EpisodeId]):
                     "intro_end_seconds": marker.end_seconds,
                 },
             )
-        if self.intro == marker:
+        if self.intro == marker and self.intro_absent_at is None:
             return self
-        return self.with_updates(intro=marker)
+        # Recording a span contradicts "has no intro", so the flag is
+        # dropped in the same transition rather than left to a caller.
+        return self.with_updates(intro=marker, intro_absent_at=None)
 
     def with_intro_cleared(self) -> Self:
-        """Return a copy with the intro marker removed.
+        """Return a copy with the intro question reopened.
+
+        Drops both the marker and the "no intro" flag, so the episode
+        goes back to ``PENDING`` and rejoins the detection queue. This
+        is how an operator undoes either decision.
 
         Returns:
-            A new Episode with ``intro`` set to ``None``, or ``self`` if
-            it was already absent.
+            A new Episode with no intro state, or ``self`` if it was
+            already pending.
         """
-        if self.intro is None:
+        if self.intro is None and self.intro_absent_at is None:
             return self
-        return self.with_updates(intro=None)
+        return self.with_updates(intro=None, intro_absent_at=None)
+
+    def with_intro_marked_absent(self, marked_at: datetime | None = None) -> Self:
+        """Return a copy flagged as having no intro at all.
+
+        Records the operator's verdict that this episode has no opening
+        sequence to skip. Any existing marker is dropped, since the two
+        states are exclusive.
+
+        Args:
+            marked_at: When the verdict was recorded. Defaults to now.
+
+        Returns:
+            A new Episode in the ``ABSENT`` state, or ``self`` if it was
+            already flagged.
+        """
+        if self.intro is None and self.intro_absent_at is not None:
+            return self
+        return self.with_updates(intro=None, intro_absent_at=marked_at or utc_now())
 
     def with_credits_marker(self, marker: CreditsMarker) -> Self:
         """Return a copy with the credits marker set.
