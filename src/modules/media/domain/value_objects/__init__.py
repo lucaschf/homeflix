@@ -16,6 +16,7 @@ from src.modules.media.domain.value_objects.hdr_format import HdrFormat
 from src.modules.media.domain.value_objects.imdb_id import ImdbId
 from src.modules.media.domain.value_objects.intro_detection_state import IntroDetectionState
 from src.modules.media.domain.value_objects.intro_marker import IntroMarker, IntroMarkerSource
+from src.modules.media.domain.value_objects.intro_status import IntroStatus
 from src.modules.media.domain.value_objects.localized_metadata import (
     LocalizedField,
     LocalizedFields,
@@ -73,6 +74,7 @@ __all__ = [
     "IntroDetectionState",
     "IntroMarker",
     "IntroMarkerSource",
+    "IntroStatus",
     "LocalizedField",
     "LocalizedFields",
     "LocalizedMetadata",

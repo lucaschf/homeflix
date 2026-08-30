@@ -11,11 +11,11 @@ from src.modules.media.domain.value_objects import EpisodeId
 class ClearEpisodeIntroUseCase:
     """Remove the intro marker from an episode.
 
-    Idempotent: clearing an episode that already has no marker still
-    succeeds (no event is dispatched). Clearing a previously-MANUAL
-    marker also returns the episode to the auto-detection queue on the
-    next job tick — that is the operator's escape hatch when manual
-    timestamps drift.
+    Idempotent: clearing an already-pending episode still succeeds (no
+    event is dispatched). Clearing a previously-MANUAL marker — or a
+    "no intro" verdict — returns the episode to the auto-detection
+    queue on the next job tick; that is the operator's escape hatch
+    when manual timestamps drift or a verdict was wrong.
 
     Example:
         >>> use_case = ClearEpisodeIntroUseCase(uow_factory, event_bus)
@@ -56,13 +56,16 @@ class ClearEpisodeIntroUseCase:
             if episode is None:
                 raise ResourceNotFoundException.for_resource("Episode", input_dto.episode_id)
 
-            had_marker = episode.intro is not None
-            if had_marker:
+            # Also reopens a "no intro" verdict: clearing is the single
+            # undo for either decision, so the episode returns to
+            # pending and rejoins the detection queue.
+            had_state = episode.intro is not None or episode.intro_absent_at is not None
+            if had_state:
                 await uow.series.update_episode_intro(episode_id, None)
 
             series_id = episode.series_id
 
-        if had_marker and self._event_bus is not None:
+        if had_state and self._event_bus is not None:
             await self._event_bus.publish(
                 IntroClearedEvent(
                     episode_id=episode_id,

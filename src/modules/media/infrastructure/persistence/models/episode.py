@@ -115,6 +115,10 @@ class EpisodeModel(Base):
     intro_end_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     intro_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     intro_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Non-NULL records an operator's verdict that this episode has no
+    # opening sequence. Mutually exclusive with the columns above; the
+    # Episode entity enforces that.
+    intro_absent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     intro_detected_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

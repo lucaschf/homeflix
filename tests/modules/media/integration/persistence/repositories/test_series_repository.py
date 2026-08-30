@@ -1962,6 +1962,105 @@ class TestUpdateEpisodeIntro:
 
 
 @pytest.mark.integration
+class TestMarkEpisodeIntroAbsent:
+    """Tests for the third intro state at the persistence boundary."""
+
+    async def test_stamps_the_flag_and_clears_any_marker(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        marker = IntroMarker(
+            start_seconds=10,
+            end_seconds=72,
+            source=IntroMarkerSource.AUTO_DETECTED,
+            confidence=0.9,
+        )
+        series = _series_with_intro(intro=marker)
+        await repo.save(series)
+        episode_id = series.seasons[0].episodes[0].id
+
+        updated = await repo.mark_episode_intro_absent(  # type: ignore[arg-type]
+            episode_id, datetime.now(UTC)
+        )
+
+        assert updated is True
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert found is not None
+        episode = found.seasons[0].episodes[0]
+        assert episode.intro is None
+        assert episode.intro_absent_at is not None
+        assert episode.intro_resolved is True
+
+    async def test_returns_false_for_an_unknown_episode(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+
+        updated = await repo.mark_episode_intro_absent(EpisodeId.generate(), datetime.now(UTC))
+
+        assert updated is False
+
+    async def test_setting_a_marker_clears_the_absent_flag(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """Otherwise the row would hold the contradiction the entity rejects."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _series_with_intro()
+        await repo.save(series)
+        episode_id = series.seasons[0].episodes[0].id
+        await repo.mark_episode_intro_absent(episode_id, datetime.now(UTC))  # type: ignore[arg-type]
+
+        await repo.update_episode_intro(
+            episode_id,  # type: ignore[arg-type]
+            IntroMarker(start_seconds=5, end_seconds=60, source=IntroMarkerSource.MANUAL),
+        )
+
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert found is not None
+        episode = found.seasons[0].episodes[0]
+        assert episode.intro_absent_at is None
+        assert episode.intro is not None
+
+    async def test_clearing_the_marker_also_reopens_the_verdict(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _series_with_intro()
+        await repo.save(series)
+        episode_id = series.seasons[0].episodes[0].id
+        await repo.mark_episode_intro_absent(episode_id, datetime.now(UTC))  # type: ignore[arg-type]
+
+        await repo.update_episode_intro(episode_id, None)  # type: ignore[arg-type]
+
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert found is not None
+        assert found.seasons[0].episodes[0].intro_absent_at is None
+
+    async def test_season_reset_preserves_the_absent_verdict(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """Re-detection clears AUTO markers; an operator verdict must survive."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        series = _series_with_intro()
+        await repo.save(series)
+        season_id = series.seasons[0].id
+        episode_id = series.seasons[0].episodes[0].id
+        await repo.mark_episode_intro_absent(episode_id, datetime.now(UTC))  # type: ignore[arg-type]
+
+        cleared = await repo.clear_auto_intro_markers_for_season(season_id)  # type: ignore[arg-type]
+
+        assert cleared == 0
+        found = await repo.find_by_id(series.id)  # type: ignore[arg-type]
+        assert found is not None
+        assert found.seasons[0].episodes[0].intro_absent_at is not None
+
+
+@pytest.mark.integration
 class TestSQLAlchemySeriesRepositoryLibraryIsolation:
     """Cross-library isolation at the persistence layer.
 

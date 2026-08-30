@@ -1,5 +1,6 @@
 """Mapper between Series/Season/Episode entities and ORM models."""
 
+from datetime import datetime
 from typing import cast
 
 from src.modules.media.domain.entities import Episode, Season, Series
@@ -89,7 +90,7 @@ class EpisodeMapper:
             if entity.scrub_preview_path
             else None,
             air_date=entity.air_date.value if entity.air_date else None,
-            **_intro_marker_to_columns(entity.intro),
+            **_intro_state_to_columns(entity.intro, entity.intro_absent_at),
             **_credits_marker_to_columns(entity.credits),
             credits_detection_state=entity.credits_detection_state.value,
         )
@@ -143,6 +144,7 @@ class EpisodeMapper:
             else None,
             air_date=AirDate(model.air_date) if model.air_date else None,
             intro=_intro_marker_from_columns(model),
+            intro_absent_at=model.intro_absent_at,
             credits=_credits_marker_from_columns(model),
             # ``server_default`` only fills on INSERT; in-memory models
             # (tests, pre-flush rows) can carry ``None`` here, so coerce.
@@ -182,7 +184,7 @@ class EpisodeMapper:
         )
         model.air_date = entity.air_date.value if entity.air_date else None
 
-        for column, value in _intro_marker_to_columns(entity.intro).items():
+        for column, value in _intro_state_to_columns(entity.intro, entity.intro_absent_at).items():
             setattr(model, column, value)
 
         for column, value in _credits_marker_to_columns(entity.credits).items():
@@ -409,20 +411,30 @@ class SeriesMapper:
         return model
 
 
-def _intro_marker_to_columns(marker: IntroMarker | None) -> dict[str, object]:
-    """Explode an IntroMarker (or absence of one) into the 5 episode columns.
+def _intro_state_to_columns(
+    marker: IntroMarker | None,
+    absent_at: datetime | None,
+) -> dict[str, object]:
+    """Explode an episode's whole intro state into its 6 columns.
+
+    Covers the marker span *and* the "confirmed to have no intro" flag
+    together, so every call site writes the complete state and cannot
+    leave a stale half behind — persisting a marker while an old
+    ``intro_absent_at`` survives would recreate the contradiction the
+    Episode entity rejects.
 
     Args:
-        marker: The IntroMarker VO to persist, or ``None`` to clear it.
+        marker: The IntroMarker VO to persist, or ``None``.
+        absent_at: When the episode was confirmed to have no intro, or
+            ``None``.
 
     Returns:
         A dict suitable for keyword-expansion into ``EpisodeModel`` or
-        ``setattr`` iteration on an existing model. All five columns
-        appear so callers can rely on a complete clear when ``marker``
-        is ``None``.
+        ``setattr`` iteration on an existing model.
     """
+    columns: dict[str, object] = {"intro_absent_at": absent_at}
     if marker is None:
-        return {
+        return columns | {
             "intro_start_seconds": None,
             "intro_end_seconds": None,
             "intro_source": None,
@@ -430,7 +442,7 @@ def _intro_marker_to_columns(marker: IntroMarker | None) -> dict[str, object]:
             "intro_detected_at": None,
         }
 
-    return {
+    return columns | {
         "intro_start_seconds": marker.start_seconds,
         "intro_end_seconds": marker.end_seconds,
         "intro_source": marker.source.value,

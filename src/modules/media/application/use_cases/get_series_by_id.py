@@ -241,6 +241,7 @@ class GetSeriesByIdUseCase:
             else None,
             air_date=episode.air_date.value.isoformat() if episode.air_date else None,
             intro=to_intro_marker_output(episode.intro),
+            intro_status=episode.intro_status.value,
             credits=to_credits_marker_output(episode.credits),
             progress_percentage=progress.percentage if progress else None,
             position_seconds=progress.position_seconds if progress else None,

@@ -680,3 +680,51 @@ class TestIntroDetectionJobProgressLogging:
         await job.run()
 
         assert callable(detector.detect.call_args.args[2])
+
+
+@pytest.mark.unit
+class TestIntroDetectionJobSkipsSettledEpisodes:
+    """Episodes a human already settled must not be re-analysed."""
+
+    @pytest.mark.asyncio
+    async def test_excludes_episodes_confirmed_to_have_no_intro(self) -> None:
+        """An ABSENT verdict must survive the next detection pass."""
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2, 3)]
+        episodes[0] = episodes[0].with_intro_marked_absent()
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[season])
+        detector = _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=2))
+
+        job = IntroDetectionJob(
+            media_uow_factory=MagicMock(return_value=uow),
+            intro_detectors=_registry(detector),
+            runtime_settings=_make_runtime_settings(),
+        )
+        await job.run()
+
+        refs = detector.detect.call_args.args[0]
+        analysed_ids = {ref.episode_id for ref in refs}
+        assert episodes[0].id not in analysed_ids
+        assert analysed_ids == {episodes[1].id, episodes[2].id}
+
+    @pytest.mark.asyncio
+    async def test_season_is_insufficient_when_too_few_undecided_remain(self) -> None:
+        """Absent episodes shrink the candidate pool like MANUAL ones do."""
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        episodes[0] = episodes[0].with_intro_marked_absent()
+        season = _make_season(episodes=episodes, series_id=sid)
+        uow = _build_uow(pending_seasons=[season])
+        detector = _make_detector()
+
+        job = IntroDetectionJob(
+            media_uow_factory=MagicMock(return_value=uow),
+            intro_detectors=_registry(detector),
+            runtime_settings=_make_runtime_settings(),
+        )
+        await job.run()
+
+        detector.detect.assert_not_called()
+        states = [c.args[1] for c in uow.series.update_season_intro_detection.await_args_list]
+        assert IntroDetectionState.INSUFFICIENT_EPISODES in states

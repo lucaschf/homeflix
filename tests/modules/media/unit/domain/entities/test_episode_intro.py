@@ -1,8 +1,13 @@
 """Tests for Episode intro-marker behavior."""
 
+from datetime import UTC, datetime
+
 import pytest
 
-from src.building_blocks.domain.errors import BusinessRuleViolationException
+from src.building_blocks.domain.errors import (
+    BusinessRuleViolationException,
+    DomainValidationException,
+)
 from src.modules.media.domain.entities import Episode
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
@@ -10,6 +15,7 @@ from src.modules.media.domain.value_objects import (
     FilePath,
     IntroMarker,
     IntroMarkerSource,
+    IntroStatus,
     MediaFile,
     Resolution,
     SeriesId,
@@ -144,3 +150,80 @@ class TestEpisodeWithIntroCleared:
         cleared = episode.with_intro_cleared()
 
         assert cleared.updated_at >= episode.updated_at
+
+
+class TestEpisodeIntroAbsent:
+    """Tests for the third intro state: confirmed to have no intro."""
+
+    def test_starts_pending(self) -> None:
+        episode = _make_episode()
+
+        assert episode.intro_status is IntroStatus.PENDING
+        assert episode.intro_resolved is False
+
+    def test_marking_absent_sets_the_absent_status(self) -> None:
+        episode = _make_episode().with_intro_marked_absent()
+
+        assert episode.intro_status is IntroStatus.ABSENT
+        assert episode.intro_resolved is True
+        assert episode.intro_absent_at is not None
+
+    def test_marking_absent_drops_an_existing_marker(self) -> None:
+        """The two states are exclusive, so the marker must go."""
+        marker = IntroMarker(start_seconds=10, end_seconds=80, source=IntroMarkerSource.MANUAL)
+        episode = _make_episode().with_intro_marker(marker)
+
+        absent = episode.with_intro_marked_absent()
+
+        assert absent.intro is None
+        assert absent.intro_status is IntroStatus.ABSENT
+
+    def test_setting_a_marker_clears_the_absent_flag(self) -> None:
+        """Recording a span contradicts the verdict, so it is dropped."""
+        episode = _make_episode().with_intro_marked_absent()
+        marker = IntroMarker(start_seconds=10, end_seconds=80, source=IntroMarkerSource.MANUAL)
+
+        marked = episode.with_intro_marker(marker)
+
+        assert marked.intro_absent_at is None
+        assert marked.intro_status is IntroStatus.MARKED
+
+    def test_clearing_reopens_an_absent_verdict(self) -> None:
+        episode = _make_episode().with_intro_marked_absent()
+
+        cleared = episode.with_intro_cleared()
+
+        assert cleared.intro_absent_at is None
+        assert cleared.intro_status is IntroStatus.PENDING
+
+    def test_marking_absent_twice_returns_self(self) -> None:
+        episode = _make_episode().with_intro_marked_absent()
+
+        assert episode.with_intro_marked_absent() is episode
+
+    def test_clearing_a_pending_episode_returns_self(self) -> None:
+        episode = _make_episode()
+
+        assert episode.with_intro_cleared() is episode
+
+    def test_accepts_an_explicit_marked_at(self) -> None:
+        stamp = datetime(2026, 8, 29, 12, 0, tzinfo=UTC)
+
+        episode = _make_episode().with_intro_marked_absent(stamp)
+
+        assert episode.intro_absent_at == stamp
+
+    def test_rejects_an_episode_that_is_both_marked_and_absent(self) -> None:
+        """Guards entities built directly, bypassing the mutators."""
+        marker = IntroMarker(start_seconds=10, end_seconds=80, source=IntroMarkerSource.MANUAL)
+
+        with pytest.raises(DomainValidationException, match="cannot both be set"):
+            Episode(
+                series_id=SeriesId.generate(),
+                season_number=1,
+                episode_number=1,
+                title=Title("Pilot"),
+                duration=Duration(2700),
+                intro=marker,
+                intro_absent_at=datetime(2026, 8, 29, tzinfo=UTC),
+            )

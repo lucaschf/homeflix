@@ -95,6 +95,9 @@ from src.modules.media.application.use_cases.list_series import ListSeriesUseCas
 from src.modules.media.application.use_cases.list_series_needing_review import (
     ListSeriesNeedingReviewUseCase,
 )
+from src.modules.media.application.use_cases.mark_episode_intro_absent import (
+    MarkEpisodeIntroAbsentUseCase,
+)
 from src.modules.media.application.use_cases.promote_movie_to_series import (
     PromoteMovieToSeriesUseCase,
 )
@@ -360,6 +363,12 @@ class MediaContainer(containers.DeclarativeContainer):
 
     clear_episode_intro = providers.Factory(
         ClearEpisodeIntroUseCase,
+        uow_factory=media_unit_of_work_factory,
+        event_bus=event_bus,
+    )
+
+    mark_episode_intro_absent = providers.Factory(
+        MarkEpisodeIntroAbsentUseCase,
         uow_factory=media_unit_of_work_factory,
         event_bus=event_bus,
     )

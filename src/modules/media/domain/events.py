@@ -64,6 +64,23 @@ class IntroManuallySetEvent(DomainEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
+class IntroMarkedAbsentEvent(DomainEvent):
+    """Emitted when an operator confirms an episode has no intro.
+
+    Distinct from :class:`IntroClearedEvent`: clearing reopens the
+    question and returns the episode to the detection queue, whereas
+    this records a verdict that takes it out of the queue for good.
+
+    Attributes:
+        episode_id: External ID of the episode (epi_xxx).
+        series_id: External ID of the parent series (ser_xxx).
+    """
+
+    episode_id: EpisodeId
+    series_id: SeriesId
+
+
+@dataclass(frozen=True, kw_only=True)
 class IntroClearedEvent(DomainEvent):
     """Emitted when an episode's intro marker is removed.
 
@@ -109,6 +126,7 @@ __all__ = [
     "IntroClearedEvent",
     "IntroDetectedEvent",
     "IntroManuallySetEvent",
+    "IntroMarkedAbsentEvent",
     "MediaConflictDetectedEvent",
     "MediaCreatedEvent",
 ]

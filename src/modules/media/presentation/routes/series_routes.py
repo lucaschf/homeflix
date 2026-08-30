@@ -11,6 +11,7 @@ from src.config.containers import ApplicationContainer
 from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_admin
 from src.modules.media.application.dtos.intro_dtos import (
     ClearEpisodeIntroInput,
+    MarkEpisodeIntroAbsentInput,
     ResetSeasonIntroDetectionInput,
     SetEpisodeIntroInput,
 )
@@ -39,6 +40,9 @@ from src.modules.media.application.use_cases.list_recently_added_series import (
     ListRecentlyAddedSeriesUseCase,
 )
 from src.modules.media.application.use_cases.list_series import ListSeriesUseCase
+from src.modules.media.application.use_cases.mark_episode_intro_absent import (
+    MarkEpisodeIntroAbsentUseCase,
+)
 from src.modules.media.application.use_cases.remove_file_variant import RemoveFileVariantUseCase
 from src.modules.media.application.use_cases.reset_season_intro_detection import (
     ResetSeasonIntroDetectionUseCase,
@@ -313,6 +317,29 @@ async def clear_episode_intro(
     job tick.
     """
     await use_case.execute(ClearEpisodeIntroInput(episode_id=episode_id))
+
+
+@router.post("/episodes/{episode_id}/intro/absent", status_code=204)
+@inject
+async def mark_episode_intro_absent(
+    episode_id: str,
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
+    use_case: MarkEpisodeIntroAbsentUseCase = Depends(
+        Provide[ApplicationContainer.media.mark_episode_intro_absent],
+    ),
+) -> None:
+    """Confirm that an episode has no opening sequence to skip.
+
+    Some episodes genuinely have no intro; without this they stay
+    "pending" forever, hold their series below full coverage, and get
+    re-analysed on every detection pass. Marking one absent counts it
+    as resolved and takes it out of the detection queue. Any existing
+    marker is dropped — the two states are exclusive.
+
+    Idempotent. To undo, DELETE the episode's intro, which reopens the
+    question and requeues it for detection.
+    """
+    await use_case.execute(MarkEpisodeIntroAbsentInput(episode_id=episode_id))
 
 
 @router.post("/seasons/{season_id}/intro-detection/reset")

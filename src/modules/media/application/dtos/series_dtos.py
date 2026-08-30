@@ -38,6 +38,10 @@ class EpisodeOutput:
         scrub_preview_path: Absolute filesystem path to the scrub-preview
             VTT, or ``None`` until the backfill job generates it.
         air_date: Original air date (optional, ISO format).
+        intro_status: ``"MARKED"``, ``"ABSENT"`` (confirmed to have no
+            opening sequence) or ``"PENDING"``. Lets clients tell a
+            reviewed episode with no intro apart from one nobody has
+            looked at yet — ``intro is None`` covers both.
     """
 
     id: str | None
@@ -56,6 +60,7 @@ class EpisodeOutput:
     segment_start_seconds: int | None = None
     segment_end_seconds: int | None = None
     intro: IntroMarkerOutput | None = None
+    intro_status: str = "PENDING"
     credits: CreditsMarkerOutput | None = None
     progress_percentage: float | None = None
     position_seconds: int | None = None
@@ -166,8 +171,12 @@ class SeriesSummaryOutput:
         season_count: Number of seasons.
         total_episodes: Total episode count.
         intro_marked_count: Number of episodes with an intro marker set
-            (auto-detected or manual). Drives the admin intro-coverage
-            progress shown per series.
+            (auto-detected or manual).
+        intro_resolved_count: Episodes whose intro question is settled —
+            marked *or* confirmed to have none. Drives the admin
+            intro-coverage progress, because ``intro_marked_count``
+            alone can never reach ``total_episodes`` on a series where
+            some episodes genuinely have no intro.
         genres: List of genre strings.
         library_id: External library id (``lib_xxx``) owning the
             series. Used by the admin Catalog "Library" column.
@@ -187,6 +196,7 @@ class SeriesSummaryOutput:
     season_count: int
     total_episodes: int
     intro_marked_count: int
+    intro_resolved_count: int
     genres: list[str]
     library_id: str
     tmdb_id: int | None
