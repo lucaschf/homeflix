@@ -50,7 +50,11 @@ def _make_chromaprint(*, returns: list[ChromaprintFingerprint | None] | None = N
     queue: list[ChromaprintFingerprint | None] = list(returns) if returns is not None else []
     service = MagicMock()
 
-    def fingerprint(_path: object) -> ChromaprintFingerprint | None:
+    def fingerprint(
+        _path: object,
+        *,
+        length_seconds: int | None = None,
+    ) -> ChromaprintFingerprint | None:
         if queue:
             return queue.pop(0)
         return ChromaprintFingerprint(duration_seconds=120.0, hashes=[1, 2, 3])
@@ -93,6 +97,23 @@ class TestChromaprintIntroDetector:
         assert len(passed) == 3
         assert all(isinstance(fp, EpisodeFingerprint) for fp in passed)
         assert result.analyzed_count == 3
+
+    def test_forwards_the_analysis_window_to_extraction_and_fpcalc(self) -> None:
+        # fpcalc fingerprints only its leading two minutes unless told
+        # otherwise, so a wider analysis_window_seconds that reaches
+        # ffmpeg but not fpcalc just decodes audio nobody looks at.
+        extractor = _make_audio_extractor()
+        service = _make_chromaprint()
+        detector = ChromaprintIntroDetector(
+            audio_extractor=extractor,
+            chromaprint_service=service,
+            correlator=_make_correlator(),
+        )
+
+        detector.detect(_refs(1), ChromaprintTuning(analysis_window_seconds=900))
+
+        assert extractor.extract_temporary.call_args.kwargs["duration_seconds"] == 900
+        assert service.fingerprint.call_args.kwargs["length_seconds"] == 900
 
     def test_drops_episodes_whose_audio_extraction_fails(self) -> None:
         correlator = _make_correlator()

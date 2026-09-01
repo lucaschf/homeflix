@@ -12,8 +12,15 @@ Each tick:
      fingerprinting, frame hashing, …);
    * persists detected markers whose confidence clears
      ``min_confidence``;
+   * retries with ``fallback_algorithm`` when the primary detector
+     persisted nothing at all — the two detectors are blind to
+     different material, so the second pass recovers seasons the first
+     cannot see;
    * transitions the season to ``COMPLETED``,
      ``INSUFFICIENT_EPISODES``, or ``FAILED``.
+
+Every detector attempt records its own audit row, so a season that
+needed the fallback shows both passes and what each one found.
 
 A single bad season is logged and marked ``FAILED``; the rest of the
 batch continues. Episodes whose media cannot be analysed (missing file,
@@ -66,9 +73,17 @@ if TYPE_CHECKING:
 
 @dataclass
 class _RunMetrics:
-    """Per-season outcome + counters, used to record an audit run."""
+    """Outcome + counters for one detector attempt.
 
+    Maps one-to-one onto an :class:`IntroDetectionRun` audit row, so a
+    season retried with the fallback detector records one of these per
+    attempt rather than collapsing both into a single row.
+    """
+
+    algorithm: IntroDetectionAlgorithm
     outcome: IntroDetectionState
+    started_at: datetime
+    finished_at: datetime
     ref_count: int = 0
     analyzed_count: int = 0
     detected_count: int = 0
@@ -224,7 +239,9 @@ class IntroDetectionJob:
 
         started_at = datetime.now(UTC)
         try:
-            metrics = await self._detect_and_persist(season, season_id, log_ctx, config)
+            attempts = await self._detect_and_persist(
+                season, season_id, log_ctx, config, started_at
+            )
         except Exception as exc:
             _logger.exception(
                 "[intro-detection] season processing failed",
@@ -246,10 +263,19 @@ class IntroDetectionJob:
                     "[intro-detection] failed to record FAILED state",
                     **log_ctx,
                 )
-            metrics = _RunMetrics(outcome=IntroDetectionState.FAILED, error=error_message)
+            attempts = [
+                _RunMetrics(
+                    algorithm=config.algorithm,
+                    outcome=IntroDetectionState.FAILED,
+                    started_at=started_at,
+                    finished_at=datetime.now(UTC),
+                    error=error_message,
+                )
+            ]
 
-        await self._record_run(season, season_id, config, metrics, started_at, series_title)
-        return metrics.outcome
+        for attempt in attempts:
+            await self._record_run(season, season_id, config, attempt, series_title)
+        return attempts[-1].outcome
 
     async def _detect_and_persist(
         self,
@@ -257,7 +283,15 @@ class IntroDetectionJob:
         season_id: SeasonId,
         log_ctx: dict[str, str | int],
         config: IntroDetectionConfig,
-    ) -> _RunMetrics:
+        started_at: datetime,
+    ) -> list[_RunMetrics]:
+        """Drive the season through the configured detector chain.
+
+        Returns one entry per detector attempt — the caller records an
+        audit row for each. The chain stops as soon as an attempt
+        persists a marker, and the season's final state comes from the
+        last attempt made.
+        """
         episode_count = len(season.episodes)
         candidates = [ep for ep in season.episodes if not _is_operator_settled(ep)]
         candidate_count = len(candidates)
@@ -273,7 +307,14 @@ class IntroDetectionJob:
                 total_episodes=len(season.episodes),
                 candidate_count=candidate_count,
             )
-            return _RunMetrics(outcome=IntroDetectionState.INSUFFICIENT_EPISODES)
+            return [
+                _RunMetrics(
+                    algorithm=config.algorithm,
+                    outcome=IntroDetectionState.INSUFFICIENT_EPISODES,
+                    started_at=started_at,
+                    finished_at=datetime.now(UTC),
+                )
+            ]
 
         refs = _build_media_refs(candidates)
         if len(refs) < _MIN_EPISODES_FOR_DETECTION:
@@ -288,24 +329,94 @@ class IntroDetectionJob:
                 candidate_count=candidate_count,
                 ref_count=len(refs),
             )
-            return _RunMetrics(
-                outcome=IntroDetectionState.INSUFFICIENT_EPISODES,
-                ref_count=len(refs),
+            return [
+                _RunMetrics(
+                    algorithm=config.algorithm,
+                    outcome=IntroDetectionState.INSUFFICIENT_EPISODES,
+                    started_at=started_at,
+                    finished_at=datetime.now(UTC),
+                    ref_count=len(refs),
+                )
+            ]
+
+        episode_numbers = _episode_numbers_by_id(candidates)
+        attempts: list[_RunMetrics] = []
+        for algorithm, detector in self._detector_chain(config, log_ctx):
+            attempt = await self._attempt_detection(
+                algorithm, detector, refs, episode_numbers, log_ctx, config
+            )
+            attempts.append(attempt)
+            if attempt.persisted_count > 0:
+                break
+            _logger.info(
+                "[intro-detection] detector persisted no marker",
+                **log_ctx,
+                algorithm=algorithm.value,
             )
 
-        detector = self._intro_detectors.get(config.algorithm)
-        if detector is None:
-            # Wiring/config mismatch — surface it as a season FAILED via
-            # the caller's handler rather than silently doing nothing.
-            raise RuntimeError(f"no intro detector registered for algorithm {config.algorithm}")
+        await self._mark_state(
+            season_id,
+            attempts[-1].outcome,
+            attempted_episode_count=episode_count,
+        )
+        return attempts
 
-        tuning = _build_tuning(config)
-        episode_numbers = _episode_numbers_by_id(candidates)
+    def _detector_chain(
+        self,
+        config: IntroDetectionConfig,
+        log_ctx: dict[str, str | int],
+    ) -> list[tuple[IntroDetectionAlgorithm, IntroDetectorPort]]:
+        """Resolve the primary detector followed by its fallback.
+
+        A missing primary is a wiring/config mismatch and is surfaced as
+        a season FAILED via the caller's handler rather than silently
+        doing nothing. A missing fallback only costs the retry, so it is
+        logged and dropped instead of sinking a season the primary can
+        still handle on its own.
+        """
+        primary = self._intro_detectors.get(config.algorithm)
+        if primary is None:
+            raise RuntimeError(f"no intro detector registered for algorithm {config.algorithm}")
+        chain = [(config.algorithm, primary)]
+
+        fallback = config.fallback_algorithm
+        if fallback is None or fallback == config.algorithm:
+            return chain
+
+        fallback_detector = self._intro_detectors.get(fallback)
+        if fallback_detector is None:
+            _logger.warning(
+                "[intro-detection] configured fallback detector is not registered; skipping",
+                **log_ctx,
+                fallback_algorithm=fallback.value,
+            )
+            return chain
+
+        chain.append((fallback, fallback_detector))
+        return chain
+
+    async def _attempt_detection(
+        self,
+        algorithm: IntroDetectionAlgorithm,
+        detector: IntroDetectorPort,
+        refs: list[EpisodeMediaRef],
+        episode_numbers: Mapping[EpisodeId, int],
+        log_ctx: dict[str, str | int],
+        config: IntroDetectionConfig,
+    ) -> _RunMetrics:
+        """Run one detector over the season and persist what it found.
+
+        Deliberately does not transition the season: in a fallback chain
+        only the last attempt gets to decide the state, so that call
+        belongs to the caller.
+        """
+        started_at = datetime.now(UTC)
+        tuning = _build_tuning(algorithm, config)
         _logger.info(
             "[intro-detection] analysing episodes",
             **log_ctx,
             episode_count=len(refs),
-            algorithm=config.algorithm.value,
+            algorithm=algorithm.value,
             analysis_window_seconds=config.analysis_window_seconds,
         )
         result = await asyncio.to_thread(
@@ -316,19 +427,18 @@ class IntroDetectionJob:
         )
 
         if result.analyzed_count < _MIN_EPISODES_FOR_DETECTION:
-            await self._mark_state(
-                season_id,
-                IntroDetectionState.INSUFFICIENT_EPISODES,
-                attempted_episode_count=episode_count,
-            )
             _logger.info(
-                "[intro-detection] season skipped: not enough analysable episodes",
+                "[intro-detection] not enough analysable episodes",
                 **log_ctx,
+                algorithm=algorithm.value,
                 ref_count=len(refs),
                 analyzed_count=result.analyzed_count,
             )
             return _RunMetrics(
+                algorithm=algorithm,
                 outcome=IntroDetectionState.INSUFFICIENT_EPISODES,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
                 ref_count=len(refs),
                 analyzed_count=result.analyzed_count,
             )
@@ -337,21 +447,20 @@ class IntroDetectionJob:
             result.markers, episode_numbers, config.min_confidence
         )
         persisted_count = await self._persist_detections(result.markers, config.min_confidence)
-        await self._mark_state(
-            season_id,
-            IntroDetectionState.COMPLETED,
-            attempted_episode_count=episode_count,
-        )
         _logger.info(
-            "[intro-detection] season completed",
+            "[intro-detection] detector finished",
             **log_ctx,
+            algorithm=algorithm.value,
             ref_count=len(refs),
             analyzed_count=result.analyzed_count,
             detected_count=len(result.markers),
             persisted_count=persisted_count,
         )
         return _RunMetrics(
+            algorithm=algorithm,
             outcome=IntroDetectionState.COMPLETED,
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
             ref_count=len(refs),
             analyzed_count=result.analyzed_count,
             detected_count=len(result.markers),
@@ -380,10 +489,9 @@ class IntroDetectionJob:
         season_id: SeasonId,
         config: IntroDetectionConfig,
         metrics: _RunMetrics,
-        started_at: datetime,
         series_title: str,
     ) -> None:
-        """Append an audit row for this season's run. Never raises.
+        """Append an audit row for one detector attempt. Never raises.
 
         ``series_title`` is resolved once by the caller and threaded in so
         the audit row stays self-contained (survives a later rename/delete)
@@ -396,7 +504,7 @@ class IntroDetectionJob:
                     series_title=series_title,
                     season_id=str(season_id),
                     season_number=season.season_number.value,
-                    algorithm=config.algorithm.value,
+                    algorithm=metrics.algorithm.value,
                     outcome=metrics.outcome,
                     ref_count=metrics.ref_count,
                     analyzed_count=metrics.analyzed_count,
@@ -405,8 +513,8 @@ class IntroDetectionJob:
                     min_confidence=config.min_confidence,
                     episode_results=metrics.episode_results,
                     error=metrics.error,
-                    started_at=started_at,
-                    finished_at=datetime.now(UTC),
+                    started_at=metrics.started_at,
+                    finished_at=metrics.finished_at,
                 )
                 await uow.intro_detection_runs.add(run)
         except Exception:
@@ -458,14 +566,19 @@ class IntroDetectionJob:
             )
 
 
-def _build_tuning(config: IntroDetectionConfig) -> IntroDetectorTuning:
-    """Build the algorithm-specific tuning for the configured detector.
+def _build_tuning(
+    algorithm: IntroDetectionAlgorithm,
+    config: IntroDetectionConfig,
+) -> IntroDetectorTuning:
+    """Build the tuning for ``algorithm``.
 
     The shared bounds (intro length, analysis window) come from the top
     level; the per-algorithm knobs come from the matching sub-bucket so
-    admin edits propagate without re-wiring the detector.
+    admin edits propagate without re-wiring the detector. Keyed off the
+    algorithm being attempted rather than the configured primary, so a
+    fallback attempt gets its own calibration.
     """
-    if config.algorithm == IntroDetectionAlgorithm.FRAME_HASH:
+    if algorithm == IntroDetectionAlgorithm.FRAME_HASH:
         return FrameHashTuning(
             min_intro_seconds=config.min_intro_seconds,
             max_intro_seconds=config.max_intro_seconds,

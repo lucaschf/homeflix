@@ -131,7 +131,11 @@ class ChromaprintIntroDetector(IntroDetectorPort):
             ) as wav_path:
                 if wav_path is None:
                     return None
-                fingerprint = self._chromaprint_service.fingerprint(wav_path)
+                # fpcalc caps itself at two minutes unless told the
+                # window it is meant to cover.
+                fingerprint = self._chromaprint_service.fingerprint(
+                    wav_path, length_seconds=window_seconds
+                )
         except Exception:
             _logger.exception(
                 "[intro-detection] fingerprinting episode failed; skipping (%s)",

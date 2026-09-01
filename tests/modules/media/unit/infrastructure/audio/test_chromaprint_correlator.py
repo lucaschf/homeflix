@@ -311,31 +311,61 @@ class TestChromaprintCorrelator:
             # where shared underscore extended the run).
             assert marker.end_seconds <= 10.5
 
-    def test_misconfigured_alignment_window_does_not_disable_matching(
-        self, shared_intro: list[int]
-    ) -> None:
-        # alignment_window_seconds * hash_rate < 1 would round down to
-        # 0 without the floor in _pairwise_match, silently skipping
-        # every shift. The correlator must still fall back to a 1-hash
-        # window so misconfiguration becomes "low quality matches" and
-        # not "matching disabled".
-        correlator = ChromaprintCorrelator(alignment_window_seconds=0.05)
-        tuning = ChromaprintTuning(min_intro_seconds=0.1)
+    def test_detects_intro_minutes_into_the_episode(self, shared_intro: list[int]) -> None:
+        # Regression: the correlator used to sweep only ±30s of
+        # alignment shift and to compare only the leading 60s of each
+        # fingerprint. A season whose title sequence sits several
+        # minutes in — at a different minute in every episode, because
+        # the cold open varies — therefore came back empty no matter
+        # how wide the analysis window was.
+        correlator = ChromaprintCorrelator()
+        # 1200s of audio per episode; intros at 25s, 150s, 300s, 600s.
+        offsets = [200, 1200, 2400, 4800]
         episodes = [
             _episode(
                 intro_hashes=shared_intro,
-                intro_offset_hashes=0,
-                total_hashes=400,
+                intro_offset_hashes=offset,
+                total_hashes=9600,
                 seed=seed,
             )
-            for seed in range(3)
+            for seed, offset in enumerate(offsets, start=20)
         ]
 
-        result = correlator.correlate(episodes, tuning)
+        result = correlator.correlate(episodes, _DEFAULT_TUNING)
 
-        # The 1-hash floor cannot detect a 10s intro, but we explicitly
-        # do not require correctness here — just that the loop is not
-        # short-circuited into producing an empty result for a sane
-        # input pair. As long as the floor is in place, len(result)
-        # should be 3 (some segment was identified for each episode).
         assert len(result) == len(episodes)
+        for episode, offset in zip(episodes, offsets, strict=True):
+            marker = result[episode.episode_id]
+            assert marker.start_seconds == pytest.approx(offset / _HASH_RATE, abs=1.0)
+            assert marker.end_seconds == pytest.approx(
+                (offset + len(shared_intro)) / _HASH_RATE, abs=1.5
+            )
+
+    def test_tolerates_bit_noise_on_an_intro_minutes_into_the_episode(self) -> None:
+        # The two failure modes combined: a far-apart intro AND the
+        # per-hash jitter real fpcalc output carries. Whole-hash
+        # equality finds no candidate alignment at all here (every
+        # single hash differs), which is why the offset vote indexes
+        # chunks of each hash rather than the hash itself.
+        correlator = ChromaprintCorrelator()
+        # A 30s intro — the low end of a real title sequence — planted
+        # in 1200s of audio.
+        intro = _make_random_hashes(int(30 * _HASH_RATE), seed=555)
+        offsets = [400, 2000, 3600]
+        episodes = [
+            _episode(
+                intro_hashes=intro,
+                intro_offset_hashes=offset,
+                total_hashes=9600,
+                seed=seed,
+                noise_bits=4,
+            )
+            for seed, offset in enumerate(offsets, start=30)
+        ]
+
+        result = correlator.correlate(episodes, _DEFAULT_TUNING)
+
+        assert len(result) == len(episodes)
+        for episode, offset in zip(episodes, offsets, strict=True):
+            marker = result[episode.episode_id]
+            assert marker.start_seconds == pytest.approx(offset / _HASH_RATE, abs=1.0)
