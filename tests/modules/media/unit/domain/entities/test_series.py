@@ -260,6 +260,98 @@ class TestSeriesIntroMarkedCount:
         assert series.total_episodes == 5
 
 
+class TestSeriesQuality:
+    """Tests for Series.best_resolution and Series.has_hdr."""
+
+    @staticmethod
+    def _episode(series_id, season_number, episode_number, resolution, hdr_format):
+        from src.modules.media.domain.entities import Episode
+        from src.modules.media.domain.value_objects import (
+            Duration,
+            FilePath,
+            MediaFile,
+            Resolution,
+            Title,
+        )
+
+        files = []
+        if resolution is not None:
+            files.append(
+                MediaFile(
+                    file_path=FilePath(
+                        f"/series/show/s{season_number:02d}e{episode_number:02d}.mkv"
+                    ),
+                    file_size=1_000_000_000,
+                    resolution=Resolution(resolution),
+                    hdr_format=hdr_format,
+                    is_primary=True,
+                )
+            )
+        return Episode(
+            series_id=series_id,
+            season_number=season_number,
+            episode_number=episode_number,
+            title=Title(f"Ep {episode_number}"),
+            duration=Duration(2700),
+            files=files,
+        )
+
+    def _series_with(self, seasons):
+        """Build a series from ``[[(resolution, hdr_format), ...], ...]``."""
+        from src.modules.media.domain.entities import Season, Series
+        from src.modules.media.domain.value_objects import SeasonId
+
+        series = Series.create(library_id=_LIBRARY_ID, title="Breaking Bad", start_year=2008)
+        for season_number, specs in enumerate(seasons, start=1):
+            season = Season(
+                id=SeasonId.generate(),
+                series_id=series.id,
+                season_number=season_number,
+                episodes=[
+                    self._episode(series.id, season_number, n + 1, resolution, hdr_format)
+                    for n, (resolution, hdr_format) in enumerate(specs)
+                ],
+            )
+            series = series.with_season(season)
+        return series
+
+    def test_best_resolution_should_be_none_without_seasons(self):
+        series = self._series_with([])
+
+        assert series.best_resolution is None
+
+    def test_best_resolution_should_be_none_when_no_episode_has_a_file(self):
+        series = self._series_with([[(None, None), (None, None)]])
+
+        assert series.best_resolution is None
+
+    def test_best_resolution_should_return_highest_across_seasons(self):
+        series = self._series_with([[("720p", None)], [("4K", None), ("1080p", None)]])
+
+        best = series.best_resolution
+        assert best is not None
+        assert best.name == "4K"
+
+    def test_best_resolution_should_ignore_episodes_without_files(self):
+        series = self._series_with([[(None, None), ("1080p", None)]])
+
+        best = series.best_resolution
+        assert best is not None
+        assert best.name == "1080p"
+
+    def test_has_hdr_should_be_false_when_no_episode_is_hdr(self):
+        series = self._series_with([[("1080p", None), ("4K", None)]])
+
+        assert series.has_hdr is False
+
+    def test_has_hdr_should_be_true_when_any_episode_is_hdr(self):
+        from src.modules.media.domain.value_objects import HdrFormat
+
+        series = self._series_with([[("1080p", None)], [("4K", HdrFormat.HDR10)]])
+
+        assert series.has_hdr is True
+
+
 class TestSeriesEquality:
     """Tests for Series equality based on ID."""
 

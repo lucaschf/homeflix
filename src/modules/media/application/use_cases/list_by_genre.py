@@ -21,6 +21,7 @@ from src.modules.media.application.ports.profile_library_access_port import (
     ProfileLibraryAccessPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.use_cases._catalog_quality_helpers import catalog_quality
 from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.value_objects import CatalogSort, Genre
 from src.shared_kernel.value_objects import MediaType
@@ -389,6 +390,7 @@ class ListByGenreUseCase:
     @staticmethod
     def _to_output(kind: MediaType, item: Movie | Series, lang: str) -> CatalogItemOutput:
         """Convert a movie/series entity into the catalog row DTO."""
+        resolution, hdr = catalog_quality(item)
         if isinstance(item, Movie):
             return CatalogItemOutput(
                 id=str(item.id),
@@ -398,6 +400,8 @@ class ListByGenreUseCase:
                 synopsis=item.get_synopsis(lang),
                 poster_path=item.get_poster_path(lang),
                 backdrop_path=item.get_backdrop_path(lang),
+                resolution=resolution,
+                hdr=hdr,
                 genres=item.get_genres(lang),
             )
         # Series
@@ -409,6 +413,8 @@ class ListByGenreUseCase:
             synopsis=item.get_synopsis(lang),
             poster_path=item.get_poster_path(lang),
             backdrop_path=item.get_backdrop_path(lang),
+            resolution=resolution,
+            hdr=hdr,
             genres=item.get_genres(lang),
         )
 
