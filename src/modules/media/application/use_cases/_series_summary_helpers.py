@@ -13,6 +13,7 @@ from src.modules.media.domain.entities.series import Series
 
 def to_series_summary(series: Series, lang: str = "en") -> SeriesSummaryOutput:
     """Convert a ``Series`` entity to its catalog-card DTO."""
+    best_resolution = series.best_resolution
     return SeriesSummaryOutput(
         id=str(series.id),
         title=series.get_title(lang),
@@ -26,6 +27,8 @@ def to_series_summary(series: Series, lang: str = "en") -> SeriesSummaryOutput:
         total_episodes=series.total_episodes,
         intro_marked_count=series.intro_marked_count,
         intro_resolved_count=series.intro_resolved_count,
+        resolution=best_resolution.value if best_resolution else None,
+        hdr=series.has_hdr,
         genres=series.get_genres(lang),
         library_id=series.library_id,
         tmdb_id=series.tmdb_id.value if series.tmdb_id else None,

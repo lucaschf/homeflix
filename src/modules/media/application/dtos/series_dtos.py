@@ -177,6 +177,10 @@ class SeriesSummaryOutput:
             intro-coverage progress, because ``intro_marked_count``
             alone can never reach ``total_episodes`` on a series where
             some episodes genuinely have no intro.
+        resolution: Best resolution across every episode's files, or
+            ``None`` when no episode has a file yet. Series carry no
+            files of their own, so quality is episode-derived.
+        hdr: Whether any episode has an HDR variant.
         genres: List of genre strings.
         library_id: External library id (``lib_xxx``) owning the
             series. Used by the admin Catalog "Library" column.
@@ -197,6 +201,8 @@ class SeriesSummaryOutput:
     total_episodes: int
     intro_marked_count: int
     intro_resolved_count: int
+    resolution: str | None
+    hdr: bool
     genres: list[str]
     library_id: str
     tmdb_id: int | None

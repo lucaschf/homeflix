@@ -307,6 +307,50 @@ class TestMovieFileManagement:
 
         assert movie.total_size == 24_000_000_000
 
+    def test_has_hdr_should_be_false_without_hdr_variants(self):
+        from src.modules.media.domain.entities import Movie
+
+        movie = Movie.create(
+            library_id=_LIBRARY_ID,
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception_1080p.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        assert movie.has_hdr is False
+
+    def test_has_hdr_should_be_true_when_any_variant_is_hdr(self):
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import (
+            FilePath,
+            HdrFormat,
+            MediaFile,
+            Resolution,
+        )
+
+        movie = Movie.create(
+            library_id=_LIBRARY_ID,
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception_1080p.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+        movie = movie.with_file(
+            MediaFile(
+                file_path=FilePath("/movies/inception_4k.mkv"),
+                file_size=20_000_000_000,
+                resolution=Resolution("4K"),
+                hdr_format=HdrFormat.DOLBY_VISION,
+            )
+        )
+
+        assert movie.has_hdr is True
+
     def test_with_file_should_add_new_variant(self):
         from src.modules.media.domain.entities import Movie
         from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution

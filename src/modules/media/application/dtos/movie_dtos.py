@@ -167,7 +167,10 @@ class MovieSummaryOutput:
         year: Release year.
         duration_formatted: Duration as HH:MM:SS.
         poster_path: Path to poster image (optional).
-        resolution: Video resolution.
+        resolution: Best available video resolution, or ``None`` when
+            the movie has no file yet. Drives the card's quality badge.
+        hdr: Whether any file variant is HDR. Combined with
+            ``resolution`` to label the badge (``4K HDR``).
         genres: List of genre strings.
         library_id: External library id (``lib_xxx``) the movie lives
             in. Read by the admin Catalog page to render the
@@ -190,6 +193,7 @@ class MovieSummaryOutput:
     poster_path: str | None
     backdrop_path: str | None
     resolution: str | None
+    hdr: bool
     variant_count: int
     available_resolutions: list[str]
     genres: list[str]

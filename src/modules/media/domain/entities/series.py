@@ -18,6 +18,7 @@ from src.modules.media.domain.value_objects import (
     ImdbId,
     LocalizedField,
     LocalizedMetadata,
+    Resolution,
     SeasonNumber,
     SeriesId,
     Title,
@@ -203,6 +204,38 @@ class Series(AggregateRoot[SeriesId]):
         return sum(
             1 for season in self.seasons for episode in season.episodes if episode.intro_resolved
         )
+
+    @property
+    def best_resolution(self) -> Resolution | None:
+        """Return the highest resolution available across all episodes.
+
+        Series carry no files of their own — quality lives on each
+        episode's file variants. The catalog card shows a single
+        quality badge per series, so it needs the best any episode
+        can offer.
+
+        Returns:
+            The highest :class:`Resolution` found, or ``None`` when no
+            episode has a file yet.
+        """
+        best_files = [
+            episode.best_file
+            for season in self.seasons
+            for episode in season.episodes
+            if episode.best_file is not None
+        ]
+        if not best_files:
+            return None
+        return max((f.resolution for f in best_files), key=lambda r: r.total_pixels)
+
+    @property
+    def has_hdr(self) -> bool:
+        """Whether any episode has an HDR file variant.
+
+        Returns:
+            True when at least one episode carries an HDR variant.
+        """
+        return any(episode.has_hdr for season in self.seasons for episode in season.episodes)
 
     @property
     def is_ongoing(self) -> bool:

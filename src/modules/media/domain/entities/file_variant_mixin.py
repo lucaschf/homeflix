@@ -48,6 +48,16 @@ class FileVariantMixin:
         )
 
     @property
+    def has_hdr(self) -> bool:
+        """Whether any file variant carries an HDR format.
+
+        Returns:
+            True when at least one variant was probed with an HDR
+            format (HDR10, Dolby Vision, ...).
+        """
+        return any(f.hdr_format is not None for f in self.files)
+
+    @property
     def total_size(self) -> int:
         """Return total file size across all variants."""
         return sum(f.file_size for f in self.files)

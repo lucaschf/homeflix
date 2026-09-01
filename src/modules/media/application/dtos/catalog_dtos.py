@@ -83,6 +83,10 @@ class CatalogItemOutput:
         synopsis: Localized synopsis, or ``None``.
         poster_path: Poster URL or path, or ``None``.
         backdrop_path: Backdrop URL or path, or ``None``.
+        resolution: Best available resolution — the movie's own best
+            file, or the best across a series' episodes. ``None`` when
+            nothing has a file yet. Drives the card's quality badge.
+        hdr: Whether any variant behind this row is HDR.
         genres: Localized genre list — same field as in the existing
             movie/series summaries so the frontend doesn't need a
             different card component.
@@ -95,6 +99,8 @@ class CatalogItemOutput:
     synopsis: str | None
     poster_path: str | None
     backdrop_path: str | None
+    resolution: str | None
+    hdr: bool
     genres: list[str]
 
 

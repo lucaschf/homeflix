@@ -13,6 +13,7 @@ from src.modules.media.application.ports.profile_library_access_port import (
     ProfileLibraryAccessPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.use_cases._catalog_quality_helpers import catalog_quality
 from src.modules.media.domain.entities import Movie, Series
 from src.shared_kernel.value_objects.library_id import LibraryId
 
@@ -125,6 +126,7 @@ class ListRecentlyAddedCatalogUseCase:
         avoid a cross use-case dependency. The DTO is small and
         mirrored in two places at most.
         """
+        resolution, hdr = catalog_quality(item)
         if isinstance(item, Movie):
             return CatalogItemOutput(
                 id=str(item.id),
@@ -134,6 +136,8 @@ class ListRecentlyAddedCatalogUseCase:
                 synopsis=item.get_synopsis(lang),
                 poster_path=item.get_poster_path(lang),
                 backdrop_path=item.get_backdrop_path(lang),
+                resolution=resolution,
+                hdr=hdr,
                 genres=item.get_genres(lang),
             )
         return CatalogItemOutput(
@@ -144,6 +148,8 @@ class ListRecentlyAddedCatalogUseCase:
             synopsis=item.get_synopsis(lang),
             poster_path=item.get_poster_path(lang),
             backdrop_path=item.get_backdrop_path(lang),
+            resolution=resolution,
+            hdr=hdr,
             genres=item.get_genres(lang),
         )
 
