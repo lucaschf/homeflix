@@ -202,3 +202,62 @@ class TestChromaprintService:
         assert "-raw" in cmd
         assert "-json" in cmd
         assert cmd[-1] == "/tmp/audio.wav"
+
+    def test_passes_requested_length_to_fpcalc(self, fake_fpcalc: MagicMock) -> None:
+        # Without -length, fpcalc fingerprints only the leading two
+        # minutes and silently discards the rest of the window.
+        captured: dict[str, list[str]] = {}
+
+        def run_side_effect(cmd, **_kwargs):  # type: ignore[no-untyped-def]
+            captured["cmd"] = cmd
+            return _completed(stdout=json.dumps({"duration": 600.0, "fingerprint": [42]}))
+
+        with patch(
+            "src.modules.media.infrastructure.audio.chromaprint_service.subprocess.run",
+            side_effect=run_side_effect,
+        ):
+            ChromaprintService().fingerprint("/tmp/audio.wav", length_seconds=600)
+
+        cmd = captured["cmd"]
+        assert cmd[cmd.index("-length") + 1] == "600"
+
+    def test_duration_is_clamped_to_the_fingerprinted_length(self, fake_fpcalc: MagicMock) -> None:
+        # fpcalc reports the input's full duration even though it only
+        # fingerprinted `-length` seconds of it. Reporting the unclamped
+        # value would make callers derive a hash rate several times too
+        # low and misplace every timestamp they compute from it.
+        payload = json.dumps({"duration": 1200.0, "fingerprint": [1, 2, 3]})
+
+        with patch(
+            "src.modules.media.infrastructure.audio.chromaprint_service.subprocess.run",
+            return_value=_completed(stdout=payload),
+        ):
+            result = ChromaprintService().fingerprint("/tmp/audio.wav", length_seconds=300)
+
+        assert result is not None
+        assert result.duration_seconds == pytest.approx(300.0)
+
+    def test_duration_falls_back_to_the_fpcalc_default_cap(self, fake_fpcalc: MagicMock) -> None:
+        # No length requested → fpcalc applied its own 120s default.
+        payload = json.dumps({"duration": 1200.0, "fingerprint": [1, 2, 3]})
+
+        with patch(
+            "src.modules.media.infrastructure.audio.chromaprint_service.subprocess.run",
+            return_value=_completed(stdout=payload),
+        ):
+            result = ChromaprintService().fingerprint("/tmp/audio.wav")
+
+        assert result is not None
+        assert result.duration_seconds == pytest.approx(120.0)
+
+    def test_duration_is_left_alone_when_source_is_shorter(self, fake_fpcalc: MagicMock) -> None:
+        payload = json.dumps({"duration": 42.0, "fingerprint": [1, 2, 3]})
+
+        with patch(
+            "src.modules.media.infrastructure.audio.chromaprint_service.subprocess.run",
+            return_value=_completed(stdout=payload),
+        ):
+            result = ChromaprintService().fingerprint("/tmp/audio.wav", length_seconds=600)
+
+        assert result is not None
+        assert result.duration_seconds == pytest.approx(42.0)

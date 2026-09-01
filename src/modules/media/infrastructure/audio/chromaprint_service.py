@@ -22,6 +22,10 @@ from src.modules.streaming.infrastructure.streaming._subprocess import SUBPROCES
 _logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_SECONDS = 30
+# fpcalc fingerprints only the leading ``-length`` seconds of its input
+# and defaults to two minutes. Anything past that is silently ignored,
+# so callers analysing a longer window MUST pass ``length_seconds``.
+_FPCALC_DEFAULT_LENGTH_SECONDS = 120
 
 
 @functools.lru_cache(maxsize=1)
@@ -43,9 +47,14 @@ class ChromaprintFingerprint:
     """Raw acoustic fingerprint emitted by ``fpcalc``.
 
     Attributes:
-        duration_seconds: Length of audio scanned, as reported by
-            fpcalc. May be slightly less than the requested length when
-            the source is shorter than the request.
+        duration_seconds: Length of audio actually covered by
+            ``hashes``. Note this is NOT simply what fpcalc reports:
+            fpcalc prints the input's full duration while fingerprinting
+            only its leading ``-length`` seconds, so the value is
+            clamped to whichever is smaller. Callers derive the hash
+            rate from it, and an unclamped duration would scale every
+            hash-index-to-seconds conversion by the ratio between the
+            two.
         hashes: Raw 32-bit fingerprint hashes, one per ~0.124s of audio.
             Suitable for hamming-distance comparison against fingerprints
             from other recordings.
@@ -78,12 +87,21 @@ class ChromaprintService:
     def __init__(self, *, timeout_seconds: int = _DEFAULT_TIMEOUT_SECONDS) -> None:
         self._timeout = timeout_seconds
 
-    def fingerprint(self, audio_path: str | Path) -> ChromaprintFingerprint | None:
+    def fingerprint(
+        self,
+        audio_path: str | Path,
+        *,
+        length_seconds: int | None = None,
+    ) -> ChromaprintFingerprint | None:
         """Compute the raw fingerprint for ``audio_path``.
 
         Args:
             audio_path: Path to a decoded audio file (WAV/FLAC/etc.) that
                 fpcalc can read directly.
+            length_seconds: How much leading audio to fingerprint. Pass
+                the full length of ``audio_path`` to fingerprint all of
+                it; omitting it leaves fpcalc's own two-minute default
+                in place, which silently ignores everything after it.
 
         Returns:
             A :class:`ChromaprintFingerprint`, or ``None`` if fpcalc is
@@ -93,9 +111,14 @@ class ChromaprintService:
         if fpcalc is None:
             return None
 
+        command = [fpcalc, "-raw", "-json"]
+        if length_seconds is not None:
+            command += ["-length", str(length_seconds)]
+        command.append(str(audio_path))
+
         try:
             result = subprocess.run(
-                [fpcalc, "-raw", "-json", str(audio_path)],
+                command,
                 **SUBPROCESS_TEXT_KWARGS,
                 check=False,
                 timeout=self._timeout,
@@ -116,10 +139,18 @@ class ChromaprintService:
             )
             return None
 
-        return _parse_fpcalc_json(result.stdout, audio_path)
+        return _parse_fpcalc_json(
+            result.stdout,
+            audio_path,
+            length_seconds if length_seconds is not None else _FPCALC_DEFAULT_LENGTH_SECONDS,
+        )
 
 
-def _parse_fpcalc_json(stdout: str, source: str | Path) -> ChromaprintFingerprint | None:
+def _parse_fpcalc_json(
+    stdout: str,
+    source: str | Path,
+    length_seconds: int,
+) -> ChromaprintFingerprint | None:
     """Parse the JSON document fpcalc emits under ``-raw -json``.
 
     Modern fpcalc (>= 1.5) emits ``"fingerprint": [int, int, ...]``;
@@ -130,6 +161,9 @@ def _parse_fpcalc_json(stdout: str, source: str | Path) -> ChromaprintFingerprin
     Args:
         stdout: Raw stdout from fpcalc.
         source: Audio path being fingerprinted (used for log context).
+        length_seconds: Cap fpcalc applied to the audio it read. The
+            reported duration is clamped to it so the returned duration
+            describes the fingerprint rather than the input file.
 
     Returns:
         Parsed fingerprint or ``None`` if the payload was malformed.
@@ -157,7 +191,10 @@ def _parse_fpcalc_json(stdout: str, source: str | Path) -> ChromaprintFingerprin
         _logger.error("fpcalc emitted an empty fingerprint for %s", source)
         return None
 
-    return ChromaprintFingerprint(duration_seconds=duration_seconds, hashes=hashes)
+    return ChromaprintFingerprint(
+        duration_seconds=min(duration_seconds, float(length_seconds)),
+        hashes=hashes,
+    )
 
 
 def _coerce_hashes(raw: object) -> list[int]:
