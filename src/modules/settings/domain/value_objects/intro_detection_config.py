@@ -73,7 +73,18 @@ class IntroDetectionConfig(CompoundValueObject):
     Attributes:
         enabled: Toggle for the periodic job. Off by default; requires
             ffmpeg (and ``fpcalc`` for the Chromaprint algorithm).
-        algorithm: Which detector to run. Defaults to ``FRAME_HASH``.
+        algorithm: Which detector to run first. Defaults to
+            ``FRAME_HASH``.
+        fallback_algorithm: Detector to retry the season with when
+            ``algorithm`` persists no marker at all — either because it
+            found nothing shared or because it could not analyse enough
+            episodes. The two detectors fail on disjoint material
+            (audio is blind to per-episode remixes, video to
+            per-episode title-card artwork), so retrying with the other
+            one recovers seasons neither would find alone. ``None``
+            disables the retry; a value equal to ``algorithm`` is
+            ignored. A partially successful primary run is never
+            retried — one persisted marker is enough to trust it.
         batch_size: Max seasons processed per detection tick. Each
             season decodes/fingerprints every episode, so values above
             2 can saturate the host on large seasons.
@@ -105,6 +116,9 @@ class IntroDetectionConfig(CompoundValueObject):
 
     enabled: bool = Field(default=False)
     algorithm: IntroDetectionAlgorithm = Field(default=IntroDetectionAlgorithm.FRAME_HASH)
+    fallback_algorithm: IntroDetectionAlgorithm | None = Field(
+        default=IntroDetectionAlgorithm.CHROMAPRINT
+    )
     batch_size: int = Field(default=1, ge=1)
     interval_minutes: int = Field(default=30, ge=1)
     stale_claim_timeout_minutes: int = Field(default=120, ge=1)

@@ -118,9 +118,17 @@ def _registry(detector: MagicMock) -> dict[IntroDetectionAlgorithm, MagicMock]:
 
 
 def _make_runtime_settings(*, intro: IntroDetectionConfig | None = None) -> AsyncMock:
-    """Return a fake :class:`RuntimeSettings` exposing ``intro_detection``."""
+    """Return a fake :class:`RuntimeSettings` exposing ``intro_detection``.
+
+    The default disables ``fallback_algorithm`` — unlike production, so
+    that the orchestration tests observe exactly one detector pass. The
+    fallback chain has its own tests below, and the shipped default is
+    covered by the config VO's tests.
+    """
     runtime = AsyncMock()
-    runtime.intro_detection = AsyncMock(return_value=intro or IntroDetectionConfig())
+    runtime.intro_detection = AsyncMock(
+        return_value=intro or IntroDetectionConfig(fallback_algorithm=None)
+    )
     return runtime
 
 
@@ -446,7 +454,7 @@ class TestIntroDetectionJob:
             media_uow_factory=factory,
             intro_detectors=detectors,
             runtime_settings=_make_runtime_settings(
-                intro=IntroDetectionConfig(algorithm=algorithm)
+                intro=IntroDetectionConfig(algorithm=algorithm, fallback_algorithm=None)
             ),
         )
         await job.run()
@@ -554,6 +562,178 @@ class TestIntroDetectionJob:
         uow.intro_detection_runs.add.assert_awaited_once()
         run = uow.intro_detection_runs.add.await_args.args[0]
         assert run.series_title == "Test Series"
+
+
+@pytest.mark.unit
+class TestIntroDetectionFallbackChain:
+    """A season the primary detector cannot crack is retried with the other one."""
+
+    @staticmethod
+    def _markers(episodes: list[Episode]) -> dict[EpisodeId, DetectedIntro]:
+        return {
+            ep.id: DetectedIntro(start_seconds=5.0, end_seconds=65.0, confidence=0.9)
+            for ep in episodes
+            if ep.id is not None
+        }
+
+    @staticmethod
+    def _job(
+        uow: AsyncMock,
+        detectors: dict[IntroDetectionAlgorithm, MagicMock],
+        *,
+        fallback: IntroDetectionAlgorithm | None,
+    ) -> IntroDetectionJob:
+        return IntroDetectionJob(
+            media_uow_factory=MagicMock(return_value=uow),
+            intro_detectors=detectors,
+            runtime_settings=_make_runtime_settings(
+                intro=IntroDetectionConfig(
+                    algorithm=IntroDetectionAlgorithm.FRAME_HASH,
+                    fallback_algorithm=fallback,
+                )
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_retries_with_the_fallback_when_primary_persists_nothing(self) -> None:
+        # Frame hash analyses every episode fine but finds nothing
+        # shared — the shape of a season whose title sequence is redrawn
+        # per episode while the theme music stays put.
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        uow = _build_uow(pending_seasons=[_make_season(episodes=episodes, series_id=sid)])
+        primary = _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=2))
+        fallback = _make_detector(
+            result=IntroDetectionResult(markers=self._markers(episodes), analyzed_count=2)
+        )
+
+        job = self._job(
+            uow,
+            {
+                IntroDetectionAlgorithm.FRAME_HASH: primary,
+                IntroDetectionAlgorithm.CHROMAPRINT: fallback,
+            },
+            fallback=IntroDetectionAlgorithm.CHROMAPRINT,
+        )
+        await job.run()
+
+        primary.detect.assert_called_once()
+        fallback.detect.assert_called_once()
+        assert uow.series.update_episode_intro.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_records_one_audit_run_per_attempt(self) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        uow = _build_uow(pending_seasons=[_make_season(episodes=episodes, series_id=sid)])
+        primary = _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=2))
+        fallback = _make_detector(
+            result=IntroDetectionResult(markers=self._markers(episodes), analyzed_count=2)
+        )
+
+        job = self._job(
+            uow,
+            {
+                IntroDetectionAlgorithm.FRAME_HASH: primary,
+                IntroDetectionAlgorithm.CHROMAPRINT: fallback,
+            },
+            fallback=IntroDetectionAlgorithm.CHROMAPRINT,
+        )
+        await job.run()
+
+        # Collapsing both passes into one row would hide which detector
+        # actually produced the markers.
+        recorded = [call.args[0] for call in uow.intro_detection_runs.add.await_args_list]
+        assert [run.algorithm for run in recorded] == ["frame_hash", "chromaprint"]
+        assert [run.persisted_count for run in recorded] == [0, 2]
+
+    @pytest.mark.asyncio
+    async def test_does_not_retry_when_the_primary_persisted_a_marker(self) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        uow = _build_uow(pending_seasons=[_make_season(episodes=episodes, series_id=sid)])
+        primary = _make_detector(
+            result=IntroDetectionResult(markers=self._markers(episodes), analyzed_count=2)
+        )
+        fallback = _make_detector()
+
+        job = self._job(
+            uow,
+            {
+                IntroDetectionAlgorithm.FRAME_HASH: primary,
+                IntroDetectionAlgorithm.CHROMAPRINT: fallback,
+            },
+            fallback=IntroDetectionAlgorithm.CHROMAPRINT,
+        )
+        await job.run()
+
+        fallback.detect.assert_not_called()
+        uow.intro_detection_runs.add.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_retries_when_the_primary_could_not_analyse_enough_episodes(self) -> None:
+        # Undecodable video is not undecodable audio: an INSUFFICIENT
+        # primary is still worth handing to the other pipeline.
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        uow = _build_uow(pending_seasons=[_make_season(episodes=episodes, series_id=sid)])
+        primary = _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=0))
+        fallback = _make_detector(
+            result=IntroDetectionResult(markers=self._markers(episodes), analyzed_count=2)
+        )
+
+        job = self._job(
+            uow,
+            {
+                IntroDetectionAlgorithm.FRAME_HASH: primary,
+                IntroDetectionAlgorithm.CHROMAPRINT: fallback,
+            },
+            fallback=IntroDetectionAlgorithm.CHROMAPRINT,
+        )
+        await job.run()
+
+        fallback.detect.assert_called_once()
+        # The season's final state comes from the last attempt, not the
+        # INSUFFICIENT_EPISODES the primary would have left behind.
+        last_state = uow.series.update_season_intro_detection.await_args.args[1]
+        assert last_state == IntroDetectionState.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_skips_a_fallback_that_is_not_registered(self) -> None:
+        # A missing fallback costs the retry, nothing more — the season
+        # must not fail over a detector it never needed.
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        uow = _build_uow(pending_seasons=[_make_season(episodes=episodes, series_id=sid)])
+        primary = _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=2))
+
+        job = self._job(
+            uow,
+            {IntroDetectionAlgorithm.FRAME_HASH: primary},
+            fallback=IntroDetectionAlgorithm.CHROMAPRINT,
+        )
+        await job.run()
+
+        primary.detect.assert_called_once()
+        uow.intro_detection_runs.add.assert_awaited_once()
+        last_state = uow.series.update_season_intro_detection.await_args.args[1]
+        assert last_state == IntroDetectionState.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_ignores_a_fallback_equal_to_the_primary(self) -> None:
+        sid = SeriesId.generate()
+        episodes = [_make_episode(series_id=sid, episode_number=i) for i in (1, 2)]
+        uow = _build_uow(pending_seasons=[_make_season(episodes=episodes, series_id=sid)])
+        primary = _make_detector(result=IntroDetectionResult(markers={}, analyzed_count=2))
+
+        job = self._job(
+            uow,
+            {IntroDetectionAlgorithm.FRAME_HASH: primary},
+            fallback=IntroDetectionAlgorithm.FRAME_HASH,
+        )
+        await job.run()
+
+        primary.detect.assert_called_once()
 
 
 @pytest.mark.unit
