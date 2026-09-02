@@ -28,7 +28,13 @@ class SubtitleAppearanceDto:
 
 @dataclass(frozen=True)
 class PreferencesOutput:
-    """Current playback preferences for the profile."""
+    """Current playback preferences for the profile.
+
+    ``intro_skip_mode`` / ``credits_skip_mode`` travel to the player as
+    the canonical enum strings; the player pairs them with the episode's
+    ``intro`` / ``credits`` markers to decide between a button and an
+    automatic jump.
+    """
 
     audio_lang: str
     subtitle_lang: str
@@ -36,6 +42,8 @@ class PreferencesOutput:
     default_quality: str
     speed: float
     subtitle_appearance: SubtitleAppearanceDto
+    intro_skip_mode: str
+    credits_skip_mode: str
 
     @classmethod
     def from_entity(cls, entity: PlaybackPreferences) -> PreferencesOutput:
@@ -53,6 +61,8 @@ class PreferencesOutput:
                 font_size=appearance.font_size.value,
                 text_edge=appearance.text_edge.value,
             ),
+            intro_skip_mode=entity.intro_skip_mode.value,
+            credits_skip_mode=entity.credits_skip_mode.value,
         )
 
 
@@ -72,6 +82,8 @@ class UpdatePreferencesInput:
     default_quality: str | None = None
     speed: float | None = None
     subtitle_appearance: dict[str, str] | None = None
+    intro_skip_mode: str | None = None
+    credits_skip_mode: str | None = None
 
 
 __all__ = [

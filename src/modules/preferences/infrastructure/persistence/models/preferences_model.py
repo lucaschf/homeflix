@@ -36,6 +36,8 @@ class PreferencesModel(Base):
     )
     subtitle_font_size: Mapped[str] = mapped_column(String(10), nullable=False, default="medium")
     subtitle_text_edge: Mapped[str] = mapped_column(String(10), nullable=False, default="shadow")
+    intro_skip_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
+    credits_skip_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
 
 
 __all__ = ["PreferencesModel"]

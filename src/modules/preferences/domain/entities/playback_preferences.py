@@ -8,6 +8,8 @@ from pydantic import Field, field_validator
 
 from src.building_blocks.domain import AggregateRoot
 from src.modules.preferences.domain.value_objects import (
+    CreditsSkipMode,
+    IntroSkipMode,
     PreferencesId,
     Quality,
     Speed,
@@ -22,6 +24,8 @@ DEFAULT_SUBTITLE_LANG = "pt-BR"
 DEFAULT_SUBTITLE_MODE = SubtitleMode.FOREIGN_ONLY
 DEFAULT_QUALITY = Quality.BEST
 DEFAULT_SPEED = 1.0
+DEFAULT_INTRO_SKIP_MODE = IntroSkipMode.MANUAL
+DEFAULT_CREDITS_SKIP_MODE = CreditsSkipMode.MANUAL
 
 
 class PlaybackPreferences(AggregateRoot[PreferencesId]):
@@ -38,6 +42,13 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
     for media tracks: the player persists region-qualified tags that the
     strict code rejects. The tag is still validated on write, so garbage
     can't round-trip to the database or out to the client.
+
+    ``intro_skip_mode`` and ``credits_skip_mode`` are advisory: the
+    server has no playhead, so it publishes the episode's markers (Media
+    BC) alongside the preference and the player is what actually seeks.
+    Both default to ``MANUAL``, which is today's behaviour — a button
+    the viewer presses — so no existing profile changes until someone
+    opts in.
 
     Example:
         >>> profile = ProfileId("prf_test12345678")
@@ -57,6 +68,8 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
     default_quality: Quality = DEFAULT_QUALITY
     speed: Speed = Field(default_factory=lambda: Speed(DEFAULT_SPEED))
     subtitle_appearance: SubtitleAppearance = Field(default_factory=SubtitleAppearance.default)
+    intro_skip_mode: IntroSkipMode = DEFAULT_INTRO_SKIP_MODE
+    credits_skip_mode: CreditsSkipMode = DEFAULT_CREDITS_SKIP_MODE
 
     @field_validator("audio_lang", "subtitle_lang", mode="before")
     @classmethod
@@ -82,6 +95,18 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
         """Accept the canonical string alongside ``Quality`` members."""
         return value if isinstance(value, Quality) else Quality(value)
 
+    @field_validator("intro_skip_mode", mode="before")
+    @classmethod
+    def _coerce_intro_skip_mode(cls, value: Any) -> IntroSkipMode:
+        """Accept the canonical string alongside ``IntroSkipMode`` members."""
+        return value if isinstance(value, IntroSkipMode) else IntroSkipMode(value)
+
+    @field_validator("credits_skip_mode", mode="before")
+    @classmethod
+    def _coerce_credits_skip_mode(cls, value: Any) -> CreditsSkipMode:
+        """Accept the canonical string alongside ``CreditsSkipMode`` members."""
+        return value if isinstance(value, CreditsSkipMode) else CreditsSkipMode(value)
+
     @classmethod
     def default_for(cls, profile_id: ProfileId) -> Self:
         """Build a fresh preferences record with all factory defaults."""
@@ -99,6 +124,8 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
         default_quality: str | None = None,
         speed: float | None = None,
         subtitle_appearance: dict[str, Any] | None = None,
+        intro_skip_mode: str | None = None,
+        credits_skip_mode: str | None = None,
     ) -> Self:
         """Return a copy with only the non-``None`` fields replaced.
 
@@ -122,6 +149,10 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
             merged = self.subtitle_appearance.model_dump(mode="json")
             merged.update(subtitle_appearance)
             updates["subtitle_appearance"] = merged
+        if intro_skip_mode is not None:
+            updates["intro_skip_mode"] = intro_skip_mode
+        if credits_skip_mode is not None:
+            updates["credits_skip_mode"] = credits_skip_mode
         if not updates:
             return self
         return self.with_updates(**updates)
@@ -129,6 +160,8 @@ class PlaybackPreferences(AggregateRoot[PreferencesId]):
 
 __all__ = [
     "DEFAULT_AUDIO_LANG",
+    "DEFAULT_CREDITS_SKIP_MODE",
+    "DEFAULT_INTRO_SKIP_MODE",
     "DEFAULT_QUALITY",
     "DEFAULT_SPEED",
     "DEFAULT_SUBTITLE_LANG",

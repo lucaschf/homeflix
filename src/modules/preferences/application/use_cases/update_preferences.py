@@ -36,6 +36,8 @@ class UpdatePreferencesUseCase:
                 default_quality=input_dto.default_quality,
                 speed=input_dto.speed,
                 subtitle_appearance=input_dto.subtitle_appearance,
+                intro_skip_mode=input_dto.intro_skip_mode,
+                credits_skip_mode=input_dto.credits_skip_mode,
             )
             saved = await uow.preferences.save(updated)
 

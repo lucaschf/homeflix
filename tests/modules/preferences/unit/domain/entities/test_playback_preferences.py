@@ -4,7 +4,13 @@ import pytest
 
 from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.preferences.domain.entities import PlaybackPreferences
-from src.modules.preferences.domain.value_objects import Quality, Speed, SubtitleMode
+from src.modules.preferences.domain.value_objects import (
+    CreditsSkipMode,
+    IntroSkipMode,
+    Quality,
+    Speed,
+    SubtitleMode,
+)
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _PROFILE_ID = ProfileId("prf_test12345678")
@@ -26,6 +32,9 @@ class TestDefaultFactory:
         assert prefs.subtitle_appearance.background.value == "rgba(0, 0, 0, 0.75)"
         assert prefs.subtitle_appearance.font_size.value == "medium"
         assert prefs.subtitle_appearance.text_edge.value == "shadow"
+        # Default is today's behaviour — a button, never an unasked seek.
+        assert prefs.intro_skip_mode is IntroSkipMode.MANUAL
+        assert prefs.credits_skip_mode is CreditsSkipMode.MANUAL
         assert prefs.id is not None
         assert prefs.id.value == _PROFILE_ID.value
 
@@ -121,3 +130,51 @@ class TestSubtitleAppearanceUpdates:
         prefs = PlaybackPreferences.default_for(_PROFILE_ID)
         with pytest.raises(DomainValidationException):
             prefs.apply_updates(subtitle_appearance={"color": "#GG0000"})
+
+
+@pytest.mark.unit
+class TestSkipModeUpdates:
+    def test_should_coerce_intro_skip_mode_from_string(self) -> None:
+        prefs = PlaybackPreferences.default_for(_PROFILE_ID)
+
+        updated = prefs.apply_updates(intro_skip_mode="autoAfterFirst")
+
+        assert updated.intro_skip_mode is IntroSkipMode.AUTO_AFTER_FIRST
+        # Credits are an independent knob — turning one on leaves the
+        # other where it was.
+        assert updated.credits_skip_mode is CreditsSkipMode.MANUAL
+        # Immutable per ADR-007 — the original is untouched.
+        assert prefs.intro_skip_mode is IntroSkipMode.MANUAL
+
+    def test_should_coerce_credits_skip_mode_from_string(self) -> None:
+        prefs = PlaybackPreferences.default_for(_PROFILE_ID)
+
+        updated = prefs.apply_updates(credits_skip_mode="auto")
+
+        assert updated.credits_skip_mode is CreditsSkipMode.AUTO
+        assert updated.intro_skip_mode is IntroSkipMode.MANUAL
+
+    def test_should_update_both_modes_at_once(self) -> None:
+        prefs = PlaybackPreferences.default_for(_PROFILE_ID)
+
+        updated = prefs.apply_updates(intro_skip_mode="auto", credits_skip_mode="auto")
+
+        assert updated.intro_skip_mode is IntroSkipMode.AUTO
+        assert updated.credits_skip_mode is CreditsSkipMode.AUTO
+
+    def test_should_accept_enum_members_alongside_strings(self) -> None:
+        prefs = PlaybackPreferences.default_for(_PROFILE_ID)
+
+        updated = prefs.apply_updates(intro_skip_mode=IntroSkipMode.AUTO)
+
+        assert updated.intro_skip_mode is IntroSkipMode.AUTO
+
+    def test_should_reject_invalid_intro_skip_mode(self) -> None:
+        prefs = PlaybackPreferences.default_for(_PROFILE_ID)
+        with pytest.raises(DomainValidationException):
+            prefs.apply_updates(intro_skip_mode="always")
+
+    def test_should_reject_intro_only_mode_on_credits(self) -> None:
+        prefs = PlaybackPreferences.default_for(_PROFILE_ID)
+        with pytest.raises(DomainValidationException):
+            prefs.apply_updates(credits_skip_mode="autoAfterFirst")

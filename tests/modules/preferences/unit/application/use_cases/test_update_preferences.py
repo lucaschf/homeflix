@@ -95,3 +95,51 @@ class TestUpdatePreferencesUseCase:
             )
 
         mocks.preferences.save.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_should_update_skip_modes(self) -> None:
+        mocks = make_preferences_uow_mock()
+        mocks.preferences.find_by_profile_id.return_value = None
+        mocks.preferences.save.side_effect = lambda prefs: prefs
+        use_case = UpdatePreferencesUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            UpdatePreferencesInput(
+                profile_id=_PROFILE_ID.value,
+                intro_skip_mode="auto",
+                credits_skip_mode="auto",
+            ),
+        )
+
+        assert result.intro_skip_mode == "auto"
+        assert result.credits_skip_mode == "auto"
+
+    @pytest.mark.asyncio
+    async def test_should_leave_credits_mode_alone_when_only_intro_is_sent(self) -> None:
+        existing = PlaybackPreferences.default_for(_PROFILE_ID).apply_updates(
+            credits_skip_mode="auto",
+        )
+        mocks = make_preferences_uow_mock()
+        mocks.preferences.find_by_profile_id.return_value = existing
+        mocks.preferences.save.side_effect = lambda prefs: prefs
+        use_case = UpdatePreferencesUseCase(uow_factory=mocks.factory)
+
+        result = await use_case.execute(
+            UpdatePreferencesInput(profile_id=_PROFILE_ID.value, intro_skip_mode="autoAfterFirst"),
+        )
+
+        assert result.intro_skip_mode == "autoAfterFirst"
+        assert result.credits_skip_mode == "auto"
+
+    @pytest.mark.asyncio
+    async def test_should_reject_invalid_intro_skip_mode(self) -> None:
+        mocks = make_preferences_uow_mock()
+        mocks.preferences.find_by_profile_id.return_value = None
+        use_case = UpdatePreferencesUseCase(uow_factory=mocks.factory)
+
+        with pytest.raises(DomainValidationException):
+            await use_case.execute(
+                UpdatePreferencesInput(profile_id=_PROFILE_ID.value, intro_skip_mode="sometimes"),
+            )
+
+        mocks.preferences.save.assert_not_awaited()

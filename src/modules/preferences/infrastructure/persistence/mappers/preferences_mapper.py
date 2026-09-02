@@ -2,6 +2,8 @@
 
 from src.modules.preferences.domain.entities import PlaybackPreferences
 from src.modules.preferences.domain.value_objects import (
+    CreditsSkipMode,
+    IntroSkipMode,
     PreferencesId,
     Quality,
     Speed,
@@ -34,6 +36,8 @@ class PreferencesMapper:
                 font_size=model.subtitle_font_size,
                 text_edge=model.subtitle_text_edge,
             ),
+            intro_skip_mode=IntroSkipMode(model.intro_skip_mode),
+            credits_skip_mode=CreditsSkipMode(model.credits_skip_mode),
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -56,6 +60,8 @@ class PreferencesMapper:
             subtitle_background=entity.subtitle_appearance.background.value,
             subtitle_font_size=entity.subtitle_appearance.font_size.value,
             subtitle_text_edge=entity.subtitle_appearance.text_edge.value,
+            intro_skip_mode=entity.intro_skip_mode.value,
+            credits_skip_mode=entity.credits_skip_mode.value,
         )
 
     @staticmethod
@@ -78,6 +84,8 @@ class PreferencesMapper:
         model.subtitle_background = entity.subtitle_appearance.background.value
         model.subtitle_font_size = entity.subtitle_appearance.font_size.value
         model.subtitle_text_edge = entity.subtitle_appearance.text_edge.value
+        model.intro_skip_mode = entity.intro_skip_mode.value
+        model.credits_skip_mode = entity.credits_skip_mode.value
         return model
 
 

@@ -4,7 +4,12 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.preferences.domain.entities import PlaybackPreferences
-from src.modules.preferences.domain.value_objects import Quality, SubtitleMode
+from src.modules.preferences.domain.value_objects import (
+    CreditsSkipMode,
+    IntroSkipMode,
+    Quality,
+    SubtitleMode,
+)
 from src.modules.preferences.infrastructure.persistence.repositories import (
     SQLAlchemyPreferencesRepository,
 )
@@ -103,3 +108,47 @@ class TestSQLAlchemyPreferencesRepository:
         assert found.subtitle_appearance.text_edge.value == "outline"
         # Untouched knob kept its default through the DB round-trip.
         assert found.subtitle_appearance.background.value == "rgba(0, 0, 0, 0.75)"
+
+    async def test_skip_modes_round_trip(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyPreferencesRepository(db_session)
+        await repo.save(
+            PlaybackPreferences.default_for(_PROFILE_ID).apply_updates(
+                intro_skip_mode="autoAfterFirst",
+                credits_skip_mode="auto",
+            ),
+        )
+
+        found = await repo.find_by_profile_id(_PROFILE_ID)
+
+        assert found is not None
+        assert found.intro_skip_mode is IntroSkipMode.AUTO_AFTER_FIRST
+        assert found.credits_skip_mode is CreditsSkipMode.AUTO
+
+    async def test_skip_modes_default_to_manual_on_a_fresh_row(
+        self, db_session: AsyncSession
+    ) -> None:
+        # A row written before the columns existed reads back as manual,
+        # which is what the migration's server_default backfills.
+        repo = SQLAlchemyPreferencesRepository(db_session)
+        await repo.save(PlaybackPreferences.default_for(_PROFILE_ID))
+
+        found = await repo.find_by_profile_id(_PROFILE_ID)
+
+        assert found is not None
+        assert found.intro_skip_mode is IntroSkipMode.MANUAL
+        assert found.credits_skip_mode is CreditsSkipMode.MANUAL
+
+    async def test_skip_mode_update_persists_over_an_existing_row(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyPreferencesRepository(db_session)
+        await repo.save(PlaybackPreferences.default_for(_PROFILE_ID))
+
+        existing = await repo.find_by_profile_id(_PROFILE_ID)
+        assert existing is not None
+        await repo.save(existing.apply_updates(intro_skip_mode="auto"))
+
+        found = await repo.find_by_profile_id(_PROFILE_ID)
+        assert found is not None
+        assert found.intro_skip_mode is IntroSkipMode.AUTO
+        assert found.credits_skip_mode is CreditsSkipMode.MANUAL

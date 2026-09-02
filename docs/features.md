@@ -64,7 +64,11 @@ Para os requisitos completos (incluindo o que ainda é planejado), veja
 - **OCR de legendas baseadas em imagem** (PGS/VOBSUB) convertidas para faixas de
   texto selecionáveis ([ADR-027](adr/ADR-027-ocr-image-based-subtitles.md)).
 - **Skip intro / skip créditos** a partir dos marcadores detectados, e
-  **trickplay** (thumbnails de scrub) na barra de progresso.
+  **trickplay** (thumbnails de scrub) na barra de progresso. O comportamento é
+  **configurável por perfil** (`intro_skip_mode` / `credits_skip_mode` em
+  `/api/v1/preferences`): botão manual (default), automático, ou — no caso da
+  abertura — automático a partir do segundo episódio da temporada. O servidor
+  publica marcador + preferência; quem move o playhead é o player.
 
 ## Progresso e histórico
 

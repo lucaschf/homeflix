@@ -1,6 +1,8 @@
 """Playback preferences value objects."""
 
+from src.modules.preferences.domain.value_objects.credits_skip_mode import CreditsSkipMode
 from src.modules.preferences.domain.value_objects.css_color import CssColor
+from src.modules.preferences.domain.value_objects.intro_skip_mode import IntroSkipMode
 from src.modules.preferences.domain.value_objects.preferences_id import PreferencesId
 from src.modules.preferences.domain.value_objects.quality import Quality
 from src.modules.preferences.domain.value_objects.speed import Speed
@@ -24,7 +26,9 @@ __all__ = [
     "DEFAULT_SUBTITLE_COLOR",
     "DEFAULT_SUBTITLE_FONT_SIZE",
     "DEFAULT_SUBTITLE_TEXT_EDGE",
+    "CreditsSkipMode",
     "CssColor",
+    "IntroSkipMode",
     "PreferencesId",
     "Quality",
     "Speed",
