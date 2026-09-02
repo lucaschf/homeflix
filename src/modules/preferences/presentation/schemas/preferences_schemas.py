@@ -23,6 +23,8 @@ class UpdatePreferencesRequest(BaseModel):
     default_quality: str | None = None
     speed: float | None = Field(default=None, ge=0.25, le=4.0)
     subtitle_appearance: SubtitleAppearanceRequest | None = None
+    intro_skip_mode: str | None = None
+    credits_skip_mode: str | None = None
 
 
 __all__ = ["SubtitleAppearanceRequest", "UpdatePreferencesRequest"]

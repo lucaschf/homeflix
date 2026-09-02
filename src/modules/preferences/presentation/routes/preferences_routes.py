@@ -62,6 +62,8 @@ async def update_preferences(
                 if body.subtitle_appearance is not None
                 else None
             ),
+            intro_skip_mode=body.intro_skip_mode,
+            credits_skip_mode=body.credits_skip_mode,
         )
     )
     return api_single("preferences", asdict(result))
