@@ -47,6 +47,10 @@ from src.modules.media.application.ports.scrub_preview_locator_port import (
 from src.modules.media.application.ports.variant_detector_port import (
     VariantDetectorPort,
 )
+from src.modules.media.application.ports.watch_history_port import (
+    WatchedTitle,
+    WatchHistoryPort,
+)
 
 __all__ = [
     "CatalogRequestLookupPort",
@@ -74,4 +78,6 @@ __all__ = [
     "SchedulerSnapshot",
     "ScrubPreviewLocatorPort",
     "VariantDetectorPort",
+    "WatchHistoryPort",
+    "WatchedTitle",
 ]

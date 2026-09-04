@@ -75,6 +75,14 @@ Para os requisitos completos (incluindo o que ainda é planejado), veja
 - **Salvamento automático de progresso**, com marcação de "completo" ao atingir
   ~90% e retomada exata (*continue watching*). O progresso é **escopo por
   perfil**.
+- **Hero recomendado pelo histórico** — o destaque da página inicial
+  (`/api/v1/featured`) nunca repete um título que o perfil já assistiu
+  (filme ou série com qualquer progresso) e prioriza títulos dos gêneros
+  mais assistidos pelo perfil, completando com títulos aleatórios ainda não
+  vistos quando o catálogo não tem o suficiente naqueles gêneros. Perfil sem
+  histórico continua vendo destaques aleatórios. A leitura do histórico entra
+  no módulo `media` por um read port
+  ([ADR-009](adr/ADR-009-cross-bc-read-ports.md)).
 
 ## Listas e coleções
 

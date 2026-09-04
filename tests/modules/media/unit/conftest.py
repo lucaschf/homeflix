@@ -11,6 +11,10 @@ from unittest.mock import AsyncMock, MagicMock
 from src.modules.media.application.ports.profile_library_access_port import (
     ProfileLibraryAccessPort,
 )
+from src.modules.media.application.ports.watch_history_port import (
+    WatchedTitle,
+    WatchHistoryPort,
+)
 from src.modules.media.application.unit_of_work import (
     MediaUnitOfWork,
     MediaUnitOfWorkFactory,
@@ -116,3 +120,33 @@ def make_profile_library_access(
     if library_ids is None:
         library_ids = ["lib_test12345678"]
     return FakeProfileLibraryAccessPort({profile_id: list(library_ids)})
+
+
+class FakeWatchHistoryPort(WatchHistoryPort):
+    """In-memory implementation of ``WatchHistoryPort`` for tests.
+
+    Stores a ``profile_id -> list[WatchedTitle]`` mapping (most recent
+    first, as the production adapter returns it). Unmapped profiles
+    resolve to an empty history — the "new viewer" path.
+    """
+
+    def __init__(self, mapping: dict[str, list[WatchedTitle]] | None = None) -> None:
+        self._mapping: dict[str, list[WatchedTitle]] = dict(mapping) if mapping else {}
+        self.calls: list[tuple[str, int]] = []
+
+    async def list_recently_watched(self, profile_id: str, *, limit: int) -> list[WatchedTitle]:
+        self.calls.append((profile_id, limit))
+        return list(self._mapping.get(profile_id, []))[:limit]
+
+
+def make_watch_history(
+    *,
+    profile_id: str = "prf_test12345678",
+    titles: list[WatchedTitle] | None = None,
+) -> FakeWatchHistoryPort:
+    """Build a fake history port bound to a single test profile.
+
+    Defaults to an empty history (``titles=None``) so use cases that
+    only care about the no-history fallback need no extra setup.
+    """
+    return FakeWatchHistoryPort({profile_id: list(titles or [])})

@@ -280,6 +280,8 @@ class SeriesCatalogRepository(ABC):
         *,
         with_backdrop: bool = False,
         allowed_library_ids: Sequence[LibraryId] | None = None,
+        genres: Sequence[Genre] | None = None,
+        exclude_ids: Sequence[SeriesId] | None = None,
     ) -> Sequence[Series]:
         """Return random series, optionally filtering to those with backdrop.
 
@@ -290,6 +292,12 @@ class SeriesCatalogRepository(ABC):
                 non-``None``, results are restricted to rows whose
                 ``library_id`` is in the supplied set. ``None``
                 (default) applies no library filter.
+            genres: Optional canonical (English) genres. When
+                non-empty, only series tagged with **at least one** of
+                them are eligible. ``None`` or empty applies no genre
+                filter.
+            exclude_ids: Optional series ids to leave out of the pool
+                (e.g. titles the profile already watched).
 
         Returns:
             Sequence of randomly selected series.

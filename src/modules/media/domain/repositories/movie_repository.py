@@ -384,6 +384,8 @@ class MovieCatalogRepository(ABC):
         *,
         with_backdrop: bool = False,
         allowed_library_ids: Sequence[LibraryId] | None = None,
+        genres: Sequence[Genre] | None = None,
+        exclude_ids: Sequence[MovieId] | None = None,
     ) -> Sequence[Movie]:
         """Return random movies, optionally filtering to those with backdrop.
 
@@ -394,6 +396,12 @@ class MovieCatalogRepository(ABC):
                 non-``None``, results are restricted to rows whose
                 ``library_id`` is in the supplied set. ``None``
                 (default) applies no library filter.
+            genres: Optional canonical (English) genres. When
+                non-empty, only movies tagged with **at least one** of
+                them are eligible. ``None`` or empty applies no genre
+                filter.
+            exclude_ids: Optional movie ids to leave out of the pool
+                (e.g. titles the profile already watched).
 
         Returns:
             Sequence of randomly selected movies.
