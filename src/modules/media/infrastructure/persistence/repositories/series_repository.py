@@ -52,6 +52,7 @@ from src.modules.media.infrastructure.persistence.repositories._artwork_helpers 
     to_still_columns,
 )
 from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
+    any_genre_predicate,
     fetch_genre_paginated_page,
     fetch_genre_rows,
 )
@@ -461,10 +462,10 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         *,
         with_backdrop: bool = False,
         allowed_library_ids: Sequence[LibraryId] | None = None,
+        genres: Sequence[Genre] | None = None,
+        exclude_ids: Sequence[SeriesId] | None = None,
     ) -> Sequence[Series]:
         """Return random series."""
-        from sqlalchemy.sql.expression import func
-
         stmt = (
             select(SeriesModel)
             .where(SeriesModel.deleted_at.is_(None))
@@ -479,6 +480,10 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             stmt = stmt.where(
                 SeriesModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
             )
+        if genres:
+            stmt = stmt.where(any_genre_predicate(SeriesModel, genres))
+        if exclude_ids:
+            stmt = stmt.where(SeriesModel.external_id.not_in([str(sid) for sid in exclude_ids]))
         stmt = stmt.order_by(func.random()).limit(limit)
         result = await self._session.execute(stmt)
         return [SeriesMapper.to_entity(m) for m in result.scalars().all()]

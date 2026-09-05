@@ -164,8 +164,8 @@ class MediaContainer(containers.DeclarativeContainer):
     - Use cases for movie, series, and file variant operations
     - Streaming and metadata infrastructure
 
-    The ``session_factory``, ``event_bus``, and ``progress_lookup``
-    dependencies must be wired from the parent container.
+    The ``session_factory``, ``event_bus``, ``progress_lookup``, and
+    ``watch_history`` dependencies must be wired from the parent container.
 
     Example:
         >>> container = MediaContainer(session_factory=sf, ...)
@@ -179,6 +179,11 @@ class MediaContainer(containers.DeclarativeContainer):
     # Wired at the composition root — the adapter depends on the
     # Watch Progress UoW factory so the Media BC only knows the port.
     progress_lookup = providers.Dependency[Any]()
+
+    # Wired at the composition root — the hero-banner use case reads
+    # the profile's recently watched titles through this port so the
+    # Media BC only knows ``WatchHistoryPort`` (ADR-009).
+    watch_history = providers.Dependency[Any]()
 
     # Wired at the composition root — the adapter lives in the
     # Catalog Requests BC, so this BC only ever sees
@@ -244,6 +249,7 @@ class MediaContainer(containers.DeclarativeContainer):
         GetFeaturedMediaUseCase,
         uow_factory=media_unit_of_work_factory,
         profile_library_access=profile_library_access,
+        watch_history=watch_history,
     )
 
     get_movie_by_id = providers.Factory(

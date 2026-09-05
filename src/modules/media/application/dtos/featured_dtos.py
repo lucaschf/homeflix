@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -41,6 +41,13 @@ class FeaturedItemOutput:
         logo_path: URL of the title-logo image (transparent PNG)
             populated from TMDB during enrich. Optional — only some
             titles have a logo on TMDB.
+        content_rating: Age/content rating label, when known.
+        trailer_url: Trailer URL, when known.
+        matched_genres: Localized genres of this title that overlap the
+            viewer's taste profile (their most-watched genres). Non-empty
+            means the item was picked *because* of the viewer's history —
+            the UI can render "because you watch Sci-Fi". Empty for random
+            backfill and for viewers with no history.
     """
 
     id: str
@@ -54,3 +61,4 @@ class FeaturedItemOutput:
     logo_path: str | None
     content_rating: str | None
     trailer_url: str | None
+    matched_genres: list[str] = field(default_factory=list)

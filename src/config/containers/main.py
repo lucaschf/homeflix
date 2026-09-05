@@ -49,6 +49,7 @@ from src.modules.media.infrastructure.acl import (
     ProgressLookupAdapter,
     ScrubPreviewLocatorAdapter,
     TmdbLocalizedTitleAdapter,
+    WatchHistoryAdapter,
 )
 from src.modules.media.infrastructure.scheduling.intro_detection_runner import (
     BackgroundIntroDetectionRunner,
@@ -119,6 +120,13 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     _progress_lookup_adapter = providers.Factory(
         ProgressLookupAdapter,
+        watch_progress_uow_factory=_watch_progress_uow_factory_for_progress_lookup,
+    )
+
+    # Recently watched titles for the hero-banner recommendations —
+    # shares the Watch Progress UoW factory above.
+    _watch_history_adapter = providers.Factory(
+        WatchHistoryAdapter,
         watch_progress_uow_factory=_watch_progress_uow_factory_for_progress_lookup,
     )
 
@@ -240,6 +248,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         session_factory=infrastructure.session_factory,
         event_bus=infrastructure.event_bus,
         progress_lookup=_progress_lookup_adapter,
+        watch_history=_watch_history_adapter,
         profile_library_access=_profile_library_access_adapter,
         catalog_request_lookup=catalog_requests.catalog_request_lookup,
         library_uow_factory=_library_uow_factory_for_media,

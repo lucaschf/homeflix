@@ -53,6 +53,21 @@ def split_genres(raw: str | None) -> list[str]:
     return [g.strip() for g in raw.split(",") if g.strip()]
 
 
+def any_genre_predicate(model: Any, genres: Sequence[Genre]) -> Any:
+    """SQL predicate: the row is tagged with at least one of ``genres``.
+
+    Wraps the comma-separated ``genres`` column with delimiters so a
+    substring search can't false-positive: "Action" must NOT match
+    "Reaction" or "Action Adventure". The matching pattern wraps each
+    genre value the same way. An empty ``genres`` yields ``true`` so
+    callers can pass the (possibly empty) list straight through.
+    """
+    if not genres:
+        return true()
+    delimited_genres = func.concat(",", func.coalesce(model.genres, ""), ",")
+    return or_(*[delimited_genres.like(f"%,{genre.value},%") for genre in genres])
+
+
 def localized_title_sort_key(model: Any, lang: str) -> Any:
     """SQL sort key ``LOWER(COALESCE(localized[lang].title, title))``.
 
@@ -284,17 +299,11 @@ async def fetch_genre_paginated_page(
     spec = _GENRE_SORT_SPECS[sort]
     decoded = decode_sort_cursor(cursor, expected_sort=sort.value)
 
-    # Wrap the column with delimiters so a substring search can't
-    # false-positive: "Action" must NOT match "Reaction" or
-    # "Action Adventure". The matching pattern wraps the genre value
-    # the same way.
-    delimited_genres = func.concat(",", func.coalesce(model.genres, ""), ",")
-
     stmt = (
         select(model)
         .where(
             model.deleted_at.is_(None),
-            delimited_genres.like(f"%,{genre.value},%"),
+            any_genre_predicate(model, [genre]),
         )
         .options(*options)
     )

@@ -42,6 +42,7 @@ from src.modules.media.infrastructure.persistence.repositories._artwork_helpers 
     to_artwork_columns,
 )
 from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
+    any_genre_predicate,
     fetch_genre_paginated_page,
     fetch_genre_rows,
     localized_title_for,
@@ -496,10 +497,10 @@ class SQLAlchemyMovieRepository(MovieRepository):
         *,
         with_backdrop: bool = False,
         allowed_library_ids: Sequence[LibraryId] | None = None,
+        genres: Sequence[Genre] | None = None,
+        exclude_ids: Sequence[MovieId] | None = None,
     ) -> Sequence[Movie]:
         """Return random movies."""
-        from sqlalchemy.sql.expression import func
-
         stmt = (
             select(MovieModel)
             .where(MovieModel.deleted_at.is_(None))
@@ -514,6 +515,10 @@ class SQLAlchemyMovieRepository(MovieRepository):
             stmt = stmt.where(
                 MovieModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
             )
+        if genres:
+            stmt = stmt.where(any_genre_predicate(MovieModel, genres))
+        if exclude_ids:
+            stmt = stmt.where(MovieModel.external_id.not_in([str(mid) for mid in exclude_ids]))
         stmt = stmt.order_by(func.random()).limit(limit)
         result = await self._session.execute(stmt)
         return [MovieMapper.to_entity(m) for m in result.scalars().all()]

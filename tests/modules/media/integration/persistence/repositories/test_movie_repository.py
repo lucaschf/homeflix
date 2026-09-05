@@ -409,6 +409,112 @@ class TestSQLAlchemyMovieRepositoryFindRandom:
         assert len(result) == 1
         assert result[0].title.value == "Kept"
 
+    async def test_find_random_with_genres_should_keep_any_match(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(
+            _create_movie(
+                title="Action Only",
+                file_path="/movies/action.mkv",
+                genres=[Genre("Action")],
+            )
+        )
+        await repo.save(
+            _create_movie(
+                title="Drama And Sci-Fi",
+                file_path="/movies/drama.mkv",
+                genres=[Genre("Drama"), Genre("Sci-Fi")],
+            )
+        )
+        await repo.save(
+            _create_movie(
+                title="Comedy",
+                file_path="/movies/comedy.mkv",
+                genres=[Genre("Comedy")],
+            )
+        )
+        await repo.save(_create_movie(title="Untagged", file_path="/movies/untagged.mkv"))
+
+        result = await repo.find_random(limit=10, genres=[Genre("Action"), Genre("Sci-Fi")])
+
+        assert {m.title.value for m in result} == {"Action Only", "Drama And Sci-Fi"}
+
+    async def test_find_random_with_genres_should_not_substring_match(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(
+            _create_movie(
+                title="Reaction",
+                file_path="/movies/reaction.mkv",
+                genres=[Genre("Reaction"), Genre("Action Adventure")],
+            )
+        )
+
+        result = await repo.find_random(limit=10, genres=[Genre("Action")])
+
+        assert result == []
+
+    async def test_find_random_with_empty_genres_should_not_filter(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await _seed_movies(repo, count=2)
+
+        result = await repo.find_random(limit=10, genres=[])
+
+        assert len(result) == 2
+
+    async def test_find_random_should_exclude_ids(self, db_session: AsyncSession) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        movies = await _seed_movies(repo, count=3)
+        excluded = [_id_of(movies[0]), _id_of(movies[2])]
+
+        result = await repo.find_random(limit=10, exclude_ids=excluded)
+
+        assert [m.title.value for m in result] == ["Movie 1"]
+
+    async def test_find_random_should_compose_genre_exclusion_and_library_filters(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        seen = _create_movie(
+            title="Seen Action",
+            file_path="/movies/seen.mkv",
+            genres=[Genre("Action")],
+            backdrop_path=ImageUrl("https://image.tmdb.org/seen.jpg"),
+        )
+        fresh = _create_movie(
+            title="Fresh Action",
+            file_path="/movies/fresh.mkv",
+            genres=[Genre("Action")],
+            backdrop_path=ImageUrl("https://image.tmdb.org/fresh.jpg"),
+        )
+        no_backdrop = _create_movie(
+            title="Action No Backdrop",
+            file_path="/movies/nobd.mkv",
+            genres=[Genre("Action")],
+        )
+        other_library = _create_movie(
+            title="Other Library Action",
+            file_path="/movies/other.mkv",
+            genres=[Genre("Action")],
+            backdrop_path=ImageUrl("https://image.tmdb.org/other.jpg"),
+        ).with_updates(library_id=_LIBRARY_ID_OTHER)
+        for movie in (seen, fresh, no_backdrop, other_library):
+            await repo.save(movie)
+
+        result = await repo.find_random(
+            limit=10,
+            with_backdrop=True,
+            allowed_library_ids=[LibraryId(_LIBRARY_ID)],
+            genres=[Genre("Action")],
+            exclude_ids=[_id_of(seen)],
+        )
+
+        assert [m.title.value for m in result] == ["Fresh Action"]
+
 
 @pytest.mark.integration
 class TestSQLAlchemyMovieRepositoryFindByIds:

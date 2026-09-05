@@ -18,6 +18,9 @@ from src.modules.media.infrastructure.acl.progress_lookup_adapter import (
 from src.modules.media.infrastructure.acl.scrub_preview_locator_adapter import (
     ScrubPreviewLocatorAdapter,
 )
+from src.modules.media.infrastructure.acl.watch_history_adapter import (
+    WatchHistoryAdapter,
+)
 
 __all__ = [
     "HlsCacheStatsAdapter",
@@ -26,4 +29,5 @@ __all__ = [
     "ProgressLookupAdapter",
     "ScrubPreviewLocatorAdapter",
     "TmdbLocalizedTitleAdapter",
+    "WatchHistoryAdapter",
 ]
