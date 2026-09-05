@@ -78,9 +78,12 @@ Para os requisitos completos (incluindo o que ainda é planejado), veja
 - **Hero recomendado pelo histórico** — o destaque da página inicial
   (`/api/v1/featured`) nunca repete um título que o perfil já assistiu
   (filme ou série com qualquer progresso) e prioriza títulos dos gêneros
-  mais assistidos pelo perfil, completando com títulos aleatórios ainda não
-  vistos quando o catálogo não tem o suficiente naqueles gêneros. Perfil sem
-  histórico continua vendo destaques aleatórios. A leitura do histórico entra
+  mais assistidos pelo perfil — títulos concluídos e assistidos recentemente
+  pesam mais —, completando com títulos aleatórios ainda não vistos quando o
+  catálogo não tem o suficiente naqueles gêneros. Cada item recomendado
+  informa em `matched_genres` quais gêneros dele batem com o gosto do perfil,
+  para a UI explicar o motivo. Perfil sem histórico continua vendo destaques
+  aleatórios. A leitura do histórico entra
   no módulo `media` por um read port
   ([ADR-009](adr/ADR-009-cross-bc-read-ports.md)).
 

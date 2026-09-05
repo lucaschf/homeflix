@@ -1,8 +1,8 @@
 """GetFeaturedMediaUseCase - Recommended media for the hero banner."""
 
 import random
-from collections import Counter
 from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime
 
 from src.modules.media.application.dtos.featured_dtos import (
     FeaturedItemOutput,
@@ -35,8 +35,13 @@ _TOP_GENRES = 3
 
 # A title watched to the end says more about taste than one abandoned
 # halfway through.
-_COMPLETED_WEIGHT = 2
-_IN_PROGRESS_WEIGHT = 1
+_COMPLETED_WEIGHT = 2.0
+_IN_PROGRESS_WEIGHT = 1.0
+
+# Recency decay: a title's weight halves every ``_RECENCY_HALF_LIFE_DAYS``
+# since it was last watched, so what the viewer is into *now* outranks a
+# phase from months ago without ever dropping to zero.
+_RECENCY_HALF_LIFE_DAYS = 30.0
 
 
 class GetFeaturedMediaUseCase:
@@ -49,8 +54,10 @@ class GetFeaturedMediaUseCase:
        profile has progress on (in progress or completed) is excluded
        from the pool.
     2. **Prefers the viewer's favourite genres** — the genres of the
-       watched titles are tallied (completed titles weigh more) and the
-       pool is first drawn from titles tagged with the top genres.
+       watched titles are tallied (completed titles weigh more, recently
+       watched titles weigh more) and the pool is first drawn from titles
+       tagged with the top genres. Each recommended item reports which of
+       its genres matched (``matched_genres``) so the UI can say why.
     3. **Backfills randomly** — when the genre pool can't fill ``limit``
        (small catalog, exotic taste) the remaining slots are drawn from
        any unseen title, so the hero is never empty just because the
@@ -128,14 +135,18 @@ class GetFeaturedMediaUseCase:
                 matched_movies, extra_movies = await self._pick_movies(
                     uow, limit, allowed, top_genres, watched_movie_ids
                 )
-                recommended.extend(self._movie_to_output(m, lang) for m in matched_movies)
+                recommended.extend(
+                    self._movie_to_output(m, lang, top_genres) for m in matched_movies
+                )
                 backfill.extend(self._movie_to_output(m, lang) for m in extra_movies)
 
             if want_series:
                 matched_series, extra_series = await self._pick_series(
                     uow, limit, allowed, top_genres, watched_series_ids
                 )
-                recommended.extend(self._series_to_output(s, lang) for s in matched_series)
+                recommended.extend(
+                    self._series_to_output(s, lang, top_genres) for s in matched_series
+                )
                 backfill.extend(self._series_to_output(s, lang) for s in extra_series)
 
         random.shuffle(recommended)
@@ -160,8 +171,9 @@ class GetFeaturedMediaUseCase:
             **{mid: movie.genres for mid, movie in watched_movies.items()},
             **{sid: series.genres for sid, series in watched_series.items()},
         }
+        now = datetime.now(UTC)
         weighted = (
-            (genres_by_id.get(title.media_id, ()), _weight_for(title.status)) for title in history
+            (genres_by_id.get(title.media_id, ()), _weight_for(title, now)) for title in history
         )
         return rank_genres(weighted, top_n=_TOP_GENRES)
 
@@ -239,7 +251,9 @@ class GetFeaturedMediaUseCase:
         return matched, backfill
 
     @staticmethod
-    def _movie_to_output(movie: Movie, lang: str) -> FeaturedItemOutput:
+    def _movie_to_output(
+        movie: Movie, lang: str, taste: Sequence[Genre] = ()
+    ) -> FeaturedItemOutput:
         """Convert Movie entity to featured output."""
         return FeaturedItemOutput(
             id=str(movie.id),
@@ -253,10 +267,13 @@ class GetFeaturedMediaUseCase:
             logo_path=movie.get_logo_path(lang),
             content_rating=movie.content_rating.value if movie.content_rating else None,
             trailer_url=movie.trailer_url,
+            matched_genres=matched_genres(movie.genres, movie.get_genres(lang), taste),
         )
 
     @staticmethod
-    def _series_to_output(series: Series, lang: str) -> FeaturedItemOutput:
+    def _series_to_output(
+        series: Series, lang: str, taste: Sequence[Genre] = ()
+    ) -> FeaturedItemOutput:
         """Convert Series entity to featured output."""
         return FeaturedItemOutput(
             id=str(series.id),
@@ -270,15 +287,40 @@ class GetFeaturedMediaUseCase:
             logo_path=series.get_logo_path(lang),
             content_rating=series.content_rating.value if series.content_rating else None,
             trailer_url=series.trailer_url,
+            matched_genres=matched_genres(series.genres, series.get_genres(lang), taste),
         )
 
 
-def _weight_for(status: str) -> int:
-    return _COMPLETED_WEIGHT if status == "completed" else _IN_PROGRESS_WEIGHT
+def _weight_for(title: WatchedTitle, now: datetime) -> float:
+    base = _COMPLETED_WEIGHT if title.status == "completed" else _IN_PROGRESS_WEIGHT
+    return base * recency_factor(title.last_watched_at, now)
+
+
+def recency_factor(
+    last_watched_at: datetime,
+    now: datetime,
+    *,
+    half_life_days: float = _RECENCY_HALF_LIFE_DAYS,
+) -> float:
+    """Exponential decay in ``(0, 1]``: ``1.0`` now, ``0.5`` one half-life ago.
+
+    A naive (tz-less) ``last_watched_at`` is treated as UTC. Timestamps
+    in the future clamp to ``1.0`` rather than inflating the weight.
+
+    Example:
+        >>> from datetime import UTC, datetime, timedelta
+        >>> now = datetime(2026, 1, 31, tzinfo=UTC)
+        >>> recency_factor(now - timedelta(days=30), now)
+        0.5
+    """
+    if last_watched_at.tzinfo is None:
+        last_watched_at = last_watched_at.replace(tzinfo=UTC)
+    age_days = max((now - last_watched_at).total_seconds(), 0.0) / 86_400
+    return float(0.5 ** (age_days / half_life_days))
 
 
 def rank_genres(
-    weighted_genres: Iterable[tuple[Sequence[Genre], int]],
+    weighted_genres: Iterable[tuple[Sequence[Genre], float]],
     *,
     top_n: int,
 ) -> list[Genre]:
@@ -296,11 +338,35 @@ def rank_genres(
         ... )
         [Genre(value='Action')]
     """
-    scores: Counter[Genre] = Counter()
+    scores: dict[Genre, float] = {}
     for genres, weight in weighted_genres:
         for genre in genres:
-            scores[genre] += weight
-    return [genre for genre, _ in scores.most_common(top_n)]
+            scores[genre] = scores.get(genre, 0.0) + weight
+    # ``sorted`` is stable, so equal scores keep insertion (first-seen) order.
+    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    return [genre for genre, _ in ranked[:top_n]]
 
 
-__all__ = ["GetFeaturedMediaUseCase", "rank_genres"]
+def matched_genres(
+    canonical: Sequence[Genre],
+    localized: Sequence[str],
+    taste: Sequence[Genre],
+) -> list[str]:
+    """Localized names of the title's genres that are in the viewer's taste.
+
+    ``localized`` is what ``Entity.get_genres(lang)`` returns — parallel
+    to ``canonical`` when a translation exists (ADR-023), or the canonical
+    names themselves when it doesn't. Falls back to the canonical name
+    whenever the lists don't line up.
+    """
+    if not taste:
+        return []
+    wanted = set(taste)
+    return [
+        localized[i] if i < len(localized) else genre.value
+        for i, genre in enumerate(canonical)
+        if genre in wanted
+    ]
+
+
+__all__ = ["GetFeaturedMediaUseCase", "matched_genres", "rank_genres", "recency_factor"]

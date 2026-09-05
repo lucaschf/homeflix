@@ -1,6 +1,6 @@
 """Tests for GetFeaturedMediaUseCase."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -11,7 +11,9 @@ from src.modules.media.application.dtos.featured_dtos import (
 from src.modules.media.application.ports.watch_history_port import WatchedTitle
 from src.modules.media.application.use_cases.get_featured_media import (
     GetFeaturedMediaUseCase,
+    matched_genres,
     rank_genres,
+    recency_factor,
 )
 from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.value_objects import Genre, ImageUrl
@@ -26,7 +28,7 @@ from tests.modules.media.unit.conftest import (
 _LIBRARY_ID = "lib_test12345678"
 _LIBRARY_ID_OTHER = "lib_otherlibrary"
 _PROFILE_ID = "prf_test12345678"
-_NOW = datetime(2026, 9, 4, tzinfo=UTC)
+_NOW = datetime.now(UTC)
 
 
 def _make_movie(
@@ -63,9 +65,18 @@ def _make_series(
     )
 
 
-def _watched(media_id: str, media_type: str, status: str = "completed") -> WatchedTitle:
+def _watched(
+    media_id: str,
+    media_type: str,
+    status: str = "completed",
+    *,
+    days_ago: float = 0,
+) -> WatchedTitle:
     return WatchedTitle(
-        media_id=media_id, media_type=media_type, status=status, last_watched_at=_NOW
+        media_id=media_id,
+        media_type=media_type,
+        status=status,
+        last_watched_at=_NOW - timedelta(days=days_ago),
     )
 
 
@@ -427,6 +438,111 @@ class TestGetFeaturedMediaRecommendations:
         assert kwargs["genres"] == []
         assert [str(i) for i in kwargs["exclude_ids"]] == ["mov_gone12345678"]
         assert mocks.movies.find_random.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_recent_history_should_outweigh_old_history(self) -> None:
+        # Three Westerns finished a year ago vs one Sci-Fi finished today:
+        # 3 * 2 * 0.5**(365/30) ≈ 0.001 < 2.0, so Sci-Fi ranks first.
+        old = [_make_movie(f"Western {i}", genres=["Western"]) for i in range(3)]
+        recent = _make_movie("Arrival", genres=["Sci-Fi"])
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_ids.return_value = {str(m.id): m for m in (*old, recent)}
+        mocks.series.find_by_ids.return_value = {}
+        mocks.movies.find_random.return_value = [_make_movie("Pick", genres=["Sci-Fi"])]
+        history = make_watch_history(
+            titles=[
+                _watched(str(recent.id), "movie"),
+                *(_watched(str(m.id), "movie", days_ago=365) for m in old),
+            ]
+        )
+        use_case = _use_case(mocks, watch_history=history)
+
+        await use_case.execute(
+            GetFeaturedInput(profile_id=_PROFILE_ID, media_type="movie", limit=1)
+        )
+
+        kwargs = mocks.movies.find_random.call_args_list[0].kwargs
+        assert kwargs["genres"] == [Genre("Sci-Fi"), Genre("Western")]
+
+    @pytest.mark.asyncio
+    async def test_recommended_items_should_report_matched_genres_localized(self) -> None:
+        watched = _make_movie("Seen", genres=["Sci-Fi", "Action"])
+        pick = _make_movie("Dune", genres=["Adventure", "Sci-Fi"]).with_updates(
+            localized={"pt-BR": {"genres": ["Aventura", "Ficção científica"]}},
+        )
+        filler = _make_movie("Filler", genres=["Romance"])
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_ids.return_value = {str(watched.id): watched}
+        mocks.series.find_by_ids.return_value = {}
+        mocks.movies.find_random.side_effect = [[pick], [filler]]
+        history = make_watch_history(titles=[_watched(str(watched.id), "movie")])
+        use_case = _use_case(mocks, watch_history=history)
+
+        result = await use_case.execute(
+            GetFeaturedInput(profile_id=_PROFILE_ID, media_type="movie", limit=2, lang="pt-BR")
+        )
+
+        by_title = {item.title: item for item in result}
+        assert by_title["Dune"].matched_genres == ["Ficção científica"]
+        assert by_title["Filler"].matched_genres == []
+
+    @pytest.mark.asyncio
+    async def test_no_history_items_should_have_empty_matched_genres(self) -> None:
+        mocks = make_media_uow_mock()
+        mocks.movies.find_random.return_value = [_make_movie("Random", genres=["Action"])]
+        use_case = _use_case(mocks)
+
+        result = await use_case.execute(
+            GetFeaturedInput(profile_id=_PROFILE_ID, media_type="movie", limit=1)
+        )
+
+        assert result[0].matched_genres == []
+
+
+@pytest.mark.unit
+class TestRecencyFactor:
+    """Exponential decay of a watched title's weight."""
+
+    def test_now_is_full_weight(self) -> None:
+        assert recency_factor(_NOW, _NOW) == 1.0
+
+    def test_one_half_life_ago_is_half(self) -> None:
+        assert recency_factor(_NOW - timedelta(days=30), _NOW) == pytest.approx(0.5)
+
+    def test_custom_half_life(self) -> None:
+        assert recency_factor(_NOW - timedelta(days=7), _NOW, half_life_days=7) == pytest.approx(
+            0.5
+        )
+
+    def test_future_timestamp_clamps_to_full_weight(self) -> None:
+        assert recency_factor(_NOW + timedelta(days=3), _NOW) == 1.0
+
+    def test_naive_timestamp_is_treated_as_utc(self) -> None:
+        naive = (_NOW - timedelta(days=30)).replace(tzinfo=None)
+        assert recency_factor(naive, _NOW) == pytest.approx(0.5)
+
+
+@pytest.mark.unit
+class TestMatchedGenres:
+    """Localized intersection between a title's genres and the taste profile."""
+
+    def test_should_return_localized_names_positionally(self) -> None:
+        canonical = [Genre("Action"), Genre("Sci-Fi"), Genre("Drama")]
+        localized = ["Ação", "Ficção científica", "Drama"]
+
+        result = matched_genres(canonical, localized, [Genre("Sci-Fi"), Genre("Action")])
+
+        assert result == ["Ação", "Ficção científica"]
+
+    def test_should_fall_back_to_canonical_when_localized_is_short(self) -> None:
+        canonical = [Genre("Action"), Genre("Sci-Fi")]
+
+        result = matched_genres(canonical, ["Ação"], [Genre("Sci-Fi")])
+
+        assert result == ["Sci-Fi"]
+
+    def test_should_return_empty_without_taste(self) -> None:
+        assert matched_genres([Genre("Action")], ["Action"], []) == []
 
 
 @pytest.mark.unit
