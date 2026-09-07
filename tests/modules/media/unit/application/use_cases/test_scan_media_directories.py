@@ -796,6 +796,33 @@ class TestScanIdempotencyAndErrors:
         assert saved == []
 
     @pytest.mark.asyncio
+    async def test_should_skip_series_when_files_owned_by_deleted_series(self) -> None:
+        # A removed series keeps its episodes' file registrations; a rescan
+        # of the same folder must skip it instead of re-creating the series
+        # and colliding on the unique file path.
+        ghost = Series.create(library_id=_LIBRARY_ID, title="Removed Show", start_year=2016)
+
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_title.return_value = None
+        mocks.series.find_by_file_path.side_effect = lambda _fp, include_deleted=False: (
+            ghost if include_deleted else None
+        )
+        saved: list[Series] = []
+        mocks.series.save.side_effect = lambda s: saved.append(s) or s
+
+        files = [
+            _episode_file("/series/Removed Show (2016)/S01/S01E01.mkv", "Removed Show", 1, 1),
+            _episode_file("/series/Removed Show (2016)/S01/S01E02.mkv", "Removed Show", 1, 2),
+        ]
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
+
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert result.episodes_created == 0
+        assert result.errors == []
+        assert saved == []
+
+    @pytest.mark.asyncio
     async def test_should_find_series_by_path_when_title_changed(self) -> None:
         # Enrichment renamed the series, so find_by_title misses; the
         # scanner must locate it by an episode file path and update it

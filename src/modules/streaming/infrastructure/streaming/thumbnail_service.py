@@ -60,7 +60,12 @@ def scrub_preview_output_dir(source: Path, subdir: str) -> Path:
     Returns:
         The directory that holds (or would hold) this file's sprite + VTT.
     """
-    return source.parent / subdir / source.stem
+    # Windows silently drops trailing spaces and dots when creating a
+    # directory, so a stem like ``"Title (1971) "`` would land on disk as
+    # ``"Title (1971)"`` and every later write to the un-stripped path
+    # would fail. Normalise up front so ffmpeg, the locator and the
+    # scanner all agree on the same folder.
+    return source.parent / subdir / source.stem.rstrip(" .")
 
 
 # JPEG quality for the sprite: ffmpeg -q:v where 2 is near-lossless and

@@ -235,7 +235,15 @@ class SubtitleOcrBackfillJob:
             )
             report = FileOcrReport(outcome=SubtitleOcrOutcome.FAILED)
             error = f"{type(exc).__name__}: {exc}"[:2000]
-        self._write_marker(ref.path, config.subdir)
+        try:
+            self._write_marker(ref.path, config.subdir)
+        except OSError:
+            # The marker is bookkeeping; a failure here (read-only share,
+            # path quirk) must not wedge the whole tick. The file is simply
+            # picked up again next time.
+            _logger.exception(
+                "[subtitle-ocr] failed to write done marker", extra={"source": str(ref.path)}
+            )
         await self._record_run(ref, report, error, started_at)
 
     async def _record_run(

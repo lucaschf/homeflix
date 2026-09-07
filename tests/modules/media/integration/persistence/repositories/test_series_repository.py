@@ -413,6 +413,65 @@ class TestSQLAlchemySeriesRepository:
         assert found is not None
         assert found.id == series_id
 
+    async def test_find_by_file_path_excludes_soft_deleted_by_default(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """A soft-deleted series is invisible to the plain path lookup."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        series_id = SeriesId.generate()
+        path = "/media/series/removed/s01e01.mkv"
+        series = Series(
+            library_id=_LIBRARY_ID,
+            id=series_id,
+            title=Title("Removed"),
+            start_year=Year(2020),
+            seasons=[
+                Season(
+                    id=SeasonId.generate(),
+                    series_id=series_id,
+                    season_number=1,
+                    episodes=[_create_episode(series_id, file_path=path)],
+                )
+            ],
+        )
+        await repo.save(series)
+        await repo.delete(series_id)
+
+        found = await repo.find_by_file_path(FilePath(path))
+
+        assert found is None
+
+    async def test_find_by_file_path_include_deleted_returns_soft_deleted_series(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """include_deleted surfaces the removed series still owning the path."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        series_id = SeriesId.generate()
+        path = "/media/series/removed/s01e01.mkv"
+        series = Series(
+            library_id=_LIBRARY_ID,
+            id=series_id,
+            title=Title("Removed"),
+            start_year=Year(2020),
+            seasons=[
+                Season(
+                    id=SeasonId.generate(),
+                    series_id=series_id,
+                    season_number=1,
+                    episodes=[_create_episode(series_id, file_path=path)],
+                )
+            ],
+        )
+        await repo.save(series)
+        await repo.delete(series_id)
+
+        found = await repo.find_by_file_path(FilePath(path), include_deleted=True)
+
+        assert found is not None
+        assert found.id == series_id
+
     async def test_find_by_file_path_returns_none_for_nonexistent(
         self,
         db_session: AsyncSession,

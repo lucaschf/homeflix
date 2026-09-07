@@ -395,11 +395,20 @@ class SeriesCatalogRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_by_file_path(self, file_path: FilePath) -> Series | None:
+    async def find_by_file_path(
+        self,
+        file_path: FilePath,
+        *,
+        include_deleted: bool = False,
+    ) -> Series | None:
         """Find a series containing an episode with this file path.
 
         Args:
             file_path: The absolute file path.
+            include_deleted: When True, also match soft-deleted series and
+                episodes. A removed series keeps its file registrations, so
+                callers about to register the same path can detect the
+                collision first.
 
         Returns:
             The Series if found, None otherwise.
