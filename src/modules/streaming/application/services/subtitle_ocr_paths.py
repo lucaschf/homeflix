@@ -36,7 +36,11 @@ def ocr_subtitle_output_dir(source: Path, subdir: str) -> Path:
     Returns:
         The directory that holds (or would hold) this file's OCR sidecars.
     """
-    return source.parent / subdir / source.stem
+    # Windows silently drops trailing spaces and dots when creating a
+    # directory, so a stem like ``"Title (1971) "`` would be created as
+    # ``"Title (1971)"`` and every later write to the un-stripped path
+    # would fail with FileNotFoundError. Normalise up front.
+    return source.parent / subdir / source.stem.rstrip(" .")
 
 
 def ocr_sidecar_filename(track: SubtitleTrack) -> str:

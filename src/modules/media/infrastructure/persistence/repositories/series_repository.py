@@ -620,7 +620,9 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         """Find a series containing an episode with this file path.
 
         Searches both the file_variants table and the flat column
-        for backward compatibility.
+        for backward compatibility. A physical file may be shared by
+        several episodes as disjoint segments (ADR-030); they all belong
+        to the same series, so the first match is enough.
 
         Args:
             file_path: The absolute file path.
@@ -636,18 +638,25 @@ class SQLAlchemySeriesRepository(SeriesRepository):
                 MediaFileModel.file_path == str(file_path),
                 EpisodeModel.deleted_at.is_(None),
             )
+            .order_by(EpisodeModel.id)
+            .limit(1)
         )
         result = await self._session.execute(stmt)
-        episode_model = result.scalar_one_or_none()
+        episode_model = result.scalars().first()
 
         if episode_model is None:
             # Fallback to flat column
-            stmt = select(EpisodeModel).where(
-                EpisodeModel.file_path == str(file_path),
-                EpisodeModel.deleted_at.is_(None),
+            stmt = (
+                select(EpisodeModel)
+                .where(
+                    EpisodeModel.file_path == str(file_path),
+                    EpisodeModel.deleted_at.is_(None),
+                )
+                .order_by(EpisodeModel.id)
+                .limit(1)
             )
             result = await self._session.execute(stmt)
-            episode_model = result.scalar_one_or_none()
+            episode_model = result.scalars().first()
 
         if episode_model is None:
             return None

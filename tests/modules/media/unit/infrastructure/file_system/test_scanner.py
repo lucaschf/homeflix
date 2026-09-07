@@ -171,6 +171,21 @@ class TestScanDirectories:
         assert results[0].season_number == 1
         assert results[0].episode_number == 1
 
+    def test_should_detect_three_digit_episode_number(
+        self, scanner: LocalFileSystemScanner, media_dir: Path
+    ) -> None:
+        # Long-running shows go past episode 99; "S01E100" must not be
+        # read as episode 10, which would attach the file to the wrong
+        # episode on rescan.
+        show_dir = media_dir / "InuYasha (2000)" / "Season 01"
+        _create_file(show_dir, "InuYasha (2000) - S01E100.mkv")
+
+        results = scanner.scan_directories([FilePath(str(media_dir))])
+
+        assert len(results) == 1
+        assert results[0].season_number == 1
+        assert results[0].episode_number == 100
+
     def test_should_detect_episode_pattern_nxnn(
         self, scanner: LocalFileSystemScanner, media_dir: Path
     ) -> None:

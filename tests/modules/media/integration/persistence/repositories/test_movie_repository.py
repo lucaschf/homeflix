@@ -282,6 +282,38 @@ class TestSQLAlchemyMovieRepository:
 
         assert found is None
 
+    async def test_find_by_file_path_excludes_soft_deleted_by_default(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """A soft-deleted movie is invisible to the plain path lookup."""
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _create_movie(file_path="/media/movies/removed.mkv")
+        await repo.save(movie)
+        await repo.delete(_id_of(movie))
+
+        found = await repo.find_by_file_path(FilePath("/media/movies/removed.mkv"))
+
+        assert found is None
+
+    async def test_find_by_file_path_include_deleted_returns_soft_deleted_movie(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """include_deleted surfaces the removed movie still owning the path."""
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _create_movie(file_path="/media/movies/removed.mkv")
+        await repo.save(movie)
+        await repo.delete(_id_of(movie))
+
+        found = await repo.find_by_file_path(
+            FilePath("/media/movies/removed.mkv"),
+            include_deleted=True,
+        )
+
+        assert found is not None
+        assert found.id == movie.id
+
     async def test_find_all_by_year_returns_only_that_year(
         self,
         db_session: AsyncSession,

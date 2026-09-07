@@ -617,23 +617,28 @@ class SQLAlchemyMovieRepository(MovieRepository):
         result = await self._session.execute(stmt)
         return [MovieMapper.to_entity(model) for model in result.scalars().all()]
 
-    async def find_by_file_path(self, file_path: FilePath) -> Movie | None:
+    async def find_by_file_path(
+        self,
+        file_path: FilePath,
+        *,
+        include_deleted: bool = False,
+    ) -> Movie | None:
         """Find a movie by any of its file variant paths.
 
         Args:
             file_path: The absolute file path.
+            include_deleted: When True, soft-deleted movies match too.
 
         Returns:
             The Movie if found, None otherwise.
         """
+        liveness = [] if include_deleted else [MovieModel.deleted_at.is_(None)]
+
         # Search in file_variants table
         stmt = (
             select(MovieModel)
             .join(MediaFileModel, MediaFileModel.movie_id == MovieModel.id)
-            .where(
-                MediaFileModel.file_path == str(file_path),
-                MovieModel.deleted_at.is_(None),
-            )
+            .where(MediaFileModel.file_path == str(file_path), *liveness)
             .options(selectinload(MovieModel.file_variants))
         )
         result = await self._session.execute(stmt)
@@ -645,10 +650,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         # Fallback to flat column for backward compatibility
         stmt = (
             select(MovieModel)
-            .where(
-                MovieModel.file_path == str(file_path),
-                MovieModel.deleted_at.is_(None),
-            )
+            .where(MovieModel.file_path == str(file_path), *liveness)
             .options(selectinload(MovieModel.file_variants))
         )
         result = await self._session.execute(stmt)
