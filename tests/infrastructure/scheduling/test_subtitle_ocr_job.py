@@ -187,6 +187,21 @@ class TestSubtitleOcrBackfillJob:
         assert run.track_results[0].language == "pt"
         assert run.track_results[0].cue_count == 99
 
+    async def test_marker_write_failure_does_not_crash_tick(self, tmp_path: Path) -> None:
+        # A file squatting where the sidecar directory should be makes the
+        # marker write fail; the job must log it, still record the run and
+        # move on instead of crashing the whole tick.
+        movie = _touch(tmp_path / "m.mkv")
+        _touch(ocr_subtitle_output_dir(movie, _SUBDIR))
+        uow = _build_uow(movies=[_movie(movie)], series=[])
+        probe, ocr = _probe_with(_image()), _ocr_service()
+        job = _make_job(uow, SubtitleOcrConfig(enabled=True), probe, ocr)
+
+        await job.run()
+
+        assert not _marker(movie).exists()
+        assert len(_recorded_runs(uow)) == 1
+
     async def test_marked_file_is_skipped(self, tmp_path: Path) -> None:
         movie = _touch(tmp_path / "m.mkv")
         _touch(_marker(movie))  # already processed

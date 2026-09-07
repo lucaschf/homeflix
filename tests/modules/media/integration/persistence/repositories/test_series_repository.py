@@ -12,6 +12,7 @@ from src.modules.media.domain.value_objects import (
     Duration,
     EpisodeId,
     FilePath,
+    FileSegment,
     Genre,
     ImageUrl,
     ImdbId,
@@ -358,6 +359,115 @@ class TestSQLAlchemySeriesRepository:
         found = await repo.find_by_file_path(
             FilePath("/media/series/show/s01e01.mkv"),
         )
+
+        assert found is not None
+        assert found.id == series_id
+
+    async def test_find_by_file_path_resolves_file_shared_by_several_episodes(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """A file split into episode segments (ADR-030) maps to one series."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        series_id = SeriesId.generate()
+        shared = "/media/series/miniseries/Miniseries (1979).mkv"
+
+        def segment_file(start: int, end: int) -> MediaFile:
+            return MediaFile(
+                file_path=FilePath(shared),
+                file_size=500_000_000,
+                resolution=Resolution("1080p"),
+                is_primary=True,
+                segment=FileSegment(start_seconds=start, end_seconds=end),
+            )
+
+        episodes = [
+            Episode(
+                id=EpisodeId.generate(),
+                series_id=series_id,
+                season_number=1,
+                episode_number=number,
+                title=Title(f"Part {number}"),
+                duration=Duration(end - start),
+                files=[segment_file(start, end)],
+            )
+            for number, (start, end) in enumerate([(0, 5492), (5492, 10983)], start=1)
+        ]
+        season = Season(
+            id=SeasonId.generate(),
+            series_id=series_id,
+            season_number=1,
+            episodes=episodes,
+        )
+        series = Series(
+            library_id=_LIBRARY_ID,
+            id=series_id,
+            title=Title("Miniseries"),
+            start_year=Year(1979),
+            seasons=[season],
+        )
+        await repo.save(series)
+
+        found = await repo.find_by_file_path(FilePath(shared))
+
+        assert found is not None
+        assert found.id == series_id
+
+    async def test_find_by_file_path_excludes_soft_deleted_by_default(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """A soft-deleted series is invisible to the plain path lookup."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        series_id = SeriesId.generate()
+        path = "/media/series/removed/s01e01.mkv"
+        series = Series(
+            library_id=_LIBRARY_ID,
+            id=series_id,
+            title=Title("Removed"),
+            start_year=Year(2020),
+            seasons=[
+                Season(
+                    id=SeasonId.generate(),
+                    series_id=series_id,
+                    season_number=1,
+                    episodes=[_create_episode(series_id, file_path=path)],
+                )
+            ],
+        )
+        await repo.save(series)
+        await repo.delete(series_id)
+
+        found = await repo.find_by_file_path(FilePath(path))
+
+        assert found is None
+
+    async def test_find_by_file_path_include_deleted_returns_soft_deleted_series(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        """include_deleted surfaces the removed series still owning the path."""
+        repo = SQLAlchemySeriesRepository(db_session)
+        series_id = SeriesId.generate()
+        path = "/media/series/removed/s01e01.mkv"
+        series = Series(
+            library_id=_LIBRARY_ID,
+            id=series_id,
+            title=Title("Removed"),
+            start_year=Year(2020),
+            seasons=[
+                Season(
+                    id=SeasonId.generate(),
+                    series_id=series_id,
+                    season_number=1,
+                    episodes=[_create_episode(series_id, file_path=path)],
+                )
+            ],
+        )
+        await repo.save(series)
+        await repo.delete(series_id)
+
+        found = await repo.find_by_file_path(FilePath(path), include_deleted=True)
 
         assert found is not None
         assert found.id == series_id

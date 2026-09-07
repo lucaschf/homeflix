@@ -616,44 +616,68 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             allowed_library_ids=allowed_library_ids,
         )
 
-    async def find_by_file_path(self, file_path: FilePath) -> Series | None:
+    async def find_by_file_path(
+        self,
+        file_path: FilePath,
+        *,
+        include_deleted: bool = False,
+    ) -> Series | None:
         """Find a series containing an episode with this file path.
 
         Searches both the file_variants table and the flat column
-        for backward compatibility.
+        for backward compatibility. A physical file may be shared by
+        several episodes as disjoint segments (ADR-030); they all belong
+        to the same series, so the first match is enough.
 
         Args:
             file_path: The absolute file path.
+            include_deleted: When True, soft-deleted series/episodes match too.
 
         Returns:
             The Series if found, None otherwise.
         """
+        liveness = [] if include_deleted else [EpisodeModel.deleted_at.is_(None)]
+
         # Search in file_variants table
         stmt = (
             select(EpisodeModel)
             .join(MediaFileModel, MediaFileModel.episode_id == EpisodeModel.id)
-            .where(
-                MediaFileModel.file_path == str(file_path),
-                EpisodeModel.deleted_at.is_(None),
-            )
+            .where(MediaFileModel.file_path == str(file_path), *liveness)
+            .order_by(EpisodeModel.id)
+            .limit(1)
         )
         result = await self._session.execute(stmt)
-        episode_model = result.scalar_one_or_none()
+        episode_model = result.scalars().first()
 
         if episode_model is None:
             # Fallback to flat column
-            stmt = select(EpisodeModel).where(
-                EpisodeModel.file_path == str(file_path),
-                EpisodeModel.deleted_at.is_(None),
+            stmt = (
+                select(EpisodeModel)
+                .where(EpisodeModel.file_path == str(file_path), *liveness)
+                .order_by(EpisodeModel.id)
+                .limit(1)
             )
             result = await self._session.execute(stmt)
-            episode_model = result.scalar_one_or_none()
+            episode_model = result.scalars().first()
 
         if episode_model is None:
             return None
 
-        # Load the full series
-        return await self.find_by_id(SeriesId(episode_model.series_external_id))
+        series_id = SeriesId(episode_model.series_external_id)
+        if not include_deleted:
+            return await self.find_by_id(series_id)
+
+        # A soft-deleted series is invisible to find_by_id; load it directly
+        # so the caller can tell "path owned by a removed title" from "unknown".
+        series_stmt = (
+            select(SeriesModel)
+            .where(SeriesModel.external_id == str(series_id))
+            .options(*self._series_load_options())
+            .execution_options(populate_existing=True)
+        )
+        series_result = await self._session.execute(series_stmt)
+        series_model = series_result.scalar_one_or_none()
+        return None if series_model is None else SeriesMapper.to_entity(series_model)
 
     async def find_episode_by_id(self, episode_id: EpisodeId) -> Episode | None:
         """Return a single episode by external id, detached from its series."""

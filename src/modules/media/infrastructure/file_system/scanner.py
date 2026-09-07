@@ -13,7 +13,7 @@ _SUPPORTED_EXTENSIONS = frozenset({".mp4", ".mkv", ".avi", ".mov", ".wmv"})
 
 # Episode patterns: S01E01, s01e01, 1x01
 _EPISODE_PATTERNS = [
-    re.compile(r"[Ss](\d{1,2})[Ee](\d{1,2})"),
+    re.compile(r"[Ss](\d{1,2})[Ee](\d{1,3})"),
     re.compile(r"(\d{1,2})[Xx](\d{2})"),
 ]
 

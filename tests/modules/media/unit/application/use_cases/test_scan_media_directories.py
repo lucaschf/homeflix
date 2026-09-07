@@ -179,7 +179,7 @@ class TestScanMovies:
         )
 
         mocks = make_media_uow_mock()
-        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+        mocks.movies.find_by_file_path.side_effect = lambda fp, **_: (
             existing if fp.value == "/movies/Inception.2010.1080p.mkv" else None
         )
         mocks.movies.save.side_effect = lambda m: m
@@ -276,7 +276,7 @@ class TestRescanResolutionUpgrade:
         )
         saved: list[Movie] = []
         mocks = make_media_uow_mock()
-        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+        mocks.movies.find_by_file_path.side_effect = lambda fp, **_: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
         mocks.movies.save.side_effect = lambda m: saved.append(m) or m
@@ -301,7 +301,7 @@ class TestRescanResolutionUpgrade:
             resolution="1080p",
         )
         mocks = make_media_uow_mock()
-        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+        mocks.movies.find_by_file_path.side_effect = lambda fp, **_: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
         mocks.movies.save.side_effect = lambda m: m
@@ -327,7 +327,7 @@ class TestRescanResolutionUpgrade:
             resolution="Unknown",
         )
         mocks = make_media_uow_mock()
-        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+        mocks.movies.find_by_file_path.side_effect = lambda fp, **_: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
         mocks.movies.save.side_effect = lambda m: m
@@ -357,7 +357,7 @@ class TestRescanResolutionUpgrade:
     @pytest.mark.asyncio
     async def test_should_stamp_probed_duration_on_new_movie(self) -> None:
         mocks = make_media_uow_mock()
-        mocks.movies.find_by_file_path.side_effect = lambda _fp: None
+        mocks.movies.find_by_file_path.side_effect = lambda _fp, **_: None
         saved: list[Movie] = []
         mocks.movies.save.side_effect = lambda m: saved.append(m) or m
         probe = MagicMock(spec=MediaProbePort)
@@ -382,7 +382,7 @@ class TestRescanResolutionUpgrade:
             resolution="Unknown",
         )
         mocks = make_media_uow_mock()
-        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+        mocks.movies.find_by_file_path.side_effect = lambda fp, **_: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
         saved: list[Movie] = []
@@ -427,7 +427,7 @@ class TestRescanResolutionUpgrade:
         existing = existing.with_updates(files=[populated_file])
 
         mocks = make_media_uow_mock()
-        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+        mocks.movies.find_by_file_path.side_effect = lambda fp, **_: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
         mocks.movies.save.side_effect = lambda m: m
@@ -580,7 +580,7 @@ class TestTrackDetection:
         )
         saved: list[Movie] = []
         mocks = make_media_uow_mock()
-        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+        mocks.movies.find_by_file_path.side_effect = lambda fp, **_: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
         mocks.movies.save.side_effect = lambda m: saved.append(m) or m
@@ -622,7 +622,7 @@ class TestTrackDetection:
         existing = existing.with_updates(files=[populated_file])
 
         mocks = make_media_uow_mock()
-        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+        mocks.movies.find_by_file_path.side_effect = lambda fp, **_: (
             existing if fp.value == "/movies/inception.mkv" else None
         )
         mocks.movies.save.side_effect = lambda m: m
@@ -760,6 +760,66 @@ class TestScanIdempotencyAndErrors:
         result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
 
         assert result.movies_created == 0
+        assert saved == []
+
+    @pytest.mark.asyncio
+    async def test_should_skip_movie_when_path_owned_by_deleted_movie(self) -> None:
+        # The loser of a resolved conflict is soft-deleted but keeps its
+        # file registrations, and paths are unique across live and deleted
+        # rows — a rescan must skip the file instead of re-creating it.
+        path = "/movies/The Cellar (1988)/The Cellar (1988).mkv"
+        ghost = Movie.create(
+            library_id=_LIBRARY_ID,
+            title="The Cellar",
+            year=1988,
+            duration=5400,
+            file_path=path,
+            file_size=1_000_000,
+            resolution="1080p",
+        )
+
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_file_path.side_effect = lambda _fp, include_deleted=False: (
+            ghost if include_deleted else None
+        )
+        mocks.series.find_by_file_path.return_value = None
+        saved: list[Movie] = []
+        mocks.movies.save.side_effect = lambda m: saved.append(m) or m
+
+        files = [_movie_file(path, "The Cellar", 1988)]
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
+
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert result.movies_created == 0
+        assert result.errors == []
+        assert saved == []
+
+    @pytest.mark.asyncio
+    async def test_should_skip_series_when_files_owned_by_deleted_series(self) -> None:
+        # A removed series keeps its episodes' file registrations; a rescan
+        # of the same folder must skip it instead of re-creating the series
+        # and colliding on the unique file path.
+        ghost = Series.create(library_id=_LIBRARY_ID, title="Removed Show", start_year=2016)
+
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_title.return_value = None
+        mocks.series.find_by_file_path.side_effect = lambda _fp, include_deleted=False: (
+            ghost if include_deleted else None
+        )
+        saved: list[Series] = []
+        mocks.series.save.side_effect = lambda s: saved.append(s) or s
+
+        files = [
+            _episode_file("/series/Removed Show (2016)/S01/S01E01.mkv", "Removed Show", 1, 1),
+            _episode_file("/series/Removed Show (2016)/S01/S01E02.mkv", "Removed Show", 1, 2),
+        ]
+        use_case, _ = _make_use_case(scanner_results=files, mocks=mocks)
+
+        result = await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        assert result.episodes_created == 0
+        assert result.errors == []
         assert saved == []
 
     @pytest.mark.asyncio
@@ -925,7 +985,7 @@ class TestScanMediaScrubPreviewLinking:
         )
         saved: list[Movie] = []
         mocks = make_media_uow_mock()
-        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+        mocks.movies.find_by_file_path.side_effect = lambda fp, **_: (
             existing if fp.value == "/movies/Inception.mkv" else None
         )
         mocks.movies.save.side_effect = lambda m: saved.append(m) or m
@@ -957,7 +1017,7 @@ class TestScanMediaScrubPreviewLinking:
             scrub_preview_path=ImageUrl("/movies/.homeflix/thumbnails/Inception/sprite.vtt"),
         )
         mocks = make_media_uow_mock()
-        mocks.movies.find_by_file_path.side_effect = lambda fp: (
+        mocks.movies.find_by_file_path.side_effect = lambda fp, **_: (
             existing if fp.value == "/movies/Inception.mkv" else None
         )
         mocks.movies.save.side_effect = lambda m: m

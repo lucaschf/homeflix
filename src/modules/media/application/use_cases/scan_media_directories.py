@@ -280,6 +280,16 @@ class ScanMediaDirectoriesUseCase:
                     "Skipping movie create; path belongs to a series episode: %s", group.paths
                 )
                 return 0, 0
+            elif await self._path_owned_by_deleted_movie(uow, group):
+                # A soft-deleted movie (e.g. the loser of a resolved
+                # conflict) keeps its file registrations, and file paths
+                # are unique across live and deleted rows. Re-creating it
+                # would collide on that index — and resurrect a title the
+                # user chose to remove. Skip it.
+                _logger.info(
+                    "Skipping movie create; path belongs to a deleted movie: %s", group.paths
+                )
+                return 0, 0
             else:
                 created, updated, events = await self._create_movie(
                     uow, group, library_id=library_id
@@ -292,6 +302,14 @@ class ScanMediaDirectoriesUseCase:
         """Return True if any variant is already an episode of some series."""
         for scanned in group:
             if await uow.series.find_by_file_path(scanned.file_path):
+                return True
+        return False
+
+    @staticmethod
+    async def _path_owned_by_deleted_movie(uow: MediaUnitOfWork, group: VariantGroup) -> bool:
+        """Return True if any variant is still registered to a soft-deleted movie."""
+        for scanned in group:
+            if await uow.movies.find_by_file_path(scanned.file_path, include_deleted=True):
                 return True
         return False
 
@@ -431,6 +449,17 @@ class ScanMediaDirectoriesUseCase:
                     if series:
                         break
             if not series:
+                if await self._paths_owned_by_deleted_series(uow, files):
+                    # A soft-deleted series keeps its episodes' file
+                    # registrations, and file paths are unique across live
+                    # and deleted rows. Re-creating it would collide on
+                    # that index — and resurrect a title the user chose to
+                    # remove. Skip the whole folder.
+                    _logger.info(
+                        "Skipping series create; files belong to a deleted series: %s",
+                        series_name,
+                    )
+                    return 0, 0
                 year = min((f.year for f in files if f.year), default=_current_year())
                 series = Series.create(title=series_name, start_year=year, library_id=library_id)
 
@@ -450,6 +479,16 @@ class ScanMediaDirectoriesUseCase:
             await uow.series.save(series)
         await self._dispatch_events(events)
         return created, updated
+
+    @staticmethod
+    async def _paths_owned_by_deleted_series(
+        uow: MediaUnitOfWork, files: list[ScannedFile]
+    ) -> bool:
+        """Return True if any file is still registered to a soft-deleted series."""
+        for scanned in files:
+            if await uow.series.find_by_file_path(scanned.file_path, include_deleted=True):
+                return True
+        return False
 
     async def _process_episode_group(
         self,

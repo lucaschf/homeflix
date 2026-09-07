@@ -100,3 +100,14 @@ class TestScrubPreviewOutputDir:
         assert output_dir == Path(
             "/media/Show/S01/.homeflix/thumbnails/Show.S01E01",
         )
+
+    def test_should_strip_trailing_spaces_and_dots_from_stem(self) -> None:
+        # Windows drops trailing spaces/dots when creating a directory, so
+        # the predicted path must match what actually lands on disk.
+        source = Path("/media/Movies/Black Killer (1971)/Black Killer (1971) .mkv")
+
+        output_dir = scrub_preview_output_dir(source, ".homeflix/thumbnails")
+
+        assert output_dir == Path(
+            "/media/Movies/Black Killer (1971)/.homeflix/thumbnails/Black Killer (1971)",
+        )

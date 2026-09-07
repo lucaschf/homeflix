@@ -506,11 +506,20 @@ class MovieCatalogRepository(ABC):
         ...
 
     @abstractmethod
-    async def find_by_file_path(self, file_path: FilePath) -> Movie | None:
+    async def find_by_file_path(
+        self,
+        file_path: FilePath,
+        *,
+        include_deleted: bool = False,
+    ) -> Movie | None:
         """Find a movie by its file path.
 
         Args:
             file_path: The absolute file path.
+            include_deleted: When True, also match soft-deleted movies. A
+                removed title (e.g. the loser of a resolved conflict) keeps
+                its file registrations, so callers about to register the
+                same path can detect the collision first.
 
         Returns:
             The Movie if found, None otherwise.
