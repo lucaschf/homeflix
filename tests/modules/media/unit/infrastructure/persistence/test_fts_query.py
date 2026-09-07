@@ -1,8 +1,11 @@
-"""Tests for the FTS5 query preparation helper."""
+"""Tests for the FTS5 query preparation and hit-ordering helpers."""
+
+from types import SimpleNamespace
 
 import pytest
 
 from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
+    _by_rank_then_title,
     _prepare_fts_query,
 )
 
@@ -35,3 +38,36 @@ class TestPrepareFtsQuery:
 
     def test_should_strip_leading_trailing_whitespace(self) -> None:
         assert _prepare_fts_query("  test  ") == "test*"
+
+
+def _hit(title: str, rank: float) -> tuple[SimpleNamespace, float]:
+    return SimpleNamespace(title=SimpleNamespace(value=title)), rank
+
+
+@pytest.mark.unit
+class TestByRankThenTitle:
+    """Ordering of FTS hits once ranks are pooled in Python."""
+
+    def test_should_put_more_negative_rank_first(self) -> None:
+        hits = [_hit("Zulu", -1.0), _hit("Alien", -5.0), _hit("Mars", -3.0)]
+
+        ordered = sorted(hits, key=_by_rank_then_title)
+
+        assert [h[0].title.value for h in ordered] == ["Alien", "Mars", "Zulu"]
+
+    def test_should_break_ties_by_title(self) -> None:
+        # bm25() returned NULL for every row of a one-letter prefix query,
+        # so all ranks were coalesced to 0.0 — the page must still come
+        # back in a stable order instead of rowid order.
+        hits = [_hit("Blade", 0.0), _hit("Alien", 0.0), _hit("Batman", 0.0)]
+
+        ordered = sorted(hits, key=_by_rank_then_title)
+
+        assert [h[0].title.value for h in ordered] == ["Alien", "Batman", "Blade"]
+
+    def test_should_place_unranked_hits_after_ranked_ones(self) -> None:
+        hits = [_hit("Unranked", 0.0), _hit("Ranked", -0.5)]
+
+        ordered = sorted(hits, key=_by_rank_then_title)
+
+        assert [h[0].title.value for h in ordered] == ["Ranked", "Unranked"]
