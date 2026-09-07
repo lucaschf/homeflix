@@ -1376,6 +1376,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         ``series_fts``, joins back to ``series``, applies filters.
         """
         from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
+            _by_rank_then_title,
             _prepare_fts_query,
         )
 
@@ -1383,8 +1384,10 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         if not fts_query:
             return []
 
+        # ``bm25()`` comes back NULL for very broad prefix queries; see
+        # ``SQLAlchemyMovieRepository.search`` for the rationale.
         sql = """
-            SELECT series_fts.rowid, bm25(series_fts) AS rank
+            SELECT series_fts.rowid, COALESCE(bm25(series_fts), 0.0) AS rank
             FROM series_fts
             WHERE series_fts MATCH :query
             ORDER BY rank
@@ -1432,7 +1435,7 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             for m in models
             if m.id in rowid_to_rank
         ]
-        hits.sort(key=lambda h: h[1])
+        hits.sort(key=_by_rank_then_title)
         return hits[:limit]
 
 

@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Sequence
+from typing import Protocol
 
 from sqlalchemy import ColumnElement, and_, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +31,7 @@ from src.modules.media.domain.value_objects import (
     FilePath,
     Genre,
     MovieId,
+    Title,
 )
 from src.modules.media.infrastructure.persistence.mappers import MovieMapper
 from src.modules.media.infrastructure.persistence.models import (
@@ -987,9 +989,12 @@ class SQLAlchemyMovieRepository(MovieRepository):
         if not fts_query:
             return []
 
-        # Step 1: FTS5 MATCH to get matching rowids + rank
+        # Step 1: FTS5 MATCH to get matching rowids + rank. ``bm25()`` comes
+        # back NULL for very broad prefix queries (a single letter matching
+        # nearly every document); COALESCE keeps the rank sortable and
+        # places those rows after any genuinely ranked hit.
         sql = """
-            SELECT movies_fts.rowid, bm25(movies_fts) AS rank
+            SELECT movies_fts.rowid, COALESCE(bm25(movies_fts), 0.0) AS rank
             FROM movies_fts
             WHERE movies_fts MATCH :query
             ORDER BY rank
@@ -1037,7 +1042,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             for m in models
             if m.id in rowid_to_rank
         ]
-        hits.sort(key=lambda h: h[1])
+        hits.sort(key=_by_rank_then_title)
         return hits[:limit]
 
 
@@ -1067,6 +1072,27 @@ async def _movie_fts_matching_ids(session: AsyncSession, query: str) -> list[int
     """
     result = await session.execute(text(sql), {"query": fts_query})
     return [row[0] for row in result.fetchall()]
+
+
+class _Titled(Protocol):
+    """Anything exposing a ``title`` value object — Movie or Series."""
+
+    @property
+    def title(self) -> Title:
+        ...
+
+
+def _by_rank_then_title(hit: tuple[_Titled, float]) -> tuple[float, str]:
+    """Sort key for FTS hits: best rank first, title as a stable tiebreak.
+
+    ``bm25()`` is a negative float where more-negative means more relevant,
+    so ascending order is "most relevant first". Ranks tie whenever FTS5
+    returned NULL (coalesced to ``0.0``) for every row of a very broad
+    prefix query; the title tiebreak keeps that result page deterministic
+    instead of leaking rowid order.
+    """
+    entity, rank = hit
+    return rank, entity.title.value
 
 
 def _prepare_fts_query(query: str) -> str:
