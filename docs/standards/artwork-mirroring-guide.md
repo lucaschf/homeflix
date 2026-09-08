@@ -190,10 +190,12 @@ Por tick:
 
 1. Lê o snapshot `ArtworkMirrorConfig` (ADR-013) — edições valem no próximo
    tick.
-2. Divide o orçamento `batch_size` entre os *kinds*, em ordem: movies,
-   series, seasons, episodes e, por último, `movies_localized` e
-   `series_localized` — as colunas (fallback de todo idioma) sempre
-   recebem orçamento primeiro.
+2. Divide o orçamento `batch_size` entre os *kinds* (movies, series,
+   seasons, episodes, `movies_localized`, `series_localized`) em cotas
+   iguais do que ainda resta, arredondadas para cima; o que um kind não
+   preenche rola para o seguinte. Assim um kind com poucas linhas que
+   falham a cada tick (stills com 404 no provider) nunca deixa os
+   seguintes sem orçamento.
 3. Para cada linha ainda remota (`find_with_remote_artwork`, ou
    `find_with_remote_localized_artwork` para um par (título, locale)):
    baixa cada campo remoto, valida que a resposta é uma **imagem suportada**
@@ -231,7 +233,7 @@ Runtime setting persistido em banco, por bucket (ADR-013/014). Definido em
 | Campo | Default | Descrição |
 |-------|---------|-----------|
 | `enabled` | `true` | Registra o job periódico no boot. |
-| `batch_size` | `20` | Máximo de linhas processadas por tick — um título nos kinds de coluna, um par (título, locale) nos kinds localizados. Limita trabalho de rede + disco por run num catálogo grande. |
+| `batch_size` | `20` | Máximo de linhas processadas por tick, em cotas iguais por kind (sobras rolam adiante) — um título nos kinds de coluna, um par (título, locale) nos kinds localizados. Limita trabalho de rede + disco por run num catálogo grande. |
 | `interval_minutes` | `30` | Cadência do job. |
 | `max_bytes` | `10485760` (10 MiB) | Teto de uma imagem baixada. Maiores são puladas (mantêm URL remota). |
 

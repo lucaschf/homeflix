@@ -9,8 +9,11 @@ CDN outages, and offline use. The per-locale artwork inside the
 ``localized`` blob (ADR-023) goes through the same flow, one row per
 (title, locale), via the ``*_localized`` kinds.
 
-Each tick processes at most ``batch_size`` rows split between the
-kinds in order (column kinds first, then localized). Network I/O never happens while a DB session is held: rows
+Each tick processes at most ``batch_size`` rows, shared fairly between
+the kinds: every kind gets an equal slice of what is left, and a slice a
+kind cannot fill rolls forward to the next. A kind whose rows keep
+failing (a handful of provider 404s) therefore never starves the ones
+after it. Network I/O never happens while a DB session is held: rows
 are fetched in one short UoW, mirrored without a session, and the column
 update runs in a fresh per-title UoW. A download failure (or a non-image
 response) is logged and leaves the remote URL untouched (graceful
@@ -123,8 +126,8 @@ class ArtworkMirrorJob:
                     EpisodeId(row.media_id), cols
                 ),
             ),
-            # Localized kinds come last so the column kinds — what every
-            # language falls back to — always get budget first.
+            # Localized kinds come last: with equal slices they only get
+            # the leftovers' priority, not the leftovers themselves.
             _Kind(
                 label="movies_localized",
                 find=lambda uow, limit: uow.movies.find_with_remote_localized_artwork(limit),
@@ -144,18 +147,22 @@ class ArtworkMirrorJob:
     async def run(self) -> None:
         """Mirror one batch of titles with still-remote artwork.
 
-        Splits the per-tick budget across the title kinds in order, and
-        logs how many titles were updated and how many images were
-        mirrored vs. left remote per kind.
+        Shares the per-tick budget across the kinds — each gets an equal
+        slice of what remains, rounded up, and whatever a kind leaves
+        unused rolls forward — then logs how many titles were updated
+        and how many images were mirrored vs. left remote per kind.
+        A strict in-order split starved the later kinds whenever an
+        earlier one had a few rows that fail on every tick.
         """
         config = await self._runtime_settings.artwork_mirror()
         budget = config.batch_size
         stats: dict[str, int] = {}
         active = False
-        for kind in self._kinds:
+        for index, kind in enumerate(self._kinds):
             if budget <= 0:
                 break
-            rows = await self._fetch(kind, budget)
+            share = -(-budget // (len(self._kinds) - index))  # ceil division
+            rows = await self._fetch(kind, share)
             budget -= len(rows)
             updated, mirrored, failed = await self._process(kind, rows, config.max_bytes)
             stats[f"{kind.label}_updated"] = updated

@@ -327,6 +327,37 @@ class TestRun:
         assert len(h.movies.updates) == 1
         assert h.series.updates == []
 
+    async def test_should_give_every_kind_a_fair_share_of_the_budget(self) -> None:
+        # Six kinds, budget 6: a movie kind with more rows than its share
+        # must not eat the whole tick — each kind gets one slot.
+        h = _make(
+            movie_rows=[_row(f"mov_{i:012d}", poster=REMOTE) for i in range(10)],
+            series_rows=[_row(SERIES_ID, poster=REMOTE)],
+            movie_localized_rows=[_row(MOVIE_ID, poster=REMOTE_B, locale="pt-BR")],
+            config=ArtworkMirrorConfig(batch_size=6),
+        )
+
+        await h.job.run()
+
+        assert len(h.movies.updates) == 1
+        assert len(h.series.updates) == 1
+        assert len(h.movies.localized_updates) == 1
+
+    async def test_should_roll_unused_share_forward_to_later_kinds(self) -> None:
+        # Budget 6 over six kinds; the first four have nothing, so the
+        # localized movie kind may spend the accumulated leftovers.
+        h = _make(
+            movie_localized_rows=[
+                _row(f"mov_{i:012d}", poster=REMOTE, locale="pt-BR") for i in range(10)
+            ],
+            config=ArtworkMirrorConfig(batch_size=6),
+        )
+
+        await h.job.run()
+
+        # ceil(6 / 2) = 3 for movies_localized, the rest for series_localized.
+        assert len(h.movies.localized_updates) == 3
+
 
 class TestLocalizedKinds:
     async def test_should_mirror_localized_movie_artwork_with_its_locale(self) -> None:
