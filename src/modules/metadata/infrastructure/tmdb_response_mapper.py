@@ -32,6 +32,10 @@ _MAX_CAST = 15
 
 _TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/original"
 
+# TMDB serves vector logos rasterized when asked for ``.png`` instead of ``.svg``.
+_SVG_SUFFIX = ".svg"
+_RASTER_SUFFIX = ".png"
+
 
 def _safe_int(value: object, default: int) -> int:
     """Safely convert a value to int, returning default on failure."""
@@ -122,8 +126,19 @@ class TmdbResponseMapper:
         self._supported_locales = list(supported_locales)
 
     def image_url(self, path: str | None) -> str | None:
-        """Rewrite a TMDB ``*_path`` field into an absolute CDN URL."""
-        return f"{self._image_base_url}{path}" if path else None
+        """Rewrite a TMDB ``*_path`` field into an absolute CDN URL.
+
+        Vector logos come back as ``.svg``; the CDN rasterizes them on
+        request when the extension is swapped for ``.png`` (same file
+        id, alpha kept, any size). Ask for the PNG so the artwork
+        mirror — which refuses SVG as an XSS vector — and the width
+        ladder treat the logo like every other raster.
+        """
+        if not path:
+            return None
+        if path.endswith(_SVG_SUFFIX):
+            path = path[: -len(_SVG_SUFFIX)] + _RASTER_SUFFIX
+        return f"{self._image_base_url}{path}"
 
     @staticmethod
     def _logo_rank(logo: dict[str, object], target: str, target_base: str) -> int:

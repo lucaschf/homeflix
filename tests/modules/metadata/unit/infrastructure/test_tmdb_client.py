@@ -217,6 +217,17 @@ class TestTmdbClientParams:
         client = _make_client()
         assert client._image_url("/poster.jpg") == "https://image.tmdb.org/t/p/original/poster.jpg"
 
+    def test_image_url_should_ask_for_the_png_rendition_of_an_svg_logo(self) -> None:
+        # TMDB rasterizes vector logos on request when the extension is
+        # swapped; the artwork mirror refuses SVG, so the mapper never
+        # hands one downstream.
+        client = _make_client()
+
+        assert client._image_url("/logo.svg") == "https://image.tmdb.org/t/p/original/logo.png"
+        assert (
+            client._image_url("/poster.svgx") == "https://image.tmdb.org/t/p/original/poster.svgx"
+        )
+
     def test_image_url_should_return_none_for_none(self) -> None:
         client = _make_client()
         assert client._image_url(None) is None
