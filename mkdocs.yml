@@ -119,3 +119,4 @@ nav:
       - adr/ADR-031-tmdb-id-shared-kernel-value-object.md
       - adr/ADR-032-decompose-media-into-subdomains.md
       - adr/ADR-033-repository-interface-segregation.md
+      - adr/ADR-034-artwork-responsive-variants.md
