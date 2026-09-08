@@ -27,12 +27,16 @@ from src.config.logging import get_logger
 from src.modules.metadata.application.ports.artwork_downloader_port import (
     ALLOWED_ARTWORK_HOSTS,
     ArtworkDownloaderPort,
+    ArtworkGoneError,
     DownloadedImage,
 )
 
 _logger = get_logger()
 
 _GATEWAY_NAME = "artwork-cdn"
+
+# Definitive "does not exist" answers from the provider — no point retrying.
+_GONE_STATUSES = frozenset({404, 410})
 
 
 class HttpxArtworkDownloader(ArtworkDownloaderPort):
@@ -86,6 +90,10 @@ class HttpxArtworkDownloader(ArtworkDownloaderPort):
                 internal_message=f"Timeout fetching {url}",
             ) from exc
         except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in _GONE_STATUSES:
+                raise ArtworkGoneError(
+                    f"HTTP {exc.response.status_code} fetching {url}: image no longer exists"
+                ) from exc
             raise GatewayBadResponseException(
                 message="Artwork provider returned an error status",
                 gateway_name=_GATEWAY_NAME,

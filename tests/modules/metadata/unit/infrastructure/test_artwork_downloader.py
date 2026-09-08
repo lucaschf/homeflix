@@ -21,6 +21,7 @@ from src.building_blocks.infrastructure.errors import (
     GatewayTimeoutException,
     GatewayUnavailableException,
 )
+from src.modules.metadata.application.ports.artwork_downloader_port import ArtworkGoneError
 from src.modules.metadata.infrastructure.artwork_downloader import (
     HttpxArtworkDownloader,
 )
@@ -148,17 +149,35 @@ class TestFetch:
 
     async def test_should_translate_http_status_error(self) -> None:
         request = httpx.Request("GET", _URL)
-        response = httpx.Response(404, request=request)
+        response = httpx.Response(503, request=request)
         ctx = _FakeStreamCtx(
             _FakeStreamResponse(
                 [],
                 {"content-type": "text/html"},
-                status_error=httpx.HTTPStatusError("not found", request=request, response=response),
+                status_error=httpx.HTTPStatusError("busy", request=request, response=response),
             )
         )
         downloader = _downloader_with(ctx)
 
         with pytest.raises(GatewayBadResponseException):
+            await downloader.fetch(_URL, max_bytes=1024)
+
+    @pytest.mark.parametrize("status", [404, 410])
+    async def test_should_report_a_vanished_image_as_gone(self, status: int) -> None:
+        # A definitive "does not exist" is not a gateway hiccup: the job
+        # must be able to tell it apart and stop retrying.
+        request = httpx.Request("GET", _URL)
+        response = httpx.Response(status, request=request)
+        ctx = _FakeStreamCtx(
+            _FakeStreamResponse(
+                [],
+                {"content-type": "text/html"},
+                status_error=httpx.HTTPStatusError("gone", request=request, response=response),
+            )
+        )
+        downloader = _downloader_with(ctx)
+
+        with pytest.raises(ArtworkGoneError):
             await downloader.fetch(_URL, max_bytes=1024)
 
     async def test_should_translate_transport_error(self) -> None:

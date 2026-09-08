@@ -93,10 +93,12 @@ class MovieArtworkMirrorRepository(ABC):
     ) -> None:
         """Rewrite one locale's artwork fields inside the ``localized`` blob.
 
-        Writes only the non-``None`` fields of ``artwork`` for that
-        locale, never the whole blob, so a concurrent enrichment that
-        rewrites title/synopsis/other locales is not reverted. The same
-        field stays last-writer-wins, exactly like ``update_movie_artwork``.
+        ``artwork`` is the final value of the three artwork fields for
+        that locale: a value is set, ``None`` removes the field (the
+        provider no longer has the image). Nothing else in the blob is
+        touched, so a concurrent enrichment that rewrites title/synopsis/
+        other locales is not reverted. The same field stays last-writer-
+        wins, exactly like ``update_movie_artwork``.
         """
         ...
 
@@ -142,7 +144,7 @@ class SeriesArtworkMirrorRepository(ABC):
         """Rewrite one locale's artwork fields inside the series ``localized`` blob.
 
         Same contract as ``MovieArtworkMirrorRepository.update_movie_localized_artwork``:
-        only the non-``None`` fields of that locale are written.
+        the three fields of that locale are set, or removed when ``None``.
         """
         ...
 
