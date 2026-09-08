@@ -41,7 +41,9 @@ from src.modules.media.infrastructure.persistence.models import (
 )
 from src.modules.media.infrastructure.persistence.repositories._artwork_helpers import (
     artwork_column_values,
+    fetch_remote_localized_artwork,
     to_artwork_columns,
+    update_localized_artwork,
 )
 from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
     any_genre_predicate,
@@ -817,6 +819,16 @@ class SQLAlchemyMovieRepository(MovieRepository):
             .where(MovieModel.external_id == movie_id.value)
             .values(**artwork_column_values(artwork))
         )
+
+    async def find_with_remote_localized_artwork(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` (movie, locale) pairs with a remote localized URL."""
+        return await fetch_remote_localized_artwork(self._session, MovieModel, limit)
+
+    async def update_movie_localized_artwork(
+        self, movie_id: MovieId, locale: str, artwork: ArtworkColumns
+    ) -> None:
+        """Rewrite one locale's artwork fields inside the movie's ``localized`` blob."""
+        await update_localized_artwork(self._session, MovieModel, movie_id.value, locale, artwork)
 
     async def count_credits_states(self) -> dict[str, int]:
         """Return ``{credits_detection_state: count}`` over non-deleted movies."""

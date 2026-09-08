@@ -148,7 +148,8 @@ class ArtworkStoragePort(ABC):
 #     served = await storage.save(content=img.content, content_type=img.content_type, key=str(key))
 #     update direto da coluna (sem save de aggregate → não apaga filhos)
 #   falha de download/store ou não-imagem -> log + mantém a URL remota (fallback gracioso)
-#   artes localizadas: mesmo fluxo sobre LocalizedFields.{poster,backdrop,logo}_path (str) — PR 3
+#   artes localizadas: mesmo fluxo, uma linha por (título, locale) via json_each;
+#     escrita campo a campo com json_set no blob (nunca o blob inteiro) — entregue (PR 3)
 ```
 
 Pontos de toque no código (blast radius): endpoint novo `GET /api/v1/artwork/{key}` na presentation de `media` (PR 1); `ArtworkStoragePort` + `LocalArtworkStorage` + config `artwork_storage_directory` (PR 1); `ArtworkMirrorJob` + `ArtworkDownloaderPort`/`HttpxArtworkDownloader` + `ArtworkKey` + bucket `ArtworkMirrorConfig` + finders/updaters de coluna + registro no scheduler (PR 2). A orquestração é do **job de infra** (convenção ratificada dos jobs irmãos), não de um use case de application. `ImageUrl`, mappers e schemas de presentation **não** mudam.
@@ -163,4 +164,5 @@ Docs a sincronizar ao implementar (docs-maintainer): página do módulo `media` 
 |------|-------|---------|
 | 2026-07-18 | Lucas | Criação inicial (Proposto) |
 | 2026-07-18 | Lucas | Default de storage passa de object-store (MinIO) para disco local; MinIO/S3 vira adapter plugável (Alternativa 3) |
+| 2026-09-08 | Lucas | PR 3 (parcial): artes **localizadas** de Movie/Series mirroradas por (título, locale) — finder `json_each` + updater `json_set` campo a campo em `_artwork_helpers` (paths a partir de `LocalizedField`, locale validado e nunca canonicalizado), dois kinds novos no job com a mesma política LWW por campo. Fotos de elenco (`profile_path`) seguem como follow-up. |
 | 2026-07-19 | Lucas | **Aceito** — implementado e mergeado (PR #364): endpoint `GET /api/v1/artwork/{key}`, `ArtworkStoragePort` + `LocalArtworkStorage` (único adapter implementado; MinIO/S3 segue plugável, não implementado), `ArtworkMirrorJob` (`homeflix:artwork-mirror`), `HttpxArtworkDownloader` guardado contra SSRF, `ArtworkKey`/`ArtworkColumns` VOs e bucket `ArtworkMirrorConfig`. Escopo entregue: campos top-level (poster/backdrop/logo) de **Movie e Series**. Poster de Season, stills de episódio, artes localizadas e fotos de elenco ficam para follow-ups (§5 do escopo v1). |

@@ -5,10 +5,12 @@ TMDB URL, downloads the bytes, persists them via
 :class:`ArtworkStoragePort`, and swaps the column for the local
 ``/api/v1/artwork/{key}`` reference. The catalog then serves art from
 storage the deployment controls, tolerating TMDB removal, rate limits,
-CDN outages, and offline use.
+CDN outages, and offline use. The per-locale artwork inside the
+``localized`` blob (ADR-023) goes through the same flow, one row per
+(title, locale), via the ``*_localized`` kinds.
 
-Each tick processes at most ``batch_size`` titles split between the
-title kinds. Network I/O never happens while a DB session is held: rows
+Each tick processes at most ``batch_size`` rows split between the
+kinds in order (column kinds first, then localized). Network I/O never happens while a DB session is held: rows
 are fetched in one short UoW, mirrored without a session, and the column
 update runs in a fresh per-title UoW. A download failure (or a non-image
 response) is logged and leaves the remote URL untouched (graceful
@@ -58,7 +60,7 @@ class _Kind:
 
     label: str
     find: Callable[[MediaUnitOfWork, int], Awaitable[Sequence[RemoteArtworkRow]]]
-    update: Callable[[MediaUnitOfWork, str, ArtworkColumns], Awaitable[None]]
+    update: Callable[[MediaUnitOfWork, RemoteArtworkRow, ArtworkColumns], Awaitable[None]]
 
 
 class ArtworkMirrorJob:
@@ -90,29 +92,45 @@ class ArtworkMirrorJob:
             _Kind(
                 label="movies",
                 find=lambda uow, limit: uow.movies.find_with_remote_artwork(limit),
-                update=lambda uow, media_id, cols: uow.movies.update_movie_artwork(
-                    MovieId(media_id), cols
+                update=lambda uow, row, cols: uow.movies.update_movie_artwork(
+                    MovieId(row.media_id), cols
                 ),
             ),
             _Kind(
                 label="series",
                 find=lambda uow, limit: uow.series.find_with_remote_artwork(limit),
-                update=lambda uow, media_id, cols: uow.series.update_series_artwork(
-                    SeriesId(media_id), cols
+                update=lambda uow, row, cols: uow.series.update_series_artwork(
+                    SeriesId(row.media_id), cols
                 ),
             ),
             _Kind(
                 label="seasons",
                 find=lambda uow, limit: uow.series.find_seasons_with_remote_poster(limit),
-                update=lambda uow, media_id, cols: uow.series.update_season_artwork(
-                    SeasonId(media_id), cols
+                update=lambda uow, row, cols: uow.series.update_season_artwork(
+                    SeasonId(row.media_id), cols
                 ),
             ),
             _Kind(
                 label="episodes",
                 find=lambda uow, limit: uow.series.find_episodes_with_remote_thumbnail(limit),
-                update=lambda uow, media_id, cols: uow.series.update_episode_thumbnail(
-                    EpisodeId(media_id), cols
+                update=lambda uow, row, cols: uow.series.update_episode_thumbnail(
+                    EpisodeId(row.media_id), cols
+                ),
+            ),
+            # Localized kinds come last so the column kinds — what every
+            # language falls back to — always get budget first.
+            _Kind(
+                label="movies_localized",
+                find=lambda uow, limit: uow.movies.find_with_remote_localized_artwork(limit),
+                update=lambda uow, row, cols: uow.movies.update_movie_localized_artwork(
+                    MovieId(row.media_id), _require_locale(row), cols
+                ),
+            ),
+            _Kind(
+                label="series_localized",
+                find=lambda uow, limit: uow.series.find_with_remote_localized_artwork(limit),
+                update=lambda uow, row, cols: uow.series.update_series_localized_artwork(
+                    SeriesId(row.media_id), _require_locale(row), cols
                 ),
             ),
         )
@@ -165,11 +183,11 @@ class ArtworkMirrorJob:
             mirrored += hits
             failed += misses
             if hits:
-                await self._persist(kind, row.media_id, columns)
+                await self._persist(kind, row, columns)
                 updated += 1
         return updated, mirrored, failed
 
-    async def _persist(self, kind: _Kind, media_id: str, artwork: ArtworkColumns) -> None:
+    async def _persist(self, kind: _Kind, row: RemoteArtworkRow, artwork: ArtworkColumns) -> None:
         """Write the mirrored artwork columns in a fresh UoW.
 
         A blind last-writer-wins column update from the fetch-time
@@ -179,7 +197,7 @@ class ArtworkMirrorJob:
         every column value in the WHERE clause.
         """
         async with self._media_uow_factory() as uow:
-            await kind.update(uow, media_id, artwork)
+            await kind.update(uow, row, artwork)
 
     async def _mirror_row(
         self,
@@ -264,6 +282,17 @@ class ArtworkMirrorJob:
                 error=str(exc),
             )
             return None
+
+
+def _require_locale(row: RemoteArtworkRow) -> str:
+    """Return the row's locale for a localized kind.
+
+    A localized finder always sets it; ``None`` here is a programming
+    error (a column-kind row routed to a localized updater), not data.
+    """
+    if row.locale is None:
+        raise ValueError(f"localized artwork row for {row.media_id} carries no locale")
+    return row.locale
 
 
 def _is_supported_image(content_type: str | None) -> bool:
