@@ -177,6 +177,11 @@ for restringido. As guardas:
 
 Timeout, erro de transporte, status não-2xx ou corpo acima do teto viram
 `GatewayException` — o job captura, mantém a URL remota e re-tenta depois.
+A exceção é o **404 / 410**: o adapter levanta `ArtworkGoneError`, o job
+**apaga a referência** (coluna → `NULL`; campo localizado → removido do
+blob) e loga `dropping reference` — a imagem não existe mais no provider,
+então re-tentar a cada tick só queimava orçamento (era o caso de 59 stills
+de episódio no acervo real).
 
 ---
 
@@ -206,7 +211,8 @@ Por tick:
    daquele locale no blob `localized`, via `json_set`) com a referência
    local.
 4. Loga por *kind* quantos títulos foram atualizados e quantas imagens
-   foram espelhadas vs. mantidas remotas.
+   foram espelhadas, mantidas remotas (`failed`) ou descartadas
+   (`dropped`, provider respondeu 404 / 410).
 
 !!! note "Sem round-trip de aggregate"
     A escrita é um **update direto de coluna** numa UoW fresca por título
@@ -255,5 +261,6 @@ buckets, com `source='default'` se nunca foi editado) e é editável por
 | Artes ainda apontam para `image.tmdb.org` | Job desligado ou ainda não alcançou o título | Confirmar bucket `enabled=true`; olhar o log `[artwork-mirror] tick complete`; baixar `batch_size`/`interval_minutes` se preciso |
 | `404` em `/api/v1/artwork/{key}` sem redirect | Objeto ausente **e** sem `origin` válido | Esperado antes do mirror rodar; garantir que o front passa `?origin=<url-remota>` para o fallback 302 |
 | Log `non-image response; keeping remote URL` | Provider serviu HTML (rate-limit/geoblock) ou tipo não suportado | Benigno — a URL remota é mantida e re-tentada; sem ação |
+| Log `provider no longer has the image; dropping reference` | Provider respondeu 404 / 410 para a URL armazenada | Esperado: a referência é apagada e o título fica sem essa arte (o front cai nos fallbacks); um re-enrichment pode trazer uma URL nova |
 | Diretório de artwork perdido | Disco corrompido / reset | Serve degrada para redirect à origem; re-mirror reconstrói; incluir o diretório no backup |
 | Arte não muda após troca upstream com mesmo `file_path` | Content-hash não detecta troca se o `file_path` não mudou | Re-mirror periódico opcional; caso comum (novo `file_path`) já é coberto |

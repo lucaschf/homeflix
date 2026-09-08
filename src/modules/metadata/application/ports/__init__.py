@@ -3,6 +3,7 @@
 from src.modules.metadata.application.ports.artwork_downloader_port import (
     ALLOWED_ARTWORK_HOSTS,
     ArtworkDownloaderPort,
+    ArtworkGoneError,
     DownloadedImage,
 )
 from src.modules.metadata.application.ports.artwork_resizer_port import (
@@ -30,6 +31,7 @@ from src.modules.metadata.application.ports.metadata_provider_port import (
 __all__ = [
     "ALLOWED_ARTWORK_HOSTS",
     "ArtworkDownloaderPort",
+    "ArtworkGoneError",
     "ArtworkResizerPort",
     "ArtworkStoragePort",
     "CollectionDetailMetadata",

@@ -134,30 +134,40 @@ async def update_localized_artwork(
 ) -> None:
     """Rewrite one locale's artwork fields inside the ``localized`` blob.
 
-    A single ``json_set`` touching only the non-``None`` fields, so a
-    concurrent enrichment that rewrites title/synopsis/other locales is
-    never reverted; the same field stays last-writer-wins, like the
-    top-level column update. No-op when there is nothing to write or the
-    blob is ``NULL`` (``json_set(NULL, ...)`` is ``NULL`` anyway, and
-    the guard keeps ``updated_at`` from bumping for nothing).
+    ``artwork`` carries the final value of the three fields for that
+    locale: a value is written with ``json_set``, ``None`` is removed
+    with ``json_remove`` (the provider no longer serves the image; a
+    path that was never there is a no-op). Only those three paths are
+    touched, so a concurrent enrichment that rewrites title/synopsis/
+    other locales is never reverted; the same field stays last-writer-
+    wins, like the top-level column update. No-op when the blob is
+    ``NULL`` (``json_set(NULL, ...)`` is ``NULL`` anyway, and the guard
+    keeps ``updated_at`` from bumping for nothing).
 
     Raises:
         ValueError: when ``locale`` cannot be used as a JSON path key.
     """
-    args: list[Any] = []
+    set_args: list[Any] = []
+    remove_paths: list[str] = []
     for field, value in (
         (LocalizedField.POSTER_PATH, artwork.poster),
         (LocalizedField.BACKDROP_PATH, artwork.backdrop),
         (LocalizedField.LOGO_PATH, artwork.logo),
     ):
-        if value is not None:
-            args.extend((localized_artwork_path(locale, field), value.value))
-    if not args:
-        return
+        path = localized_artwork_path(locale, field)
+        if value is None:
+            remove_paths.append(path)
+        else:
+            set_args.extend((path, value.value))
+    blob: Any = model.localized
+    if set_args:
+        blob = func.json_set(blob, *set_args)
+    if remove_paths:
+        blob = func.json_remove(blob, *remove_paths)
     await session.execute(
         update(model)
         .where(model.external_id == external_id, model.localized.is_not(None))
-        .values(localized=func.json_set(model.localized, *args))
+        .values(localized=blob)
     )
 
 

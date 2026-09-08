@@ -16,7 +16,10 @@ from src.building_blocks.infrastructure.errors import GatewayUnavailableExceptio
 from src.infrastructure.scheduling.artwork_mirror_job import ArtworkMirrorJob
 from src.modules.media.domain.repositories.artwork_mirror_repository import RemoteArtworkRow
 from src.modules.media.domain.value_objects import ArtworkColumns, ImageUrl
-from src.modules.metadata.application.ports.artwork_downloader_port import DownloadedImage
+from src.modules.metadata.application.ports.artwork_downloader_port import (
+    ArtworkGoneError,
+    DownloadedImage,
+)
 from src.modules.metadata.domain.value_objects.artwork_variant import ArtworkKind
 from src.modules.settings.domain.value_objects import ArtworkMirrorConfig
 
@@ -150,15 +153,19 @@ class _FakeDownloader:
         *,
         fail_urls: set[str] = frozenset(),
         nonimage_urls: set[str] = frozenset(),
+        gone_urls: set[str] = frozenset(),
     ) -> None:
         self._fail_urls = fail_urls
         self._nonimage_urls = nonimage_urls
+        self._gone_urls = gone_urls
         self.fetched: list[str] = []
 
     async def fetch(self, url: str, *, max_bytes: int) -> DownloadedImage:
         self.fetched.append(url)
         if url in self._fail_urls:
             raise GatewayUnavailableException(message="down", gateway_name="artwork-cdn")
+        if url in self._gone_urls:
+            raise ArtworkGoneError(f"HTTP 404 fetching {url}")
         content_type = "text/html" if url in self._nonimage_urls else "image/jpeg"
         return DownloadedImage(content=b"image-bytes", content_type=content_type)
 
@@ -205,6 +212,7 @@ def _make(
     config: ArtworkMirrorConfig | None = None,
     fail_urls: set[str] = frozenset(),
     nonimage_urls: set[str] = frozenset(),
+    gone_urls: set[str] = frozenset(),
 ) -> _Harness:
     movies = _FakeMovieRepo(list(movie_rows or []), list(movie_localized_rows or []))
     series = _FakeSeriesRepo(
@@ -214,7 +222,9 @@ def _make(
         localized_rows=list(series_localized_rows or []),
     )
     uow = _FakeUow(movies=movies, series=series)
-    downloader = _FakeDownloader(fail_urls=fail_urls, nonimage_urls=nonimage_urls)
+    downloader = _FakeDownloader(
+        fail_urls=fail_urls, nonimage_urls=nonimage_urls, gone_urls=gone_urls
+    )
     storage = _FakeStorage()
     variants = _FakeVariants()
     job = ArtworkMirrorJob(
@@ -445,3 +455,48 @@ class TestVariantPregeneration:
         await h.job.run()
 
         assert h.variants.pregenerated == []
+
+
+class TestGoneArtwork:
+    async def test_should_drop_a_reference_the_provider_no_longer_has(self) -> None:
+        # 404 / 410 is definitive: the column is cleared so the row stops
+        # matching the finder instead of burning budget every tick.
+        h = _make(episode_rows=[_row(EPISODE_ID, still=REMOTE)], gone_urls={REMOTE})
+
+        await h.job.run()
+
+        assert len(h.series.episode_updates) == 1
+        media_id, cols = h.series.episode_updates[0]
+        assert media_id == EPISODE_ID
+        assert cols.still is None
+        assert h.storage.saved == []
+
+    async def test_should_keep_a_transient_failure_but_drop_a_gone_one_in_the_same_row(
+        self,
+    ) -> None:
+        h = _make(
+            movie_rows=[_row(MOVIE_ID, poster=REMOTE, backdrop=REMOTE_B)],
+            fail_urls={REMOTE},
+            gone_urls={REMOTE_B},
+        )
+
+        await h.job.run()
+
+        assert len(h.movies.updates) == 1
+        _, cols = h.movies.updates[0]
+        assert cols.poster == ImageUrl(REMOTE)  # transient → retried next tick
+        assert cols.backdrop is None  # gone → dropped
+
+    async def test_should_drop_a_gone_localized_reference(self) -> None:
+        h = _make(
+            movie_localized_rows=[_row(MOVIE_ID, logo=REMOTE, poster=LOCAL, locale="pt-BR")],
+            gone_urls={REMOTE},
+        )
+
+        await h.job.run()
+
+        assert len(h.movies.localized_updates) == 1
+        _, locale, cols = h.movies.localized_updates[0]
+        assert locale == "pt-BR"
+        assert cols.logo is None
+        assert cols.poster == ImageUrl(LOCAL)

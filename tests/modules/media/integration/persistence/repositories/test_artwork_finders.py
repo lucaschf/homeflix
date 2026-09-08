@@ -259,6 +259,23 @@ class TestUpdateMovieLocalizedArtwork:
         assert raw is not None
         assert json.loads(raw) == {"pt-br": {"logo_path": _LOCAL}}
 
+    async def test_should_remove_a_field_given_as_none(self, db_session: AsyncSession) -> None:
+        # The mirror drops a reference the provider answered 404 for:
+        # the field leaves the locale entry, the rest of it survives, and
+        # the finder stops returning the row.
+        repo = SQLAlchemyMovieRepository(db_session)
+        movie = _movie("Planes", "/movies/a.mkv", localized=_localized(_LOCALIZED))
+        await repo.save(movie)
+
+        await repo.update_movie_localized_artwork(_id(movie), "pt-BR", ArtworkColumns())
+
+        assert await repo.find_with_remote_localized_artwork(limit=10) == []
+        raw = await _raw_localized(db_session, movie)
+        assert raw is not None
+        expected = json.loads(json.dumps(_LOCALIZED))
+        del expected["pt-BR"]["poster_path"]
+        assert load_localized(raw).to_serializable() == expected
+
     async def test_should_reject_an_unsafe_locale_key(self, db_session: AsyncSession) -> None:
         repo = SQLAlchemyMovieRepository(db_session)
         movie = _movie("Planes", "/movies/a.mkv", localized=_localized(_LOCALIZED))

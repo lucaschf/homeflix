@@ -22,6 +22,16 @@ from dataclasses import dataclass
 ALLOWED_ARTWORK_HOSTS = frozenset({"image.tmdb.org"})
 
 
+class ArtworkGoneError(Exception):
+    """The provider says the image no longer exists (HTTP 404 / 410).
+
+    A definitive answer, unlike a timeout or a 5xx: retrying on the next
+    tick cannot help, so the mirror job drops the reference instead of
+    keeping a URL every client would fail on too. Transient failures
+    stay ``GatewayException`` and keep the remote URL for a retry.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class DownloadedImage:
     """Bytes plus content type of a fetched image.
@@ -55,7 +65,10 @@ class ArtworkDownloaderPort(ABC):
             The downloaded bytes and content type.
 
         Raises:
-            GatewayException: On timeout, transport error, non-2xx
+            ArtworkGoneError: When the provider answers 404 / 410 — the
+                image is gone for good; the mirror job drops the
+                reference instead of retrying.
+            GatewayException: On timeout, transport error, other non-2xx
                 status, or a body exceeding ``max_bytes``. The caller
                 (mirror job) catches these and leaves the remote URL in
                 place, retrying on a later tick.

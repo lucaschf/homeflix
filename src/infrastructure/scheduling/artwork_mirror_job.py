@@ -18,6 +18,8 @@ are fetched in one short UoW, mirrored without a session, and the column
 update runs in a fresh per-title UoW. A download failure (or a non-image
 response) is logged and leaves the remote URL untouched (graceful
 fallback), so a flaky provider only defers mirroring to a later tick.
+A definitive 404 / 410 from the provider is different: the reference is
+dropped, so a handful of vanished images stop being retried forever.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from typing import TYPE_CHECKING
 from src.building_blocks.infrastructure.errors import GatewayException
 from src.config.logging import get_logger
 from src.modules.media.domain.value_objects import ArtworkColumns
+from src.modules.metadata.application.ports.artwork_downloader_port import ArtworkGoneError
 from src.modules.metadata.domain.value_objects.artwork_key import (
     SUPPORTED_ARTWORK_CONTENT_TYPES,
     ArtworkKey,
@@ -164,11 +167,12 @@ class ArtworkMirrorJob:
             share = -(-budget // (len(self._kinds) - index))  # ceil division
             rows = await self._fetch(kind, share)
             budget -= len(rows)
-            updated, mirrored, failed = await self._process(kind, rows, config.max_bytes)
+            updated, mirrored, failed, dropped = await self._process(kind, rows, config.max_bytes)
             stats[f"{kind.label}_updated"] = updated
             stats[f"{kind.label}_mirrored"] = mirrored
             stats[f"{kind.label}_failed"] = failed
-            active = active or bool(mirrored or failed)
+            stats[f"{kind.label}_dropped"] = dropped
+            active = active or bool(mirrored or failed or dropped)
 
         if active:
             _logger.info(
@@ -186,19 +190,21 @@ class ArtworkMirrorJob:
         kind: _Kind,
         rows: Sequence[RemoteArtworkRow],
         max_bytes: int,
-    ) -> tuple[int, int, int]:
-        """Mirror every row; return (titles_updated, mirrored, failed)."""
+    ) -> tuple[int, int, int, int]:
+        """Mirror every row; return (titles_updated, mirrored, failed, dropped)."""
         updated = 0
         mirrored = 0
         failed = 0
+        dropped = 0
         for row in rows:
-            columns, hits, misses = await self._mirror_row(row, max_bytes)
+            columns, hits, misses, gone = await self._mirror_row(row, max_bytes)
             mirrored += hits
             failed += misses
-            if hits:
+            dropped += gone
+            if hits or gone:
                 await self._persist(kind, row, columns)
                 updated += 1
-        return updated, mirrored, failed
+        return updated, mirrored, failed, dropped
 
     async def _persist(self, kind: _Kind, row: RemoteArtworkRow, artwork: ArtworkColumns) -> None:
         """Write the mirrored artwork columns in a fresh UoW.
@@ -216,23 +222,29 @@ class ArtworkMirrorJob:
         self,
         row: RemoteArtworkRow,
         max_bytes: int,
-    ) -> tuple[ArtworkColumns, int, int]:
+    ) -> tuple[ArtworkColumns, int, int, int]:
         """Mirror each remote reference of ``row``.
 
         Returns the final columns (local reference where a mirror
-        succeeded, the original value otherwise) plus the count of
-        successful and failed mirrors.
+        succeeded, ``None`` where the provider no longer has the image,
+        the original value otherwise) plus the counts of successful,
+        failed and dropped mirrors.
         """
-        poster, hp, mp = await self._mirror_field(row.artwork.poster, max_bytes, ArtworkKind.POSTER)
-        backdrop, hb, mb = await self._mirror_field(
+        poster, hp, mp, gp = await self._mirror_field(
+            row.artwork.poster, max_bytes, ArtworkKind.POSTER
+        )
+        backdrop, hb, mb, gb = await self._mirror_field(
             row.artwork.backdrop, max_bytes, ArtworkKind.BACKDROP
         )
-        logo, hl, ml = await self._mirror_field(row.artwork.logo, max_bytes, ArtworkKind.LOGO)
-        still, hs, ms = await self._mirror_field(row.artwork.still, max_bytes, ArtworkKind.STILL)
+        logo, hl, ml, gl = await self._mirror_field(row.artwork.logo, max_bytes, ArtworkKind.LOGO)
+        still, hs, ms, gs = await self._mirror_field(
+            row.artwork.still, max_bytes, ArtworkKind.STILL
+        )
         return (
             ArtworkColumns(poster=poster, backdrop=backdrop, logo=logo, still=still),
             hp + hb + hl + hs,
             mp + mb + ml + ms,
+            gp + gb + gl + gs,
         )
 
     async def _mirror_field(
@@ -240,20 +252,30 @@ class ArtworkMirrorJob:
         current: ImageUrl | None,
         max_bytes: int,
         kind: ArtworkKind,
-    ) -> tuple[ImageUrl | None, int, int]:
-        """Mirror one reference; return (final value, hit, miss).
+    ) -> tuple[ImageUrl | None, int, int, int]:
+        """Mirror one reference; return (final value, hit, miss, dropped).
 
         A non-remote value (local or None) is returned unchanged with no
-        hit/miss. A remote value that mirrors returns the local reference
-        and one hit; one that fails returns the original and one miss —
-        the authoritative remote URL is never dropped.
+        counts. A remote value that mirrors returns the local reference
+        and one hit; one that fails transiently returns the original and
+        one miss, so a later tick retries; one the provider reports gone
+        (404 / 410) returns ``None`` and one drop — every client would
+        fail on that URL too, and retrying it each tick only burns budget.
         """
         if current is None or not current.is_remote:
-            return current, 0, 0
-        mirrored = await self._mirror_one(current, max_bytes, kind)
+            return current, 0, 0, 0
+        try:
+            mirrored = await self._mirror_one(current, max_bytes, kind)
+        except ArtworkGoneError as exc:
+            _logger.info(
+                "[artwork-mirror] provider no longer has the image; dropping reference",
+                url=current.value,
+                error=str(exc),
+            )
+            return None, 0, 0, 1
         if mirrored is None:
-            return current, 0, 1
-        return mirrored, 1, 0
+            return current, 0, 1, 0
+        return mirrored, 1, 0, 0
 
     async def _mirror_one(
         self, url: ImageUrl, max_bytes: int, kind: ArtworkKind
