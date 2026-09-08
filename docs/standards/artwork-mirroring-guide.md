@@ -64,6 +64,7 @@ servidas). · **Tenant-scoped:** não.
 |-------|--------|-------|
 | `key` (path) | URL armazenada na coluna | Nome do objeto no storage. Validado contra `ARTWORK_KEY_PATTERN` (`^[A-Za-z0-9._-]+$`) e rejeitado se for só pontos. |
 | `origin` (query, opcional) | URL remota de origem | Para onde redirecionar quando o objeto ainda não foi espelhado. |
+| `w` (query, opcional) | Largura da escada (ADR-034) | Serve a variante `<stem>.w<w><ext>` — do storage se existir, derivada do original e gravada no primeiro acesso senão. Nunca faz upscale: original não mais largo que `w` é servido como está. Só `{300, 342, 500, 780, 1280}`. |
 
 **Respostas**
 
@@ -71,7 +72,7 @@ servidas). · **Tenant-scoped:** não.
 |--------|--------|
 | 200 | Objeto existe no storage — serve os bytes com `Cache-Control: public, max-age=31536000, immutable` e `X-Content-Type-Options: nosniff`. |
 | 302 | Objeto ausente **e** `origin` é uma URL `https` num host allow-listed (`ALLOWED_ARTWORK_HOSTS` = `{image.tmdb.org}`) — bounce para o provider enquanto o job não alcança. |
-| 400 | `key` fora do charset seguro ou só pontos. |
+| 400 | `key` fora do charset seguro ou só pontos; `w` fora da escada (`unsupported artwork width`); `w` sobre uma chave que já é variante (`cannot derive a variant of a variant`). |
 | 404 | Objeto ausente e sem `origin` válido. |
 
 !!! warning "Sem open redirect"
@@ -103,6 +104,11 @@ servidas). · **Tenant-scoped:** não.
 Extensão derivada do `Content-Type` (`image/jpeg→.jpg`, `png`, `webp`,
 `gif`, `avif`), com fallback para o sufixo da URL de origem e, por fim,
 `.jpg`.
+
+**Variantes (ADR-034):** `ArtworkKey.variant(width)` nomeia a rendition
+reduzida como `<stem>.w<width><ext>` (ex.: `ab12…ef.w1280.jpg`) — o
+marcador fica antes da extensão para o content type continuar vindo dela.
+Uma chave já variante não gera outra (`is_variant`).
 
 ---
 
@@ -192,9 +198,11 @@ Por tick:
    `find_with_remote_localized_artwork` para um par (título, locale)):
    baixa cada campo remoto, valida que a resposta é uma **imagem suportada**
    (senão mantém a URL remota — evita gravar uma página HTML de rate-limit
-   ou um `svg`), calcula a `ArtworkKey`, `storage.save`, e **atualiza a
-   coluna** (ou o campo daquele locale no blob `localized`, via `json_set`)
-   com a referência local.
+   ou um `svg`), calcula a `ArtworkKey`, `storage.save`, **pré-gera as
+   variantes** da escada daquele tipo de campo (ADR-034, best-effort — uma
+   falha aqui não desfaz o mirror), e **atualiza a coluna** (ou o campo
+   daquele locale no blob `localized`, via `json_set`) com a referência
+   local.
 4. Loga por *kind* quantos títulos foram atualizados e quantas imagens
    foram espelhadas vs. mantidas remotas.
 

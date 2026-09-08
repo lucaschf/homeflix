@@ -29,6 +29,7 @@ from src.modules.metadata.domain.value_objects.artwork_key import (
     SUPPORTED_ARTWORK_CONTENT_TYPES,
     ArtworkKey,
 )
+from src.modules.metadata.domain.value_objects.artwork_variant import ArtworkKind
 from src.shared_kernel.value_objects.image_url import ImageUrl
 from src.shared_kernel.value_objects.media_id import EpisodeId, MovieId, SeasonId, SeriesId
 
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
         ArtworkDownloaderPort,
     )
     from src.modules.metadata.application.ports.artwork_storage_port import ArtworkStoragePort
+    from src.modules.metadata.application.services import ArtworkVariantService
     from src.modules.settings.infrastructure.runtime_settings import RuntimeSettings
 
 _logger = get_logger()
@@ -75,6 +77,8 @@ class ArtworkMirrorJob:
             edits apply on the next tick (ADR-013).
         downloader: Fetches the remote image bytes.
         storage: Persists the bytes and returns the served URL.
+        variants: Pre-generates the ladder-width variants of each
+            freshly mirrored original (ADR-034), best-effort.
     """
 
     def __init__(
@@ -83,11 +87,13 @@ class ArtworkMirrorJob:
         runtime_settings: RuntimeSettings,
         downloader: ArtworkDownloaderPort,
         storage: ArtworkStoragePort,
+        variants: ArtworkVariantService,
     ) -> None:
         self._media_uow_factory = media_uow_factory
         self._runtime_settings = runtime_settings
         self._downloader = downloader
         self._storage = storage
+        self._variants = variants
         self._kinds: tuple[_Kind, ...] = (
             _Kind(
                 label="movies",
@@ -210,10 +216,12 @@ class ArtworkMirrorJob:
         succeeded, the original value otherwise) plus the count of
         successful and failed mirrors.
         """
-        poster, hp, mp = await self._mirror_field(row.artwork.poster, max_bytes)
-        backdrop, hb, mb = await self._mirror_field(row.artwork.backdrop, max_bytes)
-        logo, hl, ml = await self._mirror_field(row.artwork.logo, max_bytes)
-        still, hs, ms = await self._mirror_field(row.artwork.still, max_bytes)
+        poster, hp, mp = await self._mirror_field(row.artwork.poster, max_bytes, ArtworkKind.POSTER)
+        backdrop, hb, mb = await self._mirror_field(
+            row.artwork.backdrop, max_bytes, ArtworkKind.BACKDROP
+        )
+        logo, hl, ml = await self._mirror_field(row.artwork.logo, max_bytes, ArtworkKind.LOGO)
+        still, hs, ms = await self._mirror_field(row.artwork.still, max_bytes, ArtworkKind.STILL)
         return (
             ArtworkColumns(poster=poster, backdrop=backdrop, logo=logo, still=still),
             hp + hb + hl + hs,
@@ -224,6 +232,7 @@ class ArtworkMirrorJob:
         self,
         current: ImageUrl | None,
         max_bytes: int,
+        kind: ArtworkKind,
     ) -> tuple[ImageUrl | None, int, int]:
         """Mirror one reference; return (final value, hit, miss).
 
@@ -234,17 +243,22 @@ class ArtworkMirrorJob:
         """
         if current is None or not current.is_remote:
             return current, 0, 0
-        mirrored = await self._mirror_one(current, max_bytes)
+        mirrored = await self._mirror_one(current, max_bytes, kind)
         if mirrored is None:
             return current, 0, 1
         return mirrored, 1, 0
 
-    async def _mirror_one(self, url: ImageUrl, max_bytes: int) -> ImageUrl | None:
+    async def _mirror_one(
+        self, url: ImageUrl, max_bytes: int, kind: ArtworkKind
+    ) -> ImageUrl | None:
         """Download + store one remote image; return the local reference.
 
         None means the mirror did not happen — the response was not a
         supported image, or the download/store failed (all logged). The
-        caller keeps the remote URL so a later tick can retry.
+        caller keeps the remote URL so a later tick can retry. Once the
+        original is stored, its ladder variants are pre-generated
+        best-effort: the mirror already counts as a hit whatever happens
+        there.
         """
         try:
             image = await self._downloader.fetch(url.value, max_bytes=max_bytes)
@@ -262,10 +276,14 @@ class ArtworkMirrorJob:
                 content_type=image.content_type or "application/octet-stream",
                 source_url=url.value,
             )
+            content_type = image.content_type or "application/octet-stream"
             served = await self._storage.save(
                 content=image.content,
-                content_type=image.content_type or "application/octet-stream",
+                content_type=content_type,
                 key=str(key),
+            )
+            await self._variants.pregenerate(
+                key, kind, content=image.content, content_type=content_type
             )
             return ImageUrl(served)
         except GatewayException as exc:

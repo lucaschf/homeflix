@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import mimetypes
 from pathlib import Path
+from uuid import uuid4
 
 from src.config.logging import get_logger
 from src.modules.metadata.application.ports.artwork_storage_port import (
@@ -100,8 +101,19 @@ class LocalArtworkStorage(ArtworkStoragePort):
 
     @staticmethod
     def _write(target: Path, content: bytes) -> None:
+        # Write to a sibling temp file and rename it into place so a
+        # concurrent ``open`` never sees a half-written object. Variants
+        # (ADR-034) are written in response to the very GET that serves
+        # them, and a truncated file would be cached ``immutable`` for a
+        # year; ``Path.replace`` is atomic on POSIX and on NTFS same-volume.
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
+        tmp = target.with_name(f"{target.name}.{uuid4().hex}.tmp")
+        try:
+            tmp.write_bytes(content)
+            tmp.replace(target)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
 
     @staticmethod
     def _read(target: Path) -> bytes | None:

@@ -10,13 +10,18 @@ per-kind budget split.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from src.building_blocks.infrastructure.errors import GatewayUnavailableException
 from src.infrastructure.scheduling.artwork_mirror_job import ArtworkMirrorJob
 from src.modules.media.domain.repositories.artwork_mirror_repository import RemoteArtworkRow
 from src.modules.media.domain.value_objects import ArtworkColumns, ImageUrl
 from src.modules.metadata.application.ports.artwork_downloader_port import DownloadedImage
+from src.modules.metadata.domain.value_objects.artwork_variant import ArtworkKind
 from src.modules.settings.domain.value_objects import ArtworkMirrorConfig
+
+if TYPE_CHECKING:
+    from src.modules.metadata.domain.value_objects.artwork_key import ArtworkKey
 
 REMOTE = "https://image.tmdb.org/t/p/original/x.jpg"
 REMOTE_B = "https://image.tmdb.org/t/p/original/b.jpg"
@@ -167,6 +172,18 @@ class _FakeStorage:
         return f"/api/v1/artwork/{key}"
 
 
+class _FakeVariants:
+    """Records pre-generation requests; the real service never raises."""
+
+    def __init__(self) -> None:
+        self.pregenerated: list[tuple[str, ArtworkKind]] = []
+
+    async def pregenerate(
+        self, key: ArtworkKey, kind: ArtworkKind, *, content: bytes, content_type: str
+    ) -> None:
+        self.pregenerated.append((str(key), kind))
+
+
 @dataclass
 class _Harness:
     job: ArtworkMirrorJob
@@ -174,6 +191,7 @@ class _Harness:
     series: _FakeSeriesRepo
     downloader: _FakeDownloader
     storage: _FakeStorage
+    variants: _FakeVariants
 
 
 def _make(
@@ -198,13 +216,22 @@ def _make(
     uow = _FakeUow(movies=movies, series=series)
     downloader = _FakeDownloader(fail_urls=fail_urls, nonimage_urls=nonimage_urls)
     storage = _FakeStorage()
+    variants = _FakeVariants()
     job = ArtworkMirrorJob(
         media_uow_factory=_FakeUowFactory(uow),
         runtime_settings=_FakeRuntimeSettings(config or ArtworkMirrorConfig()),
         downloader=downloader,
         storage=storage,
+        variants=variants,
     )
-    return _Harness(job=job, movies=movies, series=series, downloader=downloader, storage=storage)
+    return _Harness(
+        job=job,
+        movies=movies,
+        series=series,
+        downloader=downloader,
+        storage=storage,
+        variants=variants,
+    )
 
 
 class TestRun:
@@ -364,3 +391,26 @@ class TestLocalizedKinds:
 
         assert len(h.movies.updates) == 1
         assert h.movies.localized_updates == []
+
+
+class TestVariantPregeneration:
+    async def test_should_pregenerate_the_ladder_for_each_mirrored_field(self) -> None:
+        h = _make(
+            movie_rows=[_row(MOVIE_ID, poster=REMOTE, backdrop=REMOTE_B)],
+            episode_rows=[_row(EPISODE_ID, still=REMOTE)],
+        )
+
+        await h.job.run()
+
+        # One request per stored original, tagged with the field's kind so
+        # the service picks that kind's ladder; keys are the stored ones.
+        kinds = sorted(kind for _, kind in h.variants.pregenerated)
+        assert kinds == sorted([ArtworkKind.POSTER, ArtworkKind.BACKDROP, ArtworkKind.STILL])
+        assert {key for key, _ in h.variants.pregenerated} <= set(h.storage.saved)
+
+    async def test_should_not_pregenerate_when_the_mirror_did_not_happen(self) -> None:
+        h = _make(movie_rows=[_row(MOVIE_ID, poster=REMOTE)], fail_urls={REMOTE})
+
+        await h.job.run()
+
+        assert h.variants.pregenerated == []

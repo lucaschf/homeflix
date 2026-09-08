@@ -384,6 +384,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         runtime_settings=settings.runtime_settings,
         downloader=metadata.artwork_downloader,
         storage=metadata.artwork_storage,
+        variants=metadata.artwork_variant_service,
     )
 
     intro_detection_job = providers.Singleton(

@@ -36,6 +36,24 @@ class TestSave:
 
         assert (tmp_path / "artwork" / "k.jpg").read_bytes() == b"poster"
 
+    async def test_should_leave_no_temp_file_behind(
+        self, storage: LocalArtworkStorage, tmp_path: Path
+    ) -> None:
+        # The write goes through a sibling temp file + rename so a reader
+        # never sees a partial object; the temp file must not survive.
+        await storage.save(content=b"poster", content_type="image/jpeg", key="k.jpg")
+
+        assert [p.name for p in (tmp_path / "artwork").iterdir()] == ["k.jpg"]
+
+    async def test_should_replace_an_existing_object_atomically(
+        self, storage: LocalArtworkStorage, tmp_path: Path
+    ) -> None:
+        await storage.save(content=b"first", content_type="image/jpeg", key="k.jpg")
+        await storage.save(content=b"second", content_type="image/jpeg", key="k.jpg")
+
+        assert (tmp_path / "artwork" / "k.jpg").read_bytes() == b"second"
+        assert [p.name for p in (tmp_path / "artwork").iterdir()] == ["k.jpg"]
+
 
 class TestOpen:
     async def test_should_round_trip_bytes_with_derived_content_type(

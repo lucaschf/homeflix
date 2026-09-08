@@ -7,7 +7,11 @@ import hashlib
 import pytest
 
 from src.building_blocks.domain.errors import DomainValidationException
-from src.modules.metadata.domain.value_objects.artwork_key import ArtworkKey
+from src.modules.metadata.domain.value_objects.artwork_key import (
+    ARTWORK_KEY_PATTERN,
+    ArtworkKey,
+)
+from src.modules.metadata.domain.value_objects.artwork_variant import ArtworkWidth
 
 
 class TestForContent:
@@ -75,3 +79,32 @@ class TestValidation:
 
     def test_should_accept_a_hash_and_extension_token(self) -> None:
         assert str(ArtworkKey("ab12CD._-def.jpg")) == "ab12CD._-def.jpg"
+
+
+class TestVariant:
+    def test_should_put_the_width_before_the_extension(self) -> None:
+        key = ArtworkKey("abc123.jpg")
+
+        assert str(key.variant(ArtworkWidth(1280))) == "abc123.w1280.jpg"
+
+    def test_should_keep_a_longer_extension(self) -> None:
+        assert str(ArtworkKey("abc.jpeg").variant(ArtworkWidth(780))) == "abc.w780.jpeg"
+
+    def test_should_handle_an_extensionless_key(self) -> None:
+        assert str(ArtworkKey("abc").variant(ArtworkWidth(780))) == "abc.w780"
+
+    def test_should_stay_within_the_key_charset(self) -> None:
+        variant = ArtworkKey("abc123.png").variant(ArtworkWidth(500))
+
+        assert ARTWORK_KEY_PATTERN.match(str(variant))
+
+    def test_should_flag_variants_but_not_originals(self) -> None:
+        assert ArtworkKey("abc.w780.jpg").is_variant
+        assert ArtworkKey("abc.w780").is_variant
+        assert not ArtworkKey("abc.jpg").is_variant
+        # ``.webp`` is an extension, not a width marker.
+        assert not ArtworkKey("abc.webp").is_variant
+
+    def test_should_refuse_a_variant_of_a_variant(self) -> None:
+        with pytest.raises(DomainValidationException):
+            ArtworkKey("abc.w780.jpg").variant(ArtworkWidth(500))
