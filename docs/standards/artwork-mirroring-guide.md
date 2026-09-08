@@ -41,8 +41,11 @@ tick seguinte — a URL remota autoritativa nunca é descartada.
   sem round-trip do agregado.
 - ✅ **Still de episódio** (`episodes.thumbnail_path`) — mesma via de coluna
   direta; viaja no campo `still` do `ArtworkColumns`.
-- ⏳ Artes localizadas por locale e fotos de elenco: **planejados**
-  (follow-ups do ADR-029 §5), ainda não implementados.
+- ✅ **Artes localizadas por locale** (`localized.<locale>.{poster,backdrop,logo}_path`
+  de Movie e Series) — uma linha por (título, locale), lida com `json_each`
+  e reescrita campo a campo com `json_set` (nunca o blob inteiro).
+- ⏳ Fotos de elenco (`profile_path`): **planejado** (follow-up do ADR-029
+  §5), ainda não implementado.
 
 ---
 
@@ -181,13 +184,17 @@ Por tick:
 
 1. Lê o snapshot `ArtworkMirrorConfig` (ADR-013) — edições valem no próximo
    tick.
-2. Divide o orçamento `batch_size` entre os *kinds* (movies, series), em
-   ordem.
-3. Para cada título com coluna ainda remota (`find_with_remote_artwork`):
+2. Divide o orçamento `batch_size` entre os *kinds*, em ordem: movies,
+   series, seasons, episodes e, por último, `movies_localized` e
+   `series_localized` — as colunas (fallback de todo idioma) sempre
+   recebem orçamento primeiro.
+3. Para cada linha ainda remota (`find_with_remote_artwork`, ou
+   `find_with_remote_localized_artwork` para um par (título, locale)):
    baixa cada campo remoto, valida que a resposta é uma **imagem suportada**
    (senão mantém a URL remota — evita gravar uma página HTML de rate-limit
    ou um `svg`), calcula a `ArtworkKey`, `storage.save`, e **atualiza a
-   coluna** com a referência local.
+   coluna** (ou o campo daquele locale no blob `localized`, via `json_set`)
+   com a referência local.
 4. Loga por *kind* quantos títulos foram atualizados e quantas imagens
    foram espelhadas vs. mantidas remotas.
 
@@ -216,7 +223,7 @@ Runtime setting persistido em banco, por bucket (ADR-013/014). Definido em
 | Campo | Default | Descrição |
 |-------|---------|-----------|
 | `enabled` | `true` | Registra o job periódico no boot. |
-| `batch_size` | `20` | Máximo de títulos (movies + series) processados por tick. Limita trabalho de rede + disco por run num catálogo grande. |
+| `batch_size` | `20` | Máximo de linhas processadas por tick — um título nos kinds de coluna, um par (título, locale) nos kinds localizados. Limita trabalho de rede + disco por run num catálogo grande. |
 | `interval_minutes` | `30` | Cadência do job. |
 | `max_bytes` | `10485760` (10 MiB) | Teto de uma imagem baixada. Maiores são puladas (mantêm URL remota). |
 

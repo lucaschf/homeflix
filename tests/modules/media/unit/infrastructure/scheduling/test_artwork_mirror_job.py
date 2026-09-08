@@ -27,7 +27,15 @@ SEASON_ID = "ssn_abc123def456"
 EPISODE_ID = "epi_abc123def456"
 
 
-def _row(media_id: str, *, poster=None, backdrop=None, logo=None, still=None) -> RemoteArtworkRow:
+def _row(
+    media_id: str,
+    *,
+    poster=None,
+    backdrop=None,
+    logo=None,
+    still=None,
+    locale: str | None = None,
+) -> RemoteArtworkRow:
     return RemoteArtworkRow(
         media_id=media_id,
         artwork=ArtworkColumns(
@@ -36,21 +44,36 @@ def _row(media_id: str, *, poster=None, backdrop=None, logo=None, still=None) ->
             logo=ImageUrl(logo) if logo else None,
             still=ImageUrl(still) if still else None,
         ),
+        locale=locale,
     )
 
 
 class _FakeRepo:
-    def __init__(self, rows: list[RemoteArtworkRow]) -> None:
+    def __init__(
+        self,
+        rows: list[RemoteArtworkRow],
+        localized_rows: list[RemoteArtworkRow] | None = None,
+    ) -> None:
         self._rows = rows
+        self._localized_rows = localized_rows or []
         self.updates: list[tuple[str, ArtworkColumns]] = []
+        self.localized_updates: list[tuple[str, str, ArtworkColumns]] = []
 
     async def find_with_remote_artwork(self, limit: int) -> list[RemoteArtworkRow]:
         return self._rows[:limit]
+
+    async def find_with_remote_localized_artwork(self, limit: int) -> list[RemoteArtworkRow]:
+        return self._localized_rows[:limit]
 
 
 class _FakeMovieRepo(_FakeRepo):
     async def update_movie_artwork(self, movie_id, artwork: ArtworkColumns) -> None:
         self.updates.append((str(movie_id), artwork))
+
+    async def update_movie_localized_artwork(
+        self, movie_id, locale: str, artwork: ArtworkColumns
+    ) -> None:
+        self.localized_updates.append((str(movie_id), locale, artwork))
 
 
 class _FakeSeriesRepo(_FakeRepo):
@@ -59,8 +82,9 @@ class _FakeSeriesRepo(_FakeRepo):
         rows: list[RemoteArtworkRow],
         season_rows: list[RemoteArtworkRow] | None = None,
         episode_rows: list[RemoteArtworkRow] | None = None,
+        localized_rows: list[RemoteArtworkRow] | None = None,
     ) -> None:
-        super().__init__(rows)
+        super().__init__(rows, localized_rows)
         self._season_rows = season_rows or []
         self._episode_rows = episode_rows or []
         self.season_updates: list[tuple[str, ArtworkColumns]] = []
@@ -68,6 +92,11 @@ class _FakeSeriesRepo(_FakeRepo):
 
     async def update_series_artwork(self, series_id, artwork: ArtworkColumns) -> None:
         self.updates.append((str(series_id), artwork))
+
+    async def update_series_localized_artwork(
+        self, series_id, locale: str, artwork: ArtworkColumns
+    ) -> None:
+        self.localized_updates.append((str(series_id), locale, artwork))
 
     async def find_seasons_with_remote_poster(self, limit: int) -> list[RemoteArtworkRow]:
         return self._season_rows[:limit]
@@ -153,15 +182,18 @@ def _make(
     series_rows: list[RemoteArtworkRow] | None = None,
     season_rows: list[RemoteArtworkRow] | None = None,
     episode_rows: list[RemoteArtworkRow] | None = None,
+    movie_localized_rows: list[RemoteArtworkRow] | None = None,
+    series_localized_rows: list[RemoteArtworkRow] | None = None,
     config: ArtworkMirrorConfig | None = None,
     fail_urls: set[str] = frozenset(),
     nonimage_urls: set[str] = frozenset(),
 ) -> _Harness:
-    movies = _FakeMovieRepo(list(movie_rows or []))
+    movies = _FakeMovieRepo(list(movie_rows or []), list(movie_localized_rows or []))
     series = _FakeSeriesRepo(
         list(series_rows or []),
         season_rows=list(season_rows or []),
         episode_rows=list(episode_rows or []),
+        localized_rows=list(series_localized_rows or []),
     )
     uow = _FakeUow(movies=movies, series=series)
     downloader = _FakeDownloader(fail_urls=fail_urls, nonimage_urls=nonimage_urls)
@@ -267,3 +299,68 @@ class TestRun:
 
         assert len(h.movies.updates) == 1
         assert h.series.updates == []
+
+
+class TestLocalizedKinds:
+    async def test_should_mirror_localized_movie_artwork_with_its_locale(self) -> None:
+        h = _make(movie_localized_rows=[_row(MOVIE_ID, poster=REMOTE, locale="pt-BR")])
+
+        await h.job.run()
+
+        assert len(h.movies.localized_updates) == 1
+        media_id, locale, cols = h.movies.localized_updates[0]
+        assert media_id == MOVIE_ID
+        assert locale == "pt-BR"
+        assert cols.poster.value.startswith("/api/v1/artwork/")
+        # The column updater is a different write path — never touched.
+        assert h.movies.updates == []
+
+    async def test_should_update_each_locale_of_the_same_title_separately(self) -> None:
+        # Two locales of one title are two rows, and the locale key goes
+        # through verbatim — no canonicalization on the way to the updater.
+        h = _make(
+            movie_localized_rows=[
+                _row(MOVIE_ID, backdrop=REMOTE, locale="pt-br"),
+                _row(MOVIE_ID, backdrop=REMOTE_B, locale="es-419"),
+            ]
+        )
+
+        await h.job.run()
+
+        assert [(m, loc) for m, loc, _ in h.movies.localized_updates] == [
+            (MOVIE_ID, "pt-br"),
+            (MOVIE_ID, "es-419"),
+        ]
+
+    async def test_should_keep_remote_localized_url_when_download_fails(self) -> None:
+        h = _make(
+            movie_localized_rows=[_row(MOVIE_ID, logo=REMOTE, locale="pt-BR")],
+            fail_urls={REMOTE},
+        )
+
+        await h.job.run()
+
+        assert h.movies.localized_updates == []
+        assert h.storage.saved == []
+
+    async def test_should_mirror_localized_series_artwork(self) -> None:
+        h = _make(series_localized_rows=[_row(SERIES_ID, poster=REMOTE, locale="pt-BR")])
+
+        await h.job.run()
+
+        assert len(h.series.localized_updates) == 1
+        media_id, locale, cols = h.series.localized_updates[0]
+        assert (media_id, locale) == (SERIES_ID, "pt-BR")
+        assert cols.poster.value.startswith("/api/v1/artwork/")
+
+    async def test_should_spend_budget_on_column_kinds_before_localized_kinds(self) -> None:
+        h = _make(
+            movie_rows=[_row(MOVIE_ID, poster=REMOTE)],
+            movie_localized_rows=[_row(MOVIE_ID, poster=REMOTE_B, locale="pt-BR")],
+            config=ArtworkMirrorConfig(batch_size=1),
+        )
+
+        await h.job.run()
+
+        assert len(h.movies.updates) == 1
+        assert h.movies.localized_updates == []

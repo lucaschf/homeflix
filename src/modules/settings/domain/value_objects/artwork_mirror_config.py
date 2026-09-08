@@ -13,8 +13,10 @@ class ArtworkMirrorConfig(CompoundValueObject):
             poster/backdrop/logo images (TMDB URLs) and mirrors them into
             local storage, replacing the stored field with the local
             reference so the catalog stops depending on the provider CDN.
-        batch_size: Maximum media items (movies + series) processed per
-            tick. Bounds network + disk work per run on a large catalog.
+        batch_size: Maximum items processed per tick, split across the
+            job's kinds — a title for the column kinds, a (title, locale)
+            pair for the localized-artwork kinds. Bounds network + disk
+            work per run on a large catalog.
         interval_minutes: How often the mirror job runs.
         max_bytes: Hard ceiling on a single downloaded image. Larger
             responses are skipped (kept as remote URLs) so a hostile or

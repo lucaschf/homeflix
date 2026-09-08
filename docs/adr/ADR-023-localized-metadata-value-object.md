@@ -248,3 +248,4 @@ Faseamento (Fase 2 do plano):
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-06-27 | Lucas | Criação inicial |
+| 2026-09-08 | Lucas | Segundo ponto de toque SQL no blob (além do `json_extract` de leitura): o mirror de artwork localizado (ADR-029) escreve campo a campo com `json_set` em `_artwork_helpers`, com paths montados a partir de `LocalizedField` — a serialização continua confinada à borda de persistência. |

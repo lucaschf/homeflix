@@ -48,8 +48,10 @@ from src.modules.media.infrastructure.persistence.models import (
 )
 from src.modules.media.infrastructure.persistence.repositories._artwork_helpers import (
     artwork_column_values,
+    fetch_remote_localized_artwork,
     to_artwork_columns,
     to_still_columns,
+    update_localized_artwork,
 )
 from src.modules.media.infrastructure.persistence.repositories._genre_helpers import (
     any_genre_predicate,
@@ -779,6 +781,16 @@ class SQLAlchemySeriesRepository(SeriesRepository):
             .where(SeriesModel.external_id == series_id.value)
             .values(**artwork_column_values(artwork))
         )
+
+    async def find_with_remote_localized_artwork(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` (series, locale) pairs with a remote localized URL."""
+        return await fetch_remote_localized_artwork(self._session, SeriesModel, limit)
+
+    async def update_series_localized_artwork(
+        self, series_id: SeriesId, locale: str, artwork: ArtworkColumns
+    ) -> None:
+        """Rewrite one locale's artwork fields inside the series's ``localized`` blob."""
+        await update_localized_artwork(self._session, SeriesModel, series_id.value, locale, artwork)
 
     async def find_seasons_with_remote_poster(self, limit: int) -> Sequence[RemoteArtworkRow]:
         """Return up to ``limit`` seasons whose poster is still a remote URL.

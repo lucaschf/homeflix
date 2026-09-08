@@ -37,10 +37,16 @@ class RemoteArtworkRow:
     ``ssn_xxx`` / ``epi_xxx``); ``artwork`` carries the references as
     ``ImageUrl`` values, so ``.is_remote`` is available without re-parsing
     strings. Reused across movies, series, seasons, and episodes.
+
+    ``locale`` is set only for rows projected out of the ``localized``
+    JSON blob (one row per title and locale): it is the blob's key exactly
+    as stored — never canonicalized — so the matching updater targets
+    the very entry the finder read.
     """
 
     media_id: str
     artwork: ArtworkColumns
+    locale: str | None = None
 
 
 class MovieArtworkMirrorRepository(ABC):
@@ -69,6 +75,31 @@ class MovieArtworkMirrorRepository(ABC):
         """
         ...
 
+    @abstractmethod
+    async def find_with_remote_localized_artwork(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` (movie, locale) pairs with a remote localized URL.
+
+        Walks the per-locale artwork inside the ``localized`` blob
+        (``poster_path`` / ``backdrop_path`` / ``logo_path`` of each
+        locale, ADR-023) and yields one row per locale that still holds
+        an ``http(s)`` provider URL, with ``RemoteArtworkRow.locale`` set.
+        Soft-deleted rows are excluded; ordered by id, then locale.
+        """
+        ...
+
+    @abstractmethod
+    async def update_movie_localized_artwork(
+        self, movie_id: MovieId, locale: str, artwork: ArtworkColumns
+    ) -> None:
+        """Rewrite one locale's artwork fields inside the ``localized`` blob.
+
+        Writes only the non-``None`` fields of ``artwork`` for that
+        locale, never the whole blob, so a concurrent enrichment that
+        rewrites title/synopsis/other locales is not reverted. The same
+        field stays last-writer-wins, exactly like ``update_movie_artwork``.
+        """
+        ...
+
 
 class SeriesArtworkMirrorRepository(ABC):
     """Artwork-mirror operations over ``series`` / ``seasons`` / ``episodes``."""
@@ -91,6 +122,27 @@ class SeriesArtworkMirrorRepository(ABC):
         mirror job never risks persisting the series with its seasons and
         episodes unloaded. ``artwork`` carries the final value for every
         column.
+        """
+        ...
+
+    @abstractmethod
+    async def find_with_remote_localized_artwork(self, limit: int) -> Sequence[RemoteArtworkRow]:
+        """Return up to ``limit`` (series, locale) pairs with a remote localized URL.
+
+        Mirror of ``MovieArtworkMirrorRepository.find_with_remote_localized_artwork``
+        over the series ``localized`` blob. Seasons and episodes carry no
+        localized artwork (title/synopsis only).
+        """
+        ...
+
+    @abstractmethod
+    async def update_series_localized_artwork(
+        self, series_id: SeriesId, locale: str, artwork: ArtworkColumns
+    ) -> None:
+        """Rewrite one locale's artwork fields inside the series ``localized`` blob.
+
+        Same contract as ``MovieArtworkMirrorRepository.update_movie_localized_artwork``:
+        only the non-``None`` fields of that locale are written.
         """
         ...
 
