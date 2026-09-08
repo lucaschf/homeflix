@@ -17,11 +17,16 @@ from __future__ import annotations
 
 import hashlib
 import re
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from pydantic import model_validator
 
+from src.building_blocks.domain.errors import DomainValidationException
 from src.building_blocks.domain.value_objects import StringValueObject
+
+if TYPE_CHECKING:
+    from src.modules.metadata.domain.value_objects.artwork_variant import ArtworkWidth
 
 #: Charset a storage key may use. Kept here so the route and the job
 #: share one definition instead of restating the rule.
@@ -54,6 +59,11 @@ _SAFE_URL_EXTENSIONS = frozenset(_CONTENT_TYPE_EXTENSIONS.values()) | {".jpeg"}
 # yields one. Artwork is always an image, so a generic image extension
 # keeps the served content type sensible.
 _FALLBACK_EXTENSION = ".jpg"
+
+# A downscaled variant (ADR-034) is ``<stem>.w<width><ext>``: the width
+# marker sits before the extension so the served content type still
+# follows the extension. A hex digest stem can never contain ``.w``.
+_VARIANT_MARKER = re.compile(r"\.w\d+(\.[A-Za-z0-9]+)?$")
 
 
 class ArtworkKey(StringValueObject):
@@ -103,6 +113,33 @@ class ArtworkKey(StringValueObject):
         """
         digest = hashlib.sha256(content).hexdigest()
         return cls(f"{digest}{_extension_for(content_type, source_url)}")
+
+    @property
+    def is_variant(self) -> bool:
+        """Whether this key names a downscaled variant rather than an original."""
+        return _VARIANT_MARKER.search(self.value) is not None
+
+    def variant(self, width: ArtworkWidth) -> ArtworkKey:
+        """Key of the ``width``-wide variant derived from this original.
+
+        ``<stem>.w<width><ext>`` stays within ``ARTWORK_KEY_PATTERN`` and
+        keeps the extension last, so ``LocalArtworkStorage`` derives the
+        same content type for the variant as for its original.
+
+        Raises:
+            DomainValidationException: When ``self`` is already a variant —
+                a variant of a variant would silently compound quality loss.
+        """
+        if self.is_variant:
+            raise DomainValidationException(
+                message="cannot derive a variant of a variant",
+                message_code="ARTWORK_VARIANT_OF_VARIANT",
+                object_type="ArtworkKey",
+            )
+        stem, dot, extension = self.value.rpartition(".")
+        if not dot:
+            return ArtworkKey(f"{self.value}.w{width.value}")
+        return ArtworkKey(f"{stem}.w{width.value}.{extension}")
 
 
 def _extension_for(content_type: str | None, source_url: str) -> str:

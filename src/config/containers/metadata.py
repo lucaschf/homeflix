@@ -10,9 +10,11 @@ suggestion use cases via cross-container wiring at the composition root
 
 from dependency_injector import containers, providers
 
+from src.modules.metadata.application.services import ArtworkVariantService
 from src.modules.metadata.application.use_cases.get_person_bio import GetPersonBioUseCase
 from src.modules.metadata.infrastructure.artwork_downloader import HttpxArtworkDownloader
 from src.modules.metadata.infrastructure.local_artwork_storage import LocalArtworkStorage
+from src.modules.metadata.infrastructure.pillow_artwork_resizer import PillowArtworkResizer
 from src.modules.metadata.infrastructure.tmdb_client import TmdbClient
 
 
@@ -58,6 +60,22 @@ class MetadataContainer(containers.DeclarativeContainer):
     # Downloads still-remote provider artwork for the mirror job (ADR-029).
     # Singleton so one pooled httpx client is shared across ticks.
     artwork_downloader = providers.Singleton(HttpxArtworkDownloader)
+
+    # Downscales stored artwork into ladder-width variants (ADR-034).
+    artwork_resizer = providers.Singleton(PillowArtworkResizer)
+
+    # -- Application services -------------------------------------------------
+
+    # Derives / caches variants for the proxy route and the mirror job.
+    # Singleton because the single-flight lock map must be shared by
+    # both callers; it resolves its ports on first use, so test
+    # overrides of ``artwork_storage`` / ``artwork_resizer`` must be
+    # installed before the first request.
+    artwork_variant_service = providers.Singleton(
+        ArtworkVariantService,
+        storage=artwork_storage,
+        resizer=artwork_resizer,
+    )
 
     # -- Use Cases ------------------------------------------------------------
 

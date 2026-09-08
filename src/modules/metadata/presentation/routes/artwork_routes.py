@@ -1,9 +1,14 @@
-"""Read-only proxy that serves mirrored catalog artwork (ADR-029).
+"""Read-only proxy that serves mirrored catalog artwork (ADR-029, ADR-034).
 
 The catalog stores a relative ``/api/v1/artwork/{key}`` URL once an
 image has been mirrored into storage. This route reads the object
 back through :class:`ArtworkStoragePort` and streams it to the
 client, so the browser never talks to the storage backend directly.
+
+``?w=<width>`` asks for a downscaled variant at one of the ladder
+widths (ADR-034): served from storage when it exists, derived from the
+original and stored on first use otherwise, and never upscaled — an
+original that is not wider than ``w`` is served as-is.
 
 When the object is not in storage (mirror hasn't run yet, or the key
 is unknown) the route degrades gracefully: if a remote origin URL was
@@ -18,10 +23,12 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse, Response
 
+from src.building_blocks.domain.errors import DomainValidationException
 from src.config.containers import ApplicationContainer
 from src.modules.metadata.application.ports.artwork_downloader_port import ALLOWED_ARTWORK_HOSTS
-from src.modules.metadata.application.ports.artwork_storage_port import ArtworkStoragePort
-from src.modules.metadata.domain.value_objects.artwork_key import ARTWORK_KEY_PATTERN
+from src.modules.metadata.application.services import ArtworkVariantService
+from src.modules.metadata.domain.value_objects.artwork_key import ARTWORK_KEY_PATTERN, ArtworkKey
+from src.modules.metadata.domain.value_objects.artwork_variant import ArtworkWidth
 
 router = APIRouter(prefix="/api/v1/artwork", tags=["Artwork"])
 
@@ -33,7 +40,8 @@ router = APIRouter(prefix="/api/v1/artwork", tags=["Artwork"])
 
 # Cache mirrored art aggressively — a content-hashed key is immutable,
 # so a long-lived immutable cache is safe and spares the proxy on every
-# repeat view.
+# repeat view. A variant is derived from an immutable original, so the
+# same holds for it.
 _CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 
@@ -48,6 +56,27 @@ def _is_allowed_origin(origin: str) -> bool:
     return parts.scheme == "https" and parts.hostname in ALLOWED_ARTWORK_HOSTS
 
 
+def _parse_width(w: int, key: ArtworkKey) -> ArtworkWidth:
+    """Validate ``?w=`` by hand so a bad value is a 400, not a 422.
+
+    Pydantic-level validation would surface as ``RequestValidationError``
+    (422); the ladder is a domain rule, so it is checked like the key
+    charset guard above and reported with a stable message.
+    """
+    if key.is_variant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="cannot derive a variant of a variant",
+        )
+    try:
+        return ArtworkWidth(w)
+    except DomainValidationException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="unsupported artwork width",
+        ) from exc
+
+
 @router.get("/{key}")
 @inject
 async def get_artwork(
@@ -56,11 +85,15 @@ async def get_artwork(
         str | None,
         Query(description="Remote origin URL to fall back to when not yet mirrored"),
     ] = None,
-    storage: ArtworkStoragePort = Depends(
-        Provide[ApplicationContainer.metadata.artwork_storage],
+    w: Annotated[
+        int | None,
+        Query(description="Ladder width (px) of the downscaled variant to serve"),
+    ] = None,
+    variants: ArtworkVariantService = Depends(
+        Provide[ApplicationContainer.metadata.artwork_variant_service],
     ),
 ) -> Response:
-    """Serve a mirrored artwork object, or fall back to its origin.
+    """Serve a mirrored artwork object (or a ladder-width variant), or fall back to its origin.
 
     Not auth-gated: artwork is public catalog imagery embedded in
     pages and ``<img>`` tags that cannot carry auth headers, mirroring
@@ -73,8 +106,12 @@ async def get_artwork(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid artwork key",
         )
+    artwork_key = ArtworkKey(key)
 
-    stored = await storage.open(key)
+    if w is None:
+        stored = await variants.open_original(artwork_key)
+    else:
+        stored = await variants.ensure(artwork_key, _parse_width(w, artwork_key))
     if stored is None:
         # Not mirrored yet — bounce the client to the provider so the
         # image still renders while the job catches up, but only when the

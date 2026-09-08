@@ -48,7 +48,10 @@ Para os requisitos completos (incluindo o que ainda é planejado), veja
   a URL remota enquanto a arte ainda não foi espelhada. O catálogo deixa de
   depender do CDN do TMDB para exibir artes
   ([ADR-029](adr/ADR-029-artwork-mirroring-storage.md)). Detalhes operacionais no
-  [Guia de Mirror de Artwork](standards/artwork-mirroring-guide.md).
+  [Guia de Mirror de Artwork](standards/artwork-mirroring-guide.md). O
+  endpoint aceita `?w=<largura>` e serve variantes redimensionadas
+  derivadas do original espelhado, numa escada compartilhada com o
+  frontend ([ADR-034](adr/ADR-034-artwork-responsive-variants.md)).
 
 ## Reprodução (player)
 
