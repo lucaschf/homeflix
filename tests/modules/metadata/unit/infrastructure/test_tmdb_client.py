@@ -17,6 +17,7 @@ from src.building_blocks.infrastructure.errors import (
 )
 from src.modules.metadata.infrastructure.tmdb_client import (
     TmdbClient,
+    _image_language_filter,
     _parse_retry_after,
 )
 from src.modules.metadata.infrastructure.tmdb_response_mapper import (
@@ -1854,6 +1855,41 @@ class TestGetSeriesRecommendations:
 
 
 @pytest.mark.unit
+class TestImageLanguageFilter:
+    """``include_image_language`` must not narrow a locale to its region.
+
+    TMDB matches this filter on language *and* region: asking for
+    ``pt-BR`` alone hides every ``pt`` / ``pt-PT`` logo server-side, so
+    the picker never sees them and silently falls back to English.
+    """
+
+    def test_should_add_the_base_language(self) -> None:
+        assert _image_language_filter("pt-BR") == "pt-BR,pt,en,null"
+
+    def test_should_not_repeat_tags(self) -> None:
+        assert _image_language_filter("en-US") == "en-US,en,null"
+        assert _image_language_filter("en") == "en,null"
+
+    @pytest.mark.asyncio
+    async def test_localized_movie_fetch_should_ask_for_the_base_language(self) -> None:
+        client = _make_client(get_responses=[_build_response(json_data={})])
+
+        await client._fetch_movie_localized_fields(27205, "pt-BR")
+
+        params = client._client.get.call_args.kwargs["params"]
+        assert params["include_image_language"] == "pt-BR,pt,en,null"
+
+    @pytest.mark.asyncio
+    async def test_localized_series_fetch_should_ask_for_the_base_language(self) -> None:
+        client = _make_client(get_responses=[_build_response(json_data={})])
+
+        await client._fetch_series_localized_fields(1396, "pt-BR")
+
+        params = client._client.get.call_args.kwargs["params"]
+        assert params["include_image_language"] == "pt-BR,pt,en,null"
+
+
+@pytest.mark.unit
 class TestPickBestLogoUrl:
     """Priority order for the ``_pick_best_logo_url`` parser.
 
@@ -1920,6 +1956,44 @@ class TestPickBestLogoUrl:
         )
         assert url is not None
         assert url.endswith("/ja.png")
+
+    def test_prefers_the_requested_region_over_another_one(self) -> None:
+        # TMDB tags logos ``iso_639_1="pt"`` plus ``iso_3166_1``, and
+        # orders them by vote — a pt-PT logo often comes first. A pt-BR
+        # request must still land on the Brazilian one.
+        url = self._mapper().pick_best_logo_url(
+            [
+                {"iso_639_1": "pt", "iso_3166_1": "PT", "file_path": "/ptpt.png"},
+                {"iso_639_1": "pt", "iso_3166_1": "BR", "file_path": "/ptbr.png"},
+            ],
+            "pt-BR",
+        )
+        assert url is not None
+        assert url.endswith("/ptbr.png")
+
+    def test_prefers_a_region_less_logo_over_another_region(self) -> None:
+        url = self._mapper().pick_best_logo_url(
+            [
+                {"iso_639_1": "pt", "iso_3166_1": "PT", "file_path": "/ptpt.png"},
+                {"iso_639_1": "pt", "file_path": "/pt.png"},
+            ],
+            "pt-BR",
+        )
+        assert url is not None
+        assert url.endswith("/pt.png")
+
+    def test_prefers_another_region_of_the_language_over_english(self) -> None:
+        # No Brazilian logo: European Portuguese still reads closer to
+        # the requested locale than an English one.
+        url = self._mapper().pick_best_logo_url(
+            [
+                {"iso_639_1": "en", "iso_3166_1": "US", "file_path": "/en.png"},
+                {"iso_639_1": "pt", "iso_3166_1": "PT", "file_path": "/ptpt.png"},
+            ],
+            "pt-BR",
+        )
+        assert url is not None
+        assert url.endswith("/ptpt.png")
 
     def test_returns_none_when_list_empty(self) -> None:
         assert self._mapper().pick_best_logo_url([], "pt-BR") is None

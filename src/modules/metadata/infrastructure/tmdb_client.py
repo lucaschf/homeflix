@@ -48,6 +48,34 @@ def _parse_retry_after(value: str | None) -> int | None:
     return seconds if seconds >= 0 else None
 
 
+def _image_language_filter(language: str) -> str:
+    """Build the ``include_image_language`` filter for a BCP-47 tag.
+
+    TMDB matches this filter on language *and* region: ``pt-BR`` alone
+    returns only the logos an uploader tagged ``BR``, hiding every
+    ``pt`` / ``pt-PT`` entry server-side — the picker then never sees
+    them and falls back to English. Asking for the base language too
+    puts the whole Portuguese set on the table and leaves the choice
+    where it belongs, in ``TmdbResponseMapper.pick_best_logo_url``.
+
+    Args:
+        language: BCP-47 tag of the request (e.g. ``"pt-BR"``).
+
+    Returns:
+        Comma-separated filter, English and language-neutral last
+        (e.g. ``"pt-BR,pt,en,null"``), with no repeated tag.
+
+    Example:
+        >>> _image_language_filter("pt-BR")
+        'pt-BR,pt,en,null'
+    """
+    tags: list[str] = []
+    for tag in (language, language.split("-", 1)[0], "en", "null"):
+        if tag not in tags:
+            tags.append(tag)
+    return ",".join(tags)
+
+
 def _is_english(language: str) -> bool:
     """Return ``True`` for any English BCP-47 tag (``en``, ``en-US``, ``en-GB``).
 
@@ -387,9 +415,9 @@ class TmdbClient(MetadataProvider):
 
         English is the base metadata; one translation is overlaid per
         configured non-English locale (``supported_locales``). Each
-        localized details call appends ``images`` filtered to that
-        locale / en / language-neutral, so the localized logo comes
-        back in the same round-trip. ``Movie.get_logo_path(lang)``
+        localized details call appends ``images`` filtered by
+        ``_image_language_filter``, so the localized logo comes back in
+        the same round-trip. ``Movie.get_logo_path(lang)``
         picks the localized one when present and falls back to the
         global (en) otherwise — same shape as title/synopsis. A locale
         whose fetch fails is skipped; the English base is still
@@ -422,7 +450,7 @@ class TmdbClient(MetadataProvider):
                 params=self._params(
                     language=locale,
                     append_to_response="images",
-                    include_image_language=f"{locale},en,null",
+                    include_image_language=_image_language_filter(locale),
                 ),
             )
             if resp.status_code != 200:
@@ -714,7 +742,7 @@ class TmdbClient(MetadataProvider):
                 params=self._params(
                     language=locale,
                     append_to_response="images",
-                    include_image_language=f"{locale},en,null",
+                    include_image_language=_image_language_filter(locale),
                 ),
             )
             if resp.status_code != 200:
@@ -731,8 +759,8 @@ class TmdbClient(MetadataProvider):
         """Fetch full movie details from TMDB.
 
         ``images`` is appended to the response (with
-        ``include_image_language`` filtered to the requested language,
-        English, and language-neutral) so the title logo comes back
+        ``include_image_language`` built by
+        ``_image_language_filter``) so the title logo comes back
         in the same round-trip — saves a separate HTTP call per
         details fetch. The ``belongs_to_collection`` follow-up fetch is
         resolved here and handed to the mapper for shaping.
@@ -742,7 +770,7 @@ class TmdbClient(MetadataProvider):
             params=self._params(
                 append_to_response="credits,release_dates,videos,images",
                 language=language,
-                include_image_language=f"{language},en,null",
+                include_image_language=_image_language_filter(language),
             ),
         )
         if resp.status_code == 404:

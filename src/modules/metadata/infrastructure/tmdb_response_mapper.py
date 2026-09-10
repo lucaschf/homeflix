@@ -141,29 +141,37 @@ class TmdbResponseMapper:
         return f"{self._image_base_url}{path}"
 
     @staticmethod
-    def _logo_rank(logo: dict[str, object], target: str, target_base: str) -> int:
+    def _logo_rank(logo: dict[str, object], target_base: str, target_region: str | None) -> int:
         """Score a TMDB logo entry for language preference (lower = better).
 
+        TMDB carries the region apart from the language (``iso_639_1``
+        ``"pt"`` + ``iso_3166_1`` ``"BR"`` / ``"PT"``) and orders logos
+        by vote, so a European-Portuguese entry routinely outranks the
+        Brazilian one. Ranking the region explicitly keeps a pt-BR
+        request on the Brazilian logo when there is one, while still
+        preferring a Portuguese logo of any region over English.
+
         Priority:
-            0. exact language match (``pt-BR`` for a pt-BR request)
-            1. base language match (``pt`` covers ``pt-BR`` / ``pt-PT``)
-            2. English (``en``)
-            3. language-neutral (``iso_639_1 is None``)
-            4. anything else — last-resort fallback
+            0. language + requested region (``pt`` + ``BR`` for pt-BR)
+            1. language, no region (``pt`` alone — region-neutral)
+            2. language, another region (``pt`` + ``PT``)
+            3. English (``en``)
+            4. language-neutral (``iso_639_1 is None``)
+            5. anything else — last-resort fallback
         """
         iso = logo.get("iso_639_1")
         if iso is None:
-            return 3
-        if not isinstance(iso, str):
             return 4
-        iso_lower = iso.lower()
-        if iso_lower == target:
-            return 0
-        if iso_lower.split("-", 1)[0] == target_base:
+        if not isinstance(iso, str):
+            return 5
+        if iso.lower().split("-", 1)[0] != target_base:
+            return 3 if iso.lower().split("-", 1)[0] == "en" else 5
+
+        region = logo.get("iso_3166_1")
+        region_upper = region.upper() if isinstance(region, str) else None
+        if region_upper is None:
             return 1
-        if iso_lower == "en":
-            return 2
-        return 4
+        return 0 if region_upper == target_region else 2
 
     def pick_best_logo_url(
         self,
@@ -179,9 +187,9 @@ class TmdbResponseMapper:
         """
         if not logos:
             return None
-        target = language.lower()
-        target_base = target.split("-", 1)[0]
-        best = min(logos, key=lambda logo: self._logo_rank(logo, target, target_base))
+        base, _, region = language.lower().partition("-")
+        target_region = region.upper() or None
+        best = min(logos, key=lambda logo: self._logo_rank(logo, base, target_region))
         return self.image_url(cast("str | None", best.get("file_path")))
 
     @staticmethod
