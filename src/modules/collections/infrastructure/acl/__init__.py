@@ -3,11 +3,11 @@
 from src.modules.collections.infrastructure.acl.media_lookup_adapter import (
     MediaLookupAdapter,
 )
-from src.modules.collections.infrastructure.acl.profile_library_access_adapter import (
-    ProfileLibraryAccessAdapter,
-)
 from src.modules.collections.infrastructure.acl.profile_lookup_adapter import (
     ProfileLookupAdapter,
+)
+from src.modules.collections.infrastructure.acl.profile_viewing_policy_adapter import (
+    ProfileViewingPolicyAdapter,
 )
 from src.modules.collections.infrastructure.acl.progress_lookup_adapter import (
     ProgressLookupAdapter,
@@ -15,7 +15,7 @@ from src.modules.collections.infrastructure.acl.progress_lookup_adapter import (
 
 __all__ = [
     "MediaLookupAdapter",
-    "ProfileLibraryAccessAdapter",
     "ProfileLookupAdapter",
+    "ProfileViewingPolicyAdapter",
     "ProgressLookupAdapter",
 ]

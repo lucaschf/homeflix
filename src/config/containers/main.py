@@ -45,7 +45,7 @@ from src.modules.media.application.use_cases.trigger_job import TriggerJobUseCas
 from src.modules.media.infrastructure.acl import (
     HlsCacheStatsAdapter,
     LibraryHealthAdapter,
-    ProfileLibraryAccessAdapter,
+    ProfileViewingPolicyAdapter,
     ProgressLookupAdapter,
     ScrubPreviewLocatorAdapter,
     TmdbLocalizedTitleAdapter,
@@ -130,17 +130,17 @@ class ApplicationContainer(containers.DeclarativeContainer):
         watch_progress_uow_factory=_watch_progress_uow_factory_for_progress_lookup,
     )
 
-    # Same pattern for the per-profile library ACL: built at the
+    # Same pattern for the per-profile viewing policy: built at the
     # composition root with its own identity UoW factory so the
     # Media container stays free of an Identity import.
-    _identity_uow_factory_for_profile_library_access = providers.Singleton(
+    _identity_uow_factory_for_profile_viewing_policy = providers.Singleton(
         SqlAlchemyIdentityUnitOfWorkFactory,
         session_factory=infrastructure.session_factory,
     )
 
-    _profile_library_access_adapter = providers.Factory(
-        ProfileLibraryAccessAdapter,
-        identity_uow_factory=_identity_uow_factory_for_profile_library_access,
+    _profile_viewing_policy_adapter = providers.Factory(
+        ProfileViewingPolicyAdapter,
+        identity_uow_factory=_identity_uow_factory_for_profile_viewing_policy,
     )
 
     # Library UoW factory built at the composition root so the
@@ -249,11 +249,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
         event_bus=infrastructure.event_bus,
         progress_lookup=_progress_lookup_adapter,
         watch_history=_watch_history_adapter,
-        profile_library_access=_profile_library_access_adapter,
+        profile_viewing_policy=_profile_viewing_policy_adapter,
         catalog_request_lookup=catalog_requests.catalog_request_lookup,
         library_uow_factory=_library_uow_factory_for_media,
         library_health=_library_health_adapter,
-        identity_uow_factory=_identity_uow_factory_for_profile_library_access,
+        identity_uow_factory=_identity_uow_factory_for_profile_viewing_policy,
         preferences_uow_factory=_preferences_uow_factory_for_media,
         tmdb_client=metadata.tmdb_client,
         runtime_settings=settings.runtime_settings,
@@ -277,7 +277,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         get_movie_by_id=media.get_movie_by_id,
         get_series_by_id=media.get_series_by_id,
         media_uow_factory=media.media_unit_of_work_factory,
-        identity_uow_factory=_identity_uow_factory_for_profile_library_access,
+        identity_uow_factory=_identity_uow_factory_for_profile_viewing_policy,
         preferences_uow_factory=_preferences_uow_factory_for_media,
     )
 
@@ -329,7 +329,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         session_factory=infrastructure.session_factory,
         media_uow_factory=media.media_unit_of_work_factory,
         watch_progress_uow_factory=watch_progress.watch_progress_unit_of_work_factory,
-        identity_uow_factory=_identity_uow_factory_for_profile_library_access,
+        identity_uow_factory=_identity_uow_factory_for_profile_viewing_policy,
     )
 
     # =========================================================================

@@ -1,4 +1,4 @@
-"""Integration tests for the Media ProfileLibraryAccessAdapter."""
+"""Integration tests for the Media ProfileViewingPolicyAdapter."""
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -14,8 +14,9 @@ from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.modules.identity.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyIdentityUnitOfWorkFactory,
 )
-from src.modules.media.infrastructure.acl import ProfileLibraryAccessAdapter
-from src.shared_kernel.value_objects.library_id import LibraryId
+from src.modules.media.infrastructure.acl import ProfileViewingPolicyAdapter
+from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 async def _seed_profile(
@@ -40,13 +41,13 @@ async def _seed_profile(
 
 def _make_adapter(
     session_factory: async_sessionmaker[AsyncSession],
-) -> ProfileLibraryAccessAdapter:
-    return ProfileLibraryAccessAdapter(SqlAlchemyIdentityUnitOfWorkFactory(session_factory))
+) -> ProfileViewingPolicyAdapter:
+    return ProfileViewingPolicyAdapter(SqlAlchemyIdentityUnitOfWorkFactory(session_factory))
 
 
 @pytest.mark.integration
-class TestProfileLibraryAccessAdapter:
-    async def test_should_return_allowed_library_ids_for_known_profile(
+class TestProfileViewingPolicyAdapter:
+    async def test_should_return_library_policy_for_known_profile(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
@@ -62,11 +63,12 @@ class TestProfileLibraryAccessAdapter:
         adapter = _make_adapter(session_factory)
 
         assert profile.id is not None
-        assert await adapter.find_for_profile(profile.id.value) == [
-            LibraryId(library_id) for library_id in granted
-        ]
+        policy = await adapter.find_for_profile(profile.id)
+        assert policy == ViewingPolicy.unrestricted(granted)
+        # ``Profile`` has no maturity limit yet, so the age axis is open.
+        assert policy.maturity_limit is None
 
-    async def test_should_return_empty_list_for_default_deny_profile(
+    async def test_should_return_deny_all_policy_for_default_deny_profile(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
@@ -81,9 +83,9 @@ class TestProfileLibraryAccessAdapter:
         adapter = _make_adapter(session_factory)
 
         assert profile.id is not None
-        assert await adapter.find_for_profile(profile.id.value) == []
+        assert (await adapter.find_for_profile(profile.id)).denies_everything is True
 
-    async def test_should_return_empty_list_for_unknown_profile_id(
+    async def test_should_return_deny_all_policy_for_unknown_profile_id(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
@@ -92,7 +94,8 @@ class TestProfileLibraryAccessAdapter:
         # the catalog reads downstream.
         adapter = _make_adapter(session_factory)
 
-        assert await adapter.find_for_profile("prf_doesnotexist") == []
+        policy = await adapter.find_for_profile(ProfileId("prf_doesnotexist"))
+        assert policy.denies_everything is True
 
     async def test_should_isolate_acls_across_profiles(
         self,
@@ -116,8 +119,9 @@ class TestProfileLibraryAccessAdapter:
 
         assert a.id is not None
         assert b.id is not None
-        assert await adapter.find_for_profile(a.id.value) == [LibraryId("lib_aaaaaaaaaaaa")]
-        assert await adapter.find_for_profile(b.id.value) == [
-            LibraryId("lib_bbbbbbbbbb01"),
-            LibraryId("lib_bbbbbbbbbb02"),
-        ]
+        assert await adapter.find_for_profile(a.id) == ViewingPolicy.unrestricted(
+            ["lib_aaaaaaaaaaaa"]
+        )
+        assert await adapter.find_for_profile(b.id) == ViewingPolicy.unrestricted(
+            ["lib_bbbbbbbbbb01", "lib_bbbbbbbbbb02"]
+        )

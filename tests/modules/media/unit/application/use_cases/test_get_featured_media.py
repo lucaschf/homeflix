@@ -17,11 +17,13 @@ from src.modules.media.application.use_cases.get_featured_media import (
 )
 from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.value_objects import Genre, ImageUrl
+from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.value_objects.library_id import LibraryId
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     FakeWatchHistoryPort,
     make_media_uow_mock,
-    make_profile_library_access,
+    make_profile_viewing_policy,
     make_watch_history,
 )
 
@@ -84,11 +86,11 @@ def _use_case(
     mocks,
     *,
     watch_history: FakeWatchHistoryPort | None = None,
-    profile_library_access: FakeProfileLibraryAccessPort | None = None,
+    profile_viewing_policy: FakeProfileViewingPolicyPort | None = None,
 ) -> GetFeaturedMediaUseCase:
     return GetFeaturedMediaUseCase(
         uow_factory=mocks.factory,
-        profile_library_access=profile_library_access or make_profile_library_access(),
+        profile_viewing_policy=profile_viewing_policy or make_profile_viewing_policy(),
         watch_history=watch_history or make_watch_history(),
     )
 
@@ -182,7 +184,7 @@ class TestGetFeaturedMediaUseCase:
         mocks.movies.find_random.assert_called_once_with(
             5,
             with_backdrop=True,
-            allowed_library_ids=[_LIBRARY_ID],
+            policy=ViewingPolicy.unrestricted([_LIBRARY_ID]),
             genres=[],
             exclude_ids=[],
         )
@@ -239,7 +241,7 @@ class TestGetFeaturedMediaUseCase:
         use_case = _use_case(
             mocks,
             watch_history=history,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: []}),
         )
 
         result = await use_case.execute(
@@ -261,7 +263,7 @@ class TestGetFeaturedMediaUseCase:
         mocks.series.find_random.return_value = []
         use_case = _use_case(
             mocks,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: [_LIBRARY_ID]}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: [_LIBRARY_ID]}),
         )
 
         result = await use_case.execute(
@@ -271,9 +273,9 @@ class TestGetFeaturedMediaUseCase:
         assert [item.title for item in result] == ["Visible"]
         movie_kwargs = mocks.movies.find_random.call_args.kwargs
         series_kwargs = mocks.series.find_random.call_args.kwargs
-        assert list(movie_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
-        assert list(series_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
-        assert _LIBRARY_ID_OTHER not in list(movie_kwargs["allowed_library_ids"])
+        assert movie_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert series_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert not movie_kwargs["policy"].permits_library(LibraryId(_LIBRARY_ID_OTHER))
 
 
 @pytest.mark.unit

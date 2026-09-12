@@ -11,7 +11,7 @@ class GetCollectionByTmdbIdInput:
 
     Attributes:
         profile_id: Caller's prefixed profile id. The use case
-            consults ``ProfileLibraryAccessPort`` and restricts the
+            consults ``ProfileViewingPolicyPort`` and restricts the
             local-catalog overlay (which titles are marked
             ``in_catalog``) to libraries the profile may see. The
             TMDB call itself is unaffected — the page still lists

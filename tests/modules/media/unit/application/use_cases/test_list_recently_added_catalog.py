@@ -11,10 +11,12 @@ from src.modules.media.application.dtos.catalog_dtos import (
 )
 from src.modules.media.application.use_cases import ListRecentlyAddedCatalogUseCase
 from src.modules.media.domain.entities import Movie, Series
+from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.value_objects.library_id import LibraryId
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     make_media_uow_mock,
-    make_profile_library_access,
+    make_profile_viewing_policy,
 )
 
 _LIBRARY_ID = "lib_test12345678"
@@ -58,7 +60,7 @@ class TestListRecentlyAddedCatalogUseCase:
         ]
         use_case = ListRecentlyAddedCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -86,7 +88,7 @@ class TestListRecentlyAddedCatalogUseCase:
         ]
         use_case = ListRecentlyAddedCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -107,16 +109,16 @@ class TestListRecentlyAddedCatalogUseCase:
         mocks.series.list_recently_added.return_value = []
         use_case = ListRecentlyAddedCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         await use_case.execute(ListRecentlyAddedCatalogInput(profile_id=_PROFILE_ID, limit=15))
 
         mocks.movies.list_recently_added.assert_awaited_once_with(
-            15, allowed_library_ids=[_LIBRARY_ID]
+            15, policy=ViewingPolicy.unrestricted([_LIBRARY_ID])
         )
         mocks.series.list_recently_added.assert_awaited_once_with(
-            15, allowed_library_ids=[_LIBRARY_ID]
+            15, policy=ViewingPolicy.unrestricted([_LIBRARY_ID])
         )
 
     @pytest.mark.asyncio
@@ -127,7 +129,7 @@ class TestListRecentlyAddedCatalogUseCase:
         mocks.series.list_recently_added.return_value = []
         use_case = ListRecentlyAddedCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListRecentlyAddedCatalogInput(profile_id=_PROFILE_ID))
@@ -143,7 +145,7 @@ class TestListRecentlyAddedCatalogUseCase:
         mocks.series.list_recently_added.return_value = []
         use_case = ListRecentlyAddedCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListRecentlyAddedCatalogInput(profile_id=_PROFILE_ID))
@@ -160,7 +162,7 @@ class TestListRecentlyAddedCatalogUseCase:
         ]
         use_case = ListRecentlyAddedCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListRecentlyAddedCatalogInput(profile_id=_PROFILE_ID))
@@ -173,7 +175,7 @@ class TestListRecentlyAddedCatalogUseCase:
         mocks = make_media_uow_mock()
         use_case = ListRecentlyAddedCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: []}),
         )
 
         result = await use_case.execute(ListRecentlyAddedCatalogInput(profile_id=_PROFILE_ID))
@@ -195,7 +197,7 @@ class TestListRecentlyAddedCatalogUseCase:
         mocks.series.list_recently_added.return_value = []
         use_case = ListRecentlyAddedCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: [_LIBRARY_ID]}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: [_LIBRARY_ID]}),
         )
 
         result = await use_case.execute(ListRecentlyAddedCatalogInput(profile_id=_PROFILE_ID))
@@ -203,6 +205,6 @@ class TestListRecentlyAddedCatalogUseCase:
         assert [it.title for it in result.items] == ["Visible"]
         movie_kwargs = mocks.movies.list_recently_added.await_args.kwargs
         series_kwargs = mocks.series.list_recently_added.await_args.kwargs
-        assert list(movie_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
-        assert list(series_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
-        assert _LIBRARY_ID_OTHER not in list(movie_kwargs["allowed_library_ids"])
+        assert movie_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert series_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert not movie_kwargs["policy"].permits_library(LibraryId(_LIBRARY_ID_OTHER))

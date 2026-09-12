@@ -26,8 +26,8 @@ from src.modules.media.application.ports.intro_detector_port import (
     IntroDetectorPort,
     IntroDetectorTuning,
 )
-from src.modules.media.application.ports.profile_library_access_port import (
-    ProfileLibraryAccessPort,
+from src.modules.media.application.ports.profile_viewing_policy_port import (
+    ProfileViewingPolicyPort,
 )
 from src.modules.media.application.ports.progress_lookup_port import (
     ProgressLookupPort,
@@ -68,7 +68,7 @@ __all__ = [
     "IntroDetectorPort",
     "IntroDetectorTuning",
     "MediaType",
-    "ProfileLibraryAccessPort",
+    "ProfileViewingPolicyPort",
     "ProgressLookupPort",
     "ProgressSummary",
     "ScannedFile",

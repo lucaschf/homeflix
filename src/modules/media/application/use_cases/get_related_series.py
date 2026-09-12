@@ -3,13 +3,14 @@
 from dataclasses import dataclass
 
 from src.modules.media.application.dtos.series_dtos import SeriesSummaryOutput
-from src.modules.media.application.ports.profile_library_access_port import (
-    ProfileLibraryAccessPort,
+from src.modules.media.application.ports.profile_viewing_policy_port import (
+    ProfileViewingPolicyPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._series_summary_helpers import to_series_summary
 from src.modules.media.domain.value_objects import SeriesId
 from src.modules.metadata.application.ports.metadata_provider_port import MetadataProvider
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 @dataclass(frozen=True)
@@ -18,7 +19,7 @@ class GetRelatedSeriesInput:
 
     Attributes:
         profile_id: Caller's prefixed profile id. The use case
-            consults ``ProfileLibraryAccessPort`` and restricts both
+            consults ``ProfileViewingPolicyPort`` and restricts both
             the source lookup and the related-series intersection to
             libraries the profile may see; a deny-all profile yields
             an empty list without opening a UoW.
@@ -57,11 +58,11 @@ class GetRelatedSeriesUseCase:
         self,
         uow_factory: MediaUnitOfWorkFactory,
         metadata_provider: MetadataProvider,
-        profile_library_access: ProfileLibraryAccessPort,
+        profile_viewing_policy: ProfileViewingPolicyPort,
     ) -> None:
         self._uow_factory = uow_factory
         self._metadata = metadata_provider
-        self._profile_library_access = profile_library_access
+        self._profile_viewing_policy = profile_viewing_policy
 
     async def execute(self, input_dto: GetRelatedSeriesInput) -> list[SeriesSummaryOutput]:
         """Run the lookup.
@@ -71,14 +72,14 @@ class GetRelatedSeriesUseCase:
         method also returns an empty list — best-effort polish, no
         404 raised here.
         """
-        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
-        if not allowed:
+        policy = await self._profile_viewing_policy.find_for_profile(
+            ProfileId(input_dto.profile_id)
+        )
+        if policy.denies_everything:
             return []
 
         async with self._uow_factory() as uow:
-            source = await uow.series.find_by_id(
-                SeriesId(input_dto.series_id), allowed_library_ids=allowed
-            )
+            source = await uow.series.find_by_id(SeriesId(input_dto.series_id), policy=policy)
             if source is None or source.tmdb_id is None:
                 return []
 
@@ -91,7 +92,7 @@ class GetRelatedSeriesUseCase:
             # Slight over-fetch (2x) so a few catalog gaps don't leave
             # the carousel sparse.
             candidate_ids = tmdb_ids[: input_dto.limit * 2]
-            local = await uow.series.find_by_tmdb_ids(candidate_ids, allowed_library_ids=allowed)
+            local = await uow.series.find_by_tmdb_ids(candidate_ids, policy=policy)
 
         # Preserve TMDB's relevance ordering by iterating the request
         # list rather than the dict's insertion order.

@@ -41,6 +41,7 @@ from src.modules.media.domain.value_objects import (
     SeriesId,
     Title,
 )
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects.library_id import LibraryId
 
 
@@ -58,19 +59,19 @@ class SeriesCatalogRepository(ABC):
         self,
         series_id: SeriesId,
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> Series | None:
         """Find a series by its ID (includes seasons and episodes).
 
         Args:
             series_id: The series' external ID.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, the lookup also requires the row's
-                ``library_id`` to be in the supplied set; otherwise the
-                method returns ``None`` even when a row with the id
-                exists. ``None`` (default) applies no library filter —
-                used by internal callers (scanner, cross-BC ACL
-                adapters) that operate outside the per-profile catalog.
+            policy: The caller's viewing policy. When non-``None``, the
+                lookup also requires the policy to permit the row;
+                otherwise the method returns ``None`` even when a row
+                with the id exists. ``None`` (default) applies no
+                visibility filter — used by internal callers (scanner,
+                cross-BC ACL adapters) that operate outside the
+                per-profile catalog.
 
         Returns:
             The Series if found, None otherwise.
@@ -90,8 +91,11 @@ class SeriesCatalogRepository(ABC):
         small so no pagination — caller orders by ``updated_at`` so
         newest-flagged float up.
 
+        Deliberately takes a library list, not a ``ViewingPolicy`` —
+        see ``MovieCatalogRepository.find_needs_enrichment_review``.
+
         Args:
-            allowed_library_ids: Optional per-profile ACL filter. When
+            allowed_library_ids: Optional operator library filter. When
                 non-``None``, restricts to rows owned by libraries in
                 the set; ``None`` means no library filter (current
                 admin endpoint passes ``None``).
@@ -141,7 +145,7 @@ class SeriesCatalogRepository(ABC):
         limit: int,
         *,
         include_total: bool = False,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
         library_id: str | None = None,
         has_tmdb_id: bool | None = None,
         q: str | None = None,
@@ -167,13 +171,12 @@ class SeriesCatalogRepository(ABC):
             include_total: When ``True`` the implementation runs an
                 extra ``COUNT(*)`` to populate
                 ``PaginatedResult.total_count``. Defaults to ``False``.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, both the page query and the optional
-                ``COUNT(*)`` are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                both the page query and the optional ``COUNT(*)`` are
+                restricted to rows the policy permits. ``None``
+                (default) applies no visibility filter.
             library_id: Optional admin filter — restrict to a single
-                library (composes with ``allowed_library_ids``).
+                library (composes with ``policy``).
             has_tmdb_id: Optional admin filter — ``True`` keeps only
                 enriched rows, ``False`` only un-enriched, ``None``
                 applies no filter.
@@ -193,7 +196,7 @@ class SeriesCatalogRepository(ABC):
         self,
         limit: int,
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> Sequence[Series]:
         """List the most recently added series.
 
@@ -204,10 +207,9 @@ class SeriesCatalogRepository(ABC):
 
         Args:
             limit: Maximum number of series to return.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, results are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                results are restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
 
         Returns:
             Sequence of recently added series (excluding soft-deleted),
@@ -220,7 +222,7 @@ class SeriesCatalogRepository(ABC):
         self,
         lang: str,
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted series row.
 
@@ -240,7 +242,7 @@ class SeriesCatalogRepository(ABC):
         *,
         sort: CatalogSort = CatalogSort.TITLE_ASC,
         lang: str = "en",
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> PaginatedResult[Series]:
         """List series belonging to a specific genre, paginated.
 
@@ -264,7 +266,7 @@ class SeriesCatalogRepository(ABC):
         year_min: int | None = None,
         year_max: int | None = None,
         limit: int = 20,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> list[tuple[Series, float]]:
         """Full-text search over title, synopsis, and genres.
 
@@ -279,7 +281,7 @@ class SeriesCatalogRepository(ABC):
         limit: int,
         *,
         with_backdrop: bool = False,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
         genres: Sequence[Genre] | None = None,
         exclude_ids: Sequence[SeriesId] | None = None,
     ) -> Sequence[Series]:
@@ -288,10 +290,9 @@ class SeriesCatalogRepository(ABC):
         Args:
             limit: Maximum number of series to return.
             with_backdrop: If True, only return series with a backdrop_path.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, results are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                results are restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
             genres: Optional canonical (English) genres. When
                 non-empty, only series tagged with **at least one** of
                 them are eligible. ``None`` or empty applies no genre
@@ -309,16 +310,15 @@ class SeriesCatalogRepository(ABC):
         self,
         series_ids: Sequence[SeriesId],
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> dict[str, Series]:
         """Find multiple series by their IDs in a single query.
 
         Args:
             series_ids: Sequence of series external IDs.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, results are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                results are restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
 
         Returns:
             Dict mapping external ID string to Series entity.
@@ -330,7 +330,7 @@ class SeriesCatalogRepository(ABC):
         self,
         tmdb_ids: Sequence[int],
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> dict[int, Series]:
         """Find series whose ``tmdb_id`` matches any of ``tmdb_ids``.
 
@@ -341,10 +341,9 @@ class SeriesCatalogRepository(ABC):
 
         Args:
             tmdb_ids: TMDB tv ids to look up.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, results are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                results are restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
 
         Returns:
             Dict mapping ``tmdb_id`` to the matching ``Series``. Empty
@@ -357,16 +356,15 @@ class SeriesCatalogRepository(ABC):
         self,
         episode_id: EpisodeId,
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> Series | None:
         """Find a series containing an episode with this ID.
 
         Args:
             episode_id: The episode's external ID.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, the lookup is restricted to series rows
-                whose ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``, the
+                lookup is restricted to series rows the policy permits.
+                ``None`` (default) applies no visibility filter.
 
         Returns:
             The Series if found, None otherwise.
@@ -378,16 +376,15 @@ class SeriesCatalogRepository(ABC):
         self,
         title: Title,
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> Series | None:
         """Find a series by its title (case-insensitive).
 
         Args:
             title: The series title to search for.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, the lookup is restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``, the
+                lookup is restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
 
         Returns:
             The Series if found, None otherwise.

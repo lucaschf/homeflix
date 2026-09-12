@@ -36,7 +36,10 @@ from src.building_blocks.application.pagination import (
 from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.domain.repositories.movie_repository import GenreRow
 from src.modules.media.domain.value_objects import CatalogSort, Genre, LocalizedField
-from src.shared_kernel.value_objects.library_id import LibraryId
+from src.modules.media.infrastructure.persistence.repositories._visibility_filter import (
+    visibility_conditions,
+)
+from src.shared_kernel.content_policy import ViewingPolicy
 
 TModel = TypeVar("TModel")
 TEntity = TypeVar("TEntity")
@@ -136,7 +139,7 @@ async def fetch_genre_rows(
     model: Any,
     lang: str,
     *,
-    allowed_library_ids: Sequence[LibraryId] | None = None,
+    policy: ViewingPolicy | None = None,
 ) -> list[GenreRow]:
     """Project the lightweight genre data of every non-deleted row.
 
@@ -146,19 +149,16 @@ async def fetch_genre_rows(
     the localized translation for the requested language (or an
     empty list when no translation is present).
 
-    When ``allowed_library_ids`` is non-``None``, the projection is
-    restricted to rows whose ``library_id`` is in the supplied set —
-    used by the per-profile catalog ACL. ``None`` (default) preserves
-    the unfiltered behavior for internal callers.
+    When ``policy`` is non-``None``, the projection is restricted to
+    rows the policy permits — used by the per-profile catalog gate.
+    ``None`` (default) preserves the unfiltered behavior for internal
+    callers.
     """
     stmt = select(model.genres, model.localized).where(
         model.deleted_at.is_(None),
         model.genres.is_not(None),
     )
-    if allowed_library_ids is not None:
-        stmt = stmt.where(
-            model.library_id.in_([library_id.value for library_id in allowed_library_ids])
-        )
+    stmt = stmt.where(*visibility_conditions(model, policy))
     result = await session.execute(stmt)
     return [
         GenreRow(
@@ -248,7 +248,7 @@ async def fetch_genre_paginated_page(
     year_column: Any,
     sort: CatalogSort = CatalogSort.TITLE_ASC,
     lang: str = "en",
-    allowed_library_ids: Sequence[LibraryId] | None = None,
+    policy: ViewingPolicy | None = None,
 ) -> PaginatedResult[TEntity]:
     """Run one page of the by-genre listing for ``model`` under ``sort``.
 
@@ -287,10 +287,11 @@ async def fetch_genre_paginated_page(
             behavior is byte-identical to the pre-sort endpoint.
         lang: Language whose localized title drives the title sort order
             (falls back to the canonical ``title`` when absent).
-        allowed_library_ids: Optional per-profile ACL filter. When
-            non-``None``, rows are restricted to those whose
-            ``library_id`` is in the supplied set. ``None`` (default)
-            applies no library filter.
+        policy: The caller's viewing policy. When non-``None``, rows
+            are restricted to those it permits. Applied before the
+            cursor, ``ORDER BY`` and ``LIMIT`` so ``has_more`` and the
+            positional ``item_cursors`` describe the filtered set.
+            ``None`` (default) applies no visibility filter.
 
     Returns:
         ``PaginatedResult`` with mapped entities, pagination
@@ -308,10 +309,7 @@ async def fetch_genre_paginated_page(
         .options(*options)
     )
 
-    if allowed_library_ids is not None:
-        stmt = stmt.where(
-            model.library_id.in_([library_id.value for library_id in allowed_library_ids])
-        )
+    stmt = stmt.where(*visibility_conditions(model, policy))
 
     primary = _primary_sort_column(model, year_column, lang, spec.key_kind)
 

@@ -22,6 +22,7 @@ from src.modules.media.domain.value_objects import (
 from src.modules.media.domain.value_objects.cast_member import CastMember
 from src.modules.media.infrastructure.persistence.models import MovieModel
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemyMovieRepository
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects.library_id import LibraryId
 
 _LIBRARY_ID = "lib_test12345678"
@@ -540,7 +541,7 @@ class TestSQLAlchemyMovieRepositoryFindRandom:
         result = await repo.find_random(
             limit=10,
             with_backdrop=True,
-            allowed_library_ids=[LibraryId(_LIBRARY_ID)],
+            policy=ViewingPolicy(allowed_library_ids=[LibraryId(_LIBRARY_ID)]),
             genres=[Genre("Action")],
             exclude_ids=[_id_of(seen)],
         )
@@ -813,6 +814,23 @@ class TestSQLAlchemyMovieRepositoryListPaginatedAdminFilters:
         page = await repo.list_paginated(cursor=None, limit=10, library_id=_LIBRARY_ID)
 
         assert {m.title.value for m in page.items} == {"A"}
+
+    async def test_empty_library_id_should_match_no_library(self, db_session: AsyncSession) -> None:
+        """``?library_id=`` arrives as ``""``, which names no library.
+
+        Testing the filter by truthiness instead of ``is not None``
+        would drop it and serve the whole catalog.
+        """
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(_create_movie(title="A", file_path="/m/a.mkv"))
+        await repo.save(
+            _movie_in_library(library_id=_LIBRARY_ID_OTHER, title="B", file_path="/m/b.mkv")
+        )
+
+        page = await repo.list_paginated(cursor=None, limit=10, include_total=True, library_id="")
+
+        assert page.items == []
+        assert page.total_count == 0
 
     async def test_has_tmdb_id_true_should_keep_only_enriched_rows(
         self, db_session: AsyncSession
@@ -1622,9 +1640,9 @@ def _movie_in_library(*, library_id: str, title: str, file_path: str) -> Movie:
 
 @pytest.mark.integration
 class TestAllowedLibraryIdsFilter:
-    """``allowed_library_ids`` kwarg restricts reads to a set of libraries.
+    """``policy`` kwarg restricts reads to the policy's set of libraries.
 
-    The use cases pass the caller's profile ACL as this kwarg; these
+    The use cases pass the caller's viewing policy as this kwarg; these
     tests pin the SQL filter at the repository boundary. Two
     representative methods are covered: ``list_paginated`` (the page
     query that backs the catalog grid) and ``find_by_id`` (the lookup
@@ -1649,7 +1667,7 @@ class TestAllowedLibraryIdsFilter:
         page = await repo.list_paginated(
             cursor=None,
             limit=10,
-            allowed_library_ids=[LibraryId(_LIBRARY_ID)],
+            policy=ViewingPolicy(allowed_library_ids=[LibraryId(_LIBRARY_ID)]),
         )
 
         titles = {m.title.value for m in page.items}
@@ -1675,7 +1693,7 @@ class TestAllowedLibraryIdsFilter:
         page = await repo.list_paginated(
             cursor=None,
             limit=10,
-            allowed_library_ids=[LibraryId(_LIBRARY_ID_OTHER)],
+            policy=ViewingPolicy(allowed_library_ids=[LibraryId(_LIBRARY_ID_OTHER)]),
         )
 
         titles = {m.title.value for m in page.items}
@@ -1694,7 +1712,9 @@ class TestAllowedLibraryIdsFilter:
         assert movie.id is not None
 
         # Caller is restricted to library A — must NOT see the row.
-        found = await repo.find_by_id(movie.id, allowed_library_ids=[LibraryId(_LIBRARY_ID)])
+        found = await repo.find_by_id(
+            movie.id, policy=ViewingPolicy(allowed_library_ids=[LibraryId(_LIBRARY_ID)])
+        )
 
         assert found is None
 
@@ -1706,7 +1726,9 @@ class TestAllowedLibraryIdsFilter:
         await repo.save(movie)
         assert movie.id is not None
 
-        found = await repo.find_by_id(movie.id, allowed_library_ids=[LibraryId(_LIBRARY_ID)])
+        found = await repo.find_by_id(
+            movie.id, policy=ViewingPolicy(allowed_library_ids=[LibraryId(_LIBRARY_ID)])
+        )
 
         assert found is not None
         assert found.title.value == "Allowed"
@@ -1735,6 +1757,44 @@ class TestFindNeedsEnrichmentReview:
         await repo.save(_create_movie(title="Inception", file_path="/movies/inception.mkv"))
 
         result = await repo.find_needs_enrichment_review()
+
+        assert result == []
+
+    async def test_should_honor_library_acl(self, db_session: AsyncSession) -> None:
+        """The optional library filter binds ``LibraryId`` values, not the VOs."""
+        repo = SQLAlchemyMovieRepository(db_session)
+        mine = _create_movie(
+            title="Mine",
+            file_path="/movies/mine.mkv",
+            needs_enrichment_review=True,
+        )
+        other = _create_movie(
+            title="Other",
+            file_path="/movies/other.mkv",
+            needs_enrichment_review=True,
+        ).with_updates(library_id=_LIBRARY_ID_OTHER)
+        await repo.save(mine)
+        await repo.save(other)
+
+        result = await repo.find_needs_enrichment_review(
+            allowed_library_ids=[LibraryId(_LIBRARY_ID)],
+        )
+
+        assert [m.title.value for m in result] == ["Mine"]
+
+    async def test_should_return_empty_for_empty_library_acl(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyMovieRepository(db_session)
+        await repo.save(
+            _create_movie(
+                title="Salem's Lot",
+                file_path="/movies/salem.mkv",
+                needs_enrichment_review=True,
+            )
+        )
+
+        result = await repo.find_needs_enrichment_review(allowed_library_ids=[])
 
         assert result == []
 

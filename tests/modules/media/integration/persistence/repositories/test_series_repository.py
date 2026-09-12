@@ -30,6 +30,7 @@ from src.modules.media.domain.value_objects import (
 )
 from src.modules.media.infrastructure.persistence.models import SeriesModel
 from src.modules.media.infrastructure.persistence.repositories import SQLAlchemySeriesRepository
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects.library_id import LibraryId
 
 _LIBRARY_ID = "lib_test12345678"
@@ -777,7 +778,7 @@ class TestSQLAlchemySeriesRepositoryFindRandom:
         result = await repo.find_random(
             limit=10,
             with_backdrop=True,
-            allowed_library_ids=[LibraryId(_LIBRARY_ID)],
+            policy=ViewingPolicy(allowed_library_ids=[LibraryId(_LIBRARY_ID)]),
             genres=[Genre("Action")],
             exclude_ids=[_id_of(seen)],
         )
@@ -1107,6 +1108,21 @@ class TestSQLAlchemySeriesRepositoryListPaginatedAdminFilters:
         page = await repo.list_paginated(cursor=None, limit=10, q="   ")
 
         assert {s.title.value for s in page.items} == {"A", "B"}
+
+    async def test_empty_library_id_should_match_no_library(self, db_session: AsyncSession) -> None:
+        """``?library_id=`` arrives as ``""``, which names no library.
+
+        Testing the filter by truthiness instead of ``is not None``
+        would drop it and serve the whole catalog.
+        """
+        repo = SQLAlchemySeriesRepository(db_session)
+        await repo.save(_create_series(title="A"))
+        await repo.save(_series_in_library(library_id=_LIBRARY_ID_OTHER, title="B"))
+
+        page = await repo.list_paginated(cursor=None, limit=10, include_total=True, library_id="")
+
+        assert page.items == []
+        assert page.total_count == 0
 
 
 @pytest.mark.integration
@@ -2320,7 +2336,7 @@ def _series_in_library(*, library_id: str, title: str) -> Series:
 
 @pytest.mark.integration
 class TestAllowedLibraryIdsFilter:
-    """``allowed_library_ids`` kwarg restricts reads to a set of libraries.
+    """``policy`` kwarg restricts reads to the policy's set of libraries.
 
     Mirror of the movies-side coverage: pin ``list_paginated`` and
     ``find_by_id`` at the repo boundary so the use cases can rely on
@@ -2337,7 +2353,7 @@ class TestAllowedLibraryIdsFilter:
         page = await repo.list_paginated(
             cursor=None,
             limit=10,
-            allowed_library_ids=[LibraryId(_LIBRARY_ID)],
+            policy=ViewingPolicy(allowed_library_ids=[LibraryId(_LIBRARY_ID)]),
         )
 
         titles = {s.title.value for s in page.items}
@@ -2355,7 +2371,7 @@ class TestAllowedLibraryIdsFilter:
         page = await repo.list_paginated(
             cursor=None,
             limit=10,
-            allowed_library_ids=[LibraryId(_LIBRARY_ID_OTHER)],
+            policy=ViewingPolicy(allowed_library_ids=[LibraryId(_LIBRARY_ID_OTHER)]),
         )
 
         titles = {s.title.value for s in page.items}
@@ -2370,7 +2386,9 @@ class TestAllowedLibraryIdsFilter:
         assert series.id is not None
 
         # Caller is restricted to library A — must NOT see the row.
-        found = await repo.find_by_id(series.id, allowed_library_ids=[LibraryId(_LIBRARY_ID)])
+        found = await repo.find_by_id(
+            series.id, policy=ViewingPolicy(allowed_library_ids=[LibraryId(_LIBRARY_ID)])
+        )
 
         assert found is None
 
@@ -2380,7 +2398,9 @@ class TestAllowedLibraryIdsFilter:
         await repo.save(series)
         assert series.id is not None
 
-        found = await repo.find_by_id(series.id, allowed_library_ids=[LibraryId(_LIBRARY_ID)])
+        found = await repo.find_by_id(
+            series.id, policy=ViewingPolicy(allowed_library_ids=[LibraryId(_LIBRARY_ID)])
+        )
 
         assert found is not None
         assert found.title.value == "Allowed"

@@ -22,8 +22,9 @@ from src.modules.metadata.application.ports.metadata_provider_port import (
     CollectionPartMetadata,
     MetadataProvider,
 )
+from src.shared_kernel.content_policy import ViewingPolicy
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     make_media_uow_mock,
 )
 
@@ -76,7 +77,7 @@ def _make_use_case(
         mocks.factory,
         provider,
         lookup,
-        FakeProfileLibraryAccessPort({_PROFILE_ID: allowed}),
+        FakeProfileViewingPolicyPort({_PROFILE_ID: allowed}),
     )
 
 
@@ -132,7 +133,7 @@ class TestGetCollectionByTmdbIdUseCase:
         assert result.parts[1].movie_id is None
         # The catalog overlay must be ACL-scoped.
         find_by_tmdb_ids_kwargs = mocks.movies.find_by_tmdb_ids.await_args.kwargs
-        assert list(find_by_tmdb_ids_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
+        assert find_by_tmdb_ids_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
 
     @pytest.mark.asyncio
     async def test_surfaces_request_status_for_missing_parts_only(self) -> None:

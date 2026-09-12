@@ -190,10 +190,10 @@ class MediaContainer(containers.DeclarativeContainer):
     # ``CatalogRequestLookupPort``.
     catalog_request_lookup = providers.Dependency[Any]()
 
-    # Wired at the composition root — the adapter reads
-    # ``Profile.allowed_library_ids`` via the Identity UoW so this
-    # BC only ever sees ``ProfileLibraryAccessPort``.
-    profile_library_access = providers.Dependency[Any]()
+    # Wired at the composition root — the adapter builds the profile's
+    # ``ViewingPolicy`` via the Identity UoW so this BC only ever sees
+    # ``ProfileViewingPolicyPort``.
+    profile_viewing_policy = providers.Dependency[Any]()
 
     # Wired at the composition root — the trigger-scan use case
     # needs to look up the requested library before opening the
@@ -248,26 +248,26 @@ class MediaContainer(containers.DeclarativeContainer):
     get_featured_media = providers.Factory(
         GetFeaturedMediaUseCase,
         uow_factory=media_unit_of_work_factory,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
         watch_history=watch_history,
     )
 
     get_movie_by_id = providers.Factory(
         GetMovieByIdUseCase,
         uow_factory=media_unit_of_work_factory,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     list_movies = providers.Factory(
         ListMoviesUseCase,
         uow_factory=media_unit_of_work_factory,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     list_recently_added_movies = providers.Factory(
         ListRecentlyAddedMoviesUseCase,
         uow_factory=media_unit_of_work_factory,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     delete_movie = providers.Factory(
@@ -284,19 +284,19 @@ class MediaContainer(containers.DeclarativeContainer):
         GetSeriesByIdUseCase,
         uow_factory=media_unit_of_work_factory,
         progress_lookup=progress_lookup,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     list_series = providers.Factory(
         ListSeriesUseCase,
         uow_factory=media_unit_of_work_factory,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     list_recently_added_series = providers.Factory(
         ListRecentlyAddedSeriesUseCase,
         uow_factory=media_unit_of_work_factory,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     # =========================================================================
@@ -306,31 +306,31 @@ class MediaContainer(containers.DeclarativeContainer):
     list_genres = providers.Factory(
         ListGenresUseCase,
         uow_factory=media_unit_of_work_factory,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     list_by_genre = providers.Factory(
         ListByGenreUseCase,
         uow_factory=media_unit_of_work_factory,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     list_movies_by_actor = providers.Factory(
         ListMoviesByActorUseCase,
         uow_factory=media_unit_of_work_factory,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     list_recently_added_catalog = providers.Factory(
         ListRecentlyAddedCatalogUseCase,
         uow_factory=media_unit_of_work_factory,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     search_catalog = providers.Factory(
         SearchCatalogUseCase,
         uow_factory=media_unit_of_work_factory,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     # =========================================================================
@@ -515,7 +515,7 @@ class MediaContainer(containers.DeclarativeContainer):
         GetRelatedMoviesUseCase,
         uow_factory=media_unit_of_work_factory,
         metadata_provider=tmdb_client,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     get_collection_by_tmdb_id = providers.Factory(
@@ -523,7 +523,7 @@ class MediaContainer(containers.DeclarativeContainer):
         uow_factory=media_unit_of_work_factory,
         metadata_provider=tmdb_client,
         catalog_request_lookup=catalog_request_lookup,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     enrich_series_metadata = providers.Factory(
@@ -538,7 +538,7 @@ class MediaContainer(containers.DeclarativeContainer):
         GetRelatedSeriesUseCase,
         uow_factory=media_unit_of_work_factory,
         metadata_provider=tmdb_client,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     bulk_enrich_metadata = providers.Factory(

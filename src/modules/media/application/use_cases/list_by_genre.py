@@ -1,7 +1,7 @@
 """ListByGenreUseCase - paginated mixed (movies + series) listing per genre."""
 
 import asyncio
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cmp_to_key
 from typing import Any, TypeVar
@@ -17,15 +17,16 @@ from src.modules.media.application.dtos.catalog_dtos import (
     ListByGenreInput,
     ListByGenreOutput,
 )
-from src.modules.media.application.ports.profile_library_access_port import (
-    ProfileLibraryAccessPort,
+from src.modules.media.application.ports.profile_viewing_policy_port import (
+    ProfileViewingPolicyPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._catalog_quality_helpers import catalog_quality
 from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.value_objects import CatalogSort, Genre
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import MediaType
-from src.shared_kernel.value_objects.library_id import LibraryId
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 _T = TypeVar("_T")
 
@@ -154,10 +155,10 @@ class ListByGenreUseCase:
     def __init__(
         self,
         uow_factory: MediaUnitOfWorkFactory,
-        profile_library_access: ProfileLibraryAccessPort,
+        profile_viewing_policy: ProfileViewingPolicyPort,
     ) -> None:
         self._uow_factory = uow_factory
-        self._profile_library_access = profile_library_access
+        self._profile_viewing_policy = profile_viewing_policy
 
     async def execute(self, input_dto: ListByGenreInput) -> ListByGenreOutput:
         """Execute the use case.
@@ -172,8 +173,10 @@ class ListByGenreUseCase:
             items + the dual cursor for the next page. A deny-all
             profile yields an empty page without opening a UoW.
         """
-        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
-        if not allowed:
+        policy = await self._profile_viewing_policy.find_for_profile(
+            ProfileId(input_dto.profile_id)
+        )
+        if policy.denies_everything:
             return ListByGenreOutput(items=[], next_cursor=None, has_more=False)
 
         decoded = decode_dual_cursor(input_dto.cursor)
@@ -190,7 +193,7 @@ class ListByGenreUseCase:
             media_type=input_dto.media_type,
             sort=input_dto.sort,
             lang=input_dto.lang,
-            allowed_library_ids=allowed,
+            policy=policy,
         )
 
         # Tag each entity with its source stream and its source-page
@@ -255,7 +258,7 @@ class ListByGenreUseCase:
         media_type: MediaType | None,
         sort: CatalogSort,
         lang: str,
-        allowed_library_ids: Sequence[LibraryId],
+        policy: ViewingPolicy,
     ) -> tuple[PaginatedResult[Movie], PaginatedResult[Series]]:
         """Fetch the movie and series pages, honoring the media-type filter.
 
@@ -277,7 +280,7 @@ class ListByGenreUseCase:
                     limit=limit,
                     sort=sort,
                     lang=lang,
-                    allowed_library_ids=allowed_library_ids,
+                    policy=policy,
                 )
             return movies_page, _empty_page(Series)
         if media_type is MediaType.SERIES:
@@ -288,7 +291,7 @@ class ListByGenreUseCase:
                     limit=limit,
                     sort=sort,
                     lang=lang,
-                    allowed_library_ids=allowed_library_ids,
+                    policy=policy,
                 )
             return _empty_page(Movie), series_page
         return await asyncio.gather(
@@ -298,7 +301,7 @@ class ListByGenreUseCase:
                 limit=limit,
                 sort=sort,
                 lang=lang,
-                allowed_library_ids=allowed_library_ids,
+                policy=policy,
             ),
             self._fetch_series_page(
                 genre=genre,
@@ -306,7 +309,7 @@ class ListByGenreUseCase:
                 limit=limit,
                 sort=sort,
                 lang=lang,
-                allowed_library_ids=allowed_library_ids,
+                policy=policy,
             ),
         )
 
@@ -318,7 +321,7 @@ class ListByGenreUseCase:
         limit: int,
         sort: CatalogSort,
         lang: str,
-        allowed_library_ids: Sequence[LibraryId],
+        policy: ViewingPolicy,
     ) -> PaginatedResult[Movie]:
         async with self._uow_factory() as uow:
             return await uow.movies.list_paginated_by_genre(
@@ -327,7 +330,7 @@ class ListByGenreUseCase:
                 limit=limit,
                 sort=sort,
                 lang=lang,
-                allowed_library_ids=allowed_library_ids,
+                policy=policy,
             )
 
     async def _fetch_series_page(
@@ -338,7 +341,7 @@ class ListByGenreUseCase:
         limit: int,
         sort: CatalogSort,
         lang: str,
-        allowed_library_ids: Sequence[LibraryId],
+        policy: ViewingPolicy,
     ) -> PaginatedResult[Series]:
         async with self._uow_factory() as uow:
             return await uow.series.list_paginated_by_genre(
@@ -347,7 +350,7 @@ class ListByGenreUseCase:
                 limit=limit,
                 sort=sort,
                 lang=lang,
-                allowed_library_ids=allowed_library_ids,
+                policy=policy,
             )
 
     @staticmethod

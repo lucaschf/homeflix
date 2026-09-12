@@ -1,20 +1,20 @@
 """SearchCatalogUseCase - full-text search across movies and series."""
 
 import asyncio
-from collections.abc import Sequence
 
 from src.modules.media.application.dtos.search_dtos import (
     SearchInput,
     SearchItemOutput,
     SearchOutput,
 )
-from src.modules.media.application.ports.profile_library_access_port import (
-    ProfileLibraryAccessPort,
+from src.modules.media.application.ports.profile_viewing_policy_port import (
+    ProfileViewingPolicyPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.entities import Movie, Series
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import MediaType
-from src.shared_kernel.value_objects.library_id import LibraryId
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class SearchCatalogUseCase:
@@ -36,10 +36,10 @@ class SearchCatalogUseCase:
     def __init__(
         self,
         uow_factory: MediaUnitOfWorkFactory,
-        profile_library_access: ProfileLibraryAccessPort,
+        profile_viewing_policy: ProfileViewingPolicyPort,
     ) -> None:
         self._uow_factory = uow_factory
-        self._profile_library_access = profile_library_access
+        self._profile_viewing_policy = profile_viewing_policy
 
     async def execute(self, input_dto: SearchInput) -> SearchOutput:
         """Execute the search.
@@ -53,8 +53,10 @@ class SearchCatalogUseCase:
             total count. A deny-all profile yields an empty result
             without opening a UoW.
         """
-        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
-        if not allowed:
+        policy = await self._profile_viewing_policy.find_for_profile(
+            ProfileId(input_dto.profile_id)
+        )
+        if policy.denies_everything:
             return SearchOutput(items=[], total=0)
 
         # Fetch from both repos in parallel, skipping the excluded
@@ -65,13 +67,13 @@ class SearchCatalogUseCase:
         series_hits: list[tuple[Series, float]] = []
 
         if input_dto.media_type is MediaType.MOVIE:
-            movie_hits = await self._search_movies(input_dto, allowed)
+            movie_hits = await self._search_movies(input_dto, policy)
         elif input_dto.media_type is MediaType.SERIES:
-            series_hits = await self._search_series(input_dto, allowed)
+            series_hits = await self._search_series(input_dto, policy)
         else:
             movie_hits, series_hits = await asyncio.gather(
-                self._search_movies(input_dto, allowed),
-                self._search_series(input_dto, allowed),
+                self._search_movies(input_dto, policy),
+                self._search_series(input_dto, policy),
             )
 
         # Pool and sort by rank (ascending = most relevant first)
@@ -87,7 +89,7 @@ class SearchCatalogUseCase:
         return SearchOutput(items=items, total=len(combined))
 
     async def _search_movies(
-        self, input_dto: SearchInput, allowed_library_ids: Sequence[LibraryId]
+        self, input_dto: SearchInput, policy: ViewingPolicy
     ) -> list[tuple[Movie, float]]:
         async with self._uow_factory() as uow:
             return await uow.movies.search(
@@ -96,11 +98,11 @@ class SearchCatalogUseCase:
                 year_min=input_dto.year_min,
                 year_max=input_dto.year_max,
                 limit=input_dto.limit,
-                allowed_library_ids=allowed_library_ids,
+                policy=policy,
             )
 
     async def _search_series(
-        self, input_dto: SearchInput, allowed_library_ids: Sequence[LibraryId]
+        self, input_dto: SearchInput, policy: ViewingPolicy
     ) -> list[tuple[Series, float]]:
         async with self._uow_factory() as uow:
             return await uow.series.search(
@@ -109,7 +111,7 @@ class SearchCatalogUseCase:
                 year_min=input_dto.year_min,
                 year_max=input_dto.year_max,
                 limit=input_dto.limit,
-                allowed_library_ids=allowed_library_ids,
+                policy=policy,
             )
 
     @staticmethod

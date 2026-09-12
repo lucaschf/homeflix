@@ -35,6 +35,7 @@ from src.modules.media.domain.value_objects import (
     Genre,
     MovieId,
 )
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects.library_id import LibraryId
 
 
@@ -68,19 +69,19 @@ class MovieCatalogRepository(ABC):
         self,
         movie_id: MovieId,
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> Movie | None:
         """Find a movie by its ID.
 
         Args:
             movie_id: The movie's external ID.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, the lookup also requires the row's
-                ``library_id`` to be in the supplied set; otherwise the
-                method returns ``None`` even when a row with the id
-                exists. ``None`` (default) applies no library filter —
-                used by internal callers (scanner, cross-BC ACL
-                adapters) that operate outside the per-profile catalog.
+            policy: The caller's viewing policy. When non-``None``, the
+                lookup also requires the policy to permit the row;
+                otherwise the method returns ``None`` even when a row
+                with the id exists. ``None`` (default) applies no
+                visibility filter — used by internal callers (scanner,
+                cross-BC ACL adapters) that operate outside the
+                per-profile catalog.
 
         Returns:
             The Movie if found, None otherwise.
@@ -127,7 +128,7 @@ class MovieCatalogRepository(ABC):
         limit: int,
         *,
         include_total: bool = False,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
         library_id: str | None = None,
         has_tmdb_id: bool | None = None,
         needs_enrichment_review: bool | None = None,
@@ -157,13 +158,12 @@ class MovieCatalogRepository(ABC):
                 ``PaginatedResult.total_count``. Defaults to ``False``
                 because the count is the most expensive part of the
                 query and is rarely needed by infinite-scroll consumers.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, both the page query and the optional
-                ``COUNT(*)`` are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                both the page query and the optional ``COUNT(*)`` are
+                restricted to rows the policy permits. ``None``
+                (default) applies no visibility filter.
             library_id: Optional admin filter — restrict to a single
-                library (composes with ``allowed_library_ids``).
+                library (composes with ``policy``).
             has_tmdb_id: Optional admin filter — ``True`` keeps only
                 enriched rows, ``False`` only un-enriched, ``None``
                 applies no filter.
@@ -185,7 +185,7 @@ class MovieCatalogRepository(ABC):
         self,
         limit: int,
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> Sequence[Movie]:
         """List the most recently added movies.
 
@@ -199,10 +199,9 @@ class MovieCatalogRepository(ABC):
 
         Args:
             limit: Maximum number of movies to return.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, results are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                results are restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
 
         Returns:
             Sequence of recently added movies (excluding soft-deleted),
@@ -215,7 +214,7 @@ class MovieCatalogRepository(ABC):
         self,
         lang: str,
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted row.
 
@@ -228,10 +227,10 @@ class MovieCatalogRepository(ABC):
             lang: Language code used to extract the localized genre
                 names from the per-row ``localized`` JSON. Falls back
                 to canonical English when no translation is present.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, the projection is restricted to rows
-                whose ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                the projection is restricted to rows the policy
+                permits. ``None`` (default) applies no visibility
+                filter.
 
         Returns:
             One ``GenreRow`` per non-deleted movie. Order is not
@@ -248,7 +247,7 @@ class MovieCatalogRepository(ABC):
         *,
         sort: CatalogSort = CatalogSort.TITLE_ASC,
         lang: str = "en",
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies belonging to a specific genre, paginated.
 
@@ -282,10 +281,9 @@ class MovieCatalogRepository(ABC):
             lang: Language whose localized title drives the title sort
                 order (falls back to the canonical ``title`` when
                 absent).
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, results are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                results are restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
 
         Returns:
             ``PaginatedResult`` with the page items and pagination
@@ -304,7 +302,7 @@ class MovieCatalogRepository(ABC):
         limit: int,
         *,
         lang: str = "en",
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies whose cast includes a member named ``actor_name``.
 
@@ -331,10 +329,9 @@ class MovieCatalogRepository(ABC):
                 to detect ``has_more`` cheaply.
             lang: Language whose localized title drives the sort order
                 (falls back to the canonical ``title`` when absent).
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, results are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                results are restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
 
         Returns:
             ``PaginatedResult`` with the page items and pagination
@@ -351,7 +348,7 @@ class MovieCatalogRepository(ABC):
         year_min: int | None = None,
         year_max: int | None = None,
         limit: int = 20,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> list[tuple[Movie, float]]:
         """Full-text search over title, synopsis, cast, and genres.
 
@@ -367,10 +364,9 @@ class MovieCatalogRepository(ABC):
             year_min: Optional inclusive lower bound on release year.
             year_max: Optional inclusive upper bound on release year.
             limit: Maximum items to return.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, hits are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                hits are restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
 
         Returns:
             List of (Movie, rank) tuples, ordered by relevance.
@@ -383,7 +379,7 @@ class MovieCatalogRepository(ABC):
         limit: int,
         *,
         with_backdrop: bool = False,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
         genres: Sequence[Genre] | None = None,
         exclude_ids: Sequence[MovieId] | None = None,
     ) -> Sequence[Movie]:
@@ -392,10 +388,9 @@ class MovieCatalogRepository(ABC):
         Args:
             limit: Maximum number of movies to return.
             with_backdrop: If True, only return movies with a backdrop_path.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, results are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                results are restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
             genres: Optional canonical (English) genres. When
                 non-empty, only movies tagged with **at least one** of
                 them are eligible. ``None`` or empty applies no genre
@@ -413,16 +408,15 @@ class MovieCatalogRepository(ABC):
         self,
         movie_ids: Sequence[MovieId],
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> dict[str, Movie]:
         """Find multiple movies by their IDs in a single query.
 
         Args:
             movie_ids: Sequence of movie external IDs.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, results are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                results are restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
 
         Returns:
             Dict mapping external ID string to Movie entity.
@@ -434,7 +428,7 @@ class MovieCatalogRepository(ABC):
         self,
         tmdb_ids: Sequence[int],
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> dict[int, Movie]:
         """Find movies whose ``tmdb_id`` is in ``tmdb_ids``.
 
@@ -450,10 +444,9 @@ class MovieCatalogRepository(ABC):
 
         Args:
             tmdb_ids: TMDB movie ids to look up.
-            allowed_library_ids: Optional per-profile ACL filter. When
-                non-``None``, results are restricted to rows whose
-                ``library_id`` is in the supplied set. ``None``
-                (default) applies no library filter.
+            policy: The caller's viewing policy. When non-``None``,
+                results are restricted to rows the policy permits.
+                ``None`` (default) applies no visibility filter.
 
         Returns:
             Dict mapping ``tmdb_id`` int to ``Movie`` entity. Keys
@@ -539,8 +532,12 @@ class MovieCatalogRepository(ABC):
         small (a few entries per few hundred movies) so no pagination
         — caller orders by ``updated_at`` so newest-flagged float up.
 
+        Deliberately takes a library list, not a ``ViewingPolicy``:
+        this is an operator worklist, and the maturity axis would hide
+        exactly the titles that still need classifying (ADR-035).
+
         Args:
-            allowed_library_ids: Optional per-profile ACL filter. When
+            allowed_library_ids: Optional operator library filter. When
                 non-``None``, restricts to rows owned by libraries in
                 the set; ``None`` means no library filter (current
                 admin endpoint passes ``None``).

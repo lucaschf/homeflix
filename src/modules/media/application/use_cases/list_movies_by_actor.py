@@ -4,11 +4,12 @@ from dataclasses import dataclass
 
 from src.building_blocks.application.pagination import DEFAULT_PAGE_SIZE
 from src.modules.media.application.dtos.movie_dtos import MovieSummaryOutput
-from src.modules.media.application.ports.profile_library_access_port import (
-    ProfileLibraryAccessPort,
+from src.modules.media.application.ports.profile_viewing_policy_port import (
+    ProfileViewingPolicyPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._movie_summary_helpers import to_movie_summary
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 @dataclass(frozen=True)
@@ -17,7 +18,7 @@ class ListMoviesByActorInput:
 
     Attributes:
         profile_id: Caller's prefixed profile id. The use case
-            consults ``ProfileLibraryAccessPort`` and restricts the
+            consults ``ProfileViewingPolicyPort`` and restricts the
             page to libraries the profile may see; a deny-all profile
             yields an empty page without opening a UoW.
         actor_name: Exact display name of the cast member. Match is
@@ -72,10 +73,10 @@ class ListMoviesByActorUseCase:
     def __init__(
         self,
         uow_factory: MediaUnitOfWorkFactory,
-        profile_library_access: ProfileLibraryAccessPort,
+        profile_viewing_policy: ProfileViewingPolicyPort,
     ) -> None:
         self._uow_factory = uow_factory
-        self._profile_library_access = profile_library_access
+        self._profile_viewing_policy = profile_viewing_policy
 
     async def execute(self, input_dto: ListMoviesByActorInput) -> ListMoviesByActorOutput:
         """Execute the use case.
@@ -89,8 +90,10 @@ class ListMoviesByActorUseCase:
             plus the next cursor. A deny-all profile yields an empty
             page without opening a UoW.
         """
-        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
-        if not allowed:
+        policy = await self._profile_viewing_policy.find_for_profile(
+            ProfileId(input_dto.profile_id)
+        )
+        if policy.denies_everything:
             return ListMoviesByActorOutput(movies=[], next_cursor=None, has_more=False)
 
         async with self._uow_factory() as uow:
@@ -99,7 +102,7 @@ class ListMoviesByActorUseCase:
                 cursor=input_dto.cursor,
                 limit=input_dto.limit,
                 lang=input_dto.lang,
-                allowed_library_ids=allowed,
+                policy=policy,
             )
 
         return ListMoviesByActorOutput(

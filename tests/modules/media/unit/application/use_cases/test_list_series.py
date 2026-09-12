@@ -11,10 +11,12 @@ from src.modules.media.application.dtos import (
 )
 from src.modules.media.application.use_cases import ListSeriesUseCase
 from src.modules.media.domain.entities import Series
+from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.value_objects.library_id import LibraryId
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     make_media_uow_mock,
-    make_profile_library_access,
+    make_profile_viewing_policy,
 )
 
 _LIBRARY_ID = "lib_test12345678"
@@ -50,7 +52,7 @@ class TestListSeriesUseCase:
         )
         use_case = ListSeriesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
@@ -64,7 +66,7 @@ class TestListSeriesUseCase:
             cursor=None,
             limit=20,
             include_total=False,
-            allowed_library_ids=[_LIBRARY_ID],
+            policy=ViewingPolicy.unrestricted([_LIBRARY_ID]),
             library_id=None,
             has_tmdb_id=None,
             q=None,
@@ -83,7 +85,7 @@ class TestListSeriesUseCase:
         mocks.series.list_paginated.return_value = _page([series])
         use_case = ListSeriesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
@@ -102,7 +104,7 @@ class TestListSeriesUseCase:
         mocks.series.list_paginated.return_value = _page([])
         use_case = ListSeriesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID, cursor="abc123", limit=15))
@@ -111,7 +113,7 @@ class TestListSeriesUseCase:
             cursor="abc123",
             limit=15,
             include_total=False,
-            allowed_library_ids=[_LIBRARY_ID],
+            policy=ViewingPolicy.unrestricted([_LIBRARY_ID]),
             library_id=None,
             has_tmdb_id=None,
             q=None,
@@ -127,7 +129,7 @@ class TestListSeriesUseCase:
         )
         use_case = ListSeriesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
@@ -141,7 +143,7 @@ class TestListSeriesUseCase:
         mocks.series.list_paginated.return_value = _page([])
         use_case = ListSeriesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
@@ -157,7 +159,7 @@ class TestListSeriesUseCase:
         mocks.series.list_paginated.return_value = _page([series])
         use_case = ListSeriesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
@@ -172,7 +174,7 @@ class TestListSeriesUseCase:
         mocks.series.list_paginated.return_value = _page([series])
         use_case = ListSeriesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
@@ -190,7 +192,7 @@ class TestListSeriesUseCase:
         )
         use_case = ListSeriesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID, include_total=True))
@@ -200,7 +202,7 @@ class TestListSeriesUseCase:
             cursor=None,
             limit=20,
             include_total=True,
-            allowed_library_ids=[_LIBRARY_ID],
+            policy=ViewingPolicy.unrestricted([_LIBRARY_ID]),
             library_id=None,
             has_tmdb_id=None,
             q=None,
@@ -211,7 +213,7 @@ class TestListSeriesUseCase:
         mocks = make_media_uow_mock()
         use_case = ListSeriesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: []}),
         )
 
         result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
@@ -232,12 +234,12 @@ class TestListSeriesUseCase:
         )
         use_case = ListSeriesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: [_LIBRARY_ID]}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: [_LIBRARY_ID]}),
         )
 
         result = await use_case.execute(ListSeriesInput(profile_id=_PROFILE_ID))
 
         assert [s.title for s in result.series] == ["Visible"]
-        passed = mocks.series.list_paginated.await_args.kwargs["allowed_library_ids"]
-        assert list(passed) == [_LIBRARY_ID]
-        assert _LIBRARY_ID_OTHER not in list(passed)
+        passed = mocks.series.list_paginated.await_args.kwargs["policy"]
+        assert passed == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert not passed.permits_library(LibraryId(_LIBRARY_ID_OTHER))

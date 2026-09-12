@@ -8,8 +8,8 @@ unit test reaches for — chiefly a factory that builds a mock
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
 
-from src.modules.media.application.ports.profile_library_access_port import (
-    ProfileLibraryAccessPort,
+from src.modules.media.application.ports.profile_viewing_policy_port import (
+    ProfileViewingPolicyPort,
 )
 from src.modules.media.application.ports.watch_history_port import (
     WatchedTitle,
@@ -24,6 +24,8 @@ from src.modules.media.domain.repositories import (
     MovieRepository,
     SeriesRepository,
 )
+from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 @dataclass
@@ -83,16 +85,22 @@ def make_media_uow_mock() -> MediaUoWMocks:
     )
 
 
-class FakeProfileLibraryAccessPort(ProfileLibraryAccessPort):
-    """In-memory implementation of ``ProfileLibraryAccessPort`` for tests.
+class FakeProfileViewingPolicyPort(ProfileViewingPolicyPort):
+    """In-memory implementation of ``ProfileViewingPolicyPort`` for tests.
 
     Stores a ``profile_id -> list[library_id]`` mapping and resolves
-    ``find_for_profile`` against it. Unmapped profile ids resolve to
-    an empty list — matching the production adapter's deny-all-on-miss
-    semantics. Tests that want the inclusion path map the configured
-    test profile to ``[_LIBRARY_ID]`` (``"lib_test12345678"``); tests
-    that want the deny-all path map it to ``[]`` (or omit it
-    entirely).
+    ``find_for_profile`` against it into a library-only
+    ``ViewingPolicy`` — the only shape the production adapter builds
+    while ``Profile`` has no maturity limit. Unmapped profile ids
+    resolve to an empty policy — matching the production adapter's
+    deny-all-on-miss semantics. Tests that want the inclusion path map
+    the configured test profile to ``[_LIBRARY_ID]``
+    (``"lib_test12345678"``); tests that want the deny-all path map it
+    to ``[]`` (or omit it entirely).
+
+    The lookup reads ``profile_id.value``, so a use case that forwards
+    the raw string instead of a ``ProfileId`` fails loudly here — the
+    test suite is not type-checked and would otherwise accept it.
     """
 
     def __init__(self, mapping: dict[str, list[str]] | None = None) -> None:
@@ -102,15 +110,18 @@ class FakeProfileLibraryAccessPort(ProfileLibraryAccessPort):
         """Set the allowed libraries for ``profile_id``."""
         self._mapping[profile_id] = list(library_ids)
 
-    async def find_for_profile(self, profile_id: str) -> list[str]:
-        return list(self._mapping.get(profile_id, []))
+    async def find_for_profile(self, profile_id: ProfileId) -> ViewingPolicy:
+        library_ids = self._mapping.get(profile_id.value)
+        if library_ids is None:
+            return ViewingPolicy()
+        return ViewingPolicy.unrestricted(library_ids)
 
 
-def make_profile_library_access(
+def make_profile_viewing_policy(
     *,
     profile_id: str = "prf_test12345678",
     library_ids: list[str] | None = None,
-) -> FakeProfileLibraryAccessPort:
+) -> FakeProfileViewingPolicyPort:
     """Build a fake port bound to a single test profile.
 
     By default maps ``prf_test12345678`` to ``["lib_test12345678"]``,
@@ -119,7 +130,7 @@ def make_profile_library_access(
     """
     if library_ids is None:
         library_ids = ["lib_test12345678"]
-    return FakeProfileLibraryAccessPort({profile_id: list(library_ids)})
+    return FakeProfileViewingPolicyPort({profile_id: list(library_ids)})
 
 
 class FakeWatchHistoryPort(WatchHistoryPort):

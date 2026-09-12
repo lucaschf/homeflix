@@ -8,12 +8,12 @@ import pytest
 from src.modules.collections.application.ports import (
     MediaLookupPort,
     MediaSummary,
-    ProfileLibraryAccessPort,
     ProfileLookupPort,
+    ProfileViewingPolicyPort,
     ProgressLookupPort,
 )
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import MediaType
-from src.shared_kernel.value_objects.library_id import LibraryId
 
 MediaSummaryFactory = Callable[..., MediaSummary]
 
@@ -88,14 +88,14 @@ def make_progress_lookup_mock(progress: dict[str, float] | None = None) -> Async
     return mock
 
 
-def make_profile_library_access_mock(*library_ids: str) -> AsyncMock:
-    """Build an ``AsyncMock`` of ``ProfileLibraryAccessPort``.
+def make_profile_viewing_policy_mock(*library_ids: str) -> AsyncMock:
+    """Build an ``AsyncMock`` of ``ProfileViewingPolicyPort``.
 
-    Returns the given library ids (as typed ``LibraryId``) for any
+    Returns a library-only ``ViewingPolicy`` over the given ids for any
     profile. An empty call means deny-all.
     """
-    mock = AsyncMock(spec=ProfileLibraryAccessPort)
-    mock.find_for_profile.return_value = [LibraryId(lib) for lib in library_ids]
+    mock = AsyncMock(spec=ProfileViewingPolicyPort)
+    mock.find_for_profile.return_value = ViewingPolicy.unrestricted(library_ids)
     return mock
 
 

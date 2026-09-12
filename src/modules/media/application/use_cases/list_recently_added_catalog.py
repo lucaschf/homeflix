@@ -1,7 +1,6 @@
 """ListRecentlyAddedCatalogUseCase - mixed (movies + series) recents."""
 
 import asyncio
-from collections.abc import Sequence
 from typing import cast
 
 from src.modules.media.application.dtos.catalog_dtos import (
@@ -9,13 +8,14 @@ from src.modules.media.application.dtos.catalog_dtos import (
     ListRecentlyAddedCatalogInput,
     ListRecentlyAddedCatalogOutput,
 )
-from src.modules.media.application.ports.profile_library_access_port import (
-    ProfileLibraryAccessPort,
+from src.modules.media.application.ports.profile_viewing_policy_port import (
+    ProfileViewingPolicyPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._catalog_quality_helpers import catalog_quality
 from src.modules.media.domain.entities import Movie, Series
-from src.shared_kernel.value_objects.library_id import LibraryId
+from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class ListRecentlyAddedCatalogUseCase:
@@ -47,17 +47,17 @@ class ListRecentlyAddedCatalogUseCase:
     def __init__(
         self,
         uow_factory: MediaUnitOfWorkFactory,
-        profile_library_access: ProfileLibraryAccessPort,
+        profile_viewing_policy: ProfileViewingPolicyPort,
     ) -> None:
         """Initialize the use case.
 
         Args:
             uow_factory: Factory that opens a fresh media Unit of Work.
-            profile_library_access: Port that resolves the caller's
-                allowed library_ids.
+            profile_viewing_policy: Port that resolves the caller's
+                viewing policy.
         """
         self._uow_factory = uow_factory
-        self._profile_library_access = profile_library_access
+        self._profile_viewing_policy = profile_viewing_policy
 
     async def execute(
         self, input_dto: ListRecentlyAddedCatalogInput
@@ -70,19 +70,21 @@ class ListRecentlyAddedCatalogUseCase:
 
         Returns:
             ``ListRecentlyAddedCatalogOutput`` with the merged page,
-            newest first. Empty when the caller's profile has no
-            ``allowed_library_ids`` — short-circuits the UoW.
+            newest first. Empty when the caller's ``ViewingPolicy``
+            denies everything — short-circuits the UoW.
         """
-        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
-        if not allowed:
+        policy = await self._profile_viewing_policy.find_for_profile(
+            ProfileId(input_dto.profile_id)
+        )
+        if policy.denies_everything:
             return ListRecentlyAddedCatalogOutput(items=[])
 
         # Each branch opens its own UoW because SQLAlchemy AsyncSession
         # forbids concurrent execution on the same session — same
         # pattern as ``ListByGenreUseCase``.
         movies, series_list = await asyncio.gather(
-            self._fetch_recent_movies(input_dto.limit, allowed),
-            self._fetch_recent_series(input_dto.limit, allowed),
+            self._fetch_recent_movies(input_dto.limit, policy),
+            self._fetch_recent_series(input_dto.limit, policy),
         )
 
         merged: list[Movie | Series] = sorted(
@@ -95,25 +97,21 @@ class ListRecentlyAddedCatalogUseCase:
             items=[self._to_output(item, input_dto.lang) for item in merged],
         )
 
-    async def _fetch_recent_movies(
-        self, limit: int, allowed_library_ids: Sequence[LibraryId]
-    ) -> list[Movie]:
+    async def _fetch_recent_movies(self, limit: int, policy: ViewingPolicy) -> list[Movie]:
         async with self._uow_factory() as uow:
             return list(
                 await uow.movies.list_recently_added(
                     limit,
-                    allowed_library_ids=allowed_library_ids,
+                    policy=policy,
                 )
             )
 
-    async def _fetch_recent_series(
-        self, limit: int, allowed_library_ids: Sequence[LibraryId]
-    ) -> list[Series]:
+    async def _fetch_recent_series(self, limit: int, policy: ViewingPolicy) -> list[Series]:
         async with self._uow_factory() as uow:
             return list(
                 await uow.series.list_recently_added(
                     limit,
-                    allowed_library_ids=allowed_library_ids,
+                    policy=policy,
                 )
             )
 

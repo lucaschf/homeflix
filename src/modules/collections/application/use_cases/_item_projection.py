@@ -9,9 +9,11 @@ becoming an access-control bypass (ADR-010).
 
 from collections.abc import Sequence
 
+from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.collections.application.dtos import CustomListItemOutput
 from src.modules.collections.application.ports import MediaLookupPort, ProgressLookupPort
 from src.modules.collections.domain.entities import CustomListItem
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.library_id import LibraryId
 
@@ -23,7 +25,7 @@ async def project_items(
     progress_lookup: ProgressLookupPort,
     lang: str,
     profile_id: str,
-    allowed_library_ids: Sequence[LibraryId] | None,
+    policy: ViewingPolicy | None,
 ) -> tuple[list[CustomListItemOutput], int]:
     """Join items with media + progress, optionally filtering by access.
 
@@ -33,10 +35,11 @@ async def project_items(
         progress_lookup: Port resolving the caller's watch progress.
         lang: Language for localized titles/genres.
         profile_id: The caller's profile id (whose progress is shown).
-        allowed_library_ids: When ``None`` the caller owns the list and
-            sees everything (no filter, ``hidden_count`` is ``0``). When
-            a (possibly empty) sequence, the caller is a follower and an
-            item is hidden unless its media's library is in the set.
+        policy: When ``None`` the caller owns the list and sees
+            everything (no filter, ``hidden_count`` is ``0``). Otherwise
+            the caller is a follower and an item is hidden unless the
+            policy permits its media's library. Only the library axis
+            is applied here.
 
     Returns:
         ``(outputs, hidden_count)`` — the visible item DTOs (ordered as
@@ -56,8 +59,6 @@ async def project_items(
     movie_id_strs = [i.media_id.value for i in items if i.media_type == MediaType.MOVIE]
     progress = await progress_lookup.get_progress(movie_id_strs, profile_id=profile_id)
 
-    allowed = None if allowed_library_ids is None else {lib.value for lib in allowed_library_ids}
-
     outputs: list[CustomListItemOutput] = []
     hidden_count = 0
     for item in items:
@@ -65,7 +66,7 @@ async def project_items(
         if summary is None:
             # Media was removed from the catalog — skip, don't count.
             continue
-        if allowed is not None and summary.library_id not in allowed:
+        if policy is not None and not _permits_library(policy, summary.library_id):
             hidden_count += 1
             continue
         outputs.append(
@@ -76,6 +77,30 @@ async def project_items(
             )
         )
     return outputs, hidden_count
+
+
+def _permits_library(policy: ViewingPolicy, library_id: str | None) -> bool:
+    """Whether ``policy`` reaches the library an item's media lives in.
+
+    ``MediaSummary.library_id`` is a raw string that may be absent,
+    malformed, or padded with whitespace ``LibraryId`` would strip. None
+    of these is the exact id the catalog's SQL gate matches, so all are
+    denied instead of raised: the item is hidden, not the whole read.
+
+    Args:
+        policy: The follower's viewing policy.
+        library_id: The media's ``lib_xxx`` id, or ``None`` when unknown.
+
+    Returns:
+        ``True`` only when the id is canonical and the policy permits it.
+    """
+    if library_id is None:
+        return False
+    try:
+        typed = LibraryId(library_id)
+    except DomainValidationException:
+        return False
+    return typed.value == library_id and policy.permits_library(typed)
 
 
 __all__ = ["project_items"]

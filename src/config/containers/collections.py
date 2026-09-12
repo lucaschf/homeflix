@@ -24,8 +24,8 @@ from src.modules.collections.application.use_cases import (
 )
 from src.modules.collections.infrastructure.acl import (
     MediaLookupAdapter,
-    ProfileLibraryAccessAdapter,
     ProfileLookupAdapter,
+    ProfileViewingPolicyAdapter,
     ProgressLookupAdapter,
 )
 from src.modules.collections.infrastructure.persistence.sqlalchemy_unit_of_work import (
@@ -51,9 +51,9 @@ class CollectionsContainer(containers.DeclarativeContainer):
     # ``ProgressLookupPort``.
     watch_progress_uow_factory = providers.Dependency[Any]()
     # Identity UoW factory — the profile ACL adapters open their own
-    # short-lived Identity transactions to resolve a follower's library
-    # access and an owner's display name. Use cases only see the
-    # ``ProfileLibraryAccessPort`` / ``ProfileLookupPort`` abstractions.
+    # short-lived Identity transactions to resolve a follower's viewing
+    # policy and an owner's display name. Use cases only see the
+    # ``ProfileViewingPolicyPort`` / ``ProfileLookupPort`` abstractions.
     identity_uow_factory = providers.Dependency[Any]()
 
     # =========================================================================
@@ -79,8 +79,8 @@ class CollectionsContainer(containers.DeclarativeContainer):
         watch_progress_uow_factory=watch_progress_uow_factory,
     )
 
-    profile_library_access = providers.Factory(
-        ProfileLibraryAccessAdapter,
+    profile_viewing_policy = providers.Factory(
+        ProfileViewingPolicyAdapter,
         identity_uow_factory=identity_uow_factory,
     )
 
@@ -155,7 +155,7 @@ class CollectionsContainer(containers.DeclarativeContainer):
         uow_factory=collections_unit_of_work_factory,
         media_lookup=media_lookup,
         progress_lookup=progress_lookup,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     # =========================================================================
@@ -177,7 +177,7 @@ class CollectionsContainer(containers.DeclarativeContainer):
         uow_factory=collections_unit_of_work_factory,
         media_lookup=media_lookup,
         progress_lookup=progress_lookup,
-        profile_library_access=profile_library_access,
+        profile_viewing_policy=profile_viewing_policy,
         profile_lookup=profile_lookup,
     )
 

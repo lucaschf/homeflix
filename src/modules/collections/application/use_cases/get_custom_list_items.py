@@ -9,7 +9,7 @@ from src.modules.collections.application.dtos import (
 )
 from src.modules.collections.application.ports import (
     MediaLookupPort,
-    ProfileLibraryAccessPort,
+    ProfileViewingPolicyPort,
     ProgressLookupPort,
 )
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
@@ -40,7 +40,7 @@ class GetCustomListItemsUseCase:
         uow_factory: CollectionsUnitOfWorkFactory,
         media_lookup: MediaLookupPort,
         progress_lookup: ProgressLookupPort,
-        profile_library_access: ProfileLibraryAccessPort,
+        profile_viewing_policy: ProfileViewingPolicyPort,
     ) -> None:
         """Initialize the use case.
 
@@ -48,12 +48,12 @@ class GetCustomListItemsUseCase:
             uow_factory: Factory that opens a fresh collections Unit of Work.
             media_lookup: Port for resolving media display metadata.
             progress_lookup: Port for resolving the caller's watch progress.
-            profile_library_access: Port for the follower's library ACL.
+            profile_viewing_policy: Port for the follower's viewing policy.
         """
         self._uow_factory = uow_factory
         self._media_lookup = media_lookup
         self._progress_lookup = progress_lookup
-        self._profile_library_access = profile_library_access
+        self._profile_viewing_policy = profile_viewing_policy
 
     async def execute(self, input_dto: GetCustomListItemsInput) -> CustomListItemsOutput:
         """Execute the use case.
@@ -74,7 +74,7 @@ class GetCustomListItemsUseCase:
             owned = await uow.custom_lists.find_by_id(input_dto.list_id, profile_id)
             if owned is not None:
                 items = await uow.custom_lists.list_items(input_dto.list_id, profile_id)
-                allowed = None  # owner sees everything they own
+                policy = None  # owner sees everything they own
             else:
                 owner_list = await uow.custom_lists.find_by_id_unscoped(input_dto.list_id)
                 if owner_list is None or owner_list.id is None or not owner_list.is_shared:
@@ -83,7 +83,7 @@ class GetCustomListItemsUseCase:
                 if follow is None:
                     raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
                 items = await uow.custom_lists.list_items(input_dto.list_id, owner_list.profile_id)
-                allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
+                policy = await self._profile_viewing_policy.find_for_profile(profile_id)
 
         outputs, hidden_count = await project_items(
             items,
@@ -91,7 +91,7 @@ class GetCustomListItemsUseCase:
             progress_lookup=self._progress_lookup,
             lang=input_dto.lang,
             profile_id=input_dto.profile_id,
-            allowed_library_ids=allowed,
+            policy=policy,
         )
         _logger.info(
             "Custom list %s: %d visible item(s), %d hidden by access",
