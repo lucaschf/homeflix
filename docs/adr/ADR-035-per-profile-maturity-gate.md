@@ -1,6 +1,6 @@
 # ADR-035: Faixa Etária por Perfil como Gate de Catálogo e Playback
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-09-12
 **Deciders:** Lucas
 **Technical Story:** O controle parental não é utilizável — restringir um perfil exige que o operador crie uma biblioteca física só de conteúdo infantil e mova ou duplique arquivos no disco, refazendo o trabalho a cada título novo. Nenhum dos 9 perfis da instância usa o mecanismo. O catálogo, porém, já carrega certificação em 87,9% dos filmes e 96,5% das séries.
@@ -221,4 +221,4 @@ Pontos de toque previstos: `age_rating.py`, `rating_system.py`, `certification.p
 
 | Data | Autor | Mudança |
 |------|-------|---------|
-| 2026-09-12 | Lucas | Criação inicial (Proposto) |
+| 2026-09-12 | Lucas | Criação inicial (Aceito) |
