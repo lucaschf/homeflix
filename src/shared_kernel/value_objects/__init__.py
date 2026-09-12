@@ -1,5 +1,7 @@
 """Shared value objects used across multiple modules."""
 
+from src.shared_kernel.value_objects.age_rating import AgeRating
+from src.shared_kernel.value_objects.certification import Certification
 from src.shared_kernel.value_objects.content_rating import ContentRating
 from src.shared_kernel.value_objects.episode_composite_id import EpisodeCompositeId
 from src.shared_kernel.value_objects.file_path import FilePath
@@ -18,13 +20,16 @@ from src.shared_kernel.value_objects.media_id import (
 )
 from src.shared_kernel.value_objects.media_type import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
+from src.shared_kernel.value_objects.rating_system import RatingSystem
 from src.shared_kernel.value_objects.subtitle_mode import SubtitleMode
 from src.shared_kernel.value_objects.tmdb_id import TmdbId
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleFormat, SubtitleTrack
 from src.shared_kernel.value_objects.user_id import UserId
 
 __all__ = [
+    "AgeRating",
     "AudioTrack",
+    "Certification",
     "ContentRating",
     "EpisodeCompositeId",
     "EpisodeId",
@@ -38,6 +43,7 @@ __all__ = [
     "MediaType",
     "MovieId",
     "ProfileId",
+    "RatingSystem",
     "SeasonId",
     "SeriesId",
     "SubtitleFormat",
