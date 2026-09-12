@@ -26,7 +26,6 @@ from src.modules.media.application.use_cases._localized_metadata_helpers import 
 )
 from src.modules.media.domain.value_objects import (
     CastMember,
-    ContentRating,
     Genre,
     ImageUrl,
     ImdbId,
@@ -35,6 +34,7 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
 )
 from src.modules.metadata.application.ports.metadata_provider_port import MediaMetadata
+from src.shared_kernel.content_policy import classify
 
 # Fields shared by movie and series that are filled only when the entity left
 # them empty (unless ``OVERWRITE``), keyed ``provider_attr: (entity_attr,
@@ -46,7 +46,13 @@ COMMON_FILL_IF_EMPTY: dict[str, tuple[str, Callable[[Any], Any] | None]] = {
     "poster_url": ("poster_path", ImageUrl),
     "backdrop_url": ("backdrop_path", ImageUrl),
     "logo_url": ("logo_path", ImageUrl),
-    "content_rating": ("content_rating", ContentRating),
+    # The provider hands over a bare label; ``classify`` turns it into a
+    # Certification carrying the comparable age (ADR-035). No country is
+    # passed yet — the provider DTO still delivers a single pre-selected
+    # label rather than the per-jurisdiction map, so a bare numeral reads
+    # as the generic numeric scale. Wiring the jurisdiction through is the
+    # next step of the plan and changes the system attributed, not the age.
+    "content_rating": ("certification", classify),
     "trailer_url": ("trailer_url", None),
 }
 

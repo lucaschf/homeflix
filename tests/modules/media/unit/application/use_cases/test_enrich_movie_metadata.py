@@ -512,6 +512,43 @@ class TestApplyMetadataFields:
         assert {g.value for g in saved.genres} == {"Sci-Fi", "Action"}
 
     @pytest.mark.asyncio
+    async def test_should_normalize_the_provider_rating_into_a_certification(self) -> None:
+        """Enrichment stores the comparable age, not just the label (ADR-035)."""
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = MediaMetadata(
+            title="Inception",
+            tmdb_id=27205,
+            content_rating="PG-13",
+        )
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        saved = mocks.movies.save.call_args[0][0]
+        assert saved.certification is not None
+        assert saved.content_rating.value == "PG-13"
+        assert saved.minimum_age.value == 13
+
+    @pytest.mark.asyncio
+    async def test_should_keep_an_unrated_label_without_inventing_an_age(self) -> None:
+        """``NR`` must not become 0 — the fail-closed rule reaches the write path too."""
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = MediaMetadata(
+            title="Inception",
+            tmdb_id=27205,
+            content_rating="NR",
+        )
+
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        saved = mocks.movies.save.call_args[0][0]
+        assert saved.content_rating.value == "NR"
+        assert saved.minimum_age is None
+
+    @pytest.mark.asyncio
     async def test_should_apply_cast_directors_writers(self) -> None:
         movie = _make_movie()
         metadata = MediaMetadata(

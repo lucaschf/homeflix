@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Integer, String, Text
+from sqlalchemy import Boolean, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.infrastructure.persistence.base import Base
@@ -31,6 +31,13 @@ class SeriesModel(Base):
         seasons: Related season records.
     """
 
+    __table_args__ = (
+        # Catalog visibility is filtered on both axes at once (ADR-035),
+        # so the index carries them in the order the predicate applies:
+        # library first (equality / IN), age second (range).
+        Index("ix_series_library_minimum_age", "library_id", "minimum_age"),
+    )
+
     # Library scoping (lib_xxx prefixed external id; cross-BC string
     # reference, no FK because the catalog and library tables live in
     # different bounded contexts).
@@ -50,7 +57,15 @@ class SeriesModel(Base):
 
     # Categorization
     genres: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Classification: the provider's label kept verbatim for display, plus
+    # the comparable age it normalizes to and the scale it was read on
+    # (ADR-035). NULL age means undeterminable, which the domain reads as
+    # adult — never as "suitable for everyone".
     content_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    minimum_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rating_system: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     trailer_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Credits — same JSON-array-of-cast-dicts shape MovieModel uses.

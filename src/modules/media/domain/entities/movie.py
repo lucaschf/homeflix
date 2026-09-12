@@ -12,7 +12,9 @@ from src.modules.media.domain.entities.file_variant_mixin import FileVariantMixi
 from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
+    AgeRating,
     CastMember,
+    Certification,
     Collection,
     ContentRating,
     CreditsDetectionState,
@@ -84,8 +86,11 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     directors: list[str] = Field(default_factory=list)
     writers: list[str] = Field(default_factory=list)
 
-    # Classification
-    content_rating: ContentRating | None = None
+    # Classification. The provider's label and the age it normalizes to
+    # travel together (ADR-035): filtering needs the age, the badge needs
+    # the label, and refining the normalization later needs to know which
+    # scale the label was written on.
+    certification: Certification | None = None
 
     # Trailer
     trailer_url: str | None = None
@@ -127,6 +132,27 @@ class Movie(FileVariantMixin, AggregateRoot[MovieId]):
     def convert_genres(cls, v: list[Any] | None) -> list[Genre]:
         """Convert string list to Genre list."""
         return [] if v is None else [Genre(g) if isinstance(g, str) else g for g in v]
+
+    # ── classification accessors ───────────────────────────────────────
+
+    @property
+    def content_rating(self) -> ContentRating | None:
+        """The certification label, for display.
+
+        Kept as an accessor so the badge and every DTO keep reading one
+        field, unchanged, while the entity stores the richer
+        :class:`Certification` (ADR-035).
+        """
+        return self.certification.label if self.certification else None
+
+    @property
+    def minimum_age(self) -> AgeRating | None:
+        """Age this title requires, or ``None`` when undeterminable.
+
+        ``None`` is not "suitable for everyone" — consumers resolve it
+        through :meth:`AgeRating.allows`, which reads it as adult.
+        """
+        return self.certification.minimum_age if self.certification else None
 
     # ── localized accessors ────────────────────────────────────────────
 

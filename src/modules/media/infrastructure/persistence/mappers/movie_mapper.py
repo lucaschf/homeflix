@@ -6,7 +6,6 @@ from typing import cast
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
     Collection,
-    ContentRating,
     CreditsDetectionState,
     CreditsMarker,
     CreditsMarkerSource,
@@ -21,6 +20,10 @@ from src.modules.media.domain.value_objects import (
     Title,
     TmdbId,
     Year,
+)
+from src.modules.media.infrastructure.persistence.mappers._certification import (
+    certification_from_columns,
+    certification_to_columns,
 )
 from src.modules.media.infrastructure.persistence.mappers._localized import (
     dump_localized,
@@ -66,6 +69,8 @@ class MovieMapper:
         if entity.id is None:
             raise ValueError("Cannot map entity without ID to model")
 
+        label, minimum_age, rating_system = certification_to_columns(entity.certification)
+
         primary = entity.primary_file
         model = MovieModel(
             external_id=str(entity.id),
@@ -88,7 +93,9 @@ class MovieMapper:
             if entity.directors
             else None,
             writers=json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None,
-            content_rating=entity.content_rating.value if entity.content_rating else None,
+            content_rating=label,
+            minimum_age=minimum_age,
+            rating_system=rating_system,
             trailer_url=entity.trailer_url,
             collection_tmdb_id=entity.collection.tmdb_id if entity.collection else None,
             collection_name=entity.collection.name if entity.collection else None,
@@ -180,7 +187,7 @@ class MovieMapper:
             cast=deserialize_cast(model.cast),
             directors=json.loads(model.directors) if model.directors else [],
             writers=json.loads(model.writers) if model.writers else [],
-            content_rating=ContentRating(model.content_rating) if model.content_rating else None,
+            certification=certification_from_columns(model),
             trailer_url=model.trailer_url,
             collection=collection,
             localized=load_localized(model.localized),
@@ -235,7 +242,11 @@ class MovieMapper:
             json.dumps(entity.directors, ensure_ascii=False) if entity.directors else None
         )
         model.writers = json.dumps(entity.writers, ensure_ascii=False) if entity.writers else None
-        model.content_rating = entity.content_rating.value if entity.content_rating else None
+        (
+            model.content_rating,
+            model.minimum_age,
+            model.rating_system,
+        ) = certification_to_columns(entity.certification)
         model.trailer_url = entity.trailer_url
         model.collection_tmdb_id = entity.collection.tmdb_id if entity.collection else None
         model.collection_name = entity.collection.name if entity.collection else None
