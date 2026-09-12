@@ -21,7 +21,7 @@ Três fatos agravam:
 - **Adoção zero, medida.** No banco da instância: 9 perfis, todos com `is_kids = 0`, todos com as mesmas 2 bibliotecas. O mecanismo degenerou em "todo mundo vê tudo".
 - **Não existe PIN.** `switch_profile.py:43-62` valida existência, ownership e sessão. Nada mais. Não há código de responsável em `User` nem em `Profile`.
 
-**O dado necessário para um mecanismo melhor já está persistido.** 574 de 653 filmes e 55 de 57 séries têm certificação em `content_rating`, importada do TMDB. A distribuição real é majoritariamente ClassInd com uma cauda americana: `R` 129, `14` 99, `L` 88, `16` 70, `12` 62, `PG` 28, `NR` 27, `PG-13` 24, `18` 24, `10` 19, `G` 4, e 79 sem rótulo.
+**O dado necessário para um mecanismo melhor já está persistido.** 571 de 644 filmes vivos e 55 de 57 séries têm certificação em `content_rating`, importada do TMDB. A distribuição real é majoritariamente ClassInd com uma cauda americana: `R` 128, `14` 98, `L` 88, `16` 70, `12` 62, `PG` 28, `NR` 27, `18` 24, `PG-13` 23, `10` 19, `G` 4, e 73 sem rótulo.
 
 O obstáculo é semântico, não de dados: `ContentRating` é um `StringValueObject` livre de até 20 caracteres (`content_rating.py:22-39`), sem ordenação. Não há como responder se `R` é mais ou menos restritivo que `14`.
 
@@ -69,7 +69,7 @@ Hash em `User.parental_pin_hash`, via o `PasswordHasherPort` que já existe (`pa
 ### Positivas
 
 - O operador deixa de precisar de biblioteca física de conteúdo infantil. A restrição é transversal a todas as bibliotecas e se aplica sozinha a títulos novos a cada scan.
-- Funciona com o acervo existente no dia do deploy: um perfil com limite `12` enxerga 173 filmes e 36 séries sem nenhum backfill; com limite `14`, 324 filmes e 46 séries.
+- Funciona com o acervo existente no dia do deploy: um perfil com limite `12` enxerga 173 filmes e 36 séries sem nenhum backfill; com limite `14`, 322 filmes e 46 séries.
 - Os ~20 blocos inline de ACL colapsam em um helper. O saldo é *menos* duplicação do que existe hoje, e um terceiro eixo futuro custa um arquivo, não vinte.
 - Fecha, de passagem, buracos de autorização pré-existentes e não relacionados a kids: `watch_progress` (`MediaLookupPort` nem recebe profile), `save_progress.py:22-49` (aceita qualquer `media_id`), `get_watchlist.py:68` (nenhuma ACL) e as escritas de watchlist e listas customizadas.
 - Executa a onda 5.2 da dívida técnica movendo a política de classificação do adapter para o domínio.
@@ -171,7 +171,7 @@ class AgeRating(IntValueObject):          # 0..21; comparadores herdados
 # shared_kernel/value_objects/certification.py
 @dataclass(frozen=True)
 class Certification:
-    system: RatingSystem           # BR_DEJUS | US_MPA | US_TV | NUMERIC | MANUAL
+    system: RatingSystem           # BR_DEJUS | US_MPA | US_TV | NUMERIC | UNKNOWN
     label: ContentRating           # inalterado — é o que o badge desenha
     minimum_age: AgeRating | None  # None = indeterminado
 
@@ -217,8 +217,60 @@ A regra recíproca — "todo use case cujo Input tem `profile_id` declara o port
 
 Pontos de toque previstos: `age_rating.py`, `rating_system.py`, `certification.py`, `content_policy/` (novos); colunas e índice composto em `movies`/`series` com data-migration derivando `min_age` das 629 linhas já classificadas; `content_rating_policy.py` (novo) e `tmdb_response_mapper.py` (deixa de decidir); `_visibility_filter.py` (novo) e os ~20 sites de repositório; `profile_viewing_policy_port.py` nos três BCs consumidores; `profile.py`, `user.py`, `access_token_model.py` e `parental_gate.py`; `authenticated_admin` em `identity/presentation/public.py`.
 
+## Emendas
+
+Três correções levantadas durante a implementação, registradas aqui em vez de
+reescritas silenciosamente no texto original.
+
+### 1. `RatingSystem` não tem `MANUAL`, e ganha `UNKNOWN`
+
+A decisão 2 listava `MANUAL` entre os membros de `RatingSystem`. Isso conflava
+dois eixos: `MANUAL` é *quem forneceu* o valor — proveniência, que vira a coluna
+`rating_source` — e não *em que escala o rótulo está escrito*. Mantidos no mesmo
+enum, "um operador classificou este título, na escala brasileira" seria
+irrepresentável.
+
+`UNKNOWN` entrou porque `Certification.system` é obrigatório e um rótulo como
+`NR` não pertence a escala nenhuma.
+
+### 2. A cobertura é 544 de 644 filmes vivos, não 547 de 653
+
+Os números originais contavam linhas soft-deleted, que nenhum perfil enxerga. O
+back-fill escopa com `deleted_at IS NULL` — atualizar uma linha soft-deleted
+dispararia os triggers de FTS5 para um documento que já saiu do índice,
+enviesando `nDoc`/`avgdl` e portanto o `bm25()` de todo o catálogo.
+
+Os degraus baixos não mudam: um perfil `12` continua vendo 173 filmes e 36
+séries. O degrau `14` passa de 324 para 322.
+
+### 3. A jurisdição deixa de seguir `supported_locales`
+
+Consequência da decisão 10 que o texto original não tornou explícita. Antes,
+quem configurasse `supported_locales = ("en", "es-ES")` ganhava `["ES", "US"]`
+como ordem de preferência automaticamente. Agora a ordem vem do bucket
+`CONTENT_RATING`, cujo default é `["BR", "US"]`.
+
+Para a configuração padrão (`("en", "pt-BR")`) o resultado é idêntico e não há
+mudança observável. Para uma instância com locale customizado fora de BR/US, o
+comportamento muda sem que o operador tenha mexido em nada — é o preço de
+separar idioma de UI de autoridade de classificação, que era exatamente a dívida
+que esta decisão pagou, mas precisa estar escrito.
+
+### 4. `classify` devolve `None` para rótulo que não cabe em `ContentRating`
+
+Descoberto ao fazer o adapter reportar todos os países: `ContentRating` tem teto
+de 20 caracteres e o TMDB serve texto livre de contribuidor — o rótulo turco
+`Genel Izleyici Kitlesi` tem 22. Deixar o VO levantar abortaria o enriquecimento
+inteiro do título por causa da redação de um órgão estrangeiro.
+
+Isso é deliberadamente distinto de "sem classificação": `NR` é uma declaração que
+um órgão fez e é preservada para o badge; uma frase de 44 caracteres não é um
+rótulo que este catálogo consegue guardar, e uma cópia truncada seria um rótulo
+errado na tela.
+
 ## Histórico de Revisões
 
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-09-12 | Lucas | Criação inicial (Aceito) |
+| 2026-09-12 | Lucas | Emendas 1-4, levantadas na implementação das PRs #421, #422 e #423 |
