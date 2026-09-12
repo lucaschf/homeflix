@@ -10,6 +10,9 @@ from src.modules.settings.domain.value_objects.artwork_mirror_config import (
     ArtworkMirrorConfig,
 )
 from src.modules.settings.domain.value_objects.avatar_config import AvatarConfig
+from src.modules.settings.domain.value_objects.content_rating_config import (
+    ContentRatingConfig,
+)
 from src.modules.settings.domain.value_objects.credits_detection_config import (
     CreditsDetectionConfig,
 )
@@ -46,6 +49,7 @@ ConfigVO = (
     | ScanDedupConfig
     | SubtitleOcrConfig
     | ArtworkMirrorConfig
+    | ContentRatingConfig
 )
 """Union of all configuration VOs persisted in ``app_settings``."""
 
@@ -54,6 +58,7 @@ __all__ = [
     "AvatarConfig",
     "ChromaprintTuningConfig",
     "ConfigVO",
+    "ContentRatingConfig",
     "CreditsDetectionConfig",
     "SETTING_VO_TYPES",
     "FrameHashTuningConfig",

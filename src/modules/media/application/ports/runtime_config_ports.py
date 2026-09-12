@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from src.modules.settings.domain.value_objects import (
+        ContentRatingConfig,
         ScanDedupConfig,
         StreamingConfig,
     )
@@ -40,7 +41,16 @@ class ScanDedupConfigPort(Protocol):
         ...
 
 
+class ContentRatingConfigPort(Protocol):
+    """Access to the current jurisdiction preference for certifications."""
+
+    async def content_rating(self) -> ContentRatingConfig:
+        """Return the current ``ContentRatingConfig``."""
+        ...
+
+
 __all__ = [
+    "ContentRatingConfigPort",
     "ScanDedupConfigPort",
     "StreamingConfigPort",
 ]

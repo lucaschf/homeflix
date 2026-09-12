@@ -9,6 +9,9 @@ from src.modules.media.application.dtos.enrichment_dtos import (
     EnrichMediaInput,
     EnrichMediaOutput,
 )
+from src.modules.media.application.ports.runtime_config_ports import (
+    ContentRatingConfigPort,
+)
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._localized_metadata_helpers import (
     merge_text_localized,
@@ -16,6 +19,8 @@ from src.modules.media.application.use_cases._localized_metadata_helpers import 
 from src.modules.media.application.use_cases._metadata_field_merge import (
     COMMON_FILL_IF_EMPTY,
     reconcile_common_fields,
+    resolve_certification,
+    set_certification,
 )
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
@@ -36,6 +41,7 @@ from src.modules.metadata.application.ports.metadata_provider_port import (
     SeasonMetadata,
 )
 from src.shared_kernel.integration_events import MediaEnrichedEvent
+from src.shared_kernel.value_objects.certification import Certification
 from src.shared_kernel.value_objects.media_type import MediaType
 
 
@@ -57,11 +63,13 @@ class EnrichSeriesMetadataUseCase:
         primary_provider: MetadataProvider,
         fallback_provider: MetadataProvider | None = None,
         event_bus: EventBus | None = None,
+        runtime_settings: ContentRatingConfigPort | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._primary = primary_provider
         self._fallback = fallback_provider
         self._event_bus = event_bus
+        self._runtime_settings = runtime_settings
 
     async def execute(self, input_dto: EnrichMediaInput) -> EnrichMediaOutput:
         """Execute series metadata enrichment.
@@ -102,7 +110,10 @@ class EnrichSeriesMetadataUseCase:
                     metadata = localized_meta
 
             series = _apply_series_metadata(
-                series, metadata, policy=MergePolicy.from_force(input_dto.force)
+                series,
+                metadata,
+                policy=MergePolicy.from_force(input_dto.force),
+                certification=await resolve_certification(metadata, self._runtime_settings),
             )
             if series.needs_enrichment_review:
                 series = series.with_updates(needs_enrichment_review=False)
@@ -168,6 +179,7 @@ def _apply_series_metadata(
     metadata: MediaMetadata,
     *,
     policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
+    certification: Certification | None = None,
 ) -> Series:
     """Apply metadata fields to a series entity.
 
@@ -203,6 +215,8 @@ def _apply_series_metadata(
     # canonical title tracks the newly-picked TMDB entry.
     if metadata.title and policy.overwrites:
         updates["title"] = Title(metadata.title)
+
+    set_certification(updates, series, certification, policy=policy)
 
     if updates:
         series = series.with_updates(**updates)

@@ -8,10 +8,15 @@ from src.modules.media.application.dtos.enrichment_dtos import (
     EnrichMediaInput,
     EnrichMediaOutput,
 )
+from src.modules.media.application.ports.runtime_config_ports import (
+    ContentRatingConfigPort,
+)
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._metadata_field_merge import (
     COMMON_FILL_IF_EMPTY,
     reconcile_common_fields,
+    resolve_certification,
+    set_certification,
 )
 from src.modules.media.domain.entities import Movie
 from src.modules.media.domain.value_objects import (
@@ -28,6 +33,7 @@ from src.modules.metadata.application.ports.metadata_provider_port import (
     MetadataProvider,
 )
 from src.shared_kernel.integration_events import MediaEnrichedEvent
+from src.shared_kernel.value_objects.certification import Certification
 from src.shared_kernel.value_objects.media_type import MediaType
 
 _logger = logging.getLogger(__name__)
@@ -51,11 +57,13 @@ class EnrichMovieMetadataUseCase:
         primary_provider: MetadataProvider,
         fallback_provider: MetadataProvider | None = None,
         event_bus: EventBus | None = None,
+        runtime_settings: ContentRatingConfigPort | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._primary = primary_provider
         self._fallback = fallback_provider
         self._event_bus = event_bus
+        self._runtime_settings = runtime_settings
 
     async def execute(self, input_dto: EnrichMediaInput) -> EnrichMediaOutput:
         """Execute movie metadata enrichment.
@@ -98,7 +106,10 @@ class EnrichMovieMetadataUseCase:
                     metadata = localized_meta
 
             movie = _apply_movie_metadata(
-                movie, metadata, policy=MergePolicy.from_force(input_dto.force)
+                movie,
+                metadata,
+                policy=MergePolicy.from_force(input_dto.force),
+                certification=await resolve_certification(metadata, self._runtime_settings),
             )
             if movie.needs_enrichment_review:
                 movie = movie.with_updates(needs_enrichment_review=False)
@@ -240,6 +251,7 @@ def _apply_movie_metadata(
     metadata: MediaMetadata,
     *,
     policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
+    certification: Certification | None = None,
 ) -> Movie:
     """Apply metadata fields to a movie entity.
 
@@ -281,6 +293,8 @@ def _apply_movie_metadata(
     # (duration still 0); never overwrite a real duration, even on OVERWRITE.
     if metadata.duration_seconds and movie.duration.value == 0:
         updates["duration"] = Duration(metadata.duration_seconds)
+
+    set_certification(updates, movie, certification, policy=policy)
 
     if updates:
         movie = movie.with_updates(**updates)

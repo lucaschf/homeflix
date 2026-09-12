@@ -247,6 +247,11 @@ class MediaMetadata:
         cast: Top billed actors.
         directors: Directors.
         writers: Screenwriters.
+        certifications: Every content rating the provider reported, as
+            country code (ISO 3166-1 alpha-2) to the label that board
+            issued, verbatim. The adapter reports what it saw and does
+            not choose between boards — which jurisdiction the catalog
+            trusts is a domain policy (ADR-025, ADR-035 decision 10).
     """
 
     title: str
@@ -265,7 +270,7 @@ class MediaMetadata:
     cast: list[CreditPerson] = field(default_factory=list)
     directors: list[CreditPerson] = field(default_factory=list)
     writers: list[CreditPerson] = field(default_factory=list)
-    content_rating: str | None = None
+    certifications: dict[str, str] = field(default_factory=dict)
     trailer_url: str | None = None
     tagline: str | None = None
     collection: CollectionMetadata | None = None

@@ -17,11 +17,13 @@ from src.shared_kernel.content_policy.certification_scale import (
     classify,
     strictest,
 )
+from src.shared_kernel.content_policy.jurisdiction import ContentRatingFallback
 from src.shared_kernel.content_policy.viewing_policy import ViewingPolicy
 
 __all__ = [
     "BR_DEJUS_SCALE",
     "UNRATED_LABELS",
+    "ContentRatingFallback",
     "US_MPA_SCALE",
     "US_TV_SCALE",
     "ViewingPolicy",

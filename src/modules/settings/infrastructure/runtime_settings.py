@@ -33,6 +33,7 @@ from src.modules.settings.domain.value_objects import (
     ArtworkMirrorConfig,
     AvatarConfig,
     ConfigVO,
+    ContentRatingConfig,
     CreditsDetectionConfig,
     IntroDetectionConfig,
     ScanDedupConfig,
@@ -137,6 +138,14 @@ class RuntimeSettings:
         return cast(
             ArtworkMirrorConfig,
             self._snapshot[SettingKey.ARTWORK_MIRROR],
+        )
+
+    async def content_rating(self) -> ContentRatingConfig:
+        """Return the current :class:`ContentRatingConfig` snapshot."""
+        await self._ensure_fresh()
+        return cast(
+            ContentRatingConfig,
+            self._snapshot[SettingKey.CONTENT_RATING],
         )
 
     async def intro_detection(self) -> IntroDetectionConfig:

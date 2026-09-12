@@ -20,6 +20,8 @@ from src.modules.metadata.application.ports.metadata_provider_port import (
     MediaMetadata,
     MetadataProvider,
 )
+from src.modules.settings.domain.value_objects import ContentRatingConfig
+from src.shared_kernel.content_policy import ContentRatingFallback
 from src.shared_kernel.integration_events import MediaEnrichedEvent
 from tests.modules.media.unit.conftest import MediaUoWMocks, make_media_uow_mock
 
@@ -52,13 +54,29 @@ def _make_metadata() -> MediaMetadata:
 
 
 def _set_up_enrichment(
-    movie: Movie, provider: MetadataProvider
+    movie: Movie,
+    provider: MetadataProvider,
+    runtime_settings: object | None = None,
 ) -> tuple[EnrichMovieMetadataUseCase, MediaUoWMocks]:
     mocks = make_media_uow_mock()
     mocks.movies.find_by_id.return_value = movie
     mocks.movies.save.side_effect = lambda m: m
-    use_case = EnrichMovieMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+    use_case = EnrichMovieMetadataUseCase(
+        uow_factory=mocks.factory,
+        primary_provider=provider,
+        runtime_settings=runtime_settings,
+    )
     return use_case, mocks
+
+
+def _settings_with(jurisdictions: list[str], fallback=None) -> AsyncMock:
+    """A stand-in for the settings facade, satisfying ContentRatingConfigPort."""
+    settings = AsyncMock()
+    settings.content_rating.return_value = ContentRatingConfig(
+        jurisdictions=jurisdictions,
+        **({"fallback": fallback} if fallback is not None else {}),
+    )
+    return settings
 
 
 @pytest.mark.unit
@@ -519,7 +537,7 @@ class TestApplyMetadataFields:
         provider.search_movie.return_value = MediaMetadata(
             title="Inception",
             tmdb_id=27205,
-            content_rating="PG-13",
+            certifications={"BR": "12", "US": "PG-13"},
         )
 
         use_case, mocks = _set_up_enrichment(movie, provider)
@@ -527,6 +545,8 @@ class TestApplyMetadataFields:
 
         saved = mocks.movies.save.call_args[0][0]
         assert saved.certification is not None
+        # No settings port wired here, so the strictest board wins:
+        # US PG-13 (13) over BR 12.
         assert saved.content_rating.value == "PG-13"
         assert saved.minimum_age.value == 13
 
@@ -538,7 +558,7 @@ class TestApplyMetadataFields:
         provider.search_movie.return_value = MediaMetadata(
             title="Inception",
             tmdb_id=27205,
-            content_rating="NR",
+            certifications={"BR": "NR"},
         )
 
         use_case, mocks = _set_up_enrichment(movie, provider)
@@ -547,6 +567,92 @@ class TestApplyMetadataFields:
         saved = mocks.movies.save.call_args[0][0]
         assert saved.content_rating.value == "NR"
         assert saved.minimum_age is None
+
+    @pytest.mark.asyncio
+    async def test_should_honour_the_configured_jurisdiction(self) -> None:
+        """The whole point of the settings bucket: the household picks the board."""
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = MediaMetadata(
+            title="Inception",
+            tmdb_id=27205,
+            certifications={"BR": "12", "US": "R"},
+        )
+
+        use_case, mocks = _set_up_enrichment(
+            movie, provider, runtime_settings=_settings_with(["BR", "US"])
+        )
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        saved = mocks.movies.save.call_args[0][0]
+        assert saved.content_rating.value == "12"
+        assert saved.minimum_age.value == 12
+
+    @pytest.mark.asyncio
+    async def test_should_follow_a_reordered_jurisdiction_preference(self) -> None:
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = MediaMetadata(
+            title="Inception",
+            tmdb_id=27205,
+            certifications={"BR": "12", "US": "R"},
+        )
+
+        use_case, mocks = _set_up_enrichment(
+            movie, provider, runtime_settings=_settings_with(["US", "BR"])
+        )
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        saved = mocks.movies.save.call_args[0][0]
+        assert saved.content_rating.value == "R"
+        assert saved.minimum_age.value == 17
+
+    @pytest.mark.asyncio
+    async def test_should_honour_the_configured_fallback(self) -> None:
+        """With fallback NONE, a title no preferred board rated stays unrated."""
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = MediaMetadata(
+            title="Inception",
+            tmdb_id=27205,
+            certifications={"FR": "12"},
+        )
+
+        use_case, mocks = _set_up_enrichment(
+            movie,
+            provider,
+            runtime_settings=_settings_with(["BR"], ContentRatingFallback.NONE),
+        )
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        saved = mocks.movies.save.call_args[0][0]
+        assert saved.certification is None
+
+    @pytest.mark.asyncio
+    async def test_should_survive_a_board_whose_label_is_too_long_to_store(self) -> None:
+        """TMDB certifications are contributor-entered free text.
+
+        One foreign board writing a sentence must not abort the whole
+        enrichment — the title would lose synopsis, poster and cast over
+        a label nobody asked for.
+        """
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = MediaMetadata(
+            title="Inception",
+            tmdb_id=27205,
+            synopsis="A mind-bending thriller.",
+            certifications={"TR": "Genel Izleyici Kitlesi", "FR": "12"},
+        )
+
+        use_case, mocks = _set_up_enrichment(
+            movie, provider, runtime_settings=_settings_with(["BR", "US"])
+        )
+        await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        saved = mocks.movies.save.call_args[0][0]
+        assert saved.minimum_age.value == 12
+        assert saved.synopsis == "A mind-bending thriller."
 
     @pytest.mark.asyncio
     async def test_should_apply_cast_directors_writers(self) -> None:
@@ -563,7 +669,7 @@ class TestApplyMetadataFields:
             ],
             directors=[CreditPerson(name="Christopher Nolan")],
             writers=[CreditPerson(name="Christopher Nolan")],
-            content_rating="PG-13",
+            certifications={"BR": "12", "US": "PG-13"},
             trailer_url="https://youtube.com/abc",
         )
         provider = AsyncMock(spec=MetadataProvider)

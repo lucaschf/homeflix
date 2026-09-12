@@ -166,6 +166,26 @@ class TestUndeterminedLabels:
     def test_should_preserve_the_original_label_for_display(self):
         assert classify("NR").label == ContentRating("NR")
 
+    @pytest.mark.parametrize(
+        "label",
+        [
+            "Genel Izleyici Kitlesi",  # the real Turkish board label, 22 chars
+            "No recomendada para menores de dieciocho anos",
+            "x" * 21,
+        ],
+    )
+    def test_should_return_none_for_a_label_too_long_to_store(self, label):
+        """TMDB certifications are contributor-entered free text.
+
+        A board that writes prose must not blow up the caller — one
+        foreign label would abort the whole enrichment of a title.
+        ``None`` is distinct from unrated: there is no label to keep.
+        """
+        assert classify(label) is None
+
+    def test_should_still_classify_a_label_at_the_length_limit(self):
+        assert classify("x" * 20) is not None
+
     def test_should_never_map_an_unknown_label_to_zero(self):
         """The silent failure this table exists to avoid."""
         for label in ("NR", "UR", "Banned", "???"):

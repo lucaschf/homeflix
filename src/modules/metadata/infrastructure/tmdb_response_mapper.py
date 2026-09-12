@@ -26,7 +26,6 @@ from src.modules.metadata.application.ports.metadata_provider_port import (
     SearchCandidate,
     SeasonMetadata,
 )
-from src.shared_kernel.value_objects import ContentRating
 
 _MAX_CAST = 15
 
@@ -107,14 +106,19 @@ class TmdbResponseMapper:
     Pure — holds no HTTP client. It carries only the small amount of
     configuration the shaping logic needs: the image CDN base (to
     rewrite ``*_path`` fields into absolute URLs) and the catalog's
-    supported BCP-47 locales (which drive content-rating jurisdiction
-    order and the ``/translations`` title map).
+    supported BCP-47 locales (which select translated titles).
+
+    Content-rating jurisdiction is deliberately **not** among them. It
+    used to be derived from ``supported_locales`` as a proxy, which
+    conflated UI language with certification authority; choosing between
+    boards is now a domain policy configured by its own settings bucket
+    (ADR-035, decision 10). This mapper reports every rating it saw and
+    picks none.
 
     Args:
         image_base_url: Base URL for the TMDB image CDN.
         supported_locales: BCP-47 tags the catalog serves (e.g.
-            ``("en", "pt-BR")``). Used to derive the content-rating
-            jurisdiction order and to select translated titles.
+            ``("en", "pt-BR")``). Used to select translated titles.
     """
 
     def __init__(
@@ -298,88 +302,64 @@ class TmdbResponseMapper:
             tmdb_id=int(str(data["id"])) if data.get("id") else None,
         )
 
-    def _preferred_rating_countries(self) -> list[str]:
-        """Jurisdiction order for picking a content rating — config-driven.
+    def parse_certifications(self, release_dates: dict[str, object]) -> dict[str, str]:
+        """Collect every movie certification TMDB reported, by country.
 
-        Built from the *region* subtag of each ``supported_locales`` entry,
-        in order, with ``US`` appended as the English-base fallback. The
-        region is the trailing 2-letter alpha subtag (``pt-BR`` → ``BR``,
-        ``zh-Hant-TW`` → ``TW``) — parsed by content, not position, so a
-        script subtag (``Hant``) isn't mistaken for a region. For the
-        default ``("en", "pt-BR")`` this is ``["BR", "US"]`` — same
-        precedence as the old hardcoded pair.
+        Reports what the provider said and nothing more: choosing
+        between disagreeing boards is a domain policy
+        (``ContentRatingPolicy``), not a translation concern. This
+        adapter used to pick one here, inferring the jurisdiction from
+        ``supported_locales`` as a proxy — a shortcut ADR-035 removed.
 
-        Note: this reuses ``supported_locales`` (a UI/metadata language
-        axis) as a proxy for certification jurisdiction. They correlate but
-        can diverge; if a household ever needs a UI language whose region
-        should not drive ratings, add a dedicated
-        ``content_rating_jurisdictions`` setting rather than overloading
-        this one.
-        """
-        countries: list[str] = []
-        for locale in self._supported_locales:
-            subtags = locale.split("-")[1:]
-            region = next((s.upper() for s in subtags if len(s) == 2 and s.isalpha()), None)
-            if region and region not in countries:
-                countries.append(region)
-        if "US" not in countries:
-            countries.append("US")
-        return countries
+        Args:
+            release_dates: The ``release_dates`` append from ``/movie/{id}``.
 
-    def _select_content_rating(self, ratings_by_country: dict[str, str]) -> ContentRating | None:
-        """Pick the rating for the first preferred jurisdiction that has one."""
-        for country in self._preferred_rating_countries():
-            cert = ratings_by_country.get(country)
-            if cert:
-                return ContentRating(cert)
-        return None
-
-    def parse_content_rating(self, release_dates: dict[str, object]) -> ContentRating | None:
-        """Extract a movie content rating from TMDB ``release_dates``.
-
-        Builds the full per-country certification map, then selects by the
-        config-driven jurisdiction order (see
-        :meth:`_preferred_rating_countries`).
+        Returns:
+            Country code to certification label, verbatim. The first
+            non-empty certification per country wins, because TMDB lists
+            one entry per release type (theatrical, digital, …) and they
+            normally agree.
         """
         results = release_dates.get("results", [])
         if not isinstance(results, list):
-            return None
+            return {}
 
-        ratings_by_country: dict[str, str] = {}
+        by_country: dict[str, str] = {}
         for entry in results:
             iso = str(entry.get("iso_3166_1", "")) if isinstance(entry, dict) else ""
             release_list = entry.get("release_dates", []) if isinstance(entry, dict) else []
-            if not isinstance(release_list, list):
+            if not iso or not isinstance(release_list, list):
                 continue
             for rel in release_list:
                 cert = str(rel.get("certification", "")).strip() if isinstance(rel, dict) else ""
-                if cert and iso not in ratings_by_country:
-                    ratings_by_country[iso] = cert
+                if cert and iso not in by_country:
+                    by_country[iso] = cert
 
-        return self._select_content_rating(ratings_by_country)
+        return by_country
 
-    def parse_series_content_rating(
-        self, content_ratings: dict[str, object]
-    ) -> ContentRating | None:
-        """Extract a series content rating from TMDB ``content_ratings``.
+    def parse_series_certifications(self, content_ratings: dict[str, object]) -> dict[str, str]:
+        """Collect every series certification TMDB reported, by country.
 
-        Same config-driven jurisdiction selection as the movie path
-        (:meth:`_preferred_rating_countries`).
+        Args:
+            content_ratings: The ``content_ratings`` append from ``/tv/{id}``.
+
+        Returns:
+            Country code to certification label, verbatim.
         """
         results = content_ratings.get("results", [])
         if not isinstance(results, list):
-            return None
+            return {}
 
-        ratings_by_country: dict[str, str] = {}
+        by_country: dict[str, str] = {}
         for entry in results:
             if not isinstance(entry, dict):
                 continue
             iso = str(entry.get("iso_3166_1", ""))
             rating = str(entry.get("rating", "")).strip()
-            if rating and iso not in ratings_by_country:
-                ratings_by_country[iso] = rating
+            if iso and rating and iso not in by_country:
+                by_country[iso] = rating
 
-        return self._select_content_rating(ratings_by_country)
+        return by_country
 
     def shape_collection_part(
         self,
@@ -478,7 +458,7 @@ class TmdbResponseMapper:
         credits = data.get("credits", {})
         cast = self.parse_cast(credits.get("cast", []))
         directors, writers = self.parse_crew(credits.get("crew", []))
-        content_rating = self.parse_content_rating(data.get("release_dates", {}))
+        certifications = self.parse_certifications(data.get("release_dates", {}))
         trailer_url = self.parse_trailer(data.get("videos", {}))
 
         logo_url = self.pick_best_logo_url(data.get("images", {}).get("logos"), language)
@@ -498,7 +478,7 @@ class TmdbResponseMapper:
             cast=cast,
             directors=directors,
             writers=writers,
-            content_rating=content_rating.value if content_rating else None,
+            certifications=certifications,
             trailer_url=trailer_url,
             collection=collection,
         )
@@ -527,7 +507,7 @@ class TmdbResponseMapper:
         if data.get("last_air_date") and data.get("status") == "Ended":
             end_year = int(data["last_air_date"][:4])
 
-        content_rating = self.parse_series_content_rating(
+        certifications = self.parse_series_certifications(
             data.get("content_ratings", {}),
         )
 
@@ -545,7 +525,7 @@ class TmdbResponseMapper:
             cast=cast,
             tmdb_id=data["id"],
             imdb_id=data.get("external_ids", {}).get("imdb_id"),
-            content_rating=content_rating.value if content_rating else None,
+            certifications=certifications,
             trailer_url=self.parse_trailer(data.get("videos", {})),
             seasons=seasons,
         )

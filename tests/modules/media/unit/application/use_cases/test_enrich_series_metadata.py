@@ -681,7 +681,7 @@ class TestApplySeriesFields:
             imdb_id="tt0903747",
             poster_url="https://image.tmdb.org/poster.jpg",
             backdrop_url="https://image.tmdb.org/backdrop.jpg",
-            content_rating="TV-MA",
+            certifications={"US": "TV-MA"},
             trailer_url="https://youtube.com/abc",
         )
 

@@ -508,6 +508,7 @@ class MediaContainer(containers.DeclarativeContainer):
         uow_factory=media_unit_of_work_factory,
         primary_provider=tmdb_client,
         event_bus=event_bus,
+        runtime_settings=runtime_settings,
     )
 
     get_related_movies = providers.Factory(
@@ -530,6 +531,7 @@ class MediaContainer(containers.DeclarativeContainer):
         uow_factory=media_unit_of_work_factory,
         primary_provider=tmdb_client,
         event_bus=event_bus,
+        runtime_settings=runtime_settings,
     )
 
     get_related_series = providers.Factory(
