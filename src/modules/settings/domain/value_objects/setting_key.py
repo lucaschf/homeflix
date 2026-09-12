@@ -24,6 +24,7 @@ class SettingKey(StrEnum):
     SCAN_DEDUP = "scan_dedup"
     SUBTITLE_OCR = "subtitle_ocr"
     ARTWORK_MIRROR = "artwork_mirror"
+    CONTENT_RATING = "content_rating"
 
 
 __all__ = ["SettingKey"]

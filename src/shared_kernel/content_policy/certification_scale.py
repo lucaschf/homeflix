@@ -9,12 +9,16 @@ into a :class:`Certification`.
 
 import re
 from types import MappingProxyType
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
+from src.building_blocks.domain.errors import DomainValidationException
 from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.certification import Certification
 from src.shared_kernel.value_objects.content_rating import ContentRating
 from src.shared_kernel.value_objects.rating_system import RatingSystem
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 # Brazilian Classificação Indicativa. The ``A``-prefixed spellings
 # ("AL", "A12") are how the labels are rendered in players and how an
@@ -126,6 +130,25 @@ def _canonical(raw: str) -> str:
     return " ".join(raw.split()).upper()
 
 
+def _as_content_rating(label: str | ContentRating) -> ContentRating | None:
+    """Build the label VO, or ``None`` when the provider's value cannot be one.
+
+    ``release_dates[].certification`` is contributor-entered free text at
+    TMDB, so it is not bounded by anything this domain controls — the
+    Turkish board's "Genel Izleyici Kitlesi" is 22 characters against a
+    20-character ceiling. Letting the VO raise here would abort the whole
+    enrichment of a title over one foreign board's wording, so an
+    unusable value is reported as absent, the way ``_safe_cron`` and the
+    ``allowed_library_ids`` decode already treat out-of-domain input.
+    """
+    if isinstance(label, ContentRating):
+        return label
+    try:
+        return ContentRating(label)
+    except DomainValidationException:
+        return None
+
+
 def _numeric_age(token: str) -> int | None:
     """Read a label that is already an age, clamped to the scale's ceiling.
 
@@ -139,11 +162,11 @@ def _numeric_age(token: str) -> int | None:
     return min(int(match.group(1)), AgeRating.MAX)
 
 
-def classify(label: str | ContentRating, *, country: str | None = None) -> Certification:
+def classify(label: str | ContentRating, *, country: str | None = None) -> Certification | None:
     """Normalize a provider's certification label into a :class:`Certification`.
 
-    Never raises on an unrecognized label and never guesses an age it
-    cannot support: an unknown or explicitly-unrated label comes back
+    Never raises, whatever the provider sent, and never guesses an age
+    it cannot support: an unknown or explicitly-unrated label comes back
     with ``minimum_age`` unset, which every consumer resolves to adult
     through :meth:`AgeRating.allows`. Callers that want an operator to
     notice (metadata enrichment, for one) log the undetermined case —
@@ -160,7 +183,13 @@ def classify(label: str | ContentRating, *, country: str | None = None) -> Certi
 
     Returns:
         The label paired with its scale and, when derivable, its
-        minimum age.
+        minimum age — or ``None`` when the label cannot be represented
+        as a :class:`ContentRating` at all. That is a different thing
+        from "unrated": ``NR`` is a statement a board made and is kept;
+        a 40-character sentence from a board that writes prose is not a
+        label this catalog can store, and a truncated copy of it would
+        be a wrong one on the badge. Callers skip such a board and look
+        at the next.
 
     Example:
         >>> classify("PG-13").minimum_age.value
@@ -173,7 +202,9 @@ def classify(label: str | ContentRating, *, country: str | None = None) -> Certi
         16
     """
     original = label.value if isinstance(label, ContentRating) else label
-    content_rating = label if isinstance(label, ContentRating) else ContentRating(label)
+    content_rating = _as_content_rating(label)
+    if content_rating is None:
+        return None
     token = _canonical(original)
 
     if token in UNRATED_LABELS:
@@ -204,7 +235,7 @@ def classify(label: str | ContentRating, *, country: str | None = None) -> Certi
 
 
 def strictest(
-    certifications: "list[Certification] | tuple[Certification, ...]",
+    certifications: "Sequence[Certification | None]",
 ) -> Certification | None:
     """Return the most restrictive certification that yields an age.
 
@@ -222,7 +253,7 @@ def strictest(
         The candidate with the highest minimum age, or ``None`` when
         none of them has one.
     """
-    determined = [c for c in certifications if c.minimum_age is not None]
+    determined = [c for c in certifications if c is not None and c.minimum_age is not None]
     if not determined:
         return None
     return max(determined, key=lambda c: c.minimum_age.value)  # type: ignore[union-attr]

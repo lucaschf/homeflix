@@ -7,6 +7,7 @@ from httpx import AsyncClient
 
 from src.modules.settings.domain.value_objects import (
     ArtworkMirrorConfig,
+    ContentRatingConfig,
     IntroDetectionConfig,
     ScanDedupConfig,
     SchedulerConfig,
@@ -99,6 +100,7 @@ class TestAdminSettingsList:
                 "scan_dedup",
                 "subtitle_ocr",
                 "artwork_mirror",
+                "content_rating",
             ]
         )
         for entry in body["data"]:
@@ -287,5 +289,39 @@ class TestAdminSettingsPatch:
         body = ArtworkMirrorConfig().model_dump(mode="json")
         body["batch_size"] = 0
         response = await client.patch(f"{SETTINGS_ROOT}/artwork-mirror", json=body)
+
+        assert response.status_code == 422
+
+    async def test_content_rating_full_replace_persists(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        admin = await _login_as_admin(client, seed_user_with_profile)
+
+        body = ContentRatingConfig(
+            jurisdictions=["us", " br "],
+            fallback="none",
+        ).model_dump(mode="json")
+        response = await client.patch(f"{SETTINGS_ROOT}/content-rating", json=body)
+
+        assert response.status_code == 200
+        payload = response.json()["data"]
+        assert payload["key"] == "content_rating"
+        assert payload["source"] == "admin"
+        assert payload["updated_by_user_id"] == admin.user_external_id
+        assert payload["value"]["jurisdictions"] == ["US", "BR"]
+        assert payload["value"]["fallback"] == "none"
+
+    async def test_content_rating_rejects_a_bad_country_code(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        await _login_as_admin(client, seed_user_with_profile)
+
+        body = ContentRatingConfig().model_dump(mode="json")
+        body["jurisdictions"] = ["BRA"]
+        response = await client.patch(f"{SETTINGS_ROOT}/content-rating", json=body)
 
         assert response.status_code == 422

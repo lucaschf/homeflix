@@ -24,7 +24,7 @@ from src.modules.metadata.infrastructure.tmdb_response_mapper import (
     TmdbResponseMapper,
     _safe_int,
 )
-from src.shared_kernel.value_objects import ContentRating, MediaType
+from src.shared_kernel.value_objects import MediaType
 
 
 def _build_response(
@@ -239,128 +239,123 @@ class TestTmdbClientParams:
 
 
 @pytest.mark.unit
-class TestParseContentRating:
-    """Tests for _parse_content_rating (config-driven jurisdiction)."""
+class TestParseCertifications:
+    """The adapter reports every board it saw; it no longer picks one.
 
-    def test_should_prefer_br_over_us(self) -> None:
+    Choosing between disagreeing jurisdictions moved to
+    ``ContentRatingPolicy`` in the media domain (ADR-035, decision 10) —
+    these tests pin that the adapter translates faithfully and decides
+    nothing.
+    """
+
+    def test_should_report_every_country(self) -> None:
         data: dict[str, Any] = {
             "results": [
-                {
-                    "iso_3166_1": "US",
-                    "release_dates": [{"certification": "PG-13"}],
-                },
-                {
-                    "iso_3166_1": "BR",
-                    "release_dates": [{"certification": "14"}],
-                },
+                {"iso_3166_1": "US", "release_dates": [{"certification": "PG-13"}]},
+                {"iso_3166_1": "BR", "release_dates": [{"certification": "14"}]},
             ],
         }
-        assert _make_mapper().parse_content_rating(data) == ContentRating("14")
+        assert _make_mapper().parse_certifications(data) == {"US": "PG-13", "BR": "14"}
 
-    def test_should_fallback_to_us(self) -> None:
-        data: dict[str, Any] = {
-            "results": [
-                {
-                    "iso_3166_1": "US",
-                    "release_dates": [{"certification": "PG-13"}],
-                },
-            ],
-        }
-        assert _make_mapper().parse_content_rating(data) == ContentRating("PG-13")
-
-    def test_should_return_none_when_empty(self) -> None:
-        assert _make_mapper().parse_content_rating({"results": []}) is None
-
-    def test_should_return_none_when_missing_key(self) -> None:
-        assert _make_mapper().parse_content_rating({}) is None
-
-    def test_should_handle_invalid_results_type(self) -> None:
-        assert _make_mapper().parse_content_rating({"results": "bad"}) is None
-
-    def test_should_skip_empty_certifications(self) -> None:
-        data: dict[str, Any] = {
-            "results": [
-                {
-                    "iso_3166_1": "BR",
-                    "release_dates": [{"certification": ""}],
-                },
-                {
-                    "iso_3166_1": "US",
-                    "release_dates": [{"certification": "R"}],
-                },
-            ],
-        }
-        assert _make_mapper().parse_content_rating(data) == ContentRating("R")
-
-    def test_jurisdiction_order_is_config_driven(self) -> None:
-        # A newly supported locale's certification body is respected
-        # without editing the gateway: es-ES → ES wins over the US
-        # fallback (vs the old hardcoded BR-then-US).
-        mapper = _make_mapper(("en", "es-ES"))
+    def test_should_not_privilege_any_jurisdiction(self) -> None:
+        """Configured locales no longer influence what the adapter returns."""
         data: dict[str, Any] = {
             "results": [
                 {"iso_3166_1": "US", "release_dates": [{"certification": "PG-13"}]},
                 {"iso_3166_1": "ES", "release_dates": [{"certification": "12"}]},
             ],
         }
-        assert mapper.parse_content_rating(data) == ContentRating("12")
 
-    def test_returns_none_when_no_preferred_country_matches(self) -> None:
-        # Default prefs [BR, US]; payload only has FR → nothing selected.
+        assert _make_mapper(("en", "es-ES")).parse_certifications(data) == _make_mapper(
+            ("en", "pt-BR")
+        ).parse_certifications(data)
+
+    def test_should_keep_a_country_no_preference_would_select(self) -> None:
+        """FR used to be dropped on the floor; the policy can now use it."""
         data: dict[str, Any] = {
             "results": [
                 {"iso_3166_1": "FR", "release_dates": [{"certification": "12"}]},
             ],
         }
-        assert _make_mapper().parse_content_rating(data) is None
+        assert _make_mapper().parse_certifications(data) == {"FR": "12"}
 
-    def test_region_parsed_by_content_not_position(self) -> None:
-        # A script subtag (zh-Hant-TW) must not be mistaken for the region:
-        # TW is the region, so a TW certification is selected over US.
-        mapper = _make_mapper(("en", "zh-Hant-TW"))
+    def test_should_take_the_first_non_empty_certification_per_country(self) -> None:
+        """TMDB lists one entry per release type; they normally agree."""
         data: dict[str, Any] = {
             "results": [
-                {"iso_3166_1": "US", "release_dates": [{"certification": "PG-13"}]},
-                {"iso_3166_1": "TW", "release_dates": [{"certification": "0+"}]},
+                {
+                    "iso_3166_1": "BR",
+                    "release_dates": [{"certification": ""}, {"certification": "16"}],
+                },
             ],
         }
-        assert mapper.parse_content_rating(data) == ContentRating("0+")
+        assert _make_mapper().parse_certifications(data) == {"BR": "16"}
+
+    def test_should_skip_countries_without_a_certification(self) -> None:
+        data: dict[str, Any] = {
+            "results": [
+                {"iso_3166_1": "BR", "release_dates": [{"certification": ""}]},
+                {"iso_3166_1": "US", "release_dates": [{"certification": "R"}]},
+            ],
+        }
+        assert _make_mapper().parse_certifications(data) == {"US": "R"}
+
+    def test_should_skip_entries_without_a_country(self) -> None:
+        data: dict[str, Any] = {
+            "results": [{"iso_3166_1": "", "release_dates": [{"certification": "R"}]}],
+        }
+        assert _make_mapper().parse_certifications(data) == {}
+
+    def test_should_return_empty_for_empty_results(self) -> None:
+        assert _make_mapper().parse_certifications({"results": []}) == {}
+
+    def test_should_return_empty_when_key_missing(self) -> None:
+        assert _make_mapper().parse_certifications({}) == {}
+
+    def test_should_handle_invalid_results_type(self) -> None:
+        assert _make_mapper().parse_certifications({"results": "bad"}) == {}
 
 
 @pytest.mark.unit
-class TestParseSeriesContentRating:
-    """Tests for _parse_series_content_rating."""
+class TestParseSeriesCertifications:
+    """Same contract on the series path."""
 
-    def test_jurisdiction_order_is_config_driven(self) -> None:
-        # Series selection is config-driven too (parity with movie): a
-        # configured locale's region wins over the US fallback.
-        mapper = _make_mapper(("en", "es-ES"))
-        data: dict[str, Any] = {
-            "results": [
-                {"iso_3166_1": "US", "rating": "TV-14"},
-                {"iso_3166_1": "ES", "rating": "12"},
-            ],
-        }
-        assert mapper.parse_series_content_rating(data) == ContentRating("12")
-
-    def test_should_prefer_br(self) -> None:
+    def test_should_report_every_country(self) -> None:
         data: dict[str, Any] = {
             "results": [
                 {"iso_3166_1": "US", "rating": "TV-MA"},
                 {"iso_3166_1": "BR", "rating": "18"},
             ],
         }
-        assert _make_mapper().parse_series_content_rating(data) == ContentRating("18")
+        assert _make_mapper().parse_series_certifications(data) == {"US": "TV-MA", "BR": "18"}
 
-    def test_should_fallback_to_us(self) -> None:
-        data: dict[str, Any] = {"results": [{"iso_3166_1": "US", "rating": "TV-14"}]}
-        assert _make_mapper().parse_series_content_rating(data) == ContentRating("TV-14")
+    def test_should_not_privilege_any_jurisdiction(self) -> None:
+        data: dict[str, Any] = {
+            "results": [
+                {"iso_3166_1": "US", "rating": "TV-14"},
+                {"iso_3166_1": "ES", "rating": "12"},
+            ],
+        }
 
-    def test_should_return_none_when_empty(self) -> None:
-        assert _make_mapper().parse_series_content_rating({}) is None
+        assert _make_mapper(("en", "es-ES")).parse_series_certifications(data) == {
+            "US": "TV-14",
+            "ES": "12",
+        }
+
+    def test_should_skip_blank_ratings(self) -> None:
+        data: dict[str, Any] = {
+            "results": [
+                {"iso_3166_1": "BR", "rating": "  "},
+                {"iso_3166_1": "US", "rating": "TV-14"},
+            ],
+        }
+        assert _make_mapper().parse_series_certifications(data) == {"US": "TV-14"}
+
+    def test_should_return_empty_when_key_missing(self) -> None:
+        assert _make_mapper().parse_series_certifications({}) == {}
 
     def test_should_handle_invalid_results_type(self) -> None:
-        assert _make_mapper().parse_series_content_rating({"results": "bad"}) is None
+        assert _make_mapper().parse_series_certifications({"results": "bad"}) == {}
 
 
 @pytest.mark.unit

@@ -19,11 +19,12 @@ field-by-field source-preference between stored and provider values.
 """
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.modules.media.application.use_cases._localized_metadata_helpers import (
     merge_media_localized,
 )
+from src.modules.media.domain.services import ContentRatingPolicy
 from src.modules.media.domain.value_objects import (
     CastMember,
     Genre,
@@ -34,7 +35,12 @@ from src.modules.media.domain.value_objects import (
     TmdbId,
 )
 from src.modules.metadata.application.ports.metadata_provider_port import MediaMetadata
-from src.shared_kernel.content_policy import classify
+
+if TYPE_CHECKING:
+    from src.modules.media.application.ports.runtime_config_ports import (
+        ContentRatingConfigPort,
+    )
+    from src.shared_kernel.value_objects.certification import Certification
 
 # Fields shared by movie and series that are filled only when the entity left
 # them empty (unless ``OVERWRITE``), keyed ``provider_attr: (entity_attr,
@@ -46,13 +52,6 @@ COMMON_FILL_IF_EMPTY: dict[str, tuple[str, Callable[[Any], Any] | None]] = {
     "poster_url": ("poster_path", ImageUrl),
     "backdrop_url": ("backdrop_path", ImageUrl),
     "logo_url": ("logo_path", ImageUrl),
-    # The provider hands over a bare label; ``classify`` turns it into a
-    # Certification carrying the comparable age (ADR-035). No country is
-    # passed yet — the provider DTO still delivers a single pre-selected
-    # label rather than the per-jurisdiction map, so a bare numeral reads
-    # as the generic numeric scale. Wiring the jurisdiction through is the
-    # next step of the plan and changes the system attributed, not the age.
-    "content_rating": ("certification", classify),
     "trailer_url": ("trailer_url", None),
 }
 
@@ -92,6 +91,73 @@ def set_if_missing(
         entity_val = getattr(entity, entity_attr, None)
         if meta_val and policy.should_write(entity_val):
             updates[entity_attr] = converter(meta_val) if converter is not None else meta_val
+
+
+async def resolve_certification(
+    metadata: MediaMetadata,
+    runtime_settings: "ContentRatingConfigPort | None",
+) -> "Certification | None":
+    """Apply the household's jurisdiction preference to the provider's map.
+
+    Shared by both enrich use cases: the rule is identical for movies
+    and series, unlike the always-overwrite fields that genuinely
+    diverge and stay in each use case.
+
+    With no settings port wired (the unit-test path) there is no
+    jurisdiction preference, so the strictest board that rated the title
+    wins — the same fallback the configured path uses when none of the
+    preferred jurisdictions rated it.
+
+    Args:
+        metadata: Provider payload carrying every board's label.
+        runtime_settings: Source of the configured preference, or
+            ``None`` when not wired.
+
+    Returns:
+        The selected certification, or ``None`` when no board the
+        household trusts produced a storable label.
+    """
+    if not metadata.certifications:
+        return None
+
+    if runtime_settings is None:
+        return ContentRatingPolicy.select(metadata.certifications, jurisdictions=())
+
+    config = await runtime_settings.content_rating()
+    return ContentRatingPolicy.select(
+        metadata.certifications,
+        jurisdictions=config.jurisdictions,
+        fallback=config.fallback,
+    )
+
+
+def set_certification(
+    updates: dict[str, object],
+    entity: object,
+    certification: "Certification | None",
+    *,
+    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
+) -> None:
+    """Set the certification chosen by ``ContentRatingPolicy``.
+
+    Kept out of the declarative ``field_map`` because this value is not
+    read off the provider DTO: it is the result of applying the
+    household's jurisdiction preference to the map of every board that
+    rated the title, which the use case resolves before calling here.
+
+    Args:
+        updates: Mutable dict of pending ``with_updates`` kwargs.
+        entity: Aggregate to read the current certification from.
+        certification: The selection, or ``None`` when no board the
+            household trusts rated this title.
+        policy: Merge policy gating the write. Under ``FILL_IF_EMPTY``
+            an existing certification is left alone, so an operator's
+            manual classification survives a routine re-enrichment.
+    """
+    if certification is None:
+        return
+    if policy.should_write(getattr(entity, "certification", None)):
+        updates["certification"] = certification
 
 
 def set_provider_ids(updates: dict[str, object], metadata: MediaMetadata) -> None:
