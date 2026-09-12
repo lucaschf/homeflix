@@ -6,7 +6,6 @@ from typing import cast
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import (
     AirDate,
-    ContentRating,
     CreditsDetectionState,
     CreditsMarker,
     CreditsMarkerSource,
@@ -28,6 +27,10 @@ from src.modules.media.domain.value_objects import (
     Title,
     TmdbId,
     Year,
+)
+from src.modules.media.infrastructure.persistence.mappers._certification import (
+    certification_from_columns,
+    certification_to_columns,
 )
 from src.modules.media.infrastructure.persistence.mappers._localized import (
     dump_localized,
@@ -313,6 +316,8 @@ class SeriesMapper:
         if entity.id is None:
             raise ValueError("Cannot map entity without ID to model")
 
+        label, minimum_age, rating_system = certification_to_columns(entity.certification)
+
         return SeriesModel(
             external_id=str(entity.id),
             library_id=entity.library_id,
@@ -325,7 +330,9 @@ class SeriesMapper:
             backdrop_path=entity.backdrop_path.value if entity.backdrop_path else None,
             logo_path=entity.logo_path.value if entity.logo_path else None,
             genres=",".join(g.value for g in entity.genres) if entity.genres else None,
-            content_rating=entity.content_rating.value if entity.content_rating else None,
+            content_rating=label,
+            minimum_age=minimum_age,
+            rating_system=rating_system,
             trailer_url=entity.trailer_url,
             cast=serialize_cast(entity.cast),
             localized=dump_localized(entity.localized),
@@ -365,7 +372,7 @@ class SeriesMapper:
             backdrop_path=ImageUrl(model.backdrop_path) if model.backdrop_path else None,
             logo_path=ImageUrl(model.logo_path) if model.logo_path else None,
             genres=genre_list,
-            content_rating=ContentRating(model.content_rating) if model.content_rating else None,
+            certification=certification_from_columns(model),
             trailer_url=model.trailer_url,
             cast=deserialize_cast(model.cast),
             localized=load_localized(model.localized),
@@ -400,7 +407,11 @@ class SeriesMapper:
         model.backdrop_path = entity.backdrop_path.value if entity.backdrop_path else None
         model.logo_path = entity.logo_path.value if entity.logo_path else None
         model.genres = ",".join(g.value for g in entity.genres) if entity.genres else None
-        model.content_rating = entity.content_rating.value if entity.content_rating else None
+        (
+            model.content_rating,
+            model.minimum_age,
+            model.rating_system,
+        ) = certification_to_columns(entity.certification)
         model.trailer_url = entity.trailer_url
         model.cast = serialize_cast(entity.cast)
         model.localized = dump_localized(entity.localized)

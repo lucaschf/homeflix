@@ -54,6 +54,10 @@ class MovieModel(Base):
             sqlite_where=text("deleted_at IS NULL"),
             postgresql_where=text("deleted_at IS NULL"),
         ),
+        # Catalog visibility is filtered on both axes at once (ADR-035),
+        # so the index carries them in the order the predicate applies:
+        # library first (equality / IN), age second (range).
+        Index("ix_movies_library_minimum_age", "library_id", "minimum_age"),
     )
 
     # Library scoping (lib_xxx prefixed external id; cross-BC string
@@ -91,8 +95,15 @@ class MovieModel(Base):
     directors: Mapped[str | None] = mapped_column(Text, nullable=True)
     writers: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Classification (e.g., "PG-13", "R", "14")
+    # Classification (e.g., "PG-13", "R", "14") — the provider's label,
+    # kept verbatim for display.
     content_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # The label normalized to a comparable age, and the scale it was read
+    # on (ADR-035). NULL age means undeterminable, which the domain reads
+    # as adult — never as "suitable for everyone".
+    minimum_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rating_system: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Trailer (YouTube URL)
     trailer_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

@@ -6,6 +6,10 @@ the actual label distribution of the running library, measured on
 exist rather than the ones a table author imagines, and so the headline
 figures the decision rested on ("a profile limited to 12 sees 173
 movies") stay honest as the table changes.
+
+It counts **live** rows only (``deleted_at IS NULL``). A soft-deleted
+title is invisible to every query, so counting one would overstate what
+a profile actually sees.
 """
 
 import pytest
@@ -13,23 +17,23 @@ import pytest
 from src.shared_kernel.content_policy import classify, strictest
 from src.shared_kernel.value_objects import AgeRating, ContentRating, RatingSystem
 
-# label -> (title count, expected minimum age or None) for 653 movies
+# label -> (title count, expected minimum age or None) for 644 live movies
 REAL_MOVIE_CENSUS: list[tuple[str | None, int, int | None]] = [
-    ("R", 129, 17),
-    ("14", 99, 14),
+    ("R", 128, 17),
+    ("14", 98, 14),
     ("L", 88, 0),
-    (None, 79, None),
+    (None, 73, None),
     ("16", 70, 16),
     ("12", 62, 12),
     ("PG", 28, 13),
     ("NR", 27, None),
-    ("PG-13", 24, 13),
     ("18", 24, 18),
+    ("PG-13", 23, 13),
     ("10", 19, 10),
     ("G", 4, 0),
 ]
 
-# label -> (title count, expected minimum age or None) for 57 series
+# label -> (title count, expected minimum age or None) for 57 live series
 REAL_SERIES_CENSUS: list[tuple[str | None, int, int | None]] = [
     ("L", 17, 0),
     ("12", 12, 12),
@@ -229,7 +233,7 @@ class TestAgainstRealCatalog:
         assert classify(label).minimum_age == expected
 
     def test_census_totals_match_the_measured_library(self):
-        assert sum(count for _, count, _ in REAL_MOVIE_CENSUS) == 653
+        assert sum(count for _, count, _ in REAL_MOVIE_CENSUS) == 644
         assert sum(count for _, count, _ in REAL_SERIES_CENSUS) == 57
 
     @pytest.mark.parametrize(
@@ -238,9 +242,9 @@ class TestAgainstRealCatalog:
             (0, 92, 17),
             (10, 111, 24),
             (12, 173, 36),
-            (14, 324, 46),
-            (16, 394, 52),
-            (18, 653, 57),
+            (14, 322, 46),
+            (16, 392, 52),
+            (18, 644, 57),
         ],
     )
     def test_ladder_step_yields_the_documented_catalog_size(self, limit, movies, series):
@@ -249,8 +253,8 @@ class TestAgainstRealCatalog:
         assert _visible(REAL_SERIES_CENSUS, limit) == series
 
     def test_unrestricted_profile_sees_everything(self):
-        assert _visible(REAL_MOVIE_CENSUS, AgeRating.ADULT) == 653
+        assert _visible(REAL_MOVIE_CENSUS, AgeRating.ADULT) == 644
 
     def test_limited_profile_never_sees_the_unrated_tail(self):
-        """106 movies (79 without a label + 27 NR) stay hidden from every limited profile."""
-        assert _visible(REAL_MOVIE_CENSUS, 17) == 653 - 106 - 24
+        """100 movies (73 without a label + 27 NR) stay hidden from every limited profile."""
+        assert _visible(REAL_MOVIE_CENSUS, 17) == 644 - 100 - 24

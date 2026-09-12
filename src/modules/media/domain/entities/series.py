@@ -11,7 +11,9 @@ from src.building_blocks.domain.errors import BusinessRuleViolationException
 from src.modules.media.domain.events import MediaCreatedEvent
 from src.modules.media.domain.rule_codes import MediaRuleCodes
 from src.modules.media.domain.value_objects import (
+    AgeRating,
     CastMember,
+    Certification,
     ContentRating,
     Genre,
     ImageUrl,
@@ -68,7 +70,8 @@ class Series(AggregateRoot[SeriesId]):
 
     # Categorization
     genres: list[Genre] = Field(default_factory=list)
-    content_rating: ContentRating | None = None
+    # Classification — label and normalized age together (ADR-035).
+    certification: Certification | None = None
     trailer_url: str | None = None
 
     # Credits (top-billed cast pulled from TMDB during enrichment).
@@ -153,6 +156,25 @@ class Series(AggregateRoot[SeriesId]):
         if self.end_year is not None and self.end_year < self.start_year:
             raise ValueError("end_year cannot be before start_year")
         return self
+
+    @property
+    def content_rating(self) -> ContentRating | None:
+        """The certification label, for display.
+
+        Kept as an accessor so the badge and every DTO keep reading one
+        field, unchanged, while the entity stores the richer
+        :class:`Certification` (ADR-035).
+        """
+        return self.certification.label if self.certification else None
+
+    @property
+    def minimum_age(self) -> AgeRating | None:
+        """Age this title requires, or ``None`` when undeterminable.
+
+        ``None`` is not "suitable for everyone" — consumers resolve it
+        through :meth:`AgeRating.allows`, which reads it as adult.
+        """
+        return self.certification.minimum_age if self.certification else None
 
     @property
     def season_count(self) -> int:
