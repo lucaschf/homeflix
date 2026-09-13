@@ -11,7 +11,7 @@ class GetFeaturedInput:
 
     Attributes:
         profile_id: Caller's prefixed profile id. The use case
-            consults ``ProfileLibraryAccessPort`` and restricts the
+            consults ``ProfileViewingPolicyPort`` and restricts the
             random pool to libraries the profile may see; a deny-all
             profile yields an empty list without opening a UoW.
         media_type: Filter by type — "all", "movie", or "series".

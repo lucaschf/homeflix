@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from tests.modules.collections.unit.application.use_cases.conftest import (
     make_media_lookup_mock,
-    make_profile_library_access_mock,
+    make_profile_viewing_policy_mock,
     make_progress_lookup_mock,
 )
 from tests.modules.collections.unit.conftest import make_collections_uow_mock
@@ -61,7 +61,7 @@ class TestGetCustomListItemsUseCase:
             uow_factory=mocks.factory,
             media_lookup=media_lookup,
             progress_lookup=make_progress_lookup_mock(),
-            profile_library_access=make_profile_library_access_mock(),
+            profile_viewing_policy=make_profile_viewing_policy_mock(),
         )
 
         result = await use_case.execute(
@@ -103,7 +103,7 @@ class TestGetCustomListItemsUseCase:
             uow_factory=mocks.factory,
             media_lookup=make_media_lookup_mock(movie_summary("mov_abc123def456")),
             progress_lookup=make_progress_lookup_mock({"mov_abc123def456": 0.5}),
-            profile_library_access=make_profile_library_access_mock(),
+            profile_viewing_policy=make_profile_viewing_policy_mock(),
         )
 
         result = await use_case.execute(
@@ -122,7 +122,7 @@ class TestGetCustomListItemsUseCase:
             uow_factory=mocks.factory,
             media_lookup=AsyncMock(spec=MediaLookupPort),
             progress_lookup=make_progress_lookup_mock(),
-            profile_library_access=make_profile_library_access_mock(),
+            profile_viewing_policy=make_profile_viewing_policy_mock(),
         )
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
@@ -145,7 +145,7 @@ class TestGetCustomListItemsUseCase:
             uow_factory=mocks.factory,
             media_lookup=AsyncMock(spec=MediaLookupPort),
             progress_lookup=make_progress_lookup_mock(),
-            profile_library_access=make_profile_library_access_mock(),
+            profile_viewing_policy=make_profile_viewing_policy_mock(),
         )
 
         result = await use_case.execute(
@@ -175,7 +175,7 @@ class TestGetCustomListItemsUseCase:
             uow_factory=mocks.factory,
             media_lookup=make_media_lookup_mock(),
             progress_lookup=make_progress_lookup_mock(),
-            profile_library_access=make_profile_library_access_mock(),
+            profile_viewing_policy=make_profile_viewing_policy_mock(),
         )
 
         result = await use_case.execute(
@@ -219,7 +219,7 @@ class TestGetCustomListItemsUseCase:
             uow_factory=mocks.factory,
             media_lookup=media_lookup,
             progress_lookup=make_progress_lookup_mock(),
-            profile_library_access=make_profile_library_access_mock(),
+            profile_viewing_policy=make_profile_viewing_policy_mock(),
         )
 
         result = await use_case.execute(
@@ -255,7 +255,7 @@ class TestGetCustomListItemsUseCase:
             uow_factory=mocks.factory,
             media_lookup=media_lookup,
             progress_lookup=make_progress_lookup_mock(),
-            profile_library_access=make_profile_library_access_mock(),
+            profile_viewing_policy=make_profile_viewing_policy_mock(),
         )
 
         await use_case.execute(
@@ -310,7 +310,7 @@ class TestGetCustomListItemsFollowerPath:
                 movie_summary("mov_restrict0001", library_id="lib_locked000001"),
             ),
             progress_lookup=make_progress_lookup_mock(),
-            profile_library_access=make_profile_library_access_mock("lib_movies000001"),
+            profile_viewing_policy=make_profile_viewing_policy_mock("lib_movies000001"),
         )
 
         result = await use_case.execute(
@@ -335,7 +335,7 @@ class TestGetCustomListItemsFollowerPath:
             uow_factory=mocks.factory,
             media_lookup=AsyncMock(spec=MediaLookupPort),
             progress_lookup=make_progress_lookup_mock(),
-            profile_library_access=make_profile_library_access_mock("lib_movies000001"),
+            profile_viewing_policy=make_profile_viewing_policy_mock("lib_movies000001"),
         )
 
         with pytest.raises(ResourceNotFoundException):

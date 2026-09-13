@@ -7,10 +7,11 @@ from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.media.application.dtos import GetMovieByIdInput, MovieOutput
 from src.modules.media.application.use_cases import GetMovieByIdUseCase
 from src.modules.media.domain.entities import Movie
+from src.shared_kernel.content_policy import ViewingPolicy
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     make_media_uow_mock,
-    make_profile_library_access,
+    make_profile_viewing_policy,
 )
 
 _LIBRARY_ID = "lib_test12345678"
@@ -35,7 +36,7 @@ class TestGetMovieByIdUseCase:
         mocks.movies.find_by_id.return_value = movie
         use_case = GetMovieByIdUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -63,7 +64,7 @@ class TestGetMovieByIdUseCase:
         mocks.movies.find_by_id.return_value = movie
         use_case = GetMovieByIdUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -89,7 +90,7 @@ class TestGetMovieByIdUseCase:
         mocks.movies.find_by_id.return_value = movie
         use_case = GetMovieByIdUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -113,7 +114,7 @@ class TestGetMovieByIdUseCase:
         mocks.movies.find_by_id.return_value = movie
         use_case = GetMovieByIdUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -133,7 +134,7 @@ class TestGetMovieByIdUseCase:
         mocks.movies.find_by_id.return_value = None
         use_case = GetMovieByIdUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
@@ -159,7 +160,7 @@ class TestGetMovieByIdUseCase:
         mocks.movies.find_by_id.return_value = movie
         use_case = GetMovieByIdUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         await use_case.execute(GetMovieByIdInput(profile_id=_PROFILE_ID, movie_id=str(movie.id)))
@@ -167,7 +168,7 @@ class TestGetMovieByIdUseCase:
         mocks.movies.find_by_id.assert_awaited_once()
         call_args = mocks.movies.find_by_id.await_args
         assert str(call_args.args[0]) == str(movie.id)
-        assert list(call_args.kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
+        assert call_args.kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
 
     @pytest.mark.asyncio
     async def test_should_raise_404_for_deny_all_profile(self):
@@ -178,7 +179,7 @@ class TestGetMovieByIdUseCase:
         mocks = make_media_uow_mock()
         use_case = GetMovieByIdUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: []}),
         )
 
         with pytest.raises(ResourceNotFoundException):

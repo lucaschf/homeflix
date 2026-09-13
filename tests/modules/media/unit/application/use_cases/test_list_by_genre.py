@@ -15,9 +15,11 @@ from src.modules.media.application.dtos.catalog_dtos import (
 from src.modules.media.application.use_cases.list_by_genre import ListByGenreUseCase
 from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.value_objects import CatalogSort
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import MediaType
+from src.shared_kernel.value_objects.library_id import LibraryId
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     make_media_uow_mock,
 )
 
@@ -94,7 +96,7 @@ def _make_use_case(mocks, *, allowed: list[str] | None = None) -> ListByGenreUse
         allowed = [_LIBRARY_ID]
     return ListByGenreUseCase(
         uow_factory=mocks.factory,
-        profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: allowed}),
+        profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: allowed}),
     )
 
 
@@ -149,8 +151,8 @@ class TestListByGenreUseCase:
         series_call_kwargs = mocks.series.list_paginated_by_genre.await_args.kwargs
         assert movie_call_kwargs["cursor"] == "movies-token"
         assert series_call_kwargs["cursor"] == "series-token"
-        assert list(movie_call_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
-        assert list(series_call_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
+        assert movie_call_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert series_call_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
 
     @pytest.mark.asyncio
     async def test_should_advance_cursor_only_for_consumed_streams(self) -> None:
@@ -342,7 +344,7 @@ class TestListByGenreUseCase:
         mocks = make_media_uow_mock()
         use_case = ListByGenreUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: []}),
         )
 
         result = await use_case.execute(ListByGenreInput(profile_id=_PROFILE_ID, genre="Action"))
@@ -368,9 +370,9 @@ class TestListByGenreUseCase:
         assert [item.title for item in result.items] == ["Visible"]
         movie_kwargs = mocks.movies.list_paginated_by_genre.await_args.kwargs
         series_kwargs = mocks.series.list_paginated_by_genre.await_args.kwargs
-        assert list(movie_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
-        assert list(series_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
-        assert _LIBRARY_ID_OTHER not in list(movie_kwargs["allowed_library_ids"])
+        assert movie_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert series_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert not movie_kwargs["policy"].permits_library(LibraryId(_LIBRARY_ID_OTHER))
 
 
 @pytest.mark.unit

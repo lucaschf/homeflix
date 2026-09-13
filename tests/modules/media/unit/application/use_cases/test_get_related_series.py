@@ -11,8 +11,9 @@ from src.modules.media.application.use_cases.get_related_series import (
 from src.modules.media.domain.entities import Series
 from src.modules.media.domain.value_objects import SeriesId, TmdbId
 from src.modules.metadata.application.ports.metadata_provider_port import MetadataProvider
+from src.shared_kernel.content_policy import ViewingPolicy
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     make_media_uow_mock,
 )
 
@@ -31,7 +32,7 @@ def _make_use_case(mocks, provider, *, allowed: list[str] | None = None) -> GetR
     return GetRelatedSeriesUseCase(
         mocks.factory,
         provider,
-        FakeProfileLibraryAccessPort({_PROFILE_ID: allowed}),
+        FakeProfileViewingPolicyPort({_PROFILE_ID: allowed}),
     )
 
 
@@ -98,8 +99,8 @@ class TestGetRelatedSeriesUseCase:
         assert [s.title for s in result] == ["Breaking Bad", "Rick and Morty"]
         find_by_id_kwargs = mocks.series.find_by_id.await_args.kwargs
         find_by_tmdb_ids_kwargs = mocks.series.find_by_tmdb_ids.await_args.kwargs
-        assert list(find_by_id_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
-        assert list(find_by_tmdb_ids_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
+        assert find_by_id_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert find_by_tmdb_ids_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
 
     @pytest.mark.asyncio
     async def test_truncates_to_limit(self) -> None:

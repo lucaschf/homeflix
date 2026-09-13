@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 import pytest
 from tests.modules.collections.unit.application.use_cases.conftest import (
     make_media_lookup_mock,
-    make_profile_library_access_mock,
     make_profile_lookup_mock,
+    make_profile_viewing_policy_mock,
     make_progress_lookup_mock,
 )
 from tests.modules.collections.unit.conftest import make_collections_uow_mock
@@ -46,7 +46,7 @@ def _make_use_case(
         uow_factory=mocks.factory,
         media_lookup=make_media_lookup_mock(*summaries),
         progress_lookup=make_progress_lookup_mock(),
-        profile_library_access=make_profile_library_access_mock(*allowed_libraries),
+        profile_viewing_policy=make_profile_viewing_policy_mock(*allowed_libraries),
         profile_lookup=make_profile_lookup_mock({_OWNER.value: owner_name}),
     )
 
@@ -120,6 +120,30 @@ class TestGetSharedListPreviewUseCase:
             mocks,
             allowed_libraries=(),  # deny-all
             summaries=[movie_summary("mov_restrict0001", library_id="lib_adults000001")],
+        )
+
+        result = await use_case.execute(
+            GetSharedListPreviewInput(profile_id=_FOLLOWER.value, token=shared.share_token.value)
+        )
+
+        assert result.items == ()
+        assert result.hidden_count == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("library_id", [None, "lib_short", "", " lib_movies000001 "])
+    async def test_item_with_unknown_or_malformed_library_is_hidden(
+        self, movie_summary: MediaSummaryFactory, library_id: str | None
+    ) -> None:
+        # No policy can grant a library it cannot name: the item is
+        # withheld and counted, and the preview itself still succeeds.
+        shared = _shared_list()
+        mocks = make_collections_uow_mock()
+        mocks.custom_lists.find_by_share_token.return_value = shared
+        mocks.custom_lists.list_items.return_value = [_item("mov_restrict0001")]
+        use_case = _make_use_case(
+            mocks,
+            allowed_libraries=("lib_movies000001",),
+            summaries=[movie_summary("mov_restrict0001", library_id=library_id)],
         )
 
         result = await use_case.execute(

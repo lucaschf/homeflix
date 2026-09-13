@@ -226,9 +226,9 @@ class GetSeriesByIdInput:
 
     Attributes:
         profile_id: Caller's prefixed profile id. The use case looks
-            up the per-profile library ACL through
-            ``ProfileLibraryAccessPort`` and restricts the lookup to
-            those libraries — a row outside the ACL surfaces as
+            up the per-profile viewing policy through
+            ``ProfileViewingPolicyPort`` and restricts the lookup to
+            what it permits — a row outside the policy surfaces as
             ``ResourceNotFoundException`` (404).
         series_id: External ID of the series (ser_xxx format).
         lang: Language code for localized metadata.
@@ -245,7 +245,7 @@ class ListSeriesInput:
 
     Attributes:
         profile_id: Caller's prefixed profile id. The use case
-            consults ``ProfileLibraryAccessPort`` and restricts the
+            consults ``ProfileViewingPolicyPort`` and restricts the
             page to libraries the profile may see; a deny-all profile
             yields an empty page without opening a UoW.
         cursor: Opaque pagination cursor from the previous page's
@@ -298,7 +298,7 @@ class ListRecentlyAddedSeriesInput:
 
     Attributes:
         profile_id: Caller's prefixed profile id. The use case
-            consults ``ProfileLibraryAccessPort`` and restricts the
+            consults ``ProfileViewingPolicyPort`` and restricts the
             top-N to libraries the profile may see; a deny-all
             profile yields an empty list without opening a UoW.
         limit: Maximum number of series to return. Routes clamp this

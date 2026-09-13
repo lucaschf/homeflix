@@ -11,8 +11,8 @@ from src.modules.collections.application.dtos import (
 )
 from src.modules.collections.application.ports import (
     MediaLookupPort,
-    ProfileLibraryAccessPort,
     ProfileLookupPort,
+    ProfileViewingPolicyPort,
     ProgressLookupPort,
 )
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
@@ -41,13 +41,13 @@ class GetSharedListPreviewUseCase:
         uow_factory: CollectionsUnitOfWorkFactory,
         media_lookup: MediaLookupPort,
         progress_lookup: ProgressLookupPort,
-        profile_library_access: ProfileLibraryAccessPort,
+        profile_viewing_policy: ProfileViewingPolicyPort,
         profile_lookup: ProfileLookupPort,
     ) -> None:
         self._uow_factory = uow_factory
         self._media_lookup = media_lookup
         self._progress_lookup = progress_lookup
-        self._profile_library_access = profile_library_access
+        self._profile_viewing_policy = profile_viewing_policy
         self._profile_lookup = profile_lookup
 
     async def execute(self, input_dto: GetSharedListPreviewInput) -> SharedListPreviewOutput:
@@ -69,7 +69,7 @@ class GetSharedListPreviewUseCase:
             follow = await uow.list_follows.find(profile_id, custom_list.id)
 
         owner_names = await self._profile_lookup.get_names([custom_list.profile_id.value])
-        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
+        policy = await self._profile_viewing_policy.find_for_profile(profile_id)
 
         outputs, hidden_count = await project_items(
             items,
@@ -77,7 +77,7 @@ class GetSharedListPreviewUseCase:
             progress_lookup=self._progress_lookup,
             lang=input_dto.lang,
             profile_id=input_dto.profile_id,
-            allowed_library_ids=allowed,
+            policy=policy,
         )
 
         return SharedListPreviewOutput(

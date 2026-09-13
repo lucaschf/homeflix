@@ -19,8 +19,9 @@ from src.modules.media.domain.value_objects import (
     SeasonId,
     Title,
 )
+from src.shared_kernel.content_policy import ViewingPolicy
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     make_media_uow_mock,
 )
 
@@ -42,7 +43,7 @@ def _make_use_case(mocks, lookup, *, allowed: list[str] | None = None):
     return GetSeriesByIdUseCase(
         uow_factory=mocks.factory,
         progress_lookup=lookup,
-        profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: allowed}),
+        profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: allowed}),
     )
 
 
@@ -291,7 +292,7 @@ class TestGetSeriesByIdUseCase:
         await use_case.execute(GetSeriesByIdInput(profile_id=_PROFILE_ID, series_id=str(series.id)))
 
         call_args = mocks.series.find_by_id.await_args
-        assert list(call_args.kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
+        assert call_args.kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
 
     @pytest.mark.asyncio
     async def test_should_raise_404_for_deny_all_profile(self, mock_progress_lookup):

@@ -6,10 +6,12 @@ from src.building_blocks.domain.pagination import PaginatedResult, Pagination
 from src.modules.media.application.dtos import ListMoviesInput, ListMoviesOutput, MovieSummaryOutput
 from src.modules.media.application.use_cases import ListMoviesUseCase
 from src.modules.media.domain.entities import Movie
+from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.value_objects.library_id import LibraryId
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     make_media_uow_mock,
-    make_profile_library_access,
+    make_profile_viewing_policy,
 )
 
 _LIBRARY_ID = "lib_test12345678"
@@ -60,7 +62,7 @@ class TestListMoviesUseCase:
         )
         use_case = ListMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
@@ -75,7 +77,7 @@ class TestListMoviesUseCase:
             cursor=None,
             limit=20,
             include_total=False,
-            allowed_library_ids=[_LIBRARY_ID],
+            policy=ViewingPolicy.unrestricted([_LIBRARY_ID]),
             library_id=None,
             has_tmdb_id=None,
             needs_enrichment_review=None,
@@ -89,7 +91,7 @@ class TestListMoviesUseCase:
         mocks.movies.list_paginated.return_value = _page([movie])
         use_case = ListMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
@@ -108,7 +110,7 @@ class TestListMoviesUseCase:
         mocks.movies.list_paginated.return_value = _page([])
         use_case = ListMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID, cursor="abc123", limit=15))
@@ -117,7 +119,7 @@ class TestListMoviesUseCase:
             cursor="abc123",
             limit=15,
             include_total=False,
-            allowed_library_ids=[_LIBRARY_ID],
+            policy=ViewingPolicy.unrestricted([_LIBRARY_ID]),
             library_id=None,
             has_tmdb_id=None,
             needs_enrichment_review=None,
@@ -134,7 +136,7 @@ class TestListMoviesUseCase:
         )
         use_case = ListMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
@@ -148,7 +150,7 @@ class TestListMoviesUseCase:
         mocks.movies.list_paginated.return_value = _page([])
         use_case = ListMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
@@ -166,7 +168,7 @@ class TestListMoviesUseCase:
         )
         use_case = ListMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID, include_total=True))
@@ -176,7 +178,7 @@ class TestListMoviesUseCase:
             cursor=None,
             limit=20,
             include_total=True,
-            allowed_library_ids=[_LIBRARY_ID],
+            policy=ViewingPolicy.unrestricted([_LIBRARY_ID]),
             library_id=None,
             has_tmdb_id=None,
             needs_enrichment_review=None,
@@ -191,7 +193,7 @@ class TestListMoviesUseCase:
         mocks = make_media_uow_mock()
         use_case = ListMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: []}),
         )
 
         result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
@@ -208,7 +210,7 @@ class TestListMoviesUseCase:
         mocks = make_media_uow_mock()
         use_case = ListMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: []}),
         )
 
         result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID, include_total=True))
@@ -231,15 +233,15 @@ class TestListMoviesUseCase:
         )
         use_case = ListMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: [_LIBRARY_ID]}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: [_LIBRARY_ID]}),
         )
 
         result = await use_case.execute(ListMoviesInput(profile_id=_PROFILE_ID))
 
         assert [m.title for m in result.movies] == ["Visible"]
-        passed = mocks.movies.list_paginated.await_args.kwargs["allowed_library_ids"]
-        assert list(passed) == [_LIBRARY_ID]
-        assert _LIBRARY_ID_OTHER not in list(passed)
+        passed = mocks.movies.list_paginated.await_args.kwargs["policy"]
+        assert passed == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert not passed.permits_library(LibraryId(_LIBRARY_ID_OTHER))
 
     @pytest.mark.asyncio
     async def test_should_forward_admin_filters_to_repository(self) -> None:
@@ -250,7 +252,7 @@ class TestListMoviesUseCase:
         mocks.movies.list_paginated.return_value = _page([])
         use_case = ListMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         await use_case.execute(

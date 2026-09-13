@@ -17,7 +17,7 @@ class SearchInput:
 
     Attributes:
         profile_id: Caller's prefixed profile id. The use case
-            consults ``ProfileLibraryAccessPort`` and restricts both
+            consults ``ProfileViewingPolicyPort`` and restricts both
             repositories' searches to libraries the profile may see;
             a deny-all profile yields an empty result without opening
             a UoW.

@@ -10,11 +10,13 @@ from src.modules.media.application.dtos.search_dtos import (
 )
 from src.modules.media.application.use_cases.search_catalog import SearchCatalogUseCase
 from src.modules.media.domain.entities import Movie, Series
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import MediaType
+from src.shared_kernel.value_objects.library_id import LibraryId
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     make_media_uow_mock,
-    make_profile_library_access,
+    make_profile_viewing_policy,
 )
 
 _LIBRARY_ID = "lib_test12345678"
@@ -50,7 +52,7 @@ class TestSearchCatalogUseCase:
         mocks.series.search.return_value = [(_series("Breaking Bad"), -2.0)]
         use_case = SearchCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(SearchInput(profile_id=_PROFILE_ID, query="test"))
@@ -66,7 +68,7 @@ class TestSearchCatalogUseCase:
         mocks.movies.search.return_value = [(_movie("Avatar"), -3.0)]
         use_case = SearchCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -84,7 +86,7 @@ class TestSearchCatalogUseCase:
         mocks.series.search.return_value = [(_series("Dark"), -4.0)]
         use_case = SearchCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -110,7 +112,7 @@ class TestSearchCatalogUseCase:
         ]
         use_case = SearchCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(SearchInput(profile_id=_PROFILE_ID, query="test", limit=3))
@@ -125,7 +127,7 @@ class TestSearchCatalogUseCase:
         mocks.series.search.return_value = []
         use_case = SearchCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(SearchInput(profile_id=_PROFILE_ID, query="nonexistent"))
@@ -140,7 +142,7 @@ class TestSearchCatalogUseCase:
         mocks.series.search.return_value = []
         use_case = SearchCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         await use_case.execute(
@@ -159,7 +161,7 @@ class TestSearchCatalogUseCase:
         assert call_kwargs.kwargs["year_min"] == 2000
         assert call_kwargs.kwargs["year_max"] == 2020
         assert call_kwargs.kwargs["limit"] == 10
-        assert list(call_kwargs.kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
+        assert call_kwargs.kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
 
     @pytest.mark.asyncio
     async def test_search_item_output_carries_required_fields(self) -> None:
@@ -168,7 +170,7 @@ class TestSearchCatalogUseCase:
         mocks.series.search.return_value = [(_series("Test Series"), -3.0)]
         use_case = SearchCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(SearchInput(profile_id=_PROFILE_ID, query="test"))
@@ -187,7 +189,7 @@ class TestSearchCatalogUseCase:
         mocks.series.search.return_value = [(_series("Dark"), -3.0)]
         use_case = SearchCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(SearchInput(profile_id=_PROFILE_ID, query="test"))
@@ -200,7 +202,7 @@ class TestSearchCatalogUseCase:
         mocks = make_media_uow_mock()
         use_case = SearchCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: []}),
         )
 
         result = await use_case.execute(SearchInput(profile_id=_PROFILE_ID, query="anything"))
@@ -220,7 +222,7 @@ class TestSearchCatalogUseCase:
         mocks.series.search.return_value = []
         use_case = SearchCatalogUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: [_LIBRARY_ID]}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: [_LIBRARY_ID]}),
         )
 
         result = await use_case.execute(SearchInput(profile_id=_PROFILE_ID, query="visible"))
@@ -228,6 +230,6 @@ class TestSearchCatalogUseCase:
         assert [item.title for item in result.items] == ["Visible"]
         movie_kwargs = mocks.movies.search.await_args.kwargs
         series_kwargs = mocks.series.search.await_args.kwargs
-        assert list(movie_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
-        assert list(series_kwargs["allowed_library_ids"]) == [_LIBRARY_ID]
-        assert _LIBRARY_ID_OTHER not in list(movie_kwargs["allowed_library_ids"])
+        assert movie_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert series_kwargs["policy"] == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert not movie_kwargs["policy"].permits_library(LibraryId(_LIBRARY_ID_OTHER))

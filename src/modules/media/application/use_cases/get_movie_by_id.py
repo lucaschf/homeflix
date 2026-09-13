@@ -7,8 +7,8 @@ from src.modules.media.application.dtos.movie_dtos import (
     GetMovieByIdInput,
     MovieOutput,
 )
-from src.modules.media.application.ports.profile_library_access_port import (
-    ProfileLibraryAccessPort,
+from src.modules.media.application.ports.profile_viewing_policy_port import (
+    ProfileViewingPolicyPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._credits_media_helpers import (
@@ -19,6 +19,7 @@ from src.modules.media.application.use_cases._media_file_helpers import (
 )
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.value_objects import MovieId
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class GetMovieByIdUseCase:
@@ -27,15 +28,15 @@ class GetMovieByIdUseCase:
     This use case fetches a movie from the repository and returns
     it in a format suitable for API consumption.
 
-    Per ADR-010, the lookup is restricted to the caller's
-    ``Profile.allowed_library_ids`` via ``ProfileLibraryAccessPort``. A
-    movie that exists outside the ACL surfaces as
+    Per ADR-010 and ADR-035, the lookup is restricted to what the caller's
+    ``ViewingPolicy`` permits, resolved via ``ProfileViewingPolicyPort``. A
+    movie that exists outside the policy surfaces as
     ``ResourceNotFoundException`` (HTTP 404), preventing the catalog
     ACL from being bypassed by id-poking. A deny-all profile
     short-circuits to a 404 without opening the UoW.
 
     Example:
-        >>> use_case = GetMovieByIdUseCase(uow_factory, profile_library_access)
+        >>> use_case = GetMovieByIdUseCase(uow_factory, profile_viewing_policy)
         >>> result = await use_case.execute(
         ...     GetMovieByIdInput(profile_id="prf_abc", movie_id="mov_abc123")
         ... )
@@ -46,17 +47,17 @@ class GetMovieByIdUseCase:
     def __init__(
         self,
         uow_factory: MediaUnitOfWorkFactory,
-        profile_library_access: ProfileLibraryAccessPort,
+        profile_viewing_policy: ProfileViewingPolicyPort,
     ) -> None:
         """Initialize the use case.
 
         Args:
             uow_factory: Factory that opens a fresh media Unit of Work.
-            profile_library_access: Port that resolves the caller's
-                allowed library_ids.
+            profile_viewing_policy: Port that resolves the caller's
+                viewing policy.
         """
         self._uow_factory = uow_factory
-        self._profile_library_access = profile_library_access
+        self._profile_viewing_policy = profile_viewing_policy
 
     async def execute(self, input_dto: GetMovieByIdInput) -> MovieOutput:
         """Execute the use case.
@@ -69,15 +70,17 @@ class GetMovieByIdUseCase:
 
         Raises:
             ResourceNotFoundException: If the movie does not exist or
-                lives in a library outside the caller's ACL.
+                falls outside the caller's viewing policy.
         """
-        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
-        if not allowed:
+        policy = await self._profile_viewing_policy.find_for_profile(
+            ProfileId(input_dto.profile_id)
+        )
+        if policy.denies_everything:
             raise ResourceNotFoundException.for_resource("Movie", input_dto.movie_id)
 
         movie_id = MovieId(input_dto.movie_id)
         async with self._uow_factory() as uow:
-            movie = await uow.movies.find_by_id(movie_id, allowed_library_ids=allowed)
+            movie = await uow.movies.find_by_id(movie_id, policy=policy)
 
         if movie is None:
             raise ResourceNotFoundException.for_resource("Movie", input_dto.movie_id)

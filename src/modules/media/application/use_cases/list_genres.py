@@ -5,12 +5,13 @@ from src.modules.media.application.dtos.catalog_dtos import (
     ListGenresInput,
     ListGenresOutput,
 )
-from src.modules.media.application.ports.profile_library_access_port import (
-    ProfileLibraryAccessPort,
+from src.modules.media.application.ports.profile_viewing_policy_port import (
+    ProfileViewingPolicyPort,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.domain.repositories.movie_repository import GenreRow
 from src.shared_kernel.value_objects import MediaType
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 class ListGenresUseCase:
@@ -42,17 +43,17 @@ class ListGenresUseCase:
     def __init__(
         self,
         uow_factory: MediaUnitOfWorkFactory,
-        profile_library_access: ProfileLibraryAccessPort,
+        profile_viewing_policy: ProfileViewingPolicyPort,
     ) -> None:
         """Initialize the use case.
 
         Args:
             uow_factory: Factory that opens a fresh media Unit of Work.
-            profile_library_access: Port that resolves the caller's
-                allowed library_ids.
+            profile_viewing_policy: Port that resolves the caller's
+                viewing policy.
         """
         self._uow_factory = uow_factory
-        self._profile_library_access = profile_library_access
+        self._profile_viewing_policy = profile_viewing_policy
 
     async def execute(self, input_dto: ListGenresInput) -> ListGenresOutput:
         """Execute the use case.
@@ -66,12 +67,14 @@ class ListGenresUseCase:
             ``ListGenresOutput`` with one ``GenreOutput`` per unique
             canonical genre present in the library (restricted to the
             selected media type when ``media_type`` is set, and
-            further restricted to the caller's
-            ``Profile.allowed_library_ids``). A deny-all profile
-            yields an empty list without opening a UoW.
+            further restricted to what the caller's ``ViewingPolicy``
+            permits). A deny-all profile yields an empty list without
+            opening a UoW.
         """
-        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
-        if not allowed:
+        policy = await self._profile_viewing_policy.find_for_profile(
+            ProfileId(input_dto.profile_id)
+        )
+        if policy.denies_everything:
             return ListGenresOutput(genres=[])
 
         # Skip the repo call for the excluded media type when a
@@ -83,7 +86,7 @@ class ListGenresUseCase:
             movie_rows = (
                 await uow.movies.list_genre_rows(
                     input_dto.lang,
-                    allowed_library_ids=allowed,
+                    policy=policy,
                 )
                 if input_dto.media_type is not MediaType.SERIES
                 else []
@@ -91,7 +94,7 @@ class ListGenresUseCase:
             series_rows = (
                 await uow.series.list_genre_rows(
                     input_dto.lang,
-                    allowed_library_ids=allowed,
+                    policy=policy,
                 )
                 if input_dto.media_type is not MediaType.MOVIE
                 else []

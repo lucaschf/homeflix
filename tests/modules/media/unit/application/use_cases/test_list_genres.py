@@ -10,11 +10,13 @@ from src.modules.media.application.dtos.catalog_dtos import (
 )
 from src.modules.media.application.use_cases.list_genres import ListGenresUseCase
 from src.modules.media.domain.repositories.movie_repository import GenreRow
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import MediaType
+from src.shared_kernel.value_objects.library_id import LibraryId
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     make_media_uow_mock,
-    make_profile_library_access,
+    make_profile_viewing_policy,
 )
 
 _LIBRARY_ID = "lib_test12345678"
@@ -43,7 +45,7 @@ class TestListGenresUseCase:
         ]
         use_case = ListGenresUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListGenresInput(profile_id=_PROFILE_ID))
@@ -67,7 +69,7 @@ class TestListGenresUseCase:
         mocks.series.list_genre_rows.return_value = []
         use_case = ListGenresUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListGenresInput(profile_id=_PROFILE_ID))
@@ -85,7 +87,7 @@ class TestListGenresUseCase:
         mocks.series.list_genre_rows.return_value = []
         use_case = ListGenresUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListGenresInput(profile_id=_PROFILE_ID, lang="pt-BR"))
@@ -100,7 +102,7 @@ class TestListGenresUseCase:
         mocks.series.list_genre_rows.return_value = []
         use_case = ListGenresUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListGenresInput(profile_id=_PROFILE_ID, lang="pt-BR"))
@@ -120,7 +122,7 @@ class TestListGenresUseCase:
         mocks.series.list_genre_rows.return_value = []
         use_case = ListGenresUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListGenresInput(profile_id=_PROFILE_ID, lang="pt-BR"))
@@ -134,7 +136,7 @@ class TestListGenresUseCase:
         mocks.series.list_genre_rows.return_value = []
         use_case = ListGenresUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListGenresInput(profile_id=_PROFILE_ID))
@@ -148,16 +150,16 @@ class TestListGenresUseCase:
         mocks.series.list_genre_rows.return_value = []
         use_case = ListGenresUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         await use_case.execute(ListGenresInput(profile_id=_PROFILE_ID, lang="pt-BR"))
 
         mocks.movies.list_genre_rows.assert_awaited_once_with(
-            "pt-BR", allowed_library_ids=[_LIBRARY_ID]
+            "pt-BR", policy=ViewingPolicy.unrestricted([_LIBRARY_ID])
         )
         mocks.series.list_genre_rows.assert_awaited_once_with(
-            "pt-BR", allowed_library_ids=[_LIBRARY_ID]
+            "pt-BR", policy=ViewingPolicy.unrestricted([_LIBRARY_ID])
         )
 
     @pytest.mark.asyncio
@@ -171,7 +173,7 @@ class TestListGenresUseCase:
         mocks.series.list_genre_rows.return_value = [_row(["Drama"])]
         use_case = ListGenresUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -191,7 +193,7 @@ class TestListGenresUseCase:
         mocks.series.list_genre_rows.return_value = [_row(["Drama"]), _row(["Thriller"])]
         use_case = ListGenresUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -207,7 +209,7 @@ class TestListGenresUseCase:
         mocks = make_media_uow_mock()
         use_case = ListGenresUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: []}),
         )
 
         result = await use_case.execute(ListGenresInput(profile_id=_PROFILE_ID))
@@ -226,13 +228,13 @@ class TestListGenresUseCase:
         mocks.series.list_genre_rows.return_value = []
         use_case = ListGenresUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: [_LIBRARY_ID]}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: [_LIBRARY_ID]}),
         )
 
         await use_case.execute(ListGenresInput(profile_id=_PROFILE_ID))
 
-        passed_movies = mocks.movies.list_genre_rows.await_args.kwargs["allowed_library_ids"]
-        passed_series = mocks.series.list_genre_rows.await_args.kwargs["allowed_library_ids"]
-        assert list(passed_movies) == [_LIBRARY_ID]
-        assert list(passed_series) == [_LIBRARY_ID]
-        assert _LIBRARY_ID_OTHER not in list(passed_movies)
+        passed_movies = mocks.movies.list_genre_rows.await_args.kwargs["policy"]
+        passed_series = mocks.series.list_genre_rows.await_args.kwargs["policy"]
+        assert passed_movies == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert passed_series == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert not passed_movies.permits_library(LibraryId(_LIBRARY_ID_OTHER))

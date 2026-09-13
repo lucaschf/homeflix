@@ -55,12 +55,18 @@ from src.modules.media.infrastructure.persistence.repositories._genre_helpers im
 from src.modules.media.infrastructure.persistence.repositories._path_prefix_helpers import (
     build_path_prefix_filters,
 )
+from src.modules.media.infrastructure.persistence.repositories._visibility_filter import (
+    library_acl_conditions,
+    library_scope_condition,
+    visibility_conditions,
+)
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects.library_id import LibraryId
 
 
 def _movie_filter_conditions(
     *,
-    allowed_library_ids: Sequence[LibraryId] | None,
+    policy: ViewingPolicy | None,
     library_id: str | None,
     has_tmdb_id: bool | None,
     needs_enrichment_review: bool | None,
@@ -77,13 +83,9 @@ def _movie_filter_conditions(
     Caller resolves it once, before the page query, so the same
     id set scopes both ``SELECT`` and ``COUNT(*)``.
     """
-    conditions: list[ColumnElement[bool]] = []
-    if allowed_library_ids is not None:
-        conditions.append(
-            MovieModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
-        )
+    conditions: list[ColumnElement[bool]] = list(visibility_conditions(MovieModel, policy))
     if library_id is not None:
-        conditions.append(MovieModel.library_id == library_id)
+        conditions.append(library_scope_condition(MovieModel, library_id))
     if has_tmdb_id is not None:
         conditions.append(
             MovieModel.tmdb_id.is_not(None) if has_tmdb_id else MovieModel.tmdb_id.is_(None),
@@ -121,13 +123,14 @@ class SQLAlchemyMovieRepository(MovieRepository):
         self,
         movie_id: MovieId,
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> Movie | None:
         """Find a movie by its ID.
 
         Args:
             movie_id: The movie's external ID.
-            allowed_library_ids: Optional per-profile ACL filter.
+            policy: The caller's viewing policy, or ``None`` for no
+                visibility filter.
 
         Returns:
             The Movie if found, None otherwise.
@@ -140,10 +143,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             )
             .options(selectinload(MovieModel.file_variants))
         )
-        if allowed_library_ids is not None:
-            stmt = stmt.where(
-                MovieModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
-            )
+        stmt = stmt.where(*visibility_conditions(MovieModel, policy))
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
 
@@ -238,7 +238,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         limit: int,
         *,
         include_total: bool = False,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
         library_id: str | None = None,
         has_tmdb_id: bool | None = None,
         needs_enrichment_review: bool | None = None,
@@ -258,11 +258,13 @@ class SQLAlchemyMovieRepository(MovieRepository):
         without an extra query.
 
         The admin-facing filters (``library_id``, ``has_tmdb_id``,
-        ``needs_enrichment_review``) compose with the per-profile ACL
-        in ``allowed_library_ids``: when both are present the row must
-        satisfy *both* constraints. Admin pages call without ACL
-        kwargs and pass these filters; the user-facing list does the
-        inverse.
+        ``needs_enrichment_review``) compose with the per-profile
+        viewing ``policy``: when both are present the row must
+        satisfy *both* constraints. The admin Catalog page and the
+        member grid share one path: both reach this through
+        ``ListMoviesUseCase`` with the active profile's policy, and
+        the admin page adds these filters on top, so it narrows
+        within what that profile may see rather than bypassing it.
 
         ``q`` is delegated to the ``movies_fts`` virtual table so the
         same i18n-aware tokenizer + indexed surface (title,
@@ -286,7 +288,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
                 )
 
         conditions = _movie_filter_conditions(
-            allowed_library_ids=allowed_library_ids,
+            policy=policy,
             library_id=library_id,
             has_tmdb_id=has_tmdb_id,
             needs_enrichment_review=needs_enrichment_review,
@@ -336,7 +338,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         self,
         limit: int,
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> Sequence[Movie]:
         """Return the top ``limit`` non-deleted movies, newest first.
 
@@ -351,10 +353,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             .where(MovieModel.deleted_at.is_(None))
             .options(selectinload(MovieModel.file_variants))
         )
-        if allowed_library_ids is not None:
-            stmt = stmt.where(
-                MovieModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
-            )
+        stmt = stmt.where(*visibility_conditions(MovieModel, policy))
         stmt = stmt.order_by(MovieModel.id.desc()).limit(limit)
         result = await self._session.execute(stmt)
         return [MovieMapper.to_entity(m) for m in result.scalars().all()]
@@ -363,14 +362,14 @@ class SQLAlchemyMovieRepository(MovieRepository):
         self,
         lang: str,
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> Sequence[GenreRow]:
         """Project the genre columns of every non-deleted movie row."""
         return await fetch_genre_rows(
             self._session,
             MovieModel,
             lang,
-            allowed_library_ids=allowed_library_ids,
+            policy=policy,
         )
 
     async def list_paginated_by_genre(
@@ -381,7 +380,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         *,
         sort: CatalogSort = CatalogSort.TITLE_ASC,
         lang: str = "en",
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies for a single genre, paginated under ``sort``.
 
@@ -403,7 +402,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             year_column=MovieModel.year,
             sort=sort,
             lang=lang,
-            allowed_library_ids=allowed_library_ids,
+            policy=policy,
         )
 
     async def list_paginated_by_cast_member(
@@ -413,7 +412,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         limit: int,
         *,
         lang: str = "en",
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> PaginatedResult[Movie]:
         """List movies whose ``cast`` JSON contains an entry for ``actor_name``.
 
@@ -460,10 +459,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             .options(selectinload(MovieModel.file_variants))
         )
 
-        if allowed_library_ids is not None:
-            stmt = stmt.where(
-                MovieModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
-            )
+        stmt = stmt.where(*visibility_conditions(MovieModel, policy))
 
         if decoded is not None:
             stmt = stmt.where(
@@ -500,7 +496,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         limit: int,
         *,
         with_backdrop: bool = False,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
         genres: Sequence[Genre] | None = None,
         exclude_ids: Sequence[MovieId] | None = None,
     ) -> Sequence[Movie]:
@@ -515,10 +511,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
                 MovieModel.backdrop_path.is_not(None),
                 MovieModel.backdrop_path != "",
             )
-        if allowed_library_ids is not None:
-            stmt = stmt.where(
-                MovieModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
-            )
+        stmt = stmt.where(*visibility_conditions(MovieModel, policy))
         if genres:
             stmt = stmt.where(any_genre_predicate(MovieModel, genres))
         if exclude_ids:
@@ -531,7 +524,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         self,
         movie_ids: Sequence[MovieId],
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> dict[str, Movie]:
         """Find multiple movies by their IDs in a single query."""
         if not movie_ids:
@@ -546,10 +539,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             )
             .options(selectinload(MovieModel.file_variants))
         )
-        if allowed_library_ids is not None:
-            stmt = stmt.where(
-                MovieModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
-            )
+        stmt = stmt.where(*visibility_conditions(MovieModel, policy))
         result = await self._session.execute(stmt)
         return {model.external_id: MovieMapper.to_entity(model) for model in result.scalars().all()}
 
@@ -557,7 +547,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         self,
         tmdb_ids: Sequence[int],
         *,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> dict[int, Movie]:
         """Find movies whose ``tmdb_id`` matches any of ``tmdb_ids``.
 
@@ -576,10 +566,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             )
             .options(selectinload(MovieModel.file_variants))
         )
-        if allowed_library_ids is not None:
-            stmt = stmt.where(
-                MovieModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
-            )
+        stmt = stmt.where(*visibility_conditions(MovieModel, policy))
         result = await self._session.execute(stmt)
         return {
             model.tmdb_id: MovieMapper.to_entity(model)
@@ -671,12 +658,8 @@ class SQLAlchemyMovieRepository(MovieRepository):
         conditions = [
             MovieModel.deleted_at.is_(None),
             MovieModel.needs_enrichment_review.is_(True),
+            *library_acl_conditions(MovieModel, allowed_library_ids),
         ]
-        if allowed_library_ids is not None:
-            allowed = list(allowed_library_ids)
-            if not allowed:
-                return []
-            conditions.append(MovieModel.library_id.in_(allowed))
 
         stmt = (
             select(MovieModel)
@@ -983,7 +966,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
         year_min: int | None = None,
         year_max: int | None = None,
         limit: int = 20,
-        allowed_library_ids: Sequence[LibraryId] | None = None,
+        policy: ViewingPolicy | None = None,
     ) -> list[tuple[Movie, float]]:
         """Full-text search using FTS5.
 
@@ -1040,10 +1023,7 @@ class SQLAlchemyMovieRepository(MovieRepository):
             stmt = stmt.where(MovieModel.year >= year_min)
         if year_max is not None:
             stmt = stmt.where(MovieModel.year <= year_max)
-        if allowed_library_ids is not None:
-            stmt = stmt.where(
-                MovieModel.library_id.in_([library_id.value for library_id in allowed_library_ids])
-            )
+        stmt = stmt.where(*visibility_conditions(MovieModel, policy))
 
         result = await self._session.execute(stmt)
         models = result.scalars().all()

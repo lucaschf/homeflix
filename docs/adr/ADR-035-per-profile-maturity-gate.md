@@ -268,9 +268,25 @@ um órgão fez e é preservada para o badge; uma frase de 44 caracteres não é 
 rótulo que este catálogo consegue guardar, e uma cópia truncada seria um rótulo
 errado na tela.
 
+### 5. A justificativa da decisão 7 está errada para `list_recently_added_catalog`
+
+A decisão 7 afirma que filtrar em memória em `list_recently_added_catalog`
+"desincronizaria `has_more`, `total_count` e cursores". Esse caminho não tem
+nenhum dos três: `ListRecentlyAddedCatalogOutput` carrega só `items`.
+
+A quebra real é outra, e igualmente irrecuperável em Python: cada repositório já
+aplicou `LIMIT` em SQL antes do merge por `created_at`, então um filtro posterior
+só encolhe a fileira e nunca alcança mais fundo no acervo. Medido com limite 12:
+os 20+20 mais recentes renderiam 14 itens na home com 173 filmes elegíveis, sem
+sinal nenhum de que faltou conteúdo. `find_random` (`ORDER BY random() LIMIT n`,
+usado pelo hero) tem a mesma patologia e também filtra em SQL.
+
+A conclusão — o filtro vai no `WHERE` — não muda.
+
 ## Histórico de Revisões
 
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-09-12 | Lucas | Criação inicial (Aceito) |
 | 2026-09-12 | Lucas | Emendas 1-4, levantadas na implementação das PRs #421, #422 e #423 |
+| 2026-09-12 | Lucas | Emenda 5, levantada no planejamento da PR 3a |

@@ -8,8 +8,8 @@ from src.modules.media.application.dtos.featured_dtos import (
     FeaturedItemOutput,
     GetFeaturedInput,
 )
-from src.modules.media.application.ports.profile_library_access_port import (
-    ProfileLibraryAccessPort,
+from src.modules.media.application.ports.profile_viewing_policy_port import (
+    ProfileViewingPolicyPort,
 )
 from src.modules.media.application.ports.watch_history_port import (
     WatchedTitle,
@@ -21,7 +21,8 @@ from src.modules.media.application.unit_of_work import (
 )
 from src.modules.media.domain.entities import Movie, Series
 from src.modules.media.domain.value_objects import Genre, MovieId, SeriesId
-from src.shared_kernel.value_objects.library_id import LibraryId
+from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 # How many recently watched titles feed the taste profile. Wide enough
 # that a couple of odd picks don't dominate, narrow enough that the
@@ -66,14 +67,14 @@ class GetFeaturedMediaUseCase:
     A profile with no history falls back to the original behaviour:
     random titles with a backdrop.
 
-    Per ADR-010, the pool is restricted to the caller's
-    ``Profile.allowed_library_ids`` via ``ProfileLibraryAccessPort``. A
+    Per ADR-010 and ADR-035, the pool is restricted to what the caller's
+    ``ViewingPolicy`` permits, resolved via ``ProfileViewingPolicyPort``. A
     deny-all profile short-circuits to an empty list without opening
     the UoW.
 
     Example:
         >>> use_case = GetFeaturedMediaUseCase(
-        ...     uow_factory, profile_library_access, watch_history
+        ...     uow_factory, profile_viewing_policy, watch_history
         ... )
         >>> items = await use_case.execute(
         ...     GetFeaturedInput(profile_id="prf_abc", media_type="all", limit=6)
@@ -83,20 +84,20 @@ class GetFeaturedMediaUseCase:
     def __init__(
         self,
         uow_factory: MediaUnitOfWorkFactory,
-        profile_library_access: ProfileLibraryAccessPort,
+        profile_viewing_policy: ProfileViewingPolicyPort,
         watch_history: WatchHistoryPort,
     ) -> None:
         """Initialize the use case.
 
         Args:
             uow_factory: Factory that opens a fresh media Unit of Work.
-            profile_library_access: Port that resolves the caller's
-                allowed library_ids.
+            profile_viewing_policy: Port that resolves the caller's
+                viewing policy.
             watch_history: Port that resolves the caller's recently
                 watched titles (movies and series).
         """
         self._uow_factory = uow_factory
-        self._profile_library_access = profile_library_access
+        self._profile_viewing_policy = profile_viewing_policy
         self._watch_history = watch_history
 
     async def execute(self, input_dto: GetFeaturedInput) -> list[FeaturedItemOutput]:
@@ -110,8 +111,10 @@ class GetFeaturedMediaUseCase:
             recommendations come first, random backfill last; each group
             is shuffled so the hero rotates between visits.
         """
-        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
-        if not allowed:
+        policy = await self._profile_viewing_policy.find_for_profile(
+            ProfileId(input_dto.profile_id)
+        )
+        if policy.denies_everything:
             return []
 
         history = await self._watch_history.list_recently_watched(
@@ -133,7 +136,7 @@ class GetFeaturedMediaUseCase:
 
             if want_movies:
                 matched_movies, extra_movies = await self._pick_movies(
-                    uow, limit, allowed, top_genres, watched_movie_ids
+                    uow, limit, policy, top_genres, watched_movie_ids
                 )
                 recommended.extend(
                     self._movie_to_output(m, lang, top_genres) for m in matched_movies
@@ -142,7 +145,7 @@ class GetFeaturedMediaUseCase:
 
             if want_series:
                 matched_series, extra_series = await self._pick_series(
-                    uow, limit, allowed, top_genres, watched_series_ids
+                    uow, limit, policy, top_genres, watched_series_ids
                 )
                 recommended.extend(
                     self._series_to_output(s, lang, top_genres) for s in matched_series
@@ -181,7 +184,7 @@ class GetFeaturedMediaUseCase:
     async def _pick_movies(
         uow: MediaUnitOfWork,
         limit: int,
-        allowed: Sequence[LibraryId],
+        policy: ViewingPolicy,
         genres: Sequence[Genre],
         exclude_ids: Sequence[MovieId],
     ) -> tuple[list[Movie], list[Movie]]:
@@ -195,7 +198,7 @@ class GetFeaturedMediaUseCase:
             await uow.movies.find_random(
                 limit,
                 with_backdrop=True,
-                allowed_library_ids=allowed,
+                policy=policy,
                 genres=list(genres),
                 exclude_ids=list(exclude_ids),
             )
@@ -209,7 +212,7 @@ class GetFeaturedMediaUseCase:
             await uow.movies.find_random(
                 missing,
                 with_backdrop=True,
-                allowed_library_ids=allowed,
+                policy=policy,
                 genres=[],
                 exclude_ids=already,
             )
@@ -220,7 +223,7 @@ class GetFeaturedMediaUseCase:
     async def _pick_series(
         uow: MediaUnitOfWork,
         limit: int,
-        allowed: Sequence[LibraryId],
+        policy: ViewingPolicy,
         genres: Sequence[Genre],
         exclude_ids: Sequence[SeriesId],
     ) -> tuple[list[Series], list[Series]]:
@@ -229,7 +232,7 @@ class GetFeaturedMediaUseCase:
             await uow.series.find_random(
                 limit,
                 with_backdrop=True,
-                allowed_library_ids=allowed,
+                policy=policy,
                 genres=list(genres),
                 exclude_ids=list(exclude_ids),
             )
@@ -243,7 +246,7 @@ class GetFeaturedMediaUseCase:
             await uow.series.find_random(
                 missing,
                 with_backdrop=True,
-                allowed_library_ids=allowed,
+                policy=policy,
                 genres=[],
                 exclude_ids=already,
             )

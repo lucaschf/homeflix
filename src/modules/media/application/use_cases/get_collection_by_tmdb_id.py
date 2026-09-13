@@ -10,14 +10,15 @@ from src.modules.media.application.dtos.collection_dtos import (
     CollectionPartOutput,
     GetCollectionByTmdbIdInput,
 )
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 if TYPE_CHECKING:
     from src.modules.media.application.ports import (
         CatalogRequestLookupPort,
         CatalogRequestStatus,
     )
-    from src.modules.media.application.ports.profile_library_access_port import (
-        ProfileLibraryAccessPort,
+    from src.modules.media.application.ports.profile_viewing_policy_port import (
+        ProfileViewingPolicyPort,
     )
     from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
     from src.modules.media.domain.entities.movie import Movie
@@ -68,7 +69,7 @@ class GetCollectionByTmdbIdUseCase:
         uow_factory: MediaUnitOfWorkFactory,
         metadata_provider: MetadataProvider,
         catalog_request_lookup: CatalogRequestLookupPort,
-        profile_library_access: ProfileLibraryAccessPort,
+        profile_viewing_policy: ProfileViewingPolicyPort,
     ) -> None:
         """Initialize the use case.
 
@@ -77,15 +78,15 @@ class GetCollectionByTmdbIdUseCase:
             metadata_provider: TMDB (or compatible) metadata client.
             catalog_request_lookup: Cross-BC port for resolving
                 per-title request/notification status.
-            profile_library_access: Port that resolves the caller's
-                allowed library_ids. The TMDB call itself is unaffected
+            profile_viewing_policy: Port that resolves the caller's
+                viewing policy. The TMDB call itself is unaffected
                 — only the local-catalog overlay (which titles render
                 with ``in_catalog=True``) is restricted.
         """
         self._uow_factory = uow_factory
         self._metadata = metadata_provider
         self._catalog_request_lookup = catalog_request_lookup
-        self._profile_library_access = profile_library_access
+        self._profile_viewing_policy = profile_viewing_policy
 
     async def execute(
         self,
@@ -107,17 +108,17 @@ class GetCollectionByTmdbIdUseCase:
                 str(input_dto.tmdb_id),
             )
 
-        allowed = await self._profile_library_access.find_for_profile(input_dto.profile_id)
+        policy = await self._profile_viewing_policy.find_for_profile(
+            ProfileId(input_dto.profile_id)
+        )
 
         # Cross-reference local catalog by TMDB id so we can stitch
         # the local mov_xxx + duration + artwork onto each TMDB part.
         part_tmdb_ids = [p.tmdb_id for p in collection.parts]
         local_movies: dict[int, Movie] = {}
-        if allowed:
+        if not policy.denies_everything:
             async with self._uow_factory() as uow:
-                local_movies = await uow.movies.find_by_tmdb_ids(
-                    part_tmdb_ids, allowed_library_ids=allowed
-                )
+                local_movies = await uow.movies.find_by_tmdb_ids(part_tmdb_ids, policy=policy)
 
         # Per-title catalog-request status. Missing keys mean "no
         # request / no subscription" — the merge step defaults to

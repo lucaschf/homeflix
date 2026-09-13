@@ -39,7 +39,7 @@ class ListGenresInput:
 
     Attributes:
         profile_id: Caller's prefixed profile id. The use case
-            consults ``ProfileLibraryAccessPort`` and restricts the
+            consults ``ProfileViewingPolicyPort`` and restricts the
             aggregation to libraries the profile may see; a deny-all
             profile yields an empty genre list without opening a UoW.
         lang: Language code used to resolve the localized display
@@ -110,7 +110,7 @@ class ListByGenreInput:
 
     Attributes:
         profile_id: Caller's prefixed profile id. The use case
-            consults ``ProfileLibraryAccessPort`` and restricts both
+            consults ``ProfileViewingPolicyPort`` and restricts both
             streams to libraries the profile may see; a deny-all
             profile yields an empty page without opening a UoW.
         genre: Canonical English genre id — same value the frontend
@@ -159,7 +159,7 @@ class ListRecentlyAddedCatalogInput:
 
     Attributes:
         profile_id: Caller's prefixed profile id. The use case
-            consults ``ProfileLibraryAccessPort`` and restricts both
+            consults ``ProfileViewingPolicyPort`` and restricts both
             streams to libraries the profile may see; a deny-all
             profile yields an empty list without opening a UoW.
         limit: Maximum number of mixed items to return. Routes clamp

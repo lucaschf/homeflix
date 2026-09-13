@@ -9,10 +9,12 @@ from src.modules.media.application.dtos import (
 )
 from src.modules.media.application.use_cases import ListRecentlyAddedMoviesUseCase
 from src.modules.media.domain.entities import Movie
+from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.value_objects.library_id import LibraryId
 from tests.modules.media.unit.conftest import (
-    FakeProfileLibraryAccessPort,
+    FakeProfileViewingPolicyPort,
     make_media_uow_mock,
-    make_profile_library_access,
+    make_profile_viewing_policy,
 )
 
 _LIBRARY_ID = "lib_test12345678"
@@ -49,7 +51,7 @@ class TestListRecentlyAddedMoviesUseCase:
         ]
         use_case = ListRecentlyAddedMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -66,13 +68,13 @@ class TestListRecentlyAddedMoviesUseCase:
         mocks.movies.list_recently_added.return_value = []
         use_case = ListRecentlyAddedMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         await use_case.execute(ListRecentlyAddedMoviesInput(profile_id=_PROFILE_ID, limit=15))
 
         mocks.movies.list_recently_added.assert_awaited_once_with(
-            15, allowed_library_ids=[_LIBRARY_ID]
+            15, policy=ViewingPolicy.unrestricted([_LIBRARY_ID])
         )
 
     @pytest.mark.asyncio
@@ -81,13 +83,13 @@ class TestListRecentlyAddedMoviesUseCase:
         mocks.movies.list_recently_added.return_value = []
         use_case = ListRecentlyAddedMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         await use_case.execute(ListRecentlyAddedMoviesInput(profile_id=_PROFILE_ID))
 
         mocks.movies.list_recently_added.assert_awaited_once_with(
-            20, allowed_library_ids=[_LIBRARY_ID]
+            20, policy=ViewingPolicy.unrestricted([_LIBRARY_ID])
         )
 
     @pytest.mark.asyncio
@@ -96,7 +98,7 @@ class TestListRecentlyAddedMoviesUseCase:
         mocks.movies.list_recently_added.return_value = []
         use_case = ListRecentlyAddedMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(ListRecentlyAddedMoviesInput(profile_id=_PROFILE_ID))
@@ -109,7 +111,7 @@ class TestListRecentlyAddedMoviesUseCase:
         mocks.movies.list_recently_added.return_value = [_make_movie("A Movie", 2024)]
         use_case = ListRecentlyAddedMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=make_profile_library_access(),
+            profile_viewing_policy=make_profile_viewing_policy(),
         )
 
         result = await use_case.execute(
@@ -124,7 +126,7 @@ class TestListRecentlyAddedMoviesUseCase:
         mocks = make_media_uow_mock()
         use_case = ListRecentlyAddedMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: []}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: []}),
         )
 
         result = await use_case.execute(ListRecentlyAddedMoviesInput(profile_id=_PROFILE_ID))
@@ -143,12 +145,12 @@ class TestListRecentlyAddedMoviesUseCase:
         ]
         use_case = ListRecentlyAddedMoviesUseCase(
             uow_factory=mocks.factory,
-            profile_library_access=FakeProfileLibraryAccessPort({_PROFILE_ID: [_LIBRARY_ID]}),
+            profile_viewing_policy=FakeProfileViewingPolicyPort({_PROFILE_ID: [_LIBRARY_ID]}),
         )
 
         result = await use_case.execute(ListRecentlyAddedMoviesInput(profile_id=_PROFILE_ID))
 
         assert [m.title for m in result.movies] == ["Visible"]
-        passed = mocks.movies.list_recently_added.await_args.kwargs["allowed_library_ids"]
-        assert list(passed) == [_LIBRARY_ID]
-        assert _LIBRARY_ID_OTHER not in list(passed)
+        passed = mocks.movies.list_recently_added.await_args.kwargs["policy"]
+        assert passed == ViewingPolicy.unrestricted([_LIBRARY_ID])
+        assert not passed.permits_library(LibraryId(_LIBRARY_ID_OTHER))
