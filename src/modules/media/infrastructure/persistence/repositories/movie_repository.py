@@ -2,9 +2,19 @@
 
 import json
 from collections.abc import Sequence
-from typing import Protocol
 
-from sqlalchemy import ColumnElement, and_, func, or_, select, text, update
+from sqlalchemy import (
+    ColumnElement,
+    and_,
+    column,
+    func,
+    literal_column,
+    or_,
+    select,
+    table,
+    text,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -31,7 +41,6 @@ from src.modules.media.domain.value_objects import (
     FilePath,
     Genre,
     MovieId,
-    Title,
 )
 from src.modules.media.infrastructure.persistence.mappers import MovieMapper
 from src.modules.media.infrastructure.persistence.models import (
@@ -970,10 +979,11 @@ class SQLAlchemyMovieRepository(MovieRepository):
     ) -> list[tuple[Movie, float]]:
         """Full-text search using FTS5.
 
-        Queries the ``movies_fts`` virtual table for rows matching
-        ``query``, joins back to the ``movies`` table to load the
-        full ORM model, and applies optional genre/year filters as
-        ``WHERE`` clauses on the main table.
+        Joins the ``movies_fts`` virtual table to ``movies`` in a single
+        query, so the genre/year filters and the viewing policy narrow
+        the hits before ``LIMIT`` cuts the page. Filtering after a ranked
+        top-N instead would hand a restricted profile a short page even
+        when enough visible titles match.
 
         FTS5 query syntax: ``*`` suffix triggers prefix matching
         (e.g. ``incep*`` → Inception). The repository appends ``*``
@@ -984,37 +994,45 @@ class SQLAlchemyMovieRepository(MovieRepository):
         if not fts_query:
             return []
 
-        # Step 1: FTS5 MATCH to get matching rowids + rank. ``bm25()`` comes
-        # back NULL for very broad prefix queries (a single letter matching
-        # nearly every document); COALESCE keeps the rank sortable and
-        # places those rows after any genuinely ranked hit.
-        sql = """
-            SELECT movies_fts.rowid, COALESCE(bm25(movies_fts), 0.0) AS rank
-            FROM movies_fts
-            WHERE movies_fts MATCH :query
-            ORDER BY rank
-            LIMIT :limit
-        """
-        fts_result = await self._session.execute(
-            text(sql),
-            {"query": fts_query, "limit": limit * 2},
+        # ``movies_fts`` is an external-content index
+        # (``content_rowid='id'``), so its rowid is ``movies.id``. Only
+        # the rowid and ``bm25()`` are read from it: the ``localized_*``
+        # columns it declares do not exist on ``movies`` and fail to load.
+        fts = table("movies_fts", column("rowid"))
+        # ``bm25()`` comes back NULL whenever the index's document counter
+        # sits below the number of rows the query matches: the IDF turns
+        # NaN, which SQLite returns as NULL. COALESCE keeps the rank
+        # sortable and places those rows after any genuinely ranked hit.
+        #
+        # The MATCH runs in a MATERIALIZED CTE so it is evaluated exactly
+        # once, whatever join order the planner picks. Written as a plain
+        # join, the maturity predicate (``minimum_age <= :n``) makes the
+        # ``(library_id, minimum_age)`` index look cheaper to SQLite's
+        # planner, which then walks ``movies`` through it and re-runs the
+        # MATCH once per eligible row — seconds instead of milliseconds on
+        # a real catalog. Keep the CTE; ``bm25()`` stays inside it, where
+        # the index is scanned.
+        hits = (
+            select(
+                fts.c.rowid.label("id"),
+                func.coalesce(func.bm25(literal_column("movies_fts")), 0.0).label("rank"),
+            )
+            .where(literal_column("movies_fts").op("MATCH")(fts_query))
+            .cte("hits")
+            .prefix_with("MATERIALIZED")
         )
-        fts_rows = fts_result.fetchall()
-        if not fts_rows:
-            return []
 
-        rowid_to_rank = {row[0]: row[1] for row in fts_rows}
-
-        # Step 2: Load only the root MovieModel rows. ``SearchCatalogUseCase``
+        # Only the root MovieModel columns are loaded. ``SearchCatalogUseCase``
         # builds ``SearchItemOutput`` from root columns + ``localized`` JSON
         # only — it never touches ``movie.files``. Skipping ``file_variants``
         # here avoids a fan-out of one extra query plus N rows of file
         # metadata per hit, which on a 30-result search with rich
         # multi-resolution variants meant thousands of rows fetched and
         # immediately discarded.
-        stmt = select(MovieModel).where(
-            MovieModel.id.in_(rowid_to_rank.keys()),
-            MovieModel.deleted_at.is_(None),
+        stmt = (
+            select(MovieModel, hits.c.rank)
+            .join(hits, MovieModel.id == hits.c.id)
+            .where(MovieModel.deleted_at.is_(None))
         )
         if genre:
             delimited = "," + MovieModel.genres + ","
@@ -1024,18 +1042,18 @@ class SQLAlchemyMovieRepository(MovieRepository):
         if year_max is not None:
             stmt = stmt.where(MovieModel.year <= year_max)
         stmt = stmt.where(*visibility_conditions(MovieModel, policy))
+        # ``hits.rank`` is the CTE's coalesced score, not FTS5's hidden
+        # ``rank`` column. Ties are routine — every hit of a NULL-``bm25()``
+        # query scores 0.0 — so the tiebreak decides which titles make the
+        # page: the stored title under SQLite's BINARY collation (code point
+        # order, no case folding), then id for identical titles.
+        stmt = stmt.order_by(hits.c.rank, MovieModel.title, MovieModel.id).limit(limit)
 
         result = await self._session.execute(stmt)
-        models = result.scalars().all()
-
-        # Step 3: Map to shallow entities (files=[]) and pair with rank.
-        hits = [
-            (MovieMapper.to_entity(m, include_files=False), rowid_to_rank[m.id])
-            for m in models
-            if m.id in rowid_to_rank
+        return [
+            (MovieMapper.to_entity(model, include_files=False), hit_rank)
+            for model, hit_rank in result.all()
         ]
-        hits.sort(key=_by_rank_then_title)
-        return hits[:limit]
 
 
 async def _movie_fts_matching_ids(session: AsyncSession, query: str) -> list[int]:
@@ -1064,27 +1082,6 @@ async def _movie_fts_matching_ids(session: AsyncSession, query: str) -> list[int
     """
     result = await session.execute(text(sql), {"query": fts_query})
     return [row[0] for row in result.fetchall()]
-
-
-class _Titled(Protocol):
-    """Anything exposing a ``title`` value object — Movie or Series."""
-
-    @property
-    def title(self) -> Title:
-        ...
-
-
-def _by_rank_then_title(hit: tuple[_Titled, float]) -> tuple[float, str]:
-    """Sort key for FTS hits: best rank first, title as a stable tiebreak.
-
-    ``bm25()`` is a negative float where more-negative means more relevant,
-    so ascending order is "most relevant first". Ranks tie whenever FTS5
-    returned NULL (coalesced to ``0.0``) for every row of a very broad
-    prefix query; the title tiebreak keeps that result page deterministic
-    instead of leaking rowid order.
-    """
-    entity, rank = hit
-    return rank, entity.title.value
 
 
 def _prepare_fts_query(query: str) -> str:

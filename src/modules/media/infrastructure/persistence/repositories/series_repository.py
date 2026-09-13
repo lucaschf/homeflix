@@ -4,7 +4,19 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, and_, distinct, func, or_, select, text, update
+from sqlalchemy import (
+    ColumnElement,
+    and_,
+    column,
+    distinct,
+    func,
+    literal_column,
+    or_,
+    select,
+    table,
+    text,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1366,11 +1378,10 @@ class SQLAlchemySeriesRepository(SeriesRepository):
     ) -> list[tuple[Series, float]]:
         """Full-text search using FTS5.
 
-        Same pattern as ``SQLAlchemyMovieRepository.search`` — queries
-        ``series_fts``, joins back to ``series``, applies filters.
+        Same pattern as ``SQLAlchemyMovieRepository.search`` — joins
+        ``series_fts`` to ``series`` in one query, filters, then limits.
         """
         from src.modules.media.infrastructure.persistence.repositories.movie_repository import (
-            _by_rank_then_title,
             _prepare_fts_query,
         )
 
@@ -1378,24 +1389,22 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         if not fts_query:
             return []
 
-        # ``bm25()`` comes back NULL for very broad prefix queries; see
-        # ``SQLAlchemyMovieRepository.search`` for the rationale.
-        sql = """
-            SELECT series_fts.rowid, COALESCE(bm25(series_fts), 0.0) AS rank
-            FROM series_fts
-            WHERE series_fts MATCH :query
-            ORDER BY rank
-            LIMIT :limit
-        """
-        fts_result = await self._session.execute(
-            text(sql),
-            {"query": fts_query, "limit": limit * 2},
+        # External-content index, so rowid is ``series.id``; the NULL
+        # ``bm25()``, the columns read from the index and the ordering
+        # follow ``SQLAlchemyMovieRepository.search`` — see the rationale
+        # there. So does the MATERIALIZED CTE: as a plain join, the
+        # maturity predicate lets the ``(library_id, minimum_age)`` index
+        # drive and the MATCH re-run once per eligible row.
+        fts = table("series_fts", column("rowid"))
+        hits = (
+            select(
+                fts.c.rowid.label("id"),
+                func.coalesce(func.bm25(literal_column("series_fts")), 0.0).label("rank"),
+            )
+            .where(literal_column("series_fts").op("MATCH")(fts_query))
+            .cte("hits")
+            .prefix_with("MATERIALIZED")
         )
-        fts_rows = fts_result.fetchall()
-        if not fts_rows:
-            return []
-
-        rowid_to_rank = {row[0]: row[1] for row in fts_rows}
 
         # Load only the root ``SeriesModel`` rows. ``SearchCatalogUseCase``
         # builds ``SearchItemOutput`` from root columns + ``localized`` JSON
@@ -1405,9 +1414,10 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         # 22-episode series with multi-resolution variants) just to be
         # discarded by the use case. Also keeps ``EpisodeMapper`` from
         # lazy-loading ``file_variants`` outside the session greenlet.
-        stmt = select(SeriesModel).where(
-            SeriesModel.id.in_(rowid_to_rank.keys()),
-            SeriesModel.deleted_at.is_(None),
+        stmt = (
+            select(SeriesModel, hits.c.rank)
+            .join(hits, SeriesModel.id == hits.c.id)
+            .where(SeriesModel.deleted_at.is_(None))
         )
         if genre:
             delimited = "," + SeriesModel.genres + ","
@@ -1417,17 +1427,13 @@ class SQLAlchemySeriesRepository(SeriesRepository):
         if year_max is not None:
             stmt = stmt.where(SeriesModel.start_year <= year_max)
         stmt = stmt.where(*visibility_conditions(SeriesModel, policy))
+        stmt = stmt.order_by(hits.c.rank, SeriesModel.title, SeriesModel.id).limit(limit)
 
         result = await self._session.execute(stmt)
-        models = result.scalars().unique().all()
-
-        hits = [
-            (SeriesMapper.to_entity(m, include_seasons=False), rowid_to_rank[m.id])
-            for m in models
-            if m.id in rowid_to_rank
+        return [
+            (SeriesMapper.to_entity(model, include_seasons=False), hit_rank)
+            for model, hit_rank in result.unique().all()
         ]
-        hits.sort(key=_by_rank_then_title)
-        return hits[:limit]
 
 
 __all__ = ["SQLAlchemySeriesRepository"]

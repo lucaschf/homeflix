@@ -96,7 +96,7 @@ Hash em `User.parental_pin_hash`, via o `PasswordHasherPort` que já existe (`pa
 | Criança com sessão de admin altera a classificação do próprio título | Média | Alto | Decisão 8 — autoridade de admin suspensa sob perfil restrito |
 | Lockout de PIN tranca o responsável em todos os devices | Média | Baixo | Contadores em `access_tokens`, por device |
 | Índice composto não usado por causa de `COALESCE` no predicado de idade | Média | Médio | Escolher o ramo `OR min_age IS NULL` no build da query em Python |
-| Busca perde resultados: o pré-query FTS5 corta em `limit*2` antes de qualquer filtro (`movie_repository.py:1013-1017`) | Alta | Baixo | Aumentar o multiplicador no PR de enforcement; indexar no FTS é follow-up (colunas FTS5 não têm afinidade de tipo e exigiriam `CAST`) |
+| Busca perde resultados: o pré-query FTS5 cortava em `limit*2` antes de qualquer filtro | Alta | Baixo | **Resolvido na PR 3b:** query única com `MATCH` numa CTE `MATERIALIZED` e visibilidade, gênero e ano no `WHERE` antes do `LIMIT`. Aumentar o multiplicador foi rejeitado por ser palpite não medido. A CTE materializada também evita que o predicado de idade faça o planner reexecutar o `MATCH` por linha elegível |
 | Contrato do payload de perfil quebra o frontend na janela entre backend e front | Média | Médio | Teste de contrato garantindo shape idêntico com `is_kids` derivado |
 
 ## Alternativas Consideradas
