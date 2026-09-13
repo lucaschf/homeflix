@@ -70,6 +70,25 @@ class TestCollectionsProfileViewingPolicyAdapter:
         # ``Profile`` has no maturity limit yet, so the age axis is open.
         assert policy.maturity_limit is None
 
+    async def test_should_return_the_policy_the_profile_derives(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        # ``Profile.viewing_policy()`` is the single source; once it
+        # grows the maturity axis, the adapter must carry it unchanged.
+        factory = SqlAlchemyIdentityUnitOfWorkFactory(session_factory)
+        profile = await _seed_profile(
+            factory,
+            email="lucas@homeflix.local",
+            profile_name="Lucas",
+            allowed_library_ids=["lib_movies123456"],
+        )
+
+        adapter = _make_adapter(session_factory)
+
+        assert profile.id is not None
+        assert await adapter.find_for_profile(profile.id) == profile.viewing_policy()
+
     async def test_should_return_deny_all_policy_for_default_deny_profile(
         self,
         session_factory: async_sessionmaker[AsyncSession],
@@ -97,6 +116,7 @@ class TestCollectionsProfileViewingPolicyAdapter:
 
         policy = await adapter.find_for_profile(ProfileId("prf_doesnotexist"))
         assert policy.denies_everything is True
+        assert policy == ViewingPolicy(allowed_library_ids=[])
 
     async def test_should_isolate_acls_across_profiles(
         self,
