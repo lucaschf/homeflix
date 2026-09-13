@@ -5,6 +5,10 @@ from src.modules.media.domain.repositories.artwork_mirror_repository import (
     RemoteArtworkRow,
     SeriesArtworkMirrorRepository,
 )
+from src.modules.media.domain.repositories.catalog_access_reader import (
+    CatalogAccessReader,
+    TitleAccess,
+)
 from src.modules.media.domain.repositories.credits_detection_repository import (
     CreditsStatusRow,
     MovieCreditsDetectionRepository,
@@ -36,6 +40,7 @@ from src.modules.media.domain.repositories.series_repository import (
 )
 
 __all__ = [
+    "CatalogAccessReader",
     "CreditsStatusRow",
     "GenreRow",
     "IntroDetectionRunRepository",
@@ -54,4 +59,5 @@ __all__ = [
     "SeriesIntroDetectionRepository",
     "SeriesRepository",
     "SeriesScrubPreviewRepository",
+    "TitleAccess",
 ]
