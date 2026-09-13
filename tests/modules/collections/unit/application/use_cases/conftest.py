@@ -14,8 +14,13 @@ from src.modules.collections.application.ports import (
 )
 from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import MediaType
+from src.shared_kernel.value_objects.age_rating import AgeRating
 
 MediaSummaryFactory = Callable[..., MediaSummary]
+
+#: Libraries the summary factories place titles in by default.
+MOVIES_LIBRARY_ID = "lib_movies000001"
+SERIES_LIBRARY_ID = "lib_series000001"
 
 
 @pytest.fixture
@@ -31,7 +36,8 @@ def movie_summary() -> MediaSummaryFactory:
         genres: tuple[str, ...] = ("Action", "Sci-Fi"),
         resolution: str | None = "4K",
         hdr: bool = True,
-        library_id: str | None = "lib_movies00001",
+        library_id: str | None = MOVIES_LIBRARY_ID,
+        minimum_age: AgeRating | None = None,
     ) -> MediaSummary:
         return MediaSummary(
             media_id=media_id,
@@ -44,6 +50,7 @@ def movie_summary() -> MediaSummaryFactory:
             resolution=resolution,
             hdr=hdr,
             library_id=library_id,
+            minimum_age=minimum_age,
         )
 
     return _factory
@@ -59,7 +66,8 @@ def series_summary() -> MediaSummaryFactory:
         poster_path: str | None = "https://image.tmdb.org/series.jpg",
         year: int | None = 2008,
         genres: tuple[str, ...] = ("Drama",),
-        library_id: str | None = "lib_series00001",
+        library_id: str | None = SERIES_LIBRARY_ID,
+        minimum_age: AgeRating | None = None,
     ) -> MediaSummary:
         return MediaSummary(
             media_id=media_id,
@@ -69,6 +77,7 @@ def series_summary() -> MediaSummaryFactory:
             year=year,
             genres=genres,
             library_id=library_id,
+            minimum_age=minimum_age,
         )
 
     return _factory
@@ -88,14 +97,19 @@ def make_progress_lookup_mock(progress: dict[str, float] | None = None) -> Async
     return mock
 
 
-def make_profile_viewing_policy_mock(*library_ids: str) -> AsyncMock:
+def make_profile_viewing_policy_mock(
+    *library_ids: str, maturity_limit: AgeRating | None = None
+) -> AsyncMock:
     """Build an ``AsyncMock`` of ``ProfileViewingPolicyPort``.
 
-    Returns a library-only ``ViewingPolicy`` over the given ids for any
-    profile. An empty call means deny-all.
+    Returns a ``ViewingPolicy`` over the given ids, with the given
+    maturity limit (none by default), for any profile. No ids means
+    deny-all.
     """
     mock = AsyncMock(spec=ProfileViewingPolicyPort)
-    mock.find_for_profile.return_value = ViewingPolicy.unrestricted(library_ids)
+    mock.find_for_profile.return_value = ViewingPolicy(
+        allowed_library_ids=library_ids, maturity_limit=maturity_limit
+    )
     return mock
 
 

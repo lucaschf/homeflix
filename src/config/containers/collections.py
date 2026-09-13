@@ -103,6 +103,7 @@ class CollectionsContainer(containers.DeclarativeContainer):
         uow_factory=collections_unit_of_work_factory,
         media_lookup=media_lookup,
         progress_lookup=progress_lookup,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     check_watchlist = providers.Factory(

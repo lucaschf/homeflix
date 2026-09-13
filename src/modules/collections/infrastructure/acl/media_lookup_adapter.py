@@ -33,9 +33,14 @@ class MediaLookupAdapter(MediaLookupPort):
         if not movie_ids and not series_ids:
             return result
 
+        # ``policy=None`` on purpose: the use cases apply the caller's
+        # viewing policy in Python, because they must tell a title hidden
+        # from the caller (counted or silently dropped) apart from one
+        # removed from the catalog (skipped) — a filtered query would
+        # return both as absent.
         async with self._media_uow_factory() as uow:
             if movie_ids:
-                movies_map = await uow.movies.find_by_ids(list(movie_ids))
+                movies_map = await uow.movies.find_by_ids(list(movie_ids), policy=None)
                 for media_id, movie in movies_map.items():
                     best = movie.best_file
                     result[(MediaType.MOVIE, media_id)] = MediaSummary(
@@ -49,10 +54,11 @@ class MediaLookupAdapter(MediaLookupPort):
                         resolution=best.resolution.value if best else None,
                         hdr=best.hdr_format is not None if best else False,
                         library_id=movie.library_id,
+                        minimum_age=movie.minimum_age,
                     )
 
             if series_ids:
-                series_map = await uow.series.find_by_ids(list(series_ids))
+                series_map = await uow.series.find_by_ids(list(series_ids), policy=None)
                 for media_id, series in series_map.items():
                     # Runtime/resolution/HDR live on the series' episodes,
                     # which the batch lookup doesn't hydrate — left null
@@ -65,6 +71,7 @@ class MediaLookupAdapter(MediaLookupPort):
                         year=series.start_year.value,
                         genres=tuple(series.get_genres(lang)),
                         library_id=series.library_id,
+                        minimum_age=series.minimum_age,
                     )
 
         return result

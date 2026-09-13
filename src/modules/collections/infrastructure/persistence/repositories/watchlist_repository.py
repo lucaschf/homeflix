@@ -1,10 +1,14 @@
 """SQLAlchemy implementation of WatchlistRepository."""
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.collections.domain.entities import WatchlistItem
-from src.modules.collections.domain.repositories import WatchlistRepository
+from src.modules.collections.domain.repositories import (
+    WatchlistCursor,
+    WatchlistPage,
+    WatchlistRepository,
+)
 from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.modules.collections.infrastructure.persistence.mappers import (
     WatchlistItemMapper,
@@ -88,23 +92,49 @@ class SQLAlchemyWatchlistRepository(WatchlistRepository):
         await self._session.flush()
         return True
 
-    async def list_all(
+    async def list_page(
         self,
         profile_id: ProfileId,
-        limit: int = 100,
-    ) -> list[WatchlistItem]:
-        """List the profile's watchlist entries ordered by most recently added."""
-        stmt = (
-            select(WatchlistItemModel)
-            .where(
-                WatchlistItemModel.profile_id == str(profile_id),
-                WatchlistItemModel.deleted_at.is_(None),
-            )
-            .order_by(WatchlistItemModel.added_at.desc())
-            .limit(limit)
+        *,
+        limit: int,
+        after: WatchlistCursor | None,
+    ) -> WatchlistPage:
+        """Read one keyset page of the profile's watchlist, most recently added first.
+
+        The cursor is bound through the ``added_at`` column type, so it is
+        rendered in the same text form SQLite stores and the comparison
+        stays chronological.
+        """
+        stmt = select(WatchlistItemModel).where(
+            WatchlistItemModel.profile_id == str(profile_id),
+            WatchlistItemModel.deleted_at.is_(None),
         )
+        if after is not None:
+            stmt = stmt.where(
+                or_(
+                    WatchlistItemModel.added_at < after.added_at,
+                    and_(
+                        WatchlistItemModel.added_at == after.added_at,
+                        WatchlistItemModel.media_id < after.media_id,
+                    ),
+                )
+            )
+        stmt = stmt.order_by(
+            WatchlistItemModel.added_at.desc(),
+            WatchlistItemModel.media_id.desc(),
+        ).limit(limit)
         result = await self._session.execute(stmt)
-        return [WatchlistItemMapper.to_entity(m) for m in result.scalars().all()]
+        models = list(result.scalars().all())
+
+        next_cursor = (
+            WatchlistCursor(added_at=models[-1].added_at, media_id=models[-1].media_id)
+            if models and len(models) >= limit
+            else None
+        )
+        return WatchlistPage(
+            items=[WatchlistItemMapper.to_entity(m) for m in models],
+            next_cursor=next_cursor,
+        )
 
     async def exists(self, media_id: CollectionMediaId, profile_id: ProfileId) -> bool:
         """Check whether ``media_id`` is on ``profile_id``'s watchlist."""

@@ -27,10 +27,12 @@ class GetSharedListPreviewUseCase:
     The preview is what a member sees on the ``/lists/shared/:token``
     landing page before deciding to follow. It returns the owner's
     current list meta and items, but every item is filtered through the
-    *caller's* library access (ADR-010) — a kids or restricted profile
-    never sees titles it isn't allowed to, and ``hidden_count`` reports
-    how many were withheld. A fully-restricted list previews as
-    empty-with-notice, not an error.
+    *caller's* viewing policy (ADR-010, ADR-035) — a kids or restricted
+    profile never sees titles it isn't allowed to. ``hidden_count``
+    reports how many were withheld by library access; titles above the
+    caller's maturity limit are dropped without being counted, and under
+    such a limit ``item_count`` leaves them out too. A fully-restricted
+    list previews as empty-with-notice, not an error.
 
     An unknown or revoked token yields a 404. Auth is enforced at the
     route (a HomeFlix member), so there is no public/anonymous access.
@@ -71,7 +73,7 @@ class GetSharedListPreviewUseCase:
         owner_names = await self._profile_lookup.get_names([custom_list.profile_id.value])
         policy = await self._profile_viewing_policy.find_for_profile(profile_id)
 
-        outputs, hidden_count = await project_items(
+        projected = await project_items(
             items,
             media_lookup=self._media_lookup,
             progress_lookup=self._progress_lookup,
@@ -79,6 +81,11 @@ class GetSharedListPreviewUseCase:
             profile_id=input_dto.profile_id,
             policy=policy,
         )
+        # Without a limit the stored count is shown as it always was; under
+        # one, titles withheld by age must not show up in the count either.
+        item_count = custom_list.item_count
+        if policy.restricts_maturity:
+            item_count -= projected.withheld_by_maturity
 
         return SharedListPreviewOutput(
             list=SharedListMetaOutput(
@@ -86,10 +93,10 @@ class GetSharedListPreviewUseCase:
                 name=custom_list.name.value,
                 description=custom_list.description,
                 owner_name=owner_names.get(custom_list.profile_id.value),
-                item_count=custom_list.item_count,
+                item_count=item_count,
             ),
-            items=tuple(outputs),
-            hidden_count=hidden_count,
+            items=tuple(projected.items),
+            hidden_count=projected.hidden_count,
             is_following=follow is not None,
         )
 

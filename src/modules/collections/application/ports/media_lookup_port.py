@@ -10,9 +10,10 @@ See ADR-009 for the cross-BC read port pattern.
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.shared_kernel.value_objects import MediaType
+from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 
 
@@ -38,10 +39,16 @@ class MediaSummary:
             (episode-derived, deferred).
         hdr: Whether the best file carries an HDR format. Movies only.
         library_id: External id (``lib_xxx``) of the library the media
-            lives in, or ``None`` when unknown. Consumed by the shared
-            /followed list reads to filter items through the follower's
-            per-profile library access (ADR-010) — an owner's list may
-            reference titles a follower's profile can't see.
+            lives in, or ``None`` when unknown. Consumed by every list
+            read to filter items through the caller's per-profile
+            library access (ADR-010) — a list may reference titles the
+            caller's profile can't see.
+        minimum_age: Age the title requires, or ``None`` when it carries
+            no determinable certification (read as adult by
+            ``AgeRating.allows``). Consumed by every list read to apply
+            the caller's maturity limit (ADR-035). Keyword-only with no
+            default, so a construction that forgets it fails instead of
+            silently hiding the title from every limited profile.
     """
 
     media_id: str
@@ -54,6 +61,7 @@ class MediaSummary:
     resolution: str | None = None
     hdr: bool = False
     library_id: str | None = None
+    minimum_age: AgeRating | None = field(kw_only=True)
 
 
 class MediaLookupPort(ABC):
@@ -82,7 +90,9 @@ class MediaLookupPort(ABC):
         Returns:
             Map keyed by ``(media_type, media_id)``. Ids that don't
             resolve to an entity are simply absent from the map — the
-            use case decides how to handle the gap.
+            use case decides how to handle the gap. No viewing policy is
+            applied: a title the caller can't see is still returned, so
+            the use case can tell it apart from one that was removed.
         """
         ...
 
