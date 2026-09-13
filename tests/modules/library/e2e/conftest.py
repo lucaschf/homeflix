@@ -1,10 +1,9 @@
-"""End-to-end test scaffolding for the metadata bounded context.
+"""End-to-end test scaffolding for the library bounded context.
 
-Mirrors the media e2e setup: an in-memory SQLite session factory shared
-via ``StaticPool`` and an ``ApplicationContainer`` wired by hand so the
-lifespan handler (real scheduler boot) does not fire under test. The
-artwork proxy route is unauthenticated; the person-bio route is not, so
-``seed_user_with_profile`` provides users to log in with.
+Mirrors the media/identity e2e setup: in-memory SQLite shared via
+``StaticPool`` so seeds and HTTP-driven use cases see the same rows;
+``ApplicationContainer`` wired by hand so the lifespan handler does not
+run (no real scheduler boot under test).
 """
 
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -18,9 +17,11 @@ from pwdlib import PasswordHash
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-# Registering identity + media models on ``Base.metadata`` so
-# ``create_all`` discovers every table the wired container may touch.
+# Register identity + library + media models on ``Base.metadata`` so
+# ``create_all`` discovers users / profiles / access_tokens / libraries,
+# plus the catalog tables the library reads count through.
 import src.modules.identity.infrastructure.persistence.models
+import src.modules.library.infrastructure.persistence.models.library_model
 import src.modules.media.infrastructure.persistence.models  # noqa: F401
 from src.config.containers import ApplicationContainer
 from src.infrastructure.persistence import Base

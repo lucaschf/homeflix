@@ -216,11 +216,16 @@ async def delete_movie(
 @inject
 async def get_file_variants(
     movie_id: str,
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetFileVariantsUseCase = Depends(
         Provide[ApplicationContainer.media.get_file_variants],
     ),
 ) -> dict[str, Any]:
-    """List all file variants of a movie."""
+    """List all file variants of a movie.
+
+    Admin-only, like the write-side siblings: each variant carries its
+    absolute on-disk ``file_path``.
+    """
     result = await use_case.execute(GetFileVariantsInput(media_id=movie_id))
     return api_list([_dataclass_to_dict(f) for f in result])
 

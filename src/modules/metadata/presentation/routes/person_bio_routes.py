@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from src.building_blocks.presentation import api_single
 from src.config.containers import ApplicationContainer
+from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_user
 from src.modules.metadata.application.use_cases.get_person_bio import (
     GetPersonBioInput,
     GetPersonBioUseCase,
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/api/v1/people", tags=["People"])
 async def get_person(
     tmdb_id: int,
     lang: str = "en-US",
+    _user: AuthenticatedUser = Depends(authenticated_user),
     use_case: GetPersonBioUseCase = Depends(
         Provide[ApplicationContainer.metadata.get_person_bio],
     ),
@@ -31,6 +33,10 @@ async def get_person(
     department alongside the catalog filmography. The ``tmdb_id``
     path param is captured during movie enrichment and forwarded by
     the cast card via ``location.state``.
+
+    Requires a signed-in user: the actor page only renders behind the
+    web client's auth guard, and an anonymous caller must not be able
+    to spend the server's TMDB quota through this proxy.
 
     Query params:
         lang: BCP-47 language tag (default ``en-US``). When the
