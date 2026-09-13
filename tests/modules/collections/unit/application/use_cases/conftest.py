@@ -90,6 +90,23 @@ def make_media_lookup_mock(*summaries: MediaSummary) -> AsyncMock:
     return mock
 
 
+def make_visible_titles_lookup_mock(*visible_ids: str) -> AsyncMock:
+    """Build an ``AsyncMock`` of ``MediaLookupPort`` whose catalog sees only ``visible_ids``.
+
+    ``find_visible_titles`` answers with the requested ids that are in
+    ``visible_ids``; every other id — missing or hidden alike — is absent.
+    """
+    mock = AsyncMock(spec=MediaLookupPort)
+    visible = frozenset(visible_ids)
+
+    async def find_visible_titles(*, movie_ids, series_ids, policy):
+        requested = {m.value for m in movie_ids} | {s.value for s in series_ids}
+        return frozenset(requested & visible)
+
+    mock.find_visible_titles.side_effect = find_visible_titles
+    return mock
+
+
 def make_progress_lookup_mock(progress: dict[str, float] | None = None) -> AsyncMock:
     """Build an ``AsyncMock`` of ``ProgressLookupPort`` returning ``progress``."""
     mock = AsyncMock(spec=ProgressLookupPort)

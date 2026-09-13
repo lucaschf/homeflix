@@ -1,7 +1,7 @@
 """Adapter that implements ``MediaLookupPort`` using the Media UoW.
 
 This is the only file in the Collections BC that imports from the
-Media BC. Everything above it sees ``MediaSummary``.
+Media BC. Everything above it sees ``MediaSummary`` and external ids.
 """
 
 from collections.abc import Sequence
@@ -11,6 +11,7 @@ from src.modules.collections.application.ports.media_lookup_port import (
     MediaSummary,
 )
 from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 
@@ -75,6 +76,23 @@ class MediaLookupAdapter(MediaLookupPort):
                     )
 
         return result
+
+    async def find_visible_titles(
+        self,
+        *,
+        movie_ids: Sequence[MovieId],
+        series_ids: Sequence[SeriesId],
+        policy: ViewingPolicy,
+    ) -> frozenset[str]:
+        """Read access off the catalog columns alone, without loading titles.
+
+        The policy goes to Media whole, which applies it in SQL through
+        the catalog visibility funnel — nothing is filtered here.
+        """
+        async with self._media_uow_factory() as uow:
+            movies = await uow.catalog_access.find_movie_access(movie_ids, policy=policy)
+            series = await uow.catalog_access.find_series_access(series_ids, policy=policy)
+        return frozenset(movies) | frozenset(series)
 
 
 __all__ = ["MediaLookupAdapter"]

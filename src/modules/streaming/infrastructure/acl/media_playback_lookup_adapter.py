@@ -90,8 +90,11 @@ class MediaPlaybackLookupAdapter(MediaPlaybackLookupPort):
 
     async def find_movie_source(self, movie_id: str) -> MediaSourceInfo | None:
         """Read the movie's file + title directly (operator-scoped, no ACL)."""
+        # ``policy=None`` on purpose: this source read serves operator jobs,
+        # not a profile. Profile playback is gated by the catalog detail use
+        # cases above (segment delivery awaits ADR-036), not here.
         async with self._media_uow_factory() as uow:
-            movie = await uow.movies.find_by_id(MovieId(movie_id))
+            movie = await uow.movies.find_by_id(MovieId(movie_id), policy=None)
         if movie is None or movie.primary_file is None:
             return None
         return MediaSourceInfo(
@@ -102,8 +105,9 @@ class MediaPlaybackLookupAdapter(MediaPlaybackLookupPort):
 
     async def find_episode_source(self, episode_id: str) -> MediaSourceInfo | None:
         """Read the episode's file + composed label (operator-scoped, no ACL)."""
+        # ``policy=None`` on purpose, as in ``find_movie_source``.
         async with self._media_uow_factory() as uow:
-            series = await uow.series.find_by_episode_id(EpisodeId(episode_id))
+            series = await uow.series.find_by_episode_id(EpisodeId(episode_id), policy=None)
         episode = None
         if series is not None:
             episode = next(

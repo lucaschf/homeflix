@@ -1,9 +1,10 @@
 """Port for looking up display metadata of media items from the Media BC.
 
 Collections (watchlist, custom lists) embed the title and poster of
-the referenced movies/series in their list responses. This port is
-the only surface through which Collections reaches into the Media
-catalog. The adapter lives in ``collections.infrastructure.acl``.
+the referenced movies/series in their list responses, and refuse to
+save a title the caller's profile cannot see. This port is the only
+surface through which Collections reaches into the Media catalog. The
+adapter lives in ``collections.infrastructure.acl``.
 
 See ADR-009 for the cross-BC read port pattern.
 """
@@ -12,6 +13,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
@@ -93,6 +95,33 @@ class MediaLookupPort(ABC):
             use case decides how to handle the gap. No viewing policy is
             applied: a title the caller can't see is still returned, so
             the use case can tell it apart from one that was removed.
+        """
+        ...
+
+    @abstractmethod
+    async def find_visible_titles(
+        self,
+        *,
+        movie_ids: Sequence[MovieId],
+        series_ids: Sequence[SeriesId],
+        policy: ViewingPolicy,
+    ) -> frozenset[str]:
+        """Answer which of these titles the policy lets the caller see.
+
+        Unlike :meth:`get_many`, the policy is applied on both axes, and a
+        title that does not exist comes back the same way as one the
+        policy hides — absent — so a write gated on this answer cannot
+        tell the two apart (ADR-035).
+
+        Args:
+            movie_ids: Movies to check.
+            series_ids: Series to check.
+            policy: The caller's viewing policy, applied on both axes.
+
+        Returns:
+            External ids (``mov_xxx`` / ``ser_xxx``) of the visible
+            titles. A title that does not exist, is soft-deleted, or is
+            denied by the policy is absent.
         """
         ...
 

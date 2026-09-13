@@ -96,6 +96,8 @@ class CollectionsContainer(containers.DeclarativeContainer):
     toggle_watchlist = providers.Factory(
         ToggleWatchlistUseCase,
         uow_factory=collections_unit_of_work_factory,
+        media_lookup=media_lookup,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     get_watchlist = providers.Factory(
@@ -109,6 +111,8 @@ class CollectionsContainer(containers.DeclarativeContainer):
     check_watchlist = providers.Factory(
         CheckWatchlistUseCase,
         uow_factory=collections_unit_of_work_factory,
+        media_lookup=media_lookup,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     # =========================================================================
@@ -139,6 +143,8 @@ class CollectionsContainer(containers.DeclarativeContainer):
     add_item_to_custom_list = providers.Factory(
         AddItemToCustomListUseCase,
         uow_factory=collections_unit_of_work_factory,
+        media_lookup=media_lookup,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     remove_item_from_custom_list = providers.Factory(
