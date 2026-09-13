@@ -322,6 +322,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         WatchProgressContainer,
         session_factory=infrastructure.session_factory,
         media_uow_factory=media.media_unit_of_work_factory,
+        identity_uow_factory=_identity_uow_factory_for_profile_viewing_policy,
     )
 
     collections = providers.Container(

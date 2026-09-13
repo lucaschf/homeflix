@@ -1,13 +1,22 @@
 """Integration tests for SQLAlchemyWatchProgressRepository."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.watch_progress.domain.entities import WatchProgress
+from src.modules.watch_progress.domain.repositories import (
+    RecentlyWatchedCursor,
+    RecentlyWatchedPage,
+)
 from src.modules.watch_progress.domain.value_objects import (
+    ProgressId,
     WatchableMediaId,
     WatchableMediaType,
 )
+from src.modules.watch_progress.infrastructure.persistence.models import WatchProgressModel
 from src.modules.watch_progress.infrastructure.persistence.repositories import (
     SQLAlchemyWatchProgressRepository,
 )
@@ -427,3 +436,185 @@ class TestListDropsCorruptRows:
 
         assert [p.media_id for p in result] == [SAMPLE_MOVIE_ID]
         assert any("invalid media_id" in record.message for record in caplog.records)
+
+
+_T0 = datetime(2026, 9, 13, 10, 0, 0, tzinfo=UTC)
+
+
+async def _seed_row(
+    session: AsyncSession,
+    media_id: str,
+    last_watched_at: datetime,
+    *,
+    media_type: str = "movie",
+    status: str = "in_progress",
+    profile_id: ProfileId = _PROFILE_ID,
+    deleted: bool = False,
+) -> None:
+    """Insert a raw row, so corrupt ids and exact timestamps can be stored."""
+    session.add(
+        WatchProgressModel(
+            external_id=ProgressId.generate().value,
+            profile_id=profile_id.value,
+            media_id=media_id,
+            media_type=media_type,
+            position_seconds=10,
+            duration_seconds=100,
+            status=status,
+            last_watched_at=last_watched_at,
+            deleted_at=last_watched_at if deleted else None,
+        )
+    )
+    await session.flush()
+
+
+async def _read_stream(
+    repo: SQLAlchemyWatchProgressRepository, *, limit: int
+) -> tuple[list[str], list[RecentlyWatchedPage]]:
+    """Follow the cursor to the end, returning every item id and every page."""
+    ids: list[str] = []
+    pages: list[RecentlyWatchedPage] = []
+    cursor: RecentlyWatchedCursor | None = None
+    while True:
+        page = await repo.list_recently_watched_page(_PROFILE_ID, limit=limit, after=cursor)
+        pages.append(page)
+        ids.extend(progress.media_id.value for progress in page.items)
+        if page.next_cursor is None:
+            return ids, pages
+        assert len(pages) < 50, "cursor never reached the end of the stream"
+        cursor = page.next_cursor
+
+
+@pytest.mark.integration
+class TestListRecentlyWatchedPage:
+    """Keyset pages over the recently-watched stream."""
+
+    async def test_pages_follow_time_then_media_id_without_gaps_or_repeats(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        tie = _T0 + timedelta(minutes=1)
+        await _seed_row(db_session, "mov_aaaaaaaaaaaa", tie)
+        await _seed_row(db_session, "mov_cccccccccccc", tie)
+        await _seed_row(db_session, "mov_bbbbbbbbbbbb", tie)
+        await _seed_row(db_session, "mov_zzzzzzzzzzzz", _T0)
+        await _seed_row(
+            db_session, "mov_dddddddddddd", _T0 + timedelta(minutes=2), status="completed"
+        )
+
+        ids, pages = await _read_stream(repo, limit=2)
+
+        assert ids == [
+            "mov_dddddddddddd",
+            "mov_cccccccccccc",
+            "mov_bbbbbbbbbbbb",
+            "mov_aaaaaaaaaaaa",
+            "mov_zzzzzzzzzzzz",
+        ]
+        assert [len(page.items) for page in pages] == [2, 2, 1]
+        # The tie is resumed inside the second, by media id.
+        assert pages[0].next_cursor == RecentlyWatchedCursor(
+            last_watched_at=tie.replace(tzinfo=None), media_id="mov_cccccccccccc"
+        )
+
+    async def test_page_matches_the_rows_of_list_recently_watched(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        await _seed_row(db_session, "mov_kept00000000", _T0 + timedelta(minutes=3))
+        await _seed_row(db_session, "mov_deleted00000", _T0 + timedelta(minutes=2), deleted=True)
+        await _seed_row(
+            db_session,
+            "mov_other0000000",
+            _T0 + timedelta(minutes=1),
+            profile_id=ProfileId("prf_otherprofile"),
+        )
+        await _seed_row(db_session, "mov_dropped00000", _T0, status="not_started")
+
+        page = await repo.list_recently_watched_page(_PROFILE_ID, limit=10, after=None)
+
+        assert [p.media_id.value for p in page.items] == ["mov_kept00000000"]
+        assert page.next_cursor is None
+
+    async def test_cursor_is_none_when_fewer_rows_than_limit(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        await _seed_row(db_session, "mov_aaaaaaaaaaaa", _T0)
+
+        page = await repo.list_recently_watched_page(_PROFILE_ID, limit=2, after=None)
+
+        assert [p.media_id.value for p in page.items] == ["mov_aaaaaaaaaaaa"]
+        assert page.next_cursor is None
+
+    async def test_cursor_comes_from_the_last_stored_row_even_when_corrupt(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        await _seed_row(db_session, "mov_aaaaaaaaaaaa", _T0 + timedelta(minutes=3))
+        await _seed_row(db_session, "epi_garbage", _T0 + timedelta(minutes=2), media_type="episode")
+        await _seed_row(db_session, "mov_bbbbbbbbbbbb", _T0 + timedelta(minutes=1))
+
+        first = await repo.list_recently_watched_page(_PROFILE_ID, limit=2, after=None)
+        second = await repo.list_recently_watched_page(
+            _PROFILE_ID, limit=2, after=first.next_cursor
+        )
+
+        assert [p.media_id.value for p in first.items] == ["mov_aaaaaaaaaaaa"]
+        assert first.next_cursor == RecentlyWatchedCursor(
+            last_watched_at=(_T0 + timedelta(minutes=2)).replace(tzinfo=None),
+            media_id="epi_garbage",
+        )
+        assert [p.media_id.value for p in second.items] == ["mov_bbbbbbbbbbbb"]
+        assert second.next_cursor is None
+
+    async def test_page_of_only_corrupt_rows_is_empty_but_not_the_end(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        await _seed_row(
+            db_session, "epi_garbage1", _T0 + timedelta(minutes=2), media_type="episode"
+        )
+        await _seed_row(db_session, "mov_aaaaaaaaaaaa", _T0)
+
+        ids, pages = await _read_stream(repo, limit=1)
+
+        assert pages[0].items == []
+        assert pages[0].next_cursor is not None
+        assert ids == ["mov_aaaaaaaaaaaa"]
+
+    async def test_microsecond_apart_timestamps_keep_the_stored_order(
+        self, db_session: AsyncSession
+    ) -> None:
+        """The bound cursor must compare like the 26-character text SQLite stores."""
+        repo = SQLAlchemyWatchProgressRepository(db_session)
+        second_boundary = datetime(2026, 9, 13, 10, 0, 1, tzinfo=UTC)
+        stamps = {
+            "mov_aaaaaaaaaaaa": second_boundary - timedelta(microseconds=2),
+            "mov_bbbbbbbbbbbb": second_boundary - timedelta(microseconds=1),
+            "mov_cccccccccccc": second_boundary,
+            "mov_dddddddddddd": second_boundary + timedelta(microseconds=1),
+            "mov_eeeeeeeeeeee": second_boundary + timedelta(microseconds=10),
+        }
+        # Inserted out of order, so storage order cannot stand in for sorting.
+        for media_id in ("mov_cccccccccccc", "mov_eeeeeeeeeeee", "mov_aaaaaaaaaaaa"):
+            await _seed_row(db_session, media_id, stamps[media_id])
+        for media_id in ("mov_dddddddddddd", "mov_bbbbbbbbbbbb"):
+            await _seed_row(db_session, media_id, stamps[media_id])
+
+        stored = (
+            await db_session.execute(
+                text(f"SELECT last_watched_at FROM {WatchProgressModel.__table__.name}")
+            )
+        ).scalars()
+        ids, pages = await _read_stream(repo, limit=1)
+
+        assert sorted(len(value) for value in stored) == [26] * len(stamps)
+        assert ids == [
+            "mov_eeeeeeeeeeee",
+            "mov_dddddddddddd",
+            "mov_cccccccccccc",
+            "mov_bbbbbbbbbbbb",
+            "mov_aaaaaaaaaaaa",
+        ]
+        assert len(pages) == len(stamps) + 1

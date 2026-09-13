@@ -225,7 +225,7 @@ class TestProfileViewingPolicyAdaptersDeriveFromProfile:
         """A moved or renamed adapter must fail loudly instead of passing on zero files."""
         contexts = {_bounded_context(path) for path in _adapter_files()}
 
-        assert {"media", "collections"} <= contexts
+        assert {"media", "collections", "watch_progress"} <= contexts
 
     @pytest.mark.parametrize("path", _adapter_files(), ids=_bounded_context)
     def test_adapter_builds_no_policy_but_deny_all(self, path):

@@ -13,7 +13,10 @@ from src.modules.watch_progress.application.use_cases import (
 from src.modules.watch_progress.application.use_cases.clear_series_progress import (
     ClearSeriesProgressUseCase,
 )
-from src.modules.watch_progress.infrastructure.acl import MediaLookupAdapter
+from src.modules.watch_progress.infrastructure.acl import (
+    MediaLookupAdapter,
+    ProfileViewingPolicyAdapter,
+)
 from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_work import (
     SqlAlchemyWatchProgressUnitOfWorkFactory,
 )
@@ -22,8 +25,9 @@ from src.modules.watch_progress.infrastructure.persistence.sqlalchemy_unit_of_wo
 class WatchProgressContainer(containers.DeclarativeContainer):
     """Container for Watch Progress bounded context dependencies.
 
-    The ``session_factory`` and ``media_uow_factory`` dependencies
-    must be wired from the parent container.
+    The ``session_factory``, ``media_uow_factory`` and
+    ``identity_uow_factory`` dependencies must be wired from the parent
+    container.
     """
 
     session_factory = providers.Dependency[Any]()
@@ -31,6 +35,10 @@ class WatchProgressContainer(containers.DeclarativeContainer):
     # short-lived Media transactions. Use cases only see
     # ``MediaLookupPort``.
     media_uow_factory = providers.Dependency[Any]()
+    # Identity UoW factory — the profile ACL adapter opens its own
+    # short-lived Identity transactions to resolve the caller's viewing
+    # policy. Use cases only see ``ProfileViewingPolicyPort``.
+    identity_uow_factory = providers.Dependency[Any]()
 
     # =========================================================================
     # Unit of Work
@@ -50,6 +58,11 @@ class WatchProgressContainer(containers.DeclarativeContainer):
         media_uow_factory=media_uow_factory,
     )
 
+    profile_viewing_policy = providers.Factory(
+        ProfileViewingPolicyAdapter,
+        identity_uow_factory=identity_uow_factory,
+    )
+
     # =========================================================================
     # Use Cases
     # =========================================================================
@@ -57,17 +70,22 @@ class WatchProgressContainer(containers.DeclarativeContainer):
     save_progress = providers.Factory(
         SaveProgressUseCase,
         uow_factory=watch_progress_unit_of_work_factory,
+        media_lookup=media_lookup,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     get_progress = providers.Factory(
         GetProgressUseCase,
         uow_factory=watch_progress_unit_of_work_factory,
+        media_lookup=media_lookup,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     get_continue_watching = providers.Factory(
         GetContinueWatchingUseCase,
         uow_factory=watch_progress_unit_of_work_factory,
         media_lookup=media_lookup,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     clear_progress = providers.Factory(

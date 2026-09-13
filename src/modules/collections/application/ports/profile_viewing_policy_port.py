@@ -9,10 +9,9 @@ see?".
 
 Mirrors ``media.application.ports.ProfileViewingPolicyPort`` — the same
 contract, re-declared locally so Collections does not import from the
-Media BC (ADR-009). Two copies of the same abstract port today (Media
-and Collections), with a third expected when ``watch_progress`` gains
-the gate, is conformance with that ADR, not duplication to be factored
-away.
+Media BC (ADR-009). Three copies of the same abstract port (Media,
+Collections and Watch Progress) are conformance with that ADR, not
+duplication to be factored away.
 """
 
 from abc import ABC, abstractmethod

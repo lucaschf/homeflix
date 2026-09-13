@@ -1,17 +1,24 @@
-"""Port for fetching display metadata of media referenced by progress rows.
+"""Port for asking the Media catalog about titles referenced by progress rows.
 
 The Watch Progress BC decorates its "Continue Watching" output with
-the title/poster of the referenced movie or series. This port is the
-only surface through which it reaches into the Media catalog — the
-adapter lives in ``watch_progress.infrastructure.acl``.
+the title/poster of the referenced movie or series, and refuses to
+record or reveal progress on a title the caller's profile cannot see.
+This port is the only surface through which it reaches into the Media
+catalog — the adapter lives in ``watch_progress.infrastructure.acl``.
+
+Every method takes the caller's ``ViewingPolicy`` and applies it on both
+axes. A title that does not exist and one the policy hides come back
+the same way — absent — so nothing built on this port can tell them
+apart (ADR-035).
 
 See ADR-009 for the cross-BC read port pattern.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 
 
@@ -66,31 +73,74 @@ class SeriesWithEpisodesInfo:
     episodes: Sequence[EpisodeInfo]
 
 
-class MediaLookupPort(ABC):
-    """Fetch movie / series display data on demand.
+@dataclass(frozen=True)
+class MediaDisplayBatch:
+    """Display data for the titles a policy lets the caller see.
 
-    One call per item is fine for the "Continue Watching" list — it's
-    capped at a handful of rows. Batching would only pay off if the
-    home-page consumer ever grew past tens of items.
+    Attributes:
+        movies: Movie display data keyed by external id (``mov_xxx``).
+        series: Series display data keyed by external id (``ser_xxx``).
     """
 
+    movies: Mapping[str, MovieDisplayInfo]
+    series: Mapping[str, SeriesWithEpisodesInfo]
+
+
+class MediaLookupPort(ABC):
+    """Resolve titles in batches, through the caller's viewing policy."""
+
     @abstractmethod
-    async def get_movie(self, movie_id: MovieId, lang: str) -> MovieDisplayInfo | None:
-        """Resolve a single movie. Returns ``None`` when id is unknown."""
+    async def find_visible_titles(
+        self,
+        *,
+        movie_ids: Sequence[MovieId],
+        series_ids: Sequence[SeriesId],
+        policy: ViewingPolicy,
+    ) -> frozenset[str]:
+        """Answer which of these titles the policy lets the caller see.
+
+        A series is the unit of restriction: an episode is visible
+        exactly when its series is.
+
+        Args:
+            movie_ids: Movies to check.
+            series_ids: Series to check.
+            policy: The caller's viewing policy, applied on both axes.
+
+        Returns:
+            External ids (``mov_xxx`` / ``ser_xxx``) of the visible
+            titles. A title that does not exist, is soft-deleted, or is
+            denied by the policy is absent.
+        """
         ...
 
     @abstractmethod
-    async def get_series_with_episodes(
+    async def find_display_info(
         self,
-        series_id: SeriesId,
+        *,
+        movie_ids: Sequence[MovieId],
+        series_ids: Sequence[SeriesId],
         lang: str,
-    ) -> SeriesWithEpisodesInfo | None:
-        """Resolve a series including the sorted episode list."""
+        policy: ViewingPolicy,
+    ) -> MediaDisplayBatch:
+        """Load display data for the titles the policy lets the caller see.
+
+        Args:
+            movie_ids: Movies to load.
+            series_ids: Series to load, each with its sorted episodes.
+            lang: Language for the localized titles and artwork.
+            policy: The caller's viewing policy, applied on both axes.
+
+        Returns:
+            Display data for the visible titles only; a title that does
+            not exist or is denied by the policy has no entry.
+        """
         ...
 
 
 __all__ = [
     "EpisodeInfo",
+    "MediaDisplayBatch",
     "MediaLookupPort",
     "MovieDisplayInfo",
     "SeriesWithEpisodesInfo",

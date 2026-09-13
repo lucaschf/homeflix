@@ -77,7 +77,17 @@ class ProgressOutput:
 
 @dataclass(frozen=True)
 class GetContinueWatchingInput:
-    """Input for GetContinueWatchingUseCase."""
+    """Input for GetContinueWatchingUseCase.
+
+    Attributes:
+        profile_id: Owning profile (``prf_xxx``) whose progress is listed.
+        limit: Size of the window of most recent progress *rows* the
+            list is built from — not a number of items. Only rows whose
+            title the profile can see count toward it; a completed movie
+            or a second episode of the same series still uses a slot
+            without adding an item.
+        lang: Language for the localized titles and artwork.
+    """
 
     profile_id: str
     limit: int = 20
