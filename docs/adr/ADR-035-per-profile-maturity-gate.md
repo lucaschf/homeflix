@@ -89,7 +89,7 @@ Hash em `User.parental_pin_hash`, via o `PasswordHasherPort` que já existe (`pa
 
 | Risco | Probabilidade | Impacto | Mitigação |
 |-------|---------------|---------|-----------|
-| Resposta cacheada de um perfil servida a outro — o mesmo path passa a variar por cookie | Média | Alto | `no-store` (ou `Vary: Cookie`) nos endpoints filtrados, com teste de header no PR de enforcement |
+| Resposta cacheada de um perfil servida a outro — o mesmo path passa a variar por cookie | Média | Alto | **Resolvido:** `JsonNoStoreMiddleware` (`src/building_blocks/presentation/cache_control.py`), registrado em `create_app`, põe `Cache-Control: no-store` em toda resposta JSON (`application/json` ou sufixo `+json`) que não traz `Cache-Control` própria — de todas as rotas, não só das filtradas, e inclusive nos envelopes de erro (403 `CONTENT_RESTRICTED_*`, 401, 404, 405, 422), porque o Starlette converte exceção em resposta dentro dos middlewares de usuário: na própria rota (endpoint e dependências, guard de sessão incluído) e, para erros de roteamento (404 de path inexistente, 405), no `ExceptionMiddleware` (exceto o 500 genérico, cujo handler de `Exception` o Starlette monta no `ServerErrorMiddleware`; não carrega dado de perfil). Os quatro sprites de scrub-preview (`sprite.vtt` e `sprite.jpg` de filme e episódio), únicas respostas não-JSON com gate de perfil, saem com `Cache-Control: private, no-cache`, então todo reuso revalida pelo gate; segmentos HLS (sem gate até o ADR-036), playlists (`no-cache`) e artwork (`immutable`) mantêm seus headers. `Vary: Cookie` foi descartado: a troca de perfil atualiza a linha de `access_tokens` sem reemitir o cookie, então o header `Cookie` é o mesmo antes e depois. Teste de header unitário e e2e contra o app real |
 | Catálogo restrito vazio por baixa cobertura de certificação | Baixa | Alto | Medido: 173 filmes em `12`. Backfill derivado na própria migration + worklist administrativa |
 | Filtro aplicado pós-query desincroniza cursor e paginação | Média | Médio | Filtro obrigatoriamente em SQL; teste de projeção contra o predicado do domínio |
 | Re-enrich apaga classificação manual | Alta | Médio | `rating_source = MANUAL` excepcionado em `MergePolicy.OVERWRITE` (`_metadata_field_merge.py:86-88`) |
@@ -384,9 +384,10 @@ leituras que precisam de dados de exibição.
   garante que nenhum adapter monta a política por fora.
 - [ ] Os e2e de `watch_progress` e `collections` passam a rodar também **sem**
   override do port, com perfil semeado com limite.
-- [ ] `Cache-Control: no-store` nos endpoints filtrados — a mitigação da primeira
-  linha da tabela de Riscos ainda não existe em nenhum deles; PR transversal
-  antes da PR 4.
+- [x] `Cache-Control: no-store` nos endpoints filtrados — entregue antes da PR 4:
+  middleware global marca `no-store` em toda resposta JSON sem `Cache-Control`
+  própria (envelopes 4xx incluídos) e os sprites de scrub-preview, únicas
+  respostas não-JSON com gate de perfil, saem com `private, no-cache`.
 - [ ] Riscos conhecidos fora dos BCs acima, a classificar antes de liberar limite
   para perfis reais: `in_catalog` de `/catalog/lookup` como oráculo de existência
   de título restrito; notificação de chegada de título por `user_id`, visível a
@@ -408,3 +409,4 @@ leituras que precisam de dados de exibição.
 | 2026-09-12 | Lucas | Emendas 1-4, levantadas na implementação das PRs #421, #422 e #423 |
 | 2026-09-12 | Lucas | Emenda 5, levantada no planejamento da PR 3a |
 | 2026-09-13 | Lucas | Emenda 6, levantada nas PRs 3d (#428-#434) |
+| 2026-09-13 | Lucas | Risco de cache entre perfis resolvido com `no-store` em respostas JSON e `private, no-cache` nos sprites de scrub-preview; item correspondente do checklist da PR 4 marcado |

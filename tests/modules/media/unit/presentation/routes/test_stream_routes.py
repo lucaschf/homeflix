@@ -10,6 +10,7 @@ covered without FFmpeg, disk, auth, or a live ASGI stack.
 """
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -282,6 +283,70 @@ class TestMovieTracks:
             "audio_tracks": [{"index": 0, "language": "eng"}],
             "subtitle_tracks": [],
         }
+
+
+def _scrub_preview_on_disk(tmp_path: Path) -> str:
+    """Write a VTT and its sibling sprite; return the stored VTT path."""
+    vtt_path = tmp_path / "sprite.vtt"
+    vtt_path.write_text("WEBVTT\n", encoding="utf-8")
+    (tmp_path / "sprite.jpg").write_bytes(b"\xff\xd8\xff")
+    return str(vtt_path)
+
+
+class TestScrubPreview:
+    """Profile-gated sprites make every cache reuse revalidate (ADR-035)."""
+
+    @pytest.mark.parametrize(
+        "handler",
+        [
+            pytest.param(mod.movie_scrub_preview_vtt, id="vtt"),
+            pytest.param(mod.movie_scrub_preview_sprite, id="jpg"),
+        ],
+    )
+    async def test_movie_preview_is_private_no_cache(
+        self,
+        handler: Callable[..., Awaitable[FileResponse]],
+        tmp_path: Path,
+    ) -> None:
+        lookup = _lookup_movie(
+            _movie(file_path=None, scrub_preview_path=_scrub_preview_on_disk(tmp_path))
+        )
+
+        result = await handler(
+            "mov_aaaaaaaaaaaa",
+            profile_id="prf_aaaaaaaaaaaa",
+            media_lookup=lookup,
+        )
+
+        assert isinstance(result, FileResponse)
+        assert result.headers["Cache-Control"] == "private, no-cache"
+
+    @pytest.mark.parametrize(
+        "handler",
+        [
+            pytest.param(mod.episode_scrub_preview_vtt, id="vtt"),
+            pytest.param(mod.episode_scrub_preview_sprite, id="jpg"),
+        ],
+    )
+    async def test_episode_preview_is_private_no_cache(
+        self,
+        handler: Callable[..., Awaitable[FileResponse]],
+        tmp_path: Path,
+    ) -> None:
+        lookup = _lookup_episode(
+            _episode(file_path=None, scrub_preview_path=_scrub_preview_on_disk(tmp_path))
+        )
+
+        result = await handler(
+            "ser_aaaaaaaaaaaa",
+            1,
+            1,
+            profile_id="prf_aaaaaaaaaaaa",
+            media_lookup=lookup,
+        )
+
+        assert isinstance(result, FileResponse)
+        assert result.headers["Cache-Control"] == "private, no-cache"
 
 
 class TestClearMovieHlsCache:

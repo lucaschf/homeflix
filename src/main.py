@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.building_blocks.presentation import RequestContextMiddleware
+from src.building_blocks.presentation import JsonNoStoreMiddleware, RequestContextMiddleware
 from src.building_blocks.presentation.exception_handlers import register_exception_handlers
 from src.config.containers import ApplicationContainer
 from src.config.logging import get_logger, setup_logging
@@ -480,6 +480,14 @@ def create_app() -> FastAPI:
     # Request correlation + timing — must run before routes so the
     # request_id is bound while handlers execute.
     app.add_middleware(RequestContextMiddleware)
+
+    # JSON responses vary by the profile in the session cookie, so no
+    # cache may reuse them (ADR-035). As a user middleware it wraps both
+    # places where Starlette turns exceptions into the error envelopes
+    # from ``register_exception_handlers`` — inside each route and, for
+    # 404/405 routing errors, ``ExceptionMiddleware`` — so those get the
+    # header too.
+    app.add_middleware(JsonNoStoreMiddleware)
 
     # CORS middleware
     app.add_middleware(
