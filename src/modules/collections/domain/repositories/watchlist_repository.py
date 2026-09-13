@@ -1,11 +1,44 @@
 """Watchlist repository interface."""
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime
 
 from src.modules.collections.domain.entities import WatchlistItem
 from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
+
+
+@dataclass(frozen=True)
+class WatchlistCursor:
+    """Keyset position in a profile's watchlist.
+
+    The watchlist is ordered by ``(added_at DESC, media_id DESC)``.
+    ``media_id`` breaks ties and makes the order total, since a profile
+    holds at most one row per media (``UNIQUE(profile_id, media_id)``).
+
+    Attributes:
+        added_at: ``added_at`` of the last row read.
+        media_id: Raw ``media_id`` of the last row read.
+    """
+
+    added_at: datetime
+    media_id: str
+
+
+@dataclass(frozen=True)
+class WatchlistPage:
+    """One page of a profile's watchlist.
+
+    Attributes:
+        items: Items of the page, most recently added first.
+        next_cursor: Position of the last row of the page, to resume
+            after; ``None`` when the watchlist is exhausted.
+    """
+
+    items: list[WatchlistItem]
+    next_cursor: WatchlistCursor | None
 
 
 class WatchlistRepository(ABC):
@@ -37,12 +70,28 @@ class WatchlistRepository(ABC):
         """Soft-delete an item from ``profile_id``'s watchlist."""
 
     @abstractmethod
-    async def list_all(
+    async def list_page(
         self,
         profile_id: ProfileId,
-        limit: int = 100,
-    ) -> list[WatchlistItem]:
-        """List the profile's watchlist items, most recently added first."""
+        *,
+        limit: int,
+        after: WatchlistCursor | None,
+    ) -> WatchlistPage:
+        """Read one keyset page of the profile's watchlist, most recently added first.
+
+        The order is total, so a caller that discards items can keep
+        reading without skipping or repeating any.
+
+        Args:
+            profile_id: The caller's profile.
+            limit: Maximum number of rows to read for the page.
+            after: Resume strictly after this position; ``None`` starts
+                from the most recently added row.
+
+        Returns:
+            The page. Its ``next_cursor`` comes from the last row read
+            and is ``None`` when fewer than ``limit`` rows were read.
+        """
 
     @abstractmethod
     async def exists(self, media_id: CollectionMediaId, profile_id: ProfileId) -> bool:
@@ -92,4 +141,4 @@ class WatchlistRepository(ABC):
         """
 
 
-__all__ = ["WatchlistRepository"]
+__all__ = ["WatchlistCursor", "WatchlistPage", "WatchlistRepository"]

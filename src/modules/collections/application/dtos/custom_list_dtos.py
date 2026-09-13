@@ -174,9 +174,11 @@ class CustomListItemOutput:
 class CustomListItemsOutput:
     """Items in a custom list plus the count hidden by profile access.
 
-    ``hidden_count`` is always ``0`` for the owner's own list (they see
-    everything they own) and only rises on a *followed* list whose
-    owner referenced titles the follower's profile can't see.
+    ``hidden_count`` counts the items in libraries the caller's profile
+    can't reach — on the owner's own list as on a followed one. Items
+    above the caller's maturity limit are dropped without being counted,
+    and under such a limit ``position`` is renumbered among the returned
+    items, so neither the count nor gaps reveal them.
     """
 
     items: tuple[CustomListItemOutput, ...]
@@ -218,7 +220,11 @@ class GetSharedListPreviewInput:
 
 @dataclass(frozen=True)
 class SharedListMetaOutput:
-    """Owner-facing metadata of a shared list in the preview response."""
+    """Owner-facing metadata of a shared list in the preview response.
+
+    ``item_count`` is the stored count, except for a caller with a
+    maturity limit: then it leaves out the items withheld by that limit.
+    """
 
     id: str
     name: str
@@ -229,7 +235,12 @@ class SharedListMetaOutput:
 
 @dataclass(frozen=True)
 class SharedListPreviewOutput:
-    """Read-only preview of a shared list, filtered by caller access."""
+    """Read-only preview of a shared list, filtered by caller access.
+
+    ``hidden_count`` counts only the items outside the caller's
+    libraries; items above the caller's maturity limit are dropped
+    without being counted.
+    """
 
     list: SharedListMetaOutput
     items: tuple[CustomListItemOutput, ...]

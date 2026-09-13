@@ -22,14 +22,17 @@ _logger = logging.getLogger(__name__)
 class GetCustomListItemsUseCase:
     """List items in a custom list, for either the owner or a follower.
 
-    Owner path: the caller owns the list and sees every item they own
-    — no access filter, ``hidden_count`` is ``0``.
+    Owner path: the caller owns the list and reads their own items.
 
     Follower path: the caller doesn't own the list but follows it (and
     it is still shared). The read resolves the *owner's* current items
-    (the view is live) and filters each through the *follower's* library
-    access, so a followed list can never leak titles the follower's
-    profile can't see (ADR-010). Hidden items are counted, not shown.
+    (the view is live).
+
+    On both paths every item is filtered through the *caller's* viewing
+    policy, so a list can never leak titles the caller's profile can't
+    see (ADR-010, ADR-035): items outside the caller's libraries are
+    counted in ``hidden_count``, items above the caller's maturity limit
+    are dropped without being counted.
 
     A caller who neither owns nor follows the list gets a 404 — same as
     a follower of a list that was deleted or unshared (no dangling read).
@@ -48,7 +51,7 @@ class GetCustomListItemsUseCase:
             uow_factory: Factory that opens a fresh collections Unit of Work.
             media_lookup: Port for resolving media display metadata.
             progress_lookup: Port for resolving the caller's watch progress.
-            profile_viewing_policy: Port for the follower's viewing policy.
+            profile_viewing_policy: Port for the caller's viewing policy.
         """
         self._uow_factory = uow_factory
         self._media_lookup = media_lookup
@@ -63,18 +66,18 @@ class GetCustomListItemsUseCase:
 
         Returns:
             ``CustomListItemsOutput`` with the visible items and the
-            count hidden by the follower's access (``0`` for owners).
+            count hidden by the caller's library access.
 
         Raises:
             ResourceNotFoundException: If the caller neither owns nor
                 follows the list, or the followed list is gone/unshared.
         """
         profile_id = ProfileId(input_dto.profile_id)
+        policy = await self._profile_viewing_policy.find_for_profile(profile_id)
         async with self._uow_factory() as uow:
             owned = await uow.custom_lists.find_by_id(input_dto.list_id, profile_id)
             if owned is not None:
                 items = await uow.custom_lists.list_items(input_dto.list_id, profile_id)
-                policy = None  # owner sees everything they own
             else:
                 owner_list = await uow.custom_lists.find_by_id_unscoped(input_dto.list_id)
                 if owner_list is None or owner_list.id is None or not owner_list.is_shared:
@@ -83,9 +86,8 @@ class GetCustomListItemsUseCase:
                 if follow is None:
                     raise ResourceNotFoundException.for_resource("CustomList", input_dto.list_id)
                 items = await uow.custom_lists.list_items(input_dto.list_id, owner_list.profile_id)
-                policy = await self._profile_viewing_policy.find_for_profile(profile_id)
 
-        outputs, hidden_count = await project_items(
+        projected = await project_items(
             items,
             media_lookup=self._media_lookup,
             progress_lookup=self._progress_lookup,
@@ -96,10 +98,12 @@ class GetCustomListItemsUseCase:
         _logger.info(
             "Custom list %s: %d visible item(s), %d hidden by access",
             input_dto.list_id,
-            len(outputs),
-            hidden_count,
+            len(projected.items),
+            projected.hidden_count,
         )
-        return CustomListItemsOutput(items=tuple(outputs), hidden_count=hidden_count)
+        return CustomListItemsOutput(
+            items=tuple(projected.items), hidden_count=projected.hidden_count
+        )
 
 
 __all__ = ["GetCustomListItemsUseCase"]

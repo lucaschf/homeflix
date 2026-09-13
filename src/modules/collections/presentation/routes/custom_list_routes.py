@@ -133,9 +133,10 @@ async def get_custom_list_items(
 ) -> dict[str, Any]:
     """List items in a custom list with media metadata.
 
-    Serves the owner's own list *and* a list the caller follows. On a
-    followed list, items the caller's profile can't access are filtered
-    out and reported via ``metadata.hidden_count``.
+    Serves the owner's own list *and* a list the caller follows. On
+    both, items the caller's profile can't access are filtered out:
+    those outside its libraries are reported via
+    ``metadata.hidden_count``, those above its maturity limit are not.
     """
     result = await use_case.execute(
         GetCustomListItemsInput(profile_id=profile_id, list_id=list_id, lang=lang)
