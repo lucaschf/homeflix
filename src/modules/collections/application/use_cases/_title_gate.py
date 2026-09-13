@@ -6,8 +6,11 @@ cannot see that title (ADR-035). These helpers are the single place the
 write use cases turn a :class:`CollectionMediaId` into that title, ask
 the catalog about it and build the refusal, so the watchlist toggle and
 the custom-list add cannot disagree on which title is gated or on how a
-refusal looks.
+refusal looks. The list-count reads use the batch form to learn which
+titles a maturity limit withholds.
 """
+
+from collections.abc import Iterable
 
 from src.building_blocks.application.errors import ResourceNotFoundException
 from src.modules.collections.application.ports import MediaLookupPort
@@ -66,6 +69,48 @@ async def is_title_visible(
     return title.value in visible
 
 
+async def titles_withheld_by_maturity(
+    media_lookup: MediaLookupPort,
+    titles: Iterable[MovieId | SeriesId],
+    policy: ViewingPolicy,
+) -> frozenset[str]:
+    """Which titles the policy reaches by library but withholds by age.
+
+    These are exactly the titles a list read drops without counting, so
+    subtracting them from a stored item count gives the count the caller
+    may see. A title removed from the catalog or outside the caller's
+    libraries is not among them. The whole batch costs two catalog
+    calls — one with the library axis alone, one with the full policy —
+    and none at all without a maturity limit or under a deny-all policy,
+    where nothing is withheld by age.
+
+    Args:
+        media_lookup: Port into the Media catalog.
+        titles: The movies and series to check; repeats are fine.
+        policy: The caller's viewing policy.
+
+    Returns:
+        External ids (``mov_xxx`` / ``ser_xxx``) of the titles withheld
+        by the maturity limit.
+    """
+    if not policy.restricts_maturity or policy.denies_everything:
+        return frozenset()
+    distinct = list(dict.fromkeys(titles))
+    movie_ids = [t for t in distinct if isinstance(t, MovieId)]
+    series_ids = [t for t in distinct if isinstance(t, SeriesId)]
+    if not movie_ids and not series_ids:
+        return frozenset()
+    reachable = await media_lookup.find_visible_titles(
+        movie_ids=movie_ids,
+        series_ids=series_ids,
+        policy=ViewingPolicy.unrestricted(policy.allowed_library_ids),
+    )
+    visible = await media_lookup.find_visible_titles(
+        movie_ids=movie_ids, series_ids=series_ids, policy=policy
+    )
+    return reachable - visible
+
+
 def title_not_found(title: MovieId | SeriesId) -> ResourceNotFoundException:
     """Build the 404 for a title the caller cannot save.
 
@@ -82,4 +127,9 @@ def title_not_found(title: MovieId | SeriesId) -> ResourceNotFoundException:
     return ResourceNotFoundException.for_resource(resource_type, title.value)
 
 
-__all__ = ["is_title_visible", "title_not_found", "title_of"]
+__all__ = [
+    "is_title_visible",
+    "title_not_found",
+    "title_of",
+    "titles_withheld_by_maturity",
+]

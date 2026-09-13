@@ -1,10 +1,16 @@
 """Integration tests for SQLAlchemyCustomListRepository."""
 
-import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from src.infrastructure.persistence import Base
 from src.modules.collections.domain.entities import CustomList, CustomListItem
-from src.modules.collections.domain.value_objects import CollectionMediaId
+from src.modules.collections.domain.value_objects import CollectionMediaId, CustomListItemId
+from src.modules.collections.infrastructure.persistence.models import CustomListItemModel
 from src.modules.collections.infrastructure.persistence.repositories import (
     SQLAlchemyCustomListRepository,
 )
@@ -35,6 +41,33 @@ def _create_item(
         media_type=media_type,
         position=position,
     )
+
+
+_ADDED_AT = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+async def _seed_items(
+    repo: SQLAlchemyCustomListRepository, rows: list[tuple[str, int, int]]
+) -> str:
+    """Store a list of ``(media_id, position, minutes added after _ADDED_AT)`` rows.
+
+    Rows are inserted in the given order, so ids follow it too.
+    """
+    custom_list = _create_list()
+    await repo.add(custom_list)
+    for media_id, position, minutes in rows:
+        await repo.add_item(
+            str(custom_list.id),
+            CustomListItem(
+                id=CustomListItemId.generate(),
+                media_id=CollectionMediaId(media_id),
+                media_type=MediaType.MOVIE,
+                position=position,
+                added_at=_ADDED_AT + timedelta(minutes=minutes),
+            ),
+            _PROFILE_ID,
+        )
+    return str(custom_list.id)
 
 
 @pytest.mark.integration
@@ -488,6 +521,124 @@ class TestSQLAlchemyCustomListRepositoryItems:
         # Should not raise even when the list doesn't resolve.
         await repo.reorder_items(MISSING_LIST_ID, [SAMPLE_MOVIE_ID], _PROFILE_ID)
 
+    async def test_list_items_should_break_position_ties_by_added_at_then_id(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        # Stored against the order they were added in, so the engine's own
+        # row order cannot pass for the tie-break.
+        list_id = await _seed_items(
+            repo,
+            [
+                ("mov_addedlast000", 1, 9),
+                ("mov_addedfirst00", 1, 1),
+                ("mov_zeroth000000", 0, 5),
+                ("mov_sametime0002", 2, 3),
+                ("mov_sametime0001", 2, 3),
+            ],
+        )
+
+        items = await repo.list_items(list_id, _PROFILE_ID)
+
+        assert [(i.media_id.value, i.position) for i in items] == [
+            ("mov_zeroth000000", 0),
+            ("mov_addedfirst00", 1),
+            ("mov_addedlast000", 1),
+            ("mov_sametime0002", 2),
+            ("mov_sametime0001", 2),
+        ]
+
+    async def test_reorder_items_should_keep_unsent_items_in_their_slots(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        list_id = await _seed_items(
+            repo,
+            [
+                ("mov_aaaaaaaaaaaa", 0, 0),
+                ("mov_hidden000001", 1, 1),
+                ("mov_bbbbbbbbbbbb", 2, 2),
+                ("mov_hidden000002", 3, 3),
+                ("mov_cccccccccccc", 4, 4),
+            ],
+        )
+
+        await repo.reorder_items(
+            list_id,
+            [
+                CollectionMediaId("mov_cccccccccccc"),
+                CollectionMediaId("mov_aaaaaaaaaaaa"),
+                CollectionMediaId("mov_bbbbbbbbbbbb"),
+            ],
+            _PROFILE_ID,
+        )
+
+        items = await repo.list_items(list_id, _PROFILE_ID)
+        assert [(i.media_id.value, i.position) for i in items] == [
+            ("mov_cccccccccccc", 0),
+            ("mov_hidden000001", 1),
+            ("mov_aaaaaaaaaaaa", 2),
+            ("mov_hidden000002", 3),
+            ("mov_bbbbbbbbbbbb", 4),
+        ]
+
+    async def test_reorder_items_should_renumber_duplicate_and_gapped_positions(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        # Two concurrent adds landed on 2, B's committed first but added
+        # later; earlier removals left gaps.
+        list_id = await _seed_items(
+            repo,
+            [
+                ("mov_bbbbbbbbbbbb", 2, 2),
+                ("mov_aaaaaaaaaaaa", 2, 1),
+                ("mov_cccccccccccc", 5, 3),
+                ("mov_dddddddddddd", 7, 4),
+            ],
+        )
+
+        await repo.reorder_items(
+            list_id,
+            [CollectionMediaId("mov_dddddddddddd"), CollectionMediaId("mov_aaaaaaaaaaaa")],
+            _PROFILE_ID,
+        )
+
+        items = await repo.list_items(list_id, _PROFILE_ID)
+        assert [(i.media_id.value, i.position) for i in items] == [
+            ("mov_dddddddddddd", 0),
+            ("mov_bbbbbbbbbbbb", 1),
+            ("mov_cccccccccccc", 2),
+            ("mov_aaaaaaaaaaaa", 3),
+        ]
+
+    async def test_reorder_items_should_ignore_unknown_and_repeated_ids(
+        self, db_session: AsyncSession
+    ) -> None:
+        repo = SQLAlchemyCustomListRepository(db_session)
+        list_id = await _seed_items(
+            repo,
+            [("mov_aaaaaaaaaaaa", 0, 0), ("mov_hidden000001", 1, 1), ("mov_bbbbbbbbbbbb", 2, 2)],
+        )
+
+        await repo.reorder_items(
+            list_id,
+            [
+                MISSING_ITEM_ID,
+                CollectionMediaId("mov_bbbbbbbbbbbb"),
+                CollectionMediaId("mov_bbbbbbbbbbbb"),
+                CollectionMediaId("mov_aaaaaaaaaaaa"),
+            ],
+            _PROFILE_ID,
+        )
+
+        items = await repo.list_items(list_id, _PROFILE_ID)
+        assert [(i.media_id.value, i.position) for i in items] == [
+            ("mov_bbbbbbbbbbbb", 0),
+            ("mov_hidden000001", 1),
+            ("mov_aaaaaaaaaaaa", 2),
+        ]
+
     async def test_list_items_should_return_empty_when_list_not_found(
         self, db_session: AsyncSession
     ) -> None:
@@ -559,6 +710,81 @@ class TestSQLAlchemyCustomListRepositoryItems:
 
         assert restored.media_id == SAMPLE_MOVIE_ID
         assert restored.position == 5
+
+
+@pytest.fixture
+async def file_session_factory(
+    tmp_path: Path,
+) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    """Expose sessions on a file-backed SQLite database, one connection each.
+
+    The in-memory ``session_factory`` pins every session to a single
+    connection; racing transactions need connections of their own.
+    """
+    engine = create_async_engine(f"sqlite+aiosqlite:///{(tmp_path / 'lists.db').as_posix()}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    yield async_sessionmaker(
+        bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
+    )
+
+    await engine.dispose()
+
+
+class _CommitsAnotherBetweenReadAndWrite(SQLAlchemyCustomListRepository):
+    """A repository whose reorder lets another transaction commit mid-way.
+
+    ``between`` runs right after the live items are read, so whatever it
+    commits lands between this reorder's read and its write.
+    """
+
+    def __init__(self, session: AsyncSession, between: Callable[[], Awaitable[None]]) -> None:
+        super().__init__(session)
+        self._between = between
+
+    async def _live_item_models(self, internal_id: int) -> Sequence[CustomListItemModel]:
+        models = await super()._live_item_models(internal_id)
+        await self._between()
+        return models
+
+
+@pytest.mark.integration
+class TestSQLAlchemyCustomListRepositoryConcurrentReorder:
+    """Reorders racing on the same list resolve to the last one committed."""
+
+    async def test_reorder_should_win_over_one_committed_between_its_read_and_write(
+        self, file_session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        a, b, c = "mov_aaaaaaaaaaaa", "mov_bbbbbbbbbbbb", "mov_cccccccccccc"
+        async with file_session_factory() as session:
+            list_id = await _seed_items(
+                SQLAlchemyCustomListRepository(session), [(a, 0, 0), (b, 1, 1), (c, 2, 2)]
+            )
+            await session.commit()
+
+        async def reorder_c_a_b() -> None:
+            async with file_session_factory() as session:
+                await SQLAlchemyCustomListRepository(session).reorder_items(
+                    list_id,
+                    [CollectionMediaId(c), CollectionMediaId(a), CollectionMediaId(b)],
+                    _PROFILE_ID,
+                )
+                await session.commit()
+
+        # Read [A, B, C], let [C, A, B] commit, then write [C, B, A]. B keeps
+        # index 1 against the stale read, yet [C, A, B] had moved it to 2.
+        async with file_session_factory() as session:
+            await _CommitsAnotherBetweenReadAndWrite(session, reorder_c_a_b).reorder_items(
+                list_id,
+                [CollectionMediaId(c), CollectionMediaId(b), CollectionMediaId(a)],
+                _PROFILE_ID,
+            )
+            await session.commit()
+
+        async with file_session_factory() as session:
+            items = await SQLAlchemyCustomListRepository(session).list_items(list_id, _PROFILE_ID)
+        assert [(i.media_id.value, i.position) for i in items] == [(c, 0), (b, 1), (a, 2)]
 
 
 @pytest.mark.integration

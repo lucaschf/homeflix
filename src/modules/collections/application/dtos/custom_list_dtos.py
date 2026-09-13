@@ -28,7 +28,9 @@ class CustomListOutput:
     they *follow*. ``is_shared`` is meaningful on owned rows (a token
     exists); ``is_followed`` + ``owner_name`` are meaningful on
     followed rows. Followed rows are read-only and don't count against
-    the owner's ``MAX_LISTS`` quota.
+    the owner's ``MAX_LISTS`` quota. ``item_count`` is the stored count,
+    except for a caller with a maturity limit: then it leaves out the
+    items withheld by that limit.
     """
 
     id: str

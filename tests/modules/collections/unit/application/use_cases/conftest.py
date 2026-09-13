@@ -15,6 +15,7 @@ from src.modules.collections.application.ports import (
 from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.age_rating import AgeRating
+from src.shared_kernel.value_objects.library_id import LibraryId
 
 MediaSummaryFactory = Callable[..., MediaSummary]
 
@@ -102,6 +103,33 @@ def make_visible_titles_lookup_mock(*visible_ids: str) -> AsyncMock:
     async def find_visible_titles(*, movie_ids, series_ids, policy):
         requested = {m.value for m in movie_ids} | {s.value for s in series_ids}
         return frozenset(requested & visible)
+
+    mock.find_visible_titles.side_effect = find_visible_titles
+    return mock
+
+
+def make_catalog_lookup_mock(*summaries: MediaSummary) -> AsyncMock:
+    """Build an ``AsyncMock`` of ``MediaLookupPort`` over one consistent catalog.
+
+    ``get_many`` answers with ``summaries``; ``find_visible_titles`` answers
+    with the requested ids whose summary ``policy.permits``. Reads that use
+    either method therefore agree on which titles exist, which the policy
+    reaches by library and which its maturity limit withholds.
+    """
+    mock = make_media_lookup_mock(*summaries)
+    by_id = {s.media_id: s for s in summaries}
+
+    async def find_visible_titles(*, movie_ids, series_ids, policy):
+        requested = [m.value for m in movie_ids] + [s.value for s in series_ids]
+        return frozenset(
+            media_id
+            for media_id in requested
+            if (summary := by_id.get(media_id)) is not None
+            and summary.library_id is not None
+            and policy.permits(
+                library_id=LibraryId(summary.library_id), minimum_age=summary.minimum_age
+            )
+        )
 
     mock.find_visible_titles.side_effect = find_visible_titles
     return mock
