@@ -29,8 +29,9 @@ class AddItemToCustomListRequest(BaseModel):
 class ReorderCustomListItemsRequest(BaseModel):
     """Request body for reordering a custom list's items.
 
-    ``media_ids`` is the full set of the list's item ids in the desired
-    order; each item's position becomes its index.
+    ``media_ids`` is the list's item ids in the desired order. Items left
+    out keep their slots — a profile never sends the titles withheld from
+    it — and the sent ones take the slots they occupy, in this order.
     """
 
     media_ids: list[str] = Field(..., min_length=1)

@@ -115,11 +115,23 @@ class CustomListRepository(ABC):
         ordered_media_ids: Sequence[CollectionMediaId],
         profile_id: ProfileId,
     ) -> None:
-        """Set each item's position to its index in ``ordered_media_ids``.
+        """Apply a manual order that may name only some of the items.
 
-        Scoped to a list owned by ``profile_id``. Ids not present in the
-        list are ignored; items missing from the sequence keep their
-        current position. No-op when the list doesn't resolve.
+        Scoped to a list owned by ``profile_id``. The live items are read
+        in list order (see :meth:`list_items`) and arranged by
+        :meth:`ManualItemOrder.arrange`: repeated ids count once, ids not
+        in the list are ignored, and the named items fill the slots they
+        already occupy in the order given, while every other item keeps
+        its slot. The whole list is then renumbered ``0..n-1``, which also
+        clears duplicate positions left by concurrent adds. A sequence
+        naming every item once makes each position its index there.
+        Concurrent reorders resolve to the last one committed.
+        No-op when the list doesn't resolve.
+
+        Example:
+            >>> # items [A, h1, B, h2, C]; the client does not see h1, h2
+            >>> await repo.reorder_items(list_id, [C, A, B], profile_id)
+            >>> # items [C, h1, A, h2, B] at positions 0..4
         """
 
     @abstractmethod
@@ -128,7 +140,11 @@ class CustomListRepository(ABC):
         list_id: str,
         profile_id: ProfileId,
     ) -> list[CustomListItem]:
-        """List items in a list owned by ``profile_id``, ordered by position."""
+        """List items in a list owned by ``profile_id``, in list order.
+
+        Ordered by position; items sharing a position come in the order
+        they were added.
+        """
 
     @abstractmethod
     async def get_next_position(

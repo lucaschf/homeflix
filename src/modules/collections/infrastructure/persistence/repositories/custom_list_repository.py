@@ -2,11 +2,13 @@
 
 from collections.abc import Sequence
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from src.modules.collections.domain.entities import CustomList, CustomListItem
 from src.modules.collections.domain.repositories import CustomListRepository
+from src.modules.collections.domain.services import ManualItemOrder
 from src.modules.collections.domain.value_objects import CollectionMediaId, ShareToken
 from src.modules.collections.infrastructure.persistence.mappers import (
     CustomListItemMapper,
@@ -18,6 +20,17 @@ from src.modules.collections.infrastructure.persistence.models import (
 )
 from src.shared_kernel.value_objects import MediaType
 from src.shared_kernel.value_objects.profile_id import ProfileId
+
+# List order. Adds racing on ``MAX(position) + 1`` can leave two items on
+# the same position; the one added first comes first, and the id settles
+# identical timestamps. ``added_at`` rather than the id alone because a
+# re-added item keeps its old row. Shared by the read and the reorder so
+# both see the same list.
+_ITEM_ORDER = (
+    CustomListItemModel.position.asc(),
+    CustomListItemModel.added_at.asc(),
+    CustomListItemModel.id.asc(),
+)
 
 
 class SQLAlchemyCustomListRepository(CustomListRepository):
@@ -270,16 +283,8 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         if internal_id is None:
             return []
 
-        stmt = (
-            select(CustomListItemModel)
-            .where(
-                CustomListItemModel.custom_list_id == internal_id,
-                CustomListItemModel.deleted_at.is_(None),
-            )
-            .order_by(CustomListItemModel.position.asc())
-        )
-        result = await self._session.execute(stmt)
-        return [CustomListItemMapper.to_entity(m) for m in result.scalars().all()]
+        models = await self._live_item_models(internal_id)
+        return [CustomListItemMapper.to_entity(m) for m in models]
 
     async def reorder_items(
         self,
@@ -287,21 +292,52 @@ class SQLAlchemyCustomListRepository(CustomListRepository):
         ordered_media_ids: Sequence[CollectionMediaId],
         profile_id: ProfileId,
     ) -> None:
-        """Rewrite each item's position to its index in the given order."""
+        """Arrange the requested items in their slots and renumber the list.
+
+        Positions are written row by row through the ORM. No constraint
+        spans ``(custom_list_id, position)``, so the duplicates a list
+        passes through mid-flush cannot fail the write. Every row's
+        position is written, even one that did not move against the read,
+        so the write is a full permutation of the list as read and
+        concurrent reorders resolve to the last one committed.
+        """
         internal_id = await self._get_list_internal_id(list_id, profile_id)
         if internal_id is None:
             return
 
-        for position, media_id in enumerate(ordered_media_ids):
-            await self._session.execute(
-                update(CustomListItemModel)
-                .where(
-                    CustomListItemModel.custom_list_id == internal_id,
-                    CustomListItemModel.media_id == media_id.value,
-                    CustomListItemModel.deleted_at.is_(None),
-                )
-                .values(position=position)
+        models = await self._live_item_models(internal_id)
+        arranged = ManualItemOrder.arrange(
+            [CollectionMediaId(m.media_id) for m in models], ordered_media_ids
+        )
+        rank = {media_id.value: index for index, media_id in enumerate(arranged)}
+        # ``sorted`` is stable: rows sharing a media id stay adjacent, in
+        # list order, instead of landing on one position.
+        for position, model in enumerate(sorted(models, key=lambda m: rank[m.media_id])):
+            model.position = position
+            # The ORM skips a value equal to the one it read; another
+            # reorder may have changed it since.
+            flag_modified(model, "position")
+        await self._session.flush()
+
+    async def _live_item_models(self, internal_id: int) -> Sequence[CustomListItemModel]:
+        """Load a list's live item rows in list order.
+
+        Args:
+            internal_id: The list's internal database id.
+
+        Returns:
+            The rows in list order (``_ITEM_ORDER``).
+        """
+        stmt = (
+            select(CustomListItemModel)
+            .where(
+                CustomListItemModel.custom_list_id == internal_id,
+                CustomListItemModel.deleted_at.is_(None),
             )
+            .order_by(*_ITEM_ORDER)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalars().all()
 
     async def get_next_position(
         self,

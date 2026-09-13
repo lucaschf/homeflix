@@ -128,11 +128,15 @@ class CollectionsContainer(containers.DeclarativeContainer):
         ListCustomListsUseCase,
         uow_factory=collections_unit_of_work_factory,
         profile_lookup=profile_lookup,
+        media_lookup=media_lookup,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     rename_custom_list = providers.Factory(
         RenameCustomListUseCase,
         uow_factory=collections_unit_of_work_factory,
+        media_lookup=media_lookup,
+        profile_viewing_policy=profile_viewing_policy,
     )
 
     delete_custom_list = providers.Factory(
