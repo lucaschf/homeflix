@@ -292,6 +292,12 @@ async def episode_tracks(
 # reference against the VTT URL and lands on this route's ``.jpg``
 # sibling.
 
+# The lookup gates these files by profile (403 on the maturity axis),
+# but a bare ``FileResponse`` only sends ``ETag``/``Last-Modified``, so
+# a browser could reuse one heuristically after a profile switch.
+# ``no-cache`` makes every reuse revalidate through the gate (ADR-035).
+_SCRUB_PREVIEW_HEADERS = {"Cache-Control": "private, no-cache"}
+
 
 def _scrub_preview_files(scrub_preview_path: str | None) -> tuple[Path, Path]:
     """Return (vtt_path, sprite_path) for a stored scrub-preview path, or 404.
@@ -326,7 +332,7 @@ async def movie_scrub_preview_vtt(
     """Serve the persisted scrub-preview WebVTT for a movie."""
     movie = await media_lookup.find_movie(profile_id, movie_id)
     vtt_path, _ = _scrub_preview_files(movie.scrub_preview_path)
-    return FileResponse(str(vtt_path), media_type="text/vtt")
+    return FileResponse(str(vtt_path), media_type="text/vtt", headers=_SCRUB_PREVIEW_HEADERS)
 
 
 @router.get("/movie/{movie_id}/scrub-preview/sprite.jpg")
@@ -341,7 +347,7 @@ async def movie_scrub_preview_sprite(
     """Serve the persisted scrub-preview sprite JPEG for a movie."""
     movie = await media_lookup.find_movie(profile_id, movie_id)
     _, sprite_path = _scrub_preview_files(movie.scrub_preview_path)
-    return FileResponse(str(sprite_path), media_type="image/jpeg")
+    return FileResponse(str(sprite_path), media_type="image/jpeg", headers=_SCRUB_PREVIEW_HEADERS)
 
 
 @router.get("/episode/{series_id}/{season_number}/{episode_number}/scrub-preview/sprite.vtt")
@@ -360,7 +366,7 @@ async def episode_scrub_preview_vtt(
     if episode is None:
         raise HTTPException(status_code=404, detail="Episode not found")
     vtt_path, _ = _scrub_preview_files(episode.scrub_preview_path)
-    return FileResponse(str(vtt_path), media_type="text/vtt")
+    return FileResponse(str(vtt_path), media_type="text/vtt", headers=_SCRUB_PREVIEW_HEADERS)
 
 
 @router.get("/episode/{series_id}/{season_number}/{episode_number}/scrub-preview/sprite.jpg")
@@ -379,7 +385,7 @@ async def episode_scrub_preview_sprite(
     if episode is None:
         raise HTTPException(status_code=404, detail="Episode not found")
     _, sprite_path = _scrub_preview_files(episode.scrub_preview_path)
-    return FileResponse(str(sprite_path), media_type="image/jpeg")
+    return FileResponse(str(sprite_path), media_type="image/jpeg", headers=_SCRUB_PREVIEW_HEADERS)
 
 
 # -- Cache management ----------------------------------------------------------
