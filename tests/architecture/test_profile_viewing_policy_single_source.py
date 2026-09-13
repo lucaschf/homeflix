@@ -113,13 +113,59 @@ def _find_policy_constructions(source: str) -> list[str]:
 
 _ADAPTER_METHOD = "find_for_profile"
 
+_NESTED_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
 
-def _is_bare_derivation(expr: ast.expr) -> bool:
-    """Whether ``expr`` is exactly ``<something>.viewing_policy()``, unmodified."""
+
+def _own_scope(method: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.AST]:
+    """Nodes in ``method``'s own body, without entering nested functions or classes.
+
+    A ``return`` inside a local helper is not a return of ``find_for_profile``,
+    so neither its derivation nor its deny-all may count for the method.
+    """
+    found: list[ast.AST] = []
+    pending: list[ast.AST] = [node for node in method.body if not isinstance(node, _NESTED_SCOPES)]
+    while pending:
+        node = pending.pop()
+        found.append(node)
+        pending.extend(
+            child for child in ast.iter_child_nodes(node) if not isinstance(child, _NESTED_SCOPES)
+        )
+    return found
+
+
+def _assigned_names(nodes: list[ast.AST]) -> frozenset[str]:
+    """Names bound by an assignment among ``nodes``, ``with ... as`` and loops included.
+
+    Parameters such as ``self`` are deliberately absent: the policy has to be
+    derived from something the method looked up, not from the adapter itself.
+    """
+    targets: list[ast.expr] = []
+    for node in nodes:
+        if isinstance(node, ast.Assign):
+            targets.extend(node.targets)
+        elif isinstance(
+            node, ast.AnnAssign | ast.AugAssign | ast.NamedExpr | ast.For | ast.AsyncFor
+        ):
+            targets.append(node.target)
+        elif isinstance(node, ast.With | ast.AsyncWith):
+            targets.extend(item.optional_vars for item in node.items if item.optional_vars)
+    return frozenset(
+        name.id for target in targets for name in ast.walk(target) if isinstance(name, ast.Name)
+    )
+
+
+def _is_bare_derivation(expr: ast.expr, local_names: frozenset[str]) -> bool:
+    """Whether ``expr`` is exactly ``<local>.viewing_policy()``, unmodified.
+
+    The receiver must be a name the method assigned (the profile it loaded),
+    so ``self.viewing_policy()`` or a parameter's method does not pass.
+    """
     return (
         isinstance(expr, ast.Call)
         and isinstance(expr.func, ast.Attribute)
         and expr.func.attr == _DERIVATION_METHOD
+        and isinstance(expr.func.value, ast.Name)
+        and expr.func.value.id in local_names
         and not expr.args
         and not expr.keywords
     )
@@ -149,10 +195,12 @@ def _find_non_derived_returns(source: str) -> list[str]:
     offending: list[str] = []
     derives = False
     for method in methods:
-        for node in ast.walk(method):
+        scope = _own_scope(method)
+        local_names = _assigned_names(scope)
+        for node in scope:
             if not isinstance(node, ast.Return) or node.value is None:
                 continue
-            if _is_bare_derivation(node.value):
+            if _is_bare_derivation(node.value, local_names):
                 derives = True
             elif not (isinstance(node.value, ast.Call) and _is_deny_all_literal(node.value, names)):
                 offending.append(f"line {node.lineno}: {ast.unparse(node)}")
@@ -243,10 +291,14 @@ class TestDetector:
         assert not _find_policy_constructions(snippet)
 
     _METHOD = "async def find_for_profile(self, profile_id):\n"
+    _LOOKUP = (
+        "    async with self._identity_uow_factory() as uow:\n"
+        "        profile = await uow.profiles.find_by_id(profile_id)\n"
+    )
 
     def test_accepts_the_adapter_shape(self):
         source = (
-            self._METHOD + "    if profile is None:\n"
+            self._METHOD + self._LOOKUP + "    if profile is None:\n"
             "        return ViewingPolicy(allowed_library_ids=[])\n"
             "    return profile.viewing_policy()\n"
         )
@@ -266,10 +318,29 @@ class TestDetector:
             "    return ViewingPolicy(allowed_library_ids=[])\n",
             # Derivation with arguments is not the plain derived policy.
             "    return profile.viewing_policy(strict=False)\n",
+            # The receiver is not something the method looked up.
+            "    return self.viewing_policy()\n",
+            "    return profile_id.viewing_policy()\n",
+            # A local helper's derivation is not a return of find_for_profile.
+            "    def helper(p):\n"
+            "        return p.viewing_policy()\n"
+            "    return ViewingPolicy(allowed_library_ids=[])\n",
+            "    derive = lambda: profile.viewing_policy()\n"
+            "    return ViewingPolicy(allowed_library_ids=[])\n",
         ],
     )
     def test_flags_returns_that_are_not_the_derived_policy(self, body):
-        assert _find_non_derived_returns(self._METHOD + body)
+        assert _find_non_derived_returns(self._METHOD + self._LOOKUP + body)
+
+    def test_ignores_returns_inside_a_local_helper(self):
+        """A helper's own return is its business; only the method's returns are judged."""
+        source = (
+            self._METHOD + self._LOOKUP + "    def describe():\n"
+            "        return str(profile)\n"
+            "    return profile.viewing_policy()\n"
+        )
+
+        assert not _find_non_derived_returns(source)
 
     def test_flags_a_module_without_the_adapter_method(self):
         assert _find_non_derived_returns("def other():\n    return profile.viewing_policy()\n")
