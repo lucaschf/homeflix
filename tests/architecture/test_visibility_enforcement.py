@@ -30,8 +30,10 @@ Why the AST and not grep:
 
 Raw SQL cannot be resolved to a model, so string literals (documentation
 aside) are matched with a narrow pattern: a gated column name directly
-followed by a comparison. The FTS search paths are written as raw SQL,
-which makes them the likeliest place for an inline copy to reappear.
+followed by a comparison. The admin FTS helpers
+(``_movie_fts_matching_ids``, ``_series_fts_matching_ids``) are still
+written as raw SQL, which makes them the likeliest place for an inline
+copy to reappear.
 
 This is a guardrail against drift, not a sandbox: routing a column
 through a local variable before comparing it escapes the scan. It also

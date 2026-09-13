@@ -19,10 +19,10 @@ by id or TMDB id, genre rows with no id at all), so every entry in
 ``_GATED_READS`` carries a small reader that normalizes its result to a
 set of external ids.
 
-``search`` is deliberately absent: it reads the ``movies_fts`` /
-``series_fts`` virtual tables, which ``Base.metadata.create_all`` does
-not build. Its coverage lands with the FTS fixture in the search
-rewrite (PR 3b).
+The catalog is seeded over ``fts_session_factory`` so ``search``, which
+reads the ``movies_fts`` / ``series_fts`` virtual tables that
+``Base.metadata.create_all`` does not build, sits in ``_GATED_READS``
+beside every other gated read.
 """
 
 from collections.abc import Awaitable, Callable, Sequence
@@ -69,6 +69,9 @@ _WIDE_LIMIT = 50
 #: genre and actor listings reach all of them.
 _SHARED_GENRE = Genre("Drama")
 _SHARED_ACTOR = "Gate Keeper"
+
+#: Every seeded title starts with this word, so ``search`` reaches all of them.
+_SHARED_TITLE_WORD = "Gate"
 
 _MARKER_PREFIX = "marker-"
 
@@ -163,13 +166,13 @@ def _series(library_id: str, index: int, tmdb_id: int) -> Series:
 
 
 @pytest.fixture
-async def seeded(session_factory: async_sessionmaker[AsyncSession]) -> _Seeded:
+async def seeded(fts_session_factory: async_sessionmaker[AsyncSession]) -> _Seeded:
     """Write the same catalog shape into two libraries and commit it."""
     movies: dict[str, list[Movie]] = {library: [] for library in _LIBRARIES}
     series: dict[str, list[Series]] = {library: [] for library in _LIBRARIES}
     tmdb_id = 1000
 
-    async with session_factory() as session:
+    async with fts_session_factory() as session:
         movie_repo = SQLAlchemyMovieRepository(session)
         series_repo = SQLAlchemySeriesRepository(session)
         for library in _LIBRARIES:
@@ -279,6 +282,14 @@ async def _movies_find_by_tmdb_ids(
     return {str(movie.id) for movie in found.values()}
 
 
+async def _movies_search(
+    session: AsyncSession, _seeded: _Seeded, policy: ViewingPolicy | None
+) -> set[str]:
+    repo = SQLAlchemyMovieRepository(session)
+    hits = await repo.search(_SHARED_TITLE_WORD, limit=_WIDE_LIMIT, policy=policy)
+    return {str(movie.id) for movie, _rank in hits}
+
+
 async def _series_find_by_id(
     session: AsyncSession, seeded: _Seeded, policy: ViewingPolicy | None
 ) -> set[str]:
@@ -379,6 +390,14 @@ async def _series_find_by_episode_id(
     return found
 
 
+async def _series_search(
+    session: AsyncSession, _seeded: _Seeded, policy: ViewingPolicy | None
+) -> set[str]:
+    repo = SQLAlchemySeriesRepository(session)
+    hits = await repo.search(_SHARED_TITLE_WORD, limit=_WIDE_LIMIT, policy=policy)
+    return {str(series.id) for series, _rank in hits}
+
+
 @dataclass(frozen=True)
 class _GatedRead:
     """One repository method that accepts a ``policy``.
@@ -407,6 +426,7 @@ _GATED_READS: list[_GatedRead] = [
     _GatedRead("movies.find_random", "movie", _movies_find_random),
     _GatedRead("movies.find_by_ids", "movie", _movies_find_by_ids),
     _GatedRead("movies.find_by_tmdb_ids", "movie", _movies_find_by_tmdb_ids),
+    _GatedRead("movies.search", "movie", _movies_search),
     _GatedRead("series.find_by_id", "series", _series_find_by_id),
     _GatedRead("series.list_paginated", "series", _series_list_paginated),
     _GatedRead("series.list_recently_added", "series", _series_list_recently_added),
@@ -417,6 +437,7 @@ _GATED_READS: list[_GatedRead] = [
     _GatedRead("series.find_by_ids", "series", _series_find_by_ids),
     _GatedRead("series.find_by_tmdb_ids", "series", _series_find_by_tmdb_ids),
     _GatedRead("series.find_by_episode_id", "series", _series_find_by_episode_id),
+    _GatedRead("series.search", "series", _series_search),
 ]
 
 #: ``(case, policy, libraries whose titles must come back)``.
@@ -444,7 +465,7 @@ class TestEveryGatedReadAppliesThePolicy:
     @pytest.mark.parametrize("gated_read", _GATED_READS, ids=[read.name for read in _GATED_READS])
     async def test_returns_exactly_the_titles_the_policy_reaches(
         self,
-        session_factory: async_sessionmaker[AsyncSession],
+        fts_session_factory: async_sessionmaker[AsyncSession],
         seeded: _Seeded,
         gated_read: _GatedRead,
         case: str,
@@ -457,7 +478,7 @@ class TestEveryGatedReadAppliesThePolicy:
         if policy is None:
             assert len(expected) == _TITLES_PER_LIBRARY * len(_LIBRARIES)
 
-        async with session_factory() as session:
+        async with fts_session_factory() as session:
             returned = await gated_read.read(session, seeded, policy)
 
         assert returned == expected, (
