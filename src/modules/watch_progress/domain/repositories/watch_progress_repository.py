@@ -1,11 +1,49 @@
 """WatchProgress repository interface."""
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime
 
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.value_objects import WatchableMediaId
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 from src.shared_kernel.value_objects.profile_id import ProfileId
+
+
+@dataclass(frozen=True)
+class RecentlyWatchedCursor:
+    """Keyset position in a profile's recently-watched stream.
+
+    The stream is ordered by ``(last_watched_at DESC, media_id DESC)``.
+    ``media_id`` breaks ties and makes the order total, since a profile
+    holds at most one row per media (``UNIQUE(profile_id, media_id)``).
+
+    Attributes:
+        last_watched_at: ``last_watched_at`` of the last row read.
+        media_id: Raw ``media_id`` of the last row read — kept as the
+            stored string, because the row it came from may not parse
+            as a :class:`WatchableMediaId`.
+    """
+
+    last_watched_at: datetime
+    media_id: str
+
+
+@dataclass(frozen=True)
+class RecentlyWatchedPage:
+    """One page of a profile's recently-watched stream.
+
+    Attributes:
+        items: Rows of the page, in stream order, with corrupt rows
+            already dropped — so a page can be empty and still not be
+            the last one.
+        next_cursor: Position of the last *stored* row of the page,
+            corrupt or not, to resume after; ``None`` when the stream is
+            exhausted.
+    """
+
+    items: list[WatchProgress]
+    next_cursor: RecentlyWatchedCursor | None
 
 
 class WatchProgressRepository(ABC):
@@ -69,6 +107,32 @@ class WatchProgressRepository(ABC):
         limit: int = 20,
     ) -> list[WatchProgress]:
         """List in-progress + completed items for the profile, recent first."""
+
+    @abstractmethod
+    async def list_recently_watched_page(
+        self,
+        profile_id: ProfileId,
+        *,
+        limit: int,
+        after: RecentlyWatchedCursor | None,
+    ) -> RecentlyWatchedPage:
+        """Read one keyset page of in-progress + completed items, recent first.
+
+        Covers the same rows as :meth:`list_recently_watched`, in a total
+        order, so a caller that discards rows can keep reading without
+        skipping or repeating any.
+
+        Args:
+            profile_id: The caller's profile.
+            limit: Maximum number of stored rows to read for the page.
+            after: Resume strictly after this position; ``None`` starts
+                from the most recent row.
+
+        Returns:
+            The page. Its ``next_cursor`` comes from the last stored row
+            read, before corrupt rows are dropped, and is ``None`` when
+            fewer than ``limit`` rows were read.
+        """
 
     @abstractmethod
     async def find_by_media_ids(
@@ -166,4 +230,4 @@ class WatchProgressRepository(ABC):
         """
 
 
-__all__ = ["WatchProgressRepository"]
+__all__ = ["RecentlyWatchedCursor", "RecentlyWatchedPage", "WatchProgressRepository"]

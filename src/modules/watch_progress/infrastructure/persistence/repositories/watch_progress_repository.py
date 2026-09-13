@@ -2,12 +2,16 @@
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.watch_progress.domain.entities import WatchProgress
-from src.modules.watch_progress.domain.repositories import WatchProgressRepository
+from src.modules.watch_progress.domain.repositories import (
+    RecentlyWatchedCursor,
+    RecentlyWatchedPage,
+    WatchProgressRepository,
+)
 from src.modules.watch_progress.domain.value_objects import WatchableMediaId
 from src.modules.watch_progress.infrastructure.persistence.mappers import (
     WatchProgressMapper,
@@ -121,6 +125,57 @@ class SQLAlchemyWatchProgressRepository(WatchProgressRepository):
         )
         result = await self._session.execute(stmt)
         return self._to_entities_dropping_invalid(list(result.scalars().all()))
+
+    async def list_recently_watched_page(
+        self,
+        profile_id: ProfileId,
+        *,
+        limit: int,
+        after: RecentlyWatchedCursor | None,
+    ) -> RecentlyWatchedPage:
+        """Read one keyset page of in-progress + completed rows, recent first.
+
+        The cursor is bound through the ``last_watched_at`` column type,
+        so it is rendered in the same text form SQLite stores and the
+        comparison stays chronological.
+        """
+        stmt = select(WatchProgressModel).where(
+            WatchProgressModel.profile_id == str(profile_id),
+            WatchProgressModel.status.in_(["in_progress", "completed"]),
+            WatchProgressModel.deleted_at.is_(None),
+        )
+        if after is not None:
+            stmt = stmt.where(
+                or_(
+                    WatchProgressModel.last_watched_at < after.last_watched_at,
+                    and_(
+                        WatchProgressModel.last_watched_at == after.last_watched_at,
+                        WatchProgressModel.media_id < after.media_id,
+                    ),
+                )
+            )
+        stmt = stmt.order_by(
+            WatchProgressModel.last_watched_at.desc(),
+            WatchProgressModel.media_id.desc(),
+        ).limit(limit)
+        result = await self._session.execute(stmt)
+        models = list(result.scalars().all())
+
+        # The cursor comes from the last stored row, before corrupt rows
+        # are dropped: a page made only of corrupt rows is empty but not
+        # the end of the stream.
+        next_cursor = (
+            RecentlyWatchedCursor(
+                last_watched_at=models[-1].last_watched_at,
+                media_id=models[-1].media_id,
+            )
+            if models and len(models) >= limit
+            else None
+        )
+        return RecentlyWatchedPage(
+            items=self._to_entities_dropping_invalid(models),
+            next_cursor=next_cursor,
+        )
 
     @staticmethod
     def _to_entities_dropping_invalid(
