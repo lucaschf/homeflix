@@ -7,6 +7,9 @@ from src.modules.media.application.unit_of_work import (
     MediaUnitOfWork,
     MediaUnitOfWorkFactory,
 )
+from src.modules.media.infrastructure.persistence.repositories.catalog_access_reader import (
+    SqlAlchemyCatalogAccessReader,
+)
 from src.modules.media.infrastructure.persistence.repositories.intro_detection_run_repository import (
     SqlAlchemyIntroDetectionRunRepository,
 )
@@ -43,6 +46,7 @@ class SqlAlchemyMediaUnitOfWork(SqlAlchemyUnitOfWork, MediaUnitOfWork):
         self.intro_detection_runs = SqlAlchemyIntroDetectionRunRepository(session)
         self.media_conflicts = SqlAlchemyMediaConflictRepository(session)
         self.job_runs = SqlAlchemyJobRunRepository(session)
+        self.catalog_access = SqlAlchemyCatalogAccessReader(session)
 
 
 class SqlAlchemyMediaUnitOfWorkFactory(MediaUnitOfWorkFactory):

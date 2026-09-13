@@ -17,9 +17,14 @@ them — fail-open in a parental gate.
 import pytest
 from sqlalchemy import select
 
+from src.modules.media.domain.value_objects import MovieId, SeriesId
 from src.modules.media.infrastructure.persistence.models.movie import MovieModel
+from src.modules.media.infrastructure.persistence.models.series import SeriesModel
 from src.modules.media.infrastructure.persistence.repositories._visibility_filter import (
     visibility_conditions,
+)
+from src.modules.media.infrastructure.persistence.repositories.catalog_access_reader import (
+    SqlAlchemyCatalogAccessReader,
 )
 from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import AgeRating, LibraryId
@@ -81,6 +86,17 @@ POLICIES: list[tuple[str, ViewingPolicy | None]] = [
     ),
 ]
 
+#: ``POLICIES`` without the ungated entry. ``CatalogAccessReader`` takes
+#: ``policy`` as a required argument precisely so ``None`` cannot reach it.
+GATED_POLICIES: list[tuple[str, ViewingPolicy]] = [
+    (name, policy) for name, policy in POLICIES if policy is not None
+]
+
+
+def _series_id(movie_external_id: str) -> str:
+    """The id the same matrix row carries when seeded as a series."""
+    return f"ser_{movie_external_id.removeprefix('mov_')}"
+
 
 def _domain_visible(policy: ViewingPolicy | None) -> set[str]:
     """What the domain rule says, read straight off the row matrix.
@@ -102,7 +118,7 @@ def _domain_visible(policy: ViewingPolicy | None) -> set[str]:
 
 @pytest.fixture
 async def seeded_session(session_factory):
-    """Insert the row matrix directly, bypassing the mapper.
+    """Insert the row matrix directly, as movies and as series, bypassing the mapper.
 
     Written as raw models on purpose: the point is to exercise rows the
     mapper would never produce, which is where definition and projection
@@ -120,6 +136,18 @@ async def seeded_session(session_factory):
                     title=external_id,
                     year=2024,
                     duration=7200,
+                    content_rating=label,
+                    minimum_age=age,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            session.add(
+                SeriesModel(
+                    external_id=_series_id(external_id),
+                    library_id=library_id,
+                    title=external_id,
+                    start_year=2024,
                     content_rating=label,
                     minimum_age=age,
                     created_at=now,
@@ -146,6 +174,46 @@ class TestProjectionMatchesDefinition:
             f"policy '{name}': SQL and ViewingPolicy.permits() disagree. "
             f"only in SQL: {sorted(from_sql - _domain_visible(policy))}; "
             f"only in domain: {sorted(_domain_visible(policy) - from_sql)}"
+        )
+
+
+@pytest.mark.integration
+class TestCatalogAccessReaderMatchesDefinition:
+    """The access reader must permit exactly what the rule permits, on both models.
+
+    It builds its own column query, so holding the helper to the rule is
+    not enough: a reader that skipped the funnel, or applied only one
+    axis, would still type-check and still return rows.
+    """
+
+    @pytest.mark.parametrize(("name", "policy"), GATED_POLICIES, ids=[p[0] for p in GATED_POLICIES])
+    async def test_movie_access_matches_the_domain(self, seeded_session, name, policy):
+        all_ids = [MovieId(external_id) for external_id, *_ in ROWS]
+
+        async with seeded_session() as session:
+            reader = SqlAlchemyCatalogAccessReader(session)
+            from_reader = set(await reader.find_movie_access(all_ids, policy=policy))
+
+        expected = _domain_visible(policy)
+        assert from_reader == expected, (
+            f"policy '{name}': reader and ViewingPolicy.permits() disagree on movies. "
+            f"only in reader: {sorted(from_reader - expected)}; "
+            f"only in domain: {sorted(expected - from_reader)}"
+        )
+
+    @pytest.mark.parametrize(("name", "policy"), GATED_POLICIES, ids=[p[0] for p in GATED_POLICIES])
+    async def test_series_access_matches_the_domain(self, seeded_session, name, policy):
+        all_ids = [SeriesId(_series_id(external_id)) for external_id, *_ in ROWS]
+
+        async with seeded_session() as session:
+            reader = SqlAlchemyCatalogAccessReader(session)
+            from_reader = set(await reader.find_series_access(all_ids, policy=policy))
+
+        expected = {_series_id(external_id) for external_id in _domain_visible(policy)}
+        assert from_reader == expected, (
+            f"policy '{name}': reader and ViewingPolicy.permits() disagree on series. "
+            f"only in reader: {sorted(from_reader - expected)}; "
+            f"only in domain: {sorted(expected - from_reader)}"
         )
 
 
