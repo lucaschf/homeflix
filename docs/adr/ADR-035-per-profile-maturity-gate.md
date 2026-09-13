@@ -219,7 +219,7 @@ Pontos de toque previstos: `age_rating.py`, `rating_system.py`, `certification.p
 
 ## Emendas
 
-Três correções levantadas durante a implementação, registradas aqui em vez de
+Correções levantadas durante a implementação, registradas aqui em vez de
 reescritas silenciosamente no texto original.
 
 ### 1. `RatingSystem` não tem `MANUAL`, e ganha `UNKNOWN`
@@ -283,6 +283,123 @@ usado pelo hero) tem a mesma patologia e também filtra em SQL.
 
 A conclusão — o filtro vai no `WHERE` — não muda.
 
+### 6. O gate fora do catálogo: `watch_progress` e `collections` (PRs 3d)
+
+A decisão 11 e a linha 74 das Consequências trataram o gate como uma regra só
+("404 no eixo biblioteca, 403 no etário"). Levá-lo para os BCs que guardam
+*referências* a títulos — progresso, watchlist, listas — mostrou que a resposta
+certa depende do tipo de operação, e que o 403 do detalhe viraria oráculo em
+qualquer outro lugar.
+
+**Matriz de contrato.**
+
+| Operação | Título não visível (inexistente, outra biblioteca, acima do limite, sem classificação sob limite, perfil deny-all) |
+|---|---|
+| Detalhe de catálogo (`GET /movies/{id}`, `/series/{id}`) | 404 no eixo biblioteca; 403 `CONTENT_RESTRICTED_*` no etário — a decisão 11 vale **só aqui** (#427) |
+| Coleções (Continue Watching, watchlist, itens de lista, preview) | o item é **descartado**; `limit` e janelas contam só visíveis |
+| Leitura de id único do próprio estado (`GET /progress/{id}`, `GET /watchlist/check/{id}`) | responde como ausente (`data: null`, `in_list: false`) |
+| Escrita que cria referência (`PUT /progress`, toggle add, `POST /custom-lists/{id}/items`) | **404** pelo mesmo `ResourceNotFoundException.for_resource` de um id inexistente (tipo `Movie` ou `Series` tirado do prefixo), nos dois eixos, nada gravado |
+| Remoção, reorder, dismiss, handlers de merge/promoção | **sem gate**: são escopados por *ownership*, o mesmo critério que descartou a regra recíproca (linha 216) |
+
+O 404 nas escritas foi escolhido sobre o 403 porque vaza estritamente menos que o
+detalhe e dispensa cópias de erro, `error_mapping` e bootstrap em cada BC. Nenhum
+fluxo do frontend chega a essas escritas com título restrito. Remoção fica sem
+gate porque é a única saída de um item que ficou oculto depois de salvo.
+
+**Linha 74 das Consequências — quem fechou cada buraco.**
+
+| Buraco | PR |
+|---|---|
+| `MediaLookupPort` de `watch_progress` sem profile; Continue Watching exibindo título fora da ACL | #431 |
+| `save_progress.py` aceitando qualquer `media_id` (inclusive inexistente) | #431 |
+| `get_watchlist.py` sem ACL; lista do dono lida com `policy=None`; seguidor e preview filtrando só biblioteca | #432 |
+| Escritas de watchlist e de listas customizadas aceitando qualquer id | #433 |
+| `item_count` e `position` revelando itens retidos por idade; reorder parcial colidindo posições | #432 (preview), #434 (listas e rename) |
+| `GET /movies/{id}/files` e `/series/{id}/files` sem autenticação, expondo caminho absoluto | #428 |
+
+**Decisão 7 — escopo da proibição de filtro em memória.** "O filtro não pode ser
+aplicado em memória" passa a valer para as leituras de `media` com cursor, merge
+ou `LIMIT` em SQL (#425, #426). Fora delas:
+
+- itens de lista e preview filtram em Python, porque leem a lista inteira, sem
+  `LIMIT`, e precisam distinguir título oculto (contado ou descartado) de título
+  removido (pulado) — uma query filtrada devolveria os dois como ausentes;
+- Continue Watching e watchlist usam **refill por keyset** sobre o stream do
+  próprio BC: páginas de linhas brutas, uma consulta batch de visibilidade por
+  página, cursor tirado da última linha bruta, dedupe por `media_id`. Inexistente,
+  oculto por biblioteca e oculto por idade **não consomem** o `limit`; se só um
+  deles consumisse, `limit=1` diria à criança quais títulos existem.
+
+O `limit` do Continue Watching mantém a semântica de janela de linhas, agora
+contada só entre visíveis (neutro para os perfis atuais). Passar a contar cards é
+decisão separada.
+
+**`hidden_count` conta só o eixo biblioteca, para todo chamador, dono incluído.**
+O dono deixou de ser exceção: um título fora da ACL do próprio dono conta como
+oculto na própria lista. Item acima do limite é descartado **sem contar** — contar
+entregaria ao perfil restrito quantos títulos lhe foram retidos.
+
+**`item_count` e `position` sob limite.** Para chamador com `restricts_maturity`,
+`position` é renumerado `0..n-1` entre os emitidos e `item_count` = armazenado −
+retidos por idade (alcançáveis pela ACL − visíveis pela política completa), o
+mesmo número no preview, em `GET /custom-lists` e na resposta do rename. Removidos
+e fora da ACL não são subtraídos, o que mantém
+`item_count − len(items) − hidden_count == removidos`. Sem limite, nada muda. O
+reorder passou a preservar os slots dos itens não enviados e a renumerar a lista
+inteira, gravando todas as posições para que reorders concorrentes resolvam para o
+último commit.
+
+Resíduos aceitos:
+
+- `CUSTOM_LIST_ITEM_LIMIT_EXCEEDED` conta linhas físicas, ocultos incluídos;
+- `add_item` renova o `updated_at` da lista, então um seguidor percebe que o dono
+  adicionou algo mesmo quando o item lhe é invisível (1 bit);
+- 1 bit de pertença própria: toggle devolve `added=false`, remoção de item devolve
+  204 ou 404.
+
+**`CatalogAccessReader` (#430).** Leitura leve de acesso — seleciona só o id
+externo e as colunas de classificação, aplica a política no `WHERE` pelo mesmo
+funil e não carrega agregados — com `policy` **obrigatório** (`None` levanta
+`TypeError`). É por onde passam as escritas de
+`watch_progress` e `collections`; `find_by_ids` com política completa fica para as
+leituras que precisam de dados de exibição.
+
+**Duas redes de arquitetura novas.**
+
+- `test_profile_viewing_policy_single_source.py` (#429): nos três adapters de
+  política, o único `ViewingPolicy` construído é o deny-all, e o retorno de
+  `find_for_profile` é `profile.viewing_policy()` — o ponto único de mudança da
+  PR 4.
+- `test_cross_bc_catalog_calls_explicit_policy.py` (#433): fora de `media`, toda
+  chamada a método de `.movies`, `.series` ou `.catalog_access` cujo parâmetro
+  `policy` é descoberto por introspecção das ABCs precisa passar `policy=` por
+  keyword. `visibility_conditions(model, None)` devolve `[]` e os repositórios
+  têm `policy=None` por default, então um lookup cross-BC novo que esquecesse o
+  argumento abriria o gate em silêncio. `None` continua permitido quando escrito
+  — hoje só no streaming, que serve jobs de operador.
+
+**Checklist da PR 4 (limite etário no perfil).**
+
+- [ ] `Profile.viewing_policy()` é o único ponto a mudar; o teste de fonte única
+  garante que nenhum adapter monta a política por fora.
+- [ ] Os e2e de `watch_progress` e `collections` passam a rodar também **sem**
+  override do port, com perfil semeado com limite.
+- [ ] `Cache-Control: no-store` nos endpoints filtrados — a mitigação da primeira
+  linha da tabela de Riscos ainda não existe em nenhum deles; PR transversal
+  antes da PR 4.
+- [ ] Riscos conhecidos fora dos BCs acima, a classificar antes de liberar limite
+  para perfis reais: `in_catalog` de `/catalog/lookup` como oráculo de existência
+  de título restrito; notificação de chegada de título por `user_id`, visível a
+  todos os perfis da conta; feed "Em breve" por usuário.
+- [ ] Frontend: `useUpdateProfile` (`homeflix-web/src/api/auth.ts`) invalida só
+  `authKeys.profiles`; ao mudar a política do perfil ativo precisa invalidar
+  watchlist, Continue Watching e catálogo. As mutations de progresso e coleções
+  não têm `onError`, então um 404 de escrita falha em silêncio — aceitável porque
+  nenhum card renderiza título invisível, mas nunca pode virar 401.
+- [ ] Follow-up no `homeflix-web`: `docs/list-follow-share-contract.md` ainda diz
+  que a visão do dono é irrestrita e que `hidden_count` reflete todos os itens
+  restritos; ambos contradizem esta emenda.
+
 ## Histórico de Revisões
 
 | Data | Autor | Mudança |
@@ -290,3 +407,4 @@ A conclusão — o filtro vai no `WHERE` — não muda.
 | 2026-09-12 | Lucas | Criação inicial (Aceito) |
 | 2026-09-12 | Lucas | Emendas 1-4, levantadas na implementação das PRs #421, #422 e #423 |
 | 2026-09-12 | Lucas | Emenda 5, levantada no planejamento da PR 3a |
+| 2026-09-13 | Lucas | Emenda 6, levantada nas PRs 3d (#428-#434) |
