@@ -449,8 +449,10 @@ def _bootstrap_modules() -> None:
     are simply omitted from the list.
     """
     from src.modules.identity import bootstrap as identity_bootstrap
+    from src.modules.media import bootstrap as media_bootstrap
 
     identity_bootstrap.setup()
+    media_bootstrap.setup()
 
 
 def create_app() -> FastAPI:

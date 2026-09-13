@@ -117,6 +117,20 @@ class FakeProfileViewingPolicyPort(ProfileViewingPolicyPort):
         return ViewingPolicy.unrestricted(library_ids)
 
 
+class FixedViewingPolicyPort(ProfileViewingPolicyPort):
+    """Answer every profile with one pre-built ``ViewingPolicy``.
+
+    For tests that need a maturity limit, which the production adapter
+    cannot build yet and ``FakeProfileViewingPolicyPort`` does not model.
+    """
+
+    def __init__(self, policy: ViewingPolicy) -> None:
+        self._policy = policy
+
+    async def find_for_profile(self, profile_id: ProfileId) -> ViewingPolicy:
+        return self._policy
+
+
 def make_profile_viewing_policy(
     *,
     profile_id: str = "prf_test12345678",

@@ -19,11 +19,13 @@ from src.modules.media.application.use_cases._credits_media_helpers import (
 from src.modules.media.application.use_cases._intro_marker_helpers import (
     to_intro_marker_output,
 )
+from src.modules.media.application.use_cases._maturity_gate import ensure_maturity_permits
 from src.modules.media.application.use_cases._media_file_helpers import (
     to_media_file_output,
 )
 from src.modules.media.domain.entities import Episode, Season, Series
 from src.modules.media.domain.value_objects import SeriesId
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects.episode_composite_id import EpisodeCompositeId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
@@ -74,7 +76,11 @@ class GetSeriesByIdUseCase:
 
         Raises:
             ResourceNotFoundException: If the series does not exist
-                or falls outside the caller's viewing policy.
+                or falls outside the caller's libraries.
+            ContentRestrictedByMaturityError: If the series is rated
+                above the caller's maturity limit.
+            ContentRestrictedUnratedError: If the series has no
+                determinable rating and the caller's limit is below adult.
         """
         policy = await self._profile_viewing_policy.find_for_profile(
             ProfileId(input_dto.profile_id)
@@ -84,10 +90,16 @@ class GetSeriesByIdUseCase:
 
         series_id = SeriesId(input_dto.series_id)
         async with self._uow_factory() as uow:
-            series = await uow.series.find_by_id(series_id, policy=policy)
+            # Library axis only, then the age in the domain — see
+            # GetMovieByIdUseCase. Derived lookups keep the full predicate.
+            series = await uow.series.find_by_id(
+                series_id,
+                policy=ViewingPolicy.unrestricted(policy.allowed_library_ids),
+            )
 
         if series is None:
             raise ResourceNotFoundException.for_resource("Series", input_dto.series_id)
+        ensure_maturity_permits(policy, series.minimum_age)
 
         composite_ids = [
             EpisodeCompositeId.build(

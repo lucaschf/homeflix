@@ -14,11 +14,13 @@ from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
 from src.modules.media.application.use_cases._credits_media_helpers import (
     to_credits_marker_output,
 )
+from src.modules.media.application.use_cases._maturity_gate import ensure_maturity_permits
 from src.modules.media.application.use_cases._media_file_helpers import (
     to_media_file_output,
 )
 from src.modules.media.domain.entities.movie import Movie
 from src.modules.media.domain.value_objects import MovieId
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -30,9 +32,11 @@ class GetMovieByIdUseCase:
 
     Per ADR-010 and ADR-035, the lookup is restricted to what the caller's
     ``ViewingPolicy`` permits, resolved via ``ProfileViewingPolicyPort``. A
-    movie that exists outside the policy surfaces as
+    movie outside the profile's libraries surfaces as
     ``ResourceNotFoundException`` (HTTP 404), preventing the catalog
-    ACL from being bypassed by id-poking. A deny-all profile
+    ACL from being bypassed by id-poking. A movie inside them but above
+    the profile's maturity limit surfaces as a 403 that carries the ages
+    and never the title (ADR-035, decision 11). A deny-all profile
     short-circuits to a 404 without opening the UoW.
 
     Example:
@@ -70,7 +74,11 @@ class GetMovieByIdUseCase:
 
         Raises:
             ResourceNotFoundException: If the movie does not exist or
-                falls outside the caller's viewing policy.
+                falls outside the caller's libraries.
+            ContentRestrictedByMaturityError: If the movie is rated above
+                the caller's maturity limit.
+            ContentRestrictedUnratedError: If the movie has no
+                determinable rating and the caller's limit is below adult.
         """
         policy = await self._profile_viewing_policy.find_for_profile(
             ProfileId(input_dto.profile_id)
@@ -80,10 +88,18 @@ class GetMovieByIdUseCase:
 
         movie_id = MovieId(input_dto.movie_id)
         async with self._uow_factory() as uow:
-            movie = await uow.movies.find_by_id(movie_id, policy=policy)
+            # Library axis only, then the age in the domain: a 403 has to
+            # know the title exists. Only the two detail use cases do this —
+            # derived lookups (related, episode, save reload) keep the full
+            # predicate so they never learn that an over-age title exists.
+            movie = await uow.movies.find_by_id(
+                movie_id,
+                policy=ViewingPolicy.unrestricted(policy.allowed_library_ids),
+            )
 
         if movie is None:
             raise ResourceNotFoundException.for_resource("Movie", input_dto.movie_id)
+        ensure_maturity_permits(policy, movie.minimum_age)
 
         return self._to_output(movie, input_dto.lang)
 

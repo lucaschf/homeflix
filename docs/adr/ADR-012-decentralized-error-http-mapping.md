@@ -285,3 +285,4 @@ def test_every_core_exception_subclass_has_registry_entry():
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-05-06 | Lucas Cristovam | Criação inicial — inverte o trade-off documentado em `exception-hierarchy-clean-architecture.md` §4 |
+| 2026-09-13 | Lucas Cristovam | `media` passa a ter codes próprios (`CONTENT_RESTRICTED_BY_MATURITY`, `CONTENT_RESTRICTED_UNRATED`), `error_mapping.py` e `bootstrap.py` — ADR-035 §11. A regra 6 ("hoje apenas identity") descreve o estado da época |
