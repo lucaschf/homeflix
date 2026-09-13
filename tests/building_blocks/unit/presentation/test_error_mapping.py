@@ -188,13 +188,16 @@ class TestRegistryCoverage:
         import src.building_blocks.application.errors
         import src.building_blocks.domain.errors
         import src.building_blocks.infrastructure.errors
-        import src.modules.identity.domain.errors  # noqa: F401
+        import src.modules.identity.domain.errors
+        import src.modules.media.application.errors  # noqa: F401
         from src.building_blocks.domain.errors import CoreException
         from src.modules.identity import bootstrap as identity_bootstrap
+        from src.modules.media import bootstrap as media_bootstrap
 
-        # Identity is bootstrapped from main.py at app creation; do the
-        # same here so the coverage check sees the full registry.
+        # Identity and media are bootstrapped from main.py at app creation;
+        # do the same here so the coverage check sees the full registry.
         identity_bootstrap.setup()
+        media_bootstrap.setup()
 
         sentinel = -1
         missing: list[tuple[str, str]] = []

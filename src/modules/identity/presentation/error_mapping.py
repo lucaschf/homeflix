@@ -1,7 +1,7 @@
 """Identity-specific HTTP status mappings (ADR-012).
 
-The identity Bounded Context is the only one with codes that don't fall
-under the generic transversal mapping today. ``CANNOT_DELETE_LAST_PROFILE``
+The identity Bounded Context has codes that don't fall under the generic
+transversal mapping. ``CANNOT_DELETE_LAST_PROFILE``
 and ``NO_ACTIVE_PROFILE`` map to 409 (the parent ``ApplicationException``
 defaults to 400, so the override is meaningful); the remaining entries
 restate inherited statuses explicitly because the registry is flat and

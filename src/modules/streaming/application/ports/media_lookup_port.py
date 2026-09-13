@@ -109,6 +109,11 @@ class MediaPlaybackLookupPort(ABC):
             ResourceNotFoundException: When the movie does not exist or the
                 profile may not access its library — same behaviour the
                 catalog use case surfaces, so the route still maps to 404.
+            ForbiddenOperationException: When the movie is in the profile's
+                libraries but denied on the maturity axis — rated above
+                the limit, or unrated under a limit below adult
+                (ADR-035 §11). Propagated unchanged, so the route maps
+                it to 403.
         """
         ...
 
@@ -136,6 +141,11 @@ class MediaPlaybackLookupPort(ABC):
         Raises:
             ResourceNotFoundException: When the series does not exist or the
                 profile may not access it.
+            ForbiddenOperationException: When the series is in the profile's
+                libraries but denied on the maturity axis — rated above
+                the limit, or unrated under a limit below adult
+                (ADR-035 §11). Propagated unchanged, so the route maps
+                it to 403.
         """
         ...
 
