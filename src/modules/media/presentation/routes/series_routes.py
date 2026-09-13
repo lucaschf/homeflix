@@ -208,11 +208,16 @@ async def get_related_series(
 @inject
 async def get_episode_file_variants(
     episode_id: str,
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetFileVariantsUseCase = Depends(
         Provide[ApplicationContainer.media.get_file_variants],
     ),
 ) -> dict[str, Any]:
-    """List all file variants of an episode."""
+    """List all file variants of an episode.
+
+    Admin-only, like the write-side siblings: each variant carries its
+    absolute on-disk ``file_path``.
+    """
     result = await use_case.execute(GetFileVariantsInput(media_id=episode_id))
     return api_list([_dataclass_to_dict(f) for f in result])
 

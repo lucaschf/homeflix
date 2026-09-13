@@ -1,6 +1,6 @@
 """Library CRUD REST API routes."""
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 from dependency_injector.wiring import Provide, inject
@@ -8,11 +8,16 @@ from fastapi import APIRouter, Depends
 
 from src.building_blocks.presentation import api_list, api_single
 from src.config.containers import ApplicationContainer
-from src.modules.identity.presentation.public import AuthenticatedUser, authenticated_admin
+from src.modules.identity.presentation.public import (
+    AuthenticatedUser,
+    authenticated_admin,
+    authenticated_user,
+)
 from src.modules.library.application.dtos.library_dtos import (
     CreateLibraryInput,
     DeleteLibraryInput,
     GetLibraryByIdInput,
+    LibraryOutput,
     UpdateLibraryInput,
 )
 from src.modules.library.application.use_cases.create_library import CreateLibraryUseCase
@@ -55,24 +60,36 @@ async def create_library(
 @router.get("")
 @inject
 async def list_libraries(
+    caller: AuthenticatedUser = Depends(authenticated_user),
     use_case: ListLibrariesUseCase = Depends(
         Provide[ApplicationContainer.library.list_libraries],
     ),
 ) -> dict[str, Any]:
-    """List all non-deleted libraries."""
+    """List all non-deleted libraries.
+
+    Open to every signed-in user, not just admins: the profile editor
+    (``/profiles/manage``), which members reach too, lists libraries to
+    build the per-profile ACL. The absolute on-disk ``paths`` are an
+    operator detail, so they are emptied for non-admin callers.
+    """
     result = await use_case.execute()
-    return api_list([asdict(lib) for lib in result])
+    return api_list([asdict(_visible_to(caller, lib)) for lib in result])
 
 
 @router.get("/{library_id}")
 @inject
 async def get_library(
     library_id: str,
+    _admin: AuthenticatedUser = Depends(authenticated_admin),
     use_case: GetLibraryByIdUseCase = Depends(
         Provide[ApplicationContainer.library.get_library_by_id],
     ),
 ) -> dict[str, Any]:
-    """Get a library by its external id."""
+    """Get a library by its external id.
+
+    Admin-only: the single-library read backs the admin library editor
+    and nothing else.
+    """
     result = await use_case.execute(GetLibraryByIdInput(library_id=library_id))
     return api_single("library", asdict(result))
 
@@ -118,6 +135,26 @@ async def delete_library(
 ) -> None:
     """Soft-delete a library."""
     await use_case.execute(DeleteLibraryInput(library_id=library_id))
+
+
+def _visible_to(caller: AuthenticatedUser, library: LibraryOutput) -> LibraryOutput:
+    """Project a library to what ``caller`` may see.
+
+    Only admins see the absolute on-disk ``paths``. For everyone else the
+    list is emptied rather than dropped, so the response keeps the
+    ``paths: string[]`` shape the web client types and renders.
+
+    Args:
+        caller: The authenticated caller.
+        library: The full library read.
+
+    Returns:
+        ``library`` unchanged for an admin; a copy with ``paths=[]``
+        otherwise.
+    """
+    if caller.is_admin:
+        return library
+    return replace(library, paths=[])
 
 
 __all__ = ["router"]
