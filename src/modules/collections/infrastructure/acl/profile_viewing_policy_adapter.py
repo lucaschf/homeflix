@@ -30,7 +30,7 @@ class ProfileViewingPolicyAdapter(ProfileViewingPolicyPort):
         if profile is None:
             return ViewingPolicy(allowed_library_ids=[])
 
-        return ViewingPolicy(allowed_library_ids=profile.allowed_library_ids)
+        return profile.viewing_policy()
 
 
 __all__ = ["ProfileViewingPolicyAdapter"]

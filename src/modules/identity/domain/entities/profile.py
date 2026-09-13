@@ -13,6 +13,7 @@ from src.building_blocks.domain.entity import AggregateRoot
 from src.modules.identity.domain.value_objects.profile_name import (  # noqa: TCH001
     ProfileName,
 )
+from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects.library_id import LibraryId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId  # noqa: TCH001
@@ -117,6 +118,23 @@ class Profile(AggregateRoot[ProfileId]):
         keeps the aggregate's invariants explicit at one update site.
         """
         return self.with_updates(allowed_library_ids=list(library_ids))
+
+    def viewing_policy(self) -> ViewingPolicy:
+        """Return the policy that decides what this profile may see.
+
+        The single place where a profile's fields become a
+        ``ViewingPolicy``. Every BC's ``ProfileViewingPolicyAdapter``
+        calls this instead of assembling the policy itself, so a new
+        visibility axis (the maturity limit, ADR-035 §4) is wired here
+        once rather than remembered in each adapter copy. An
+        architecture test holds the adapters to it.
+
+        Returns:
+            A policy carrying this profile's library ACL. An empty ACL
+            yields a deny-all policy (ADR-035 §5). ``Profile`` has no
+            maturity limit yet, so the age axis is unrestricted.
+        """
+        return ViewingPolicy(allowed_library_ids=self.allowed_library_ids)
 
 
 __all__ = ["Profile"]
