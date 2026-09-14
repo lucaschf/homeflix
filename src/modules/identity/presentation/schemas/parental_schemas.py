@@ -34,4 +34,14 @@ class RemoveParentalPinRequest(BaseModel):
     current_password: SecretStr
 
 
-__all__ = ["RemoveParentalPinRequest", "SetParentalPinRequest"]
+class UnlockParentalRequest(BaseModel):
+    """Body for ``POST /api/v1/parental/unlock``.
+
+    ``pin`` is the account's parental PIN, checked against the stored hash
+    and counted against this device's lockout budget.
+    """
+
+    pin: SecretStr
+
+
+__all__ = ["RemoveParentalPinRequest", "SetParentalPinRequest", "UnlockParentalRequest"]

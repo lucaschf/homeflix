@@ -22,11 +22,14 @@ from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.repositories.access_token_repository import (
     AccessTokenRepository,
     AccessTokenSnapshot,
+    ParentalSessionState,
+    PinAttemptReservation,
 )
 from src.modules.identity.domain.repositories.profile_repository import (
     ProfileRepository,
 )
 from src.modules.identity.domain.repositories.user_repository import UserRepository
+from src.modules.identity.domain.services.parental_gate import LockoutPolicy
 from src.modules.identity.domain.value_objects.email import Email
 from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.shared_kernel.value_objects.profile_id import ProfileId
@@ -161,12 +164,17 @@ class FakeAccessTokenRepository(AccessTokenRepository):
         user_id: UserId,
         current_profile_id: ProfileId | None = None,
         created_at: datetime | None = None,
+        unlock_until: datetime | None = None,
     ) -> None:
         """Test helper: insert a session row directly (no use-case path)."""
         self._rows[token] = {
             "user_id": user_id,
             "current_profile_id": current_profile_id,
             "created_at": created_at or datetime.now(UTC),
+            "failed_attempts": 0,
+            "lockouts": 0,
+            "locked_until": None,
+            "unlock_until": unlock_until,
         }
 
     async def get_by_token(self, token: str) -> AccessTokenSnapshot | None:
@@ -189,6 +197,7 @@ class FakeAccessTokenRepository(AccessTokenRepository):
         if row is None:
             return False
         row["current_profile_id"] = profile_id
+        row["unlock_until"] = None
         return True
 
     async def delete_older_than(self, cutoff: datetime) -> int:
@@ -196,6 +205,78 @@ class FakeAccessTokenRepository(AccessTokenRepository):
         for t in stale:
             del self._rows[t]
         return len(stale)
+
+    async def get_parental_state(self, token: str) -> ParentalSessionState | None:
+        row = self._rows.get(token)
+        if row is None:
+            return None
+        return ParentalSessionState(
+            user_id=row["user_id"],
+            current_profile_id=row["current_profile_id"],
+            failed_attempts=row["failed_attempts"],
+            lockouts=row["lockouts"],
+            locked_until=row["locked_until"],
+            unlock_until=row["unlock_until"],
+        )
+
+    async def reserve_pin_attempt(
+        self,
+        token: str,
+        *,
+        now: datetime,
+        policy: LockoutPolicy,
+    ) -> PinAttemptReservation:
+        # The same rules as the real single UPDATE, applied to the dict.
+        row = self._rows.get(token)
+        if row is None:
+            return PinAttemptReservation(granted=False, failed_attempts=0, locked_until=None)
+        locked_until = row["locked_until"]
+        if locked_until is not None and locked_until > now:
+            return PinAttemptReservation(
+                granted=False,
+                failed_attempts=row["failed_attempts"],
+                locked_until=locked_until,
+            )
+        attempts, lockouts = row["failed_attempts"], row["lockouts"]
+        if locked_until is not None and attempts >= policy.max_attempts:
+            attempts = 0
+        if locked_until is not None and locked_until + policy.decay <= now:
+            lockouts = 0
+        attempts += 1
+        started = None
+        if attempts >= policy.max_attempts:
+            started = now + policy.lock_duration(lockouts)
+            lockouts += 1
+            row["locked_until"] = started
+        row["failed_attempts"], row["lockouts"] = attempts, lockouts
+        return PinAttemptReservation(granted=True, failed_attempts=attempts, locked_until=started)
+
+    async def record_pin_success(
+        self,
+        token: str,
+        *,
+        now: datetime,
+        unlock_until: datetime,
+    ) -> None:
+        row = self._rows.get(token)
+        if row is None:
+            return
+        row["failed_attempts"] = 0
+        row["unlock_until"] = unlock_until
+        if row["locked_until"] is not None and row["locked_until"] > now:
+            row["locked_until"] = now
+
+    async def consume_unlock(self, token: str, *, now: datetime) -> bool:
+        row = self._rows.get(token)
+        if row is None or row["unlock_until"] is None or row["unlock_until"] <= now:
+            return False
+        row["unlock_until"] = None
+        return True
+
+    async def clear_unlock(self, token: str) -> None:
+        row = self._rows.get(token)
+        if row is not None:
+            row["unlock_until"] = None
 
 
 class FakeIdentityUnitOfWork(IdentityUnitOfWork):

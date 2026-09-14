@@ -253,6 +253,31 @@ class RemoveParentalPinInput:
     current_password: str = field(repr=False)
 
 
+@dataclass(frozen=True)
+class UnlockParentalInput:
+    """Input for ``UnlockParentalUseCase``.
+
+    ``session_token`` identifies the device whose attempts are counted and
+    whose unlock window opens. It and ``pin`` are secrets, kept out of
+    ``repr()``.
+    """
+
+    user_id: str
+    session_token: str = field(repr=False)
+    pin: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class LockParentalInput:
+    """Input for ``LockParentalUseCase``.
+
+    ``session_token`` identifies the device whose unlock window closes; a
+    secret, kept out of ``repr()``.
+    """
+
+    session_token: str = field(repr=False)
+
+
 __all__ = [
     "CreateAdminUserInput",
     "CreateProfileInput",
@@ -262,10 +287,12 @@ __all__ = [
     "GetUserDetailInput",
     "ListProfilesForUserInput",
     "ListUsersInput",
+    "LockParentalInput",
     "ProfileOutput",
     "RemoveParentalPinInput",
     "SetParentalPinInput",
     "SwitchProfileInput",
+    "UnlockParentalInput",
     "UpdateProfileInput",
     "UpdateUserRoleInput",
     "UploadProfileAvatarInput",

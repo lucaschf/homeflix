@@ -59,6 +59,7 @@ def _load_revision(filename: str) -> ModuleType:
 
 _MATURITY_LIMIT = _load_revision("2026_09_13_add_maturity_limit_to_profiles.py")
 _PARENTAL_PIN = _load_revision("2026_09_14_add_parental_pin_to_users.py")
+_PARENTAL_LOCKOUT = _load_revision("2026_09_14_add_parental_lockout_to_access_tokens.py")
 
 _USER_ID = str(uuid.uuid4())
 _SESSION_PROFILE_ID = str(uuid.uuid4())
@@ -142,6 +143,25 @@ def _profile_columns(conn: Connection) -> set[str]:
 
 def _user_columns(conn: Connection) -> set[str]:
     return {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(users)")}
+
+
+def _access_token_columns(conn: Connection) -> set[str]:
+    return {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(access_tokens)")}
+
+
+_LOCKOUT_COLUMNS = (
+    "parental_failed_attempts",
+    "parental_lockouts",
+    "parental_locked_until",
+    "parental_unlock_until",
+)
+
+
+def _lockout_values(conn: Connection) -> dict[str, tuple[object, ...]]:
+    rows = conn.exec_driver_sql(
+        f"SELECT token, {', '.join(_LOCKOUT_COLUMNS)} FROM access_tokens"
+    ).all()
+    return {row[0]: tuple(row[1:]) for row in rows}
 
 
 _SEEDED_COUNTS = {"users": 1, "profiles": 2, "access_tokens": 2}
@@ -271,5 +291,57 @@ class TestAddParentalPinToUsers:
         _run(connection, "downgrade", _PARENTAL_PIN)
 
         assert "parental_pin_hash" not in _user_columns(connection)
+        assert _counts(connection) == _SEEDED_COUNTS
+        assert _session_bindings(connection) == _SEEDED_BINDINGS
+
+
+class TestAddParentalLockoutToAccessTokens:
+    """Revision ``fe6dc087a1a4``: lockout state on ``access_tokens``, after ``7737e1954c0c``."""
+
+    _CHAIN = (_MATURITY_LIMIT, _PARENTAL_PIN, _PARENTAL_LOCKOUT)
+
+    def test_chains_onto_the_parental_pin_revision(self) -> None:
+        assert _PARENTAL_LOCKOUT.down_revision == _PARENTAL_PIN.revision
+
+    def test_upgrade_keeps_every_row_and_session_binding(self, connection: Connection) -> None:
+        _run(connection, "upgrade", *self._CHAIN)
+
+        assert _counts(connection) == _SEEDED_COUNTS
+        assert _session_bindings(connection) == _SEEDED_BINDINGS
+
+    def test_upgrade_starts_existing_sessions_at_zero_without_windows(
+        self, connection: Connection
+    ) -> None:
+        _run(connection, "upgrade", *self._CHAIN)
+
+        assert _lockout_values(connection) == dict.fromkeys(_TOKENS, (0, 0, None, None))
+
+    def test_a_login_insert_after_upgrade_gets_the_defaults(self, connection: Connection) -> None:
+        # FastAPI Users' login inserts only the token and the user (plus the
+        # creation time): the NOT NULL counters must come from the database.
+        _run(connection, "upgrade", *self._CHAIN)
+
+        with connection.begin():
+            connection.execute(
+                sa.text(
+                    "INSERT INTO access_tokens (token, user_id, created_at) "
+                    "VALUES ('token-new-login', :user_id, CURRENT_TIMESTAMP)"
+                ),
+                {"user_id": _USER_ID},
+            )
+
+        assert _lockout_values(connection)["token-new-login"] == (0, 0, None, None)
+
+    def test_downgrade_drops_the_columns_and_keeps_every_row(self, connection: Connection) -> None:
+        _run(connection, "upgrade", *self._CHAIN)
+        with connection.begin():
+            connection.exec_driver_sql(
+                "UPDATE access_tokens SET parental_failed_attempts = 5, parental_lockouts = 2, "
+                "parental_locked_until = 1789387200, parental_unlock_until = 1789387500"
+            )
+
+        _run(connection, "downgrade", _PARENTAL_LOCKOUT)
+
+        assert not set(_LOCKOUT_COLUMNS) & _access_token_columns(connection)
         assert _counts(connection) == _SEEDED_COUNTS
         assert _session_bindings(connection) == _SEEDED_BINDINGS
