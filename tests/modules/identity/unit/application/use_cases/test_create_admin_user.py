@@ -21,6 +21,9 @@ class _FakeHasher(PasswordHasherPort):
     def hash(self, password: str) -> str:
         return f"hashed::{password}"
 
+    def verify(self, plain: str, hashed: str) -> bool:
+        return hashed == self.hash(plain)
+
 
 class TestCreateAdminUserUseCase:
     async def test_should_persist_user_with_hashed_password(

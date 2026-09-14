@@ -13,7 +13,7 @@ UUIDs (preserves ADR-002). Translation happens in ``UserMapper``.
 """
 
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTableUUID
-from sqlalchemy import String
+from sqlalchemy import CheckConstraint, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.persistence.base import BaseWithUUID
@@ -36,6 +36,9 @@ class UserModel(BaseWithUUID, SQLAlchemyBaseUserTableUUID):
         role: One of ``admin`` / ``member`` (``UserRole`` enum). Stored
             as a plain string for flexibility — the domain VO converts
             it back to the enum.
+        parental_pin_hash: Hash of the household's parental PIN, or NULL
+            when none is configured (ADR-035). An empty string is refused
+            by the CHECK so it can never stand in for "no PIN".
     """
 
     __tablename__ = "users"
@@ -45,6 +48,16 @@ class UserModel(BaseWithUUID, SQLAlchemyBaseUserTableUUID):
         nullable=False,
         default="member",
         index=True,
+    )
+    # Column-level CHECK, as the migration adds it: SQLite can only drop
+    # a column whose CHECK belongs to that column.
+    parental_pin_hash: Mapped[str | None] = mapped_column(
+        String(1024),
+        CheckConstraint(
+            "parental_pin_hash IS NULL OR length(parental_pin_hash) > 0",
+            name="ck_users_parental_pin_hash_not_empty",
+        ),
+        nullable=True,
     )
 
 

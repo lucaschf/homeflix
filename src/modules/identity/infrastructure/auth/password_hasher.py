@@ -21,5 +21,17 @@ class FastApiUsersPasswordHasher(PasswordHasherPort):
         """Return the BCrypt hash backing ``password``."""
         return self._helper.hash(password)
 
+    def verify(self, plain: str, hashed: str) -> bool:
+        """Check ``plain`` against ``hashed`` with ``PasswordHelper.verify_and_update``.
+
+        The helper also returns a replacement hash when ``hashed`` uses
+        deprecated parameters. It is discarded on purpose: this port only
+        verifies, and a caller that stored it would be writing a column
+        (the account password, or the parental PIN) as a side effect of a
+        read. FastAPI Users still upgrades the account password on login.
+        """
+        verified, _discarded_rehash = self._helper.verify_and_update(plain, hashed)
+        return verified
+
 
 __all__ = ["FastApiUsersPasswordHasher"]

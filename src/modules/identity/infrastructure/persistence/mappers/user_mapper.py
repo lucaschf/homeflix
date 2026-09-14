@@ -8,9 +8,11 @@ in any other layer.
 On insert the mapper produces a model with all FastAPI Users-managed
 fields populated from the entity (``hashed_password``, ``is_verified``,
 ``is_superuser``). On update, the mapper deliberately writes ONLY the
-domain-mutable fields (``role``, ``is_active``); FastAPI Users owns
-the password / verification / superuser flow and writes those columns
-through ``SQLAlchemyUserDatabase`` instead.
+domain-mutable fields (``role``, ``is_active``); FastAPI Users owns the
+password / verification / superuser flow and writes those columns
+through ``SQLAlchemyUserDatabase`` instead, and an existing user's
+``parental_pin_hash`` is written only by
+``SqlAlchemyUserRepository.set_parental_pin_hash``.
 """
 
 from datetime import UTC, datetime
@@ -64,6 +66,7 @@ class UserMapper:
             is_superuser=entity.is_superuser,
             is_verified=entity.is_verified,
             role=entity.role.value,
+            parental_pin_hash=entity.parental_pin_hash,
         )
 
     @staticmethod
@@ -84,6 +87,9 @@ class UserMapper:
             is_superuser=model.is_superuser,
             is_verified=model.is_verified,
             hashed_password=model.hashed_password or None,
+            # Read as stored, never ``or None``: an empty string turning
+            # into "no PIN" would be a fail-open decode.
+            parental_pin_hash=model.parental_pin_hash,
             created_at=_ensure_utc(model.created_at) or datetime.now(UTC),
             updated_at=_ensure_utc(model.updated_at) or datetime.now(UTC),
         )
@@ -92,11 +98,19 @@ class UserMapper:
     def update_model(model: UserModel, entity: User) -> UserModel:
         """Apply ONLY domain-mutable fields onto an existing model.
 
-        Specifically writes ``role`` and ``is_active`` — the columns
-        the domain controls. ``hashed_password``, ``is_verified``,
+        Specifically writes ``role`` and ``is_active`` — the columns the
+        domain controls through ``save``. Leaving one out here fails
+        silently: ``save`` succeeds and the change is simply not
+        persisted. ``hashed_password``, ``is_verified``,
         ``is_superuser`` are intentionally left untouched: FastAPI
         Users owns those via the registration / verification / admin
         flows and updates them through its own database adapter.
+
+        ``parental_pin_hash`` is also left untouched, on purpose: an
+        entity read before a PIN change would otherwise write its stale
+        hash back (a role change wiping a PIN set meanwhile). The PIN
+        hash of an existing user is written only by
+        ``SqlAlchemyUserRepository.set_parental_pin_hash``.
 
         Email is also left untouched here; admin email change is a
         deliberate sensitive flow that isn't in scope for this PR.

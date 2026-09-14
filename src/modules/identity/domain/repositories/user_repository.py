@@ -15,10 +15,10 @@ class UserRepository(ABC):
     The user table is also written by FastAPI Users via
     ``SQLAlchemyUserDatabase`` (registration, password reset, email
     verification). This repository covers domain-driven reads and the
-    domain-mutable fields (``role``, ``is_active``), plus the admin
-    surface (``list_paginated``, ``count_active_admins``,
-    ``soft_delete``) that the ``/api/v1/admin/users`` endpoints
-    drive.
+    domain-mutable fields (``role``, ``is_active``), the narrow
+    ``set_parental_pin_hash`` write, plus the admin surface
+    (``list_paginated``, ``count_active_admins``, ``soft_delete``) that
+    the ``/api/v1/admin/users`` endpoints drive.
     """
 
     @abstractmethod
@@ -28,8 +28,10 @@ class UserRepository(ABC):
         On insert (``user.id is None``) every domain field is written
         and a fresh ``UserId`` is generated. On update only the
         domain-mutable fields (``role``, ``is_active``) are touched —
-        FastAPI Users-owned fields (``hashed_password``,
-        ``is_verified``, ``is_superuser``) stay untouched.
+        FastAPI Users-owned fields (``hashed_password``, ``is_verified``,
+        ``is_superuser``) stay untouched, and so does
+        ``parental_pin_hash``, which only ``set_parental_pin_hash``
+        writes on an existing user.
 
         Args:
             user: The user to save.
@@ -37,6 +39,29 @@ class UserRepository(ABC):
         Returns:
             The saved user, re-read from the database so callers see
             any server-generated values.
+        """
+        ...
+
+    @abstractmethod
+    async def set_parental_pin_hash(self, user_id: UserId, hashed: str | None) -> bool:
+        """Store or clear the parental PIN hash of a live user, and nothing else.
+
+        Exists because setting or removing the PIN checks the account
+        password between reading the user and writing the hash, so the
+        read entity can be stale by the time it is written. ``save``
+        would write that stale entity back: it restores a soft-deleted
+        row and rewrites ``role`` and ``is_active``, silently undoing a
+        delete or demotion committed meanwhile. This write touches only
+        the PIN hash (and ``updated_at``), never restores a soft-deleted
+        user, and reports whether a live user took it.
+
+        Args:
+            user_id: The user's external ID (``usr_xxx``).
+            hashed: The new PIN hash, or ``None`` to clear the PIN.
+
+        Returns:
+            ``True`` when a non-deleted user was updated, ``False`` when
+            the user does not exist or is soft-deleted.
         """
         ...
 

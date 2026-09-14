@@ -10,7 +10,8 @@ their semantics.
 """
 
 from src.modules.identity.domain.value_objects.email import Email
+from src.modules.identity.domain.value_objects.parental_pin import ParentalPin
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.modules.identity.domain.value_objects.user_role import UserRole
 
-__all__ = ["Email", "ProfileName", "UserRole"]
+__all__ = ["Email", "ParentalPin", "ProfileName", "UserRole"]

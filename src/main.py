@@ -27,6 +27,7 @@ from src.modules.collections.presentation.routes import custom_list_router, watc
 from src.modules.identity.infrastructure.auth import auth_backend, fastapi_users
 from src.modules.identity.presentation.routes import (
     admin_user_router,
+    parental_router,
     profile_router,
     users_router,
 )
@@ -125,6 +126,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.library.presentation.routes.library_routes",
     "src.modules.preferences.presentation.routes.preferences_routes",
     "src.modules.identity.presentation.routes.admin_user_routes",
+    "src.modules.identity.presentation.routes.parental_routes",
     "src.modules.identity.presentation.routes.profile_routes",
     "src.modules.identity.presentation.routes.users_routes",
     "src.modules.settings.presentation.routes.admin_settings_routes",
@@ -549,6 +551,7 @@ def create_app() -> FastAPI:
         tags=["Auth"],
     )
     app.include_router(users_router)
+    app.include_router(parental_router)
     app.include_router(profile_router)
     app.include_router(admin_user_router)
     app.include_router(admin_settings_router)

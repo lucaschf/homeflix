@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 
 
 class PasswordHasherPort(ABC):
-    """Produce a hashed-password string from a plaintext credential."""
+    """Hash a plaintext credential and verify one against a stored hash."""
 
     @abstractmethod
     def hash(self, password: str) -> str:
@@ -33,6 +33,24 @@ class PasswordHasherPort(ABC):
         Returns:
             Hashed representation suitable for
             ``UserModel.hashed_password`` (BCrypt today).
+        """
+        ...
+
+    @abstractmethod
+    def verify(self, plain: str, hashed: str) -> bool:
+        """Return whether ``plain`` matches the stored ``hashed`` value.
+
+        Used to re-check the account password before a sensitive change
+        and to check the parental PIN (ADR-035). Verification never
+        rewrites the stored hash: implementations whose library offers a
+        rehash on verify discard it.
+
+        Args:
+            plain: Plaintext credential supplied by the caller.
+            hashed: Stored hash produced by ``hash``.
+
+        Returns:
+            ``True`` when the credential matches, ``False`` otherwise.
         """
         ...
 

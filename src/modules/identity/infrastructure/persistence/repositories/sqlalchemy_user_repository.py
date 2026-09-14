@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.identity.domain.entities.user import User
@@ -22,7 +22,9 @@ class SqlAlchemyUserRepository(UserRepository):
     Distinguishes insert vs. update via ``id is None``: a fresh entity
     is fully written; an existing one only gets its domain-mutable
     fields touched (``role``, ``is_active``) so FastAPI Users-owned
-    fields stay intact. Transaction commit is the UoW's responsibility.
+    fields stay intact. An existing user's ``parental_pin_hash`` is
+    written only by ``set_parental_pin_hash``. Transaction commit is the
+    UoW's responsibility.
     """
 
     def __init__(self, session: AsyncSession) -> None:
@@ -59,6 +61,28 @@ class SqlAlchemyUserRepository(UserRepository):
         if saved is None:
             raise RuntimeError(f"User {user.id} disappeared between flush and reload")
         return saved
+
+    async def set_parental_pin_hash(self, user_id: UserId, hashed: str | None) -> bool:
+        """Update only ``parental_pin_hash`` (and ``updated_at``) of a live user.
+
+        A single ``UPDATE ... WHERE deleted_at IS NULL``: the PIN use cases
+        check the account password between their read and this write, and
+        ``save`` would write their stale entity back — restoring a user
+        soft-deleted meanwhile and reverting a concurrent demotion. This
+        statement never writes ``role``, ``is_active`` or ``deleted_at``,
+        so a concurrent delete wins and is reported as ``False``.
+        """
+        stmt = (
+            update(UserModel)
+            .where(
+                UserModel.external_id == str(user_id),
+                UserModel.deleted_at.is_(None),
+            )
+            .values(parental_pin_hash=hashed, updated_at=func.now())
+        )
+        result = await self._session.execute(stmt)
+        await self._session.flush()
+        return bool(result.rowcount)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
     async def find_by_id(self, user_id: UserId) -> User | None:
         """Look up a non-deleted user by external ID."""
