@@ -400,6 +400,274 @@ leituras que precisam de dados de exibição.
 - [ ] Follow-up no `homeflix-web`: `docs/list-follow-share-contract.md` ainda diz
   que a visão do dono é irrestrita e que `hidden_count` reflete todos os itens
   restritos; ambos contradizem esta emenda.
+- [ ] Gate de admin na raiz: dentro de `current_admin_user`, cobrindo as 78
+  rotas admin e `AuthenticatedUser.is_admin`, com escrita admin exigindo unlock
+  sob perfil irrestrito quando a conta tem perfil limitado (Emenda 7, D10).
+- [ ] PIN nos quatro bypasses de perfil (switch, `PUT`, `POST` e `DELETE`), com
+  consumo atômico do unlock e desligamento das outras sessões presas a um perfil
+  alargado (Emenda 7, D9 e D12).
+- [ ] Migrations de `profiles`, `users` e `access_tokens` escritas à mão com
+  `op.add_column` e CHECK inline, testadas com FK ligada sobre o schema da
+  revisão anterior, nunca sobre o `create_all` do head.
+- [ ] Revogação das sessões antigas de cada conta que recebe perfil limitado, no
+  deploy, depois do PIN e do limite (Emenda 7, D11).
+- [ ] D8 aplicado: `in_catalog`, notificação de chegada e "Em breve" aceitos
+  como resíduo; o front esconde "Pedir título", "Em breve" e o sino quando o
+  perfil ativo tem limite (follow-up não bloqueante do F3).
+
+### 7. PR 4: limite, PIN e suspensão de admin — decisões e correções de planejamento
+
+O planejamento da PR 4 leu `develop @ 982c3cf` e uma cópia do banco da
+instância. Encontrou perguntas que o texto original deixava em aberto,
+referências vencidas e caminhos em que a letra das decisões 8 e 9 deixaria o
+gate aberto. Esta emenda registra as respostas do dono, as correções, o corte da
+série e a ordem de deploy; o detalhe de implementação fica no plano de cada PR.
+
+**Decisões do dono.**
+
+| # | Pergunta | Decisão |
+|---|---|---|
+| D1 | Quanto vale uma sessão sem perfil selecionado (pós-login, ou solta pela 4.5) | O **menor limite entre os perfis vivos da conta**. Entrar em perfil irrestrito a partir de sessão nova só pede PIN se a conta tiver algum perfil limitado; troca entre irrestritos é livre. Resolve a ambiguidade de "limite maior que o atual" da decisão 9 |
+| D2 | Pode existir limite sem PIN | Não. Gravar limite sem PIN dá 409 `PARENTAL_PIN_NOT_CONFIGURED`; remover o PIN com algum perfil vivo limitado dá 409 `PARENTAL_PIN_IN_USE`. Nenhum limite é cosmético, e "admin suspenso sem desafio possível" deixa de existir |
+| D3 | Prova para definir, trocar e remover o PIN | A senha da conta nas três operações (403 `ACCOUNT_PASSWORD_INVALID`, nunca 401). É também o fluxo de "esqueci o PIN" |
+| D4 | Comprimento e lockout | Exatamente 6 dígitos. Escada por device (por access token): 5 erros bloqueiam 5 min, dobrando até 24 h; PIN certo não desce a escada, que decai 24 h depois do fim do último bloqueio. Janela de unlock de 5 min a partir do PIN certo, sem renovação por uso |
+| D5 | A ACL entra no gate | Não: só o eixo idade é gateado, e `allowed_library_ids` segue editável por qualquer sessão da conta (resíduo) |
+| D6 | Criança com conta de membro própria | Fora do modelo: criança é perfil dentro da conta do responsável (resíduo) |
+| D7 | Degraus da UI | Irrestrito, L, 10, 12, 14 e 16. A API aceita 0..21 |
+| D8 | `in_catalog` de `/catalog/lookup`, notificação de chegada por `user_id`, feed "Em breve" | Resíduos aceitos. O front esconde "Pedir título", "Em breve" e o sino quando o perfil ativo tem limite (cosmético, follow-up não bloqueante do F3) |
+| D9 | Escopo do unlock | Todo switch zera a janela do device. As operações de perfil gateadas (switch, `PUT`, `POST`, `DELETE`) consomem o unlock atomicamente; a janela de 5 min só serve ao admin |
+| D10 | Escrita admin sob perfil irrestrito | Com PIN configurado e algum perfil vivo limitado na conta, toda escrita admin (`POST`, `PUT`, `PATCH`, `DELETE`) exige unlock; leituras seguem livres |
+| D11 | Sessões antigas e senha | Passo do operador no deploy (abaixo) e, depois do F3, série própria com troca de senha que revoga as outras sessões e "encerrar outras sessões" |
+| D12 | Device solto de um perfil alargado | `current_profile_id = NULL` e o 401 existente de `resolve_profile_id` (`identity/presentation/dependencies.py:143-144`). O front vai a `/login` e volta a `/profiles`, porque `/users/me` segue 200 com o mesmo cookie |
+
+**Decisão 8 ampliada (D10).** Suspender o admin só sob perfil restrito deixava a
+TV do responsável aberta: sob o perfil irrestrito dele, a criança cria uma conta
+já verificada com senha que conhece (`create_admin_user.py:53-58`), faz logout
+no tablet e entra por ela; relink, segments e jurisdição também produzem efeito
+que chega ao device da criança. A matriz, para conta com PIN configurado:
+
+| Sessão | Leitura admin | Escrita admin |
+|---|---|---|
+| perfil ativo sem limite, nenhum perfil vivo da conta limitado | concedida | concedida |
+| perfil ativo sem limite, algum perfil vivo da conta limitado | concedida | **exige unlock** |
+| perfil ativo com limite | suspensa, salvo unlock | suspensa, salvo unlock |
+| perfil ativo soft-deleted | suspensa (limite efetivo `AgeRating(0)`), salvo unlock | idem |
+| sem perfil selecionado | D1: suspensa se algum perfil vivo tem limite, senão concedida | idem |
+
+Conta sem PIN: o gate é inerte e não custa query, e com D2 não existe limite sem
+PIN. O admin **não** consome a janela (D9). `/users/me` ganha `admin_access`
+(`none`, `granted`, `suspended`), para o front trocar a checagem por role.
+
+**Decisão 9 por operação.** Vale para contas com PIN configurado; sem PIN tudo
+passa. `L` é o limite efetivo da sessão: o do perfil ativo vivo; `AgeRating(0)`
+se o perfil selecionado foi soft-deleted (o LEFT JOIN de
+`sqlalchemy_access_token_repository.py:52-56` devolve o id mesmo assim); D1 se
+nenhum perfil está selecionado. `exceeds(alvo, base)` é falso com base `None`,
+verdadeiro com alvo `None` e base limitada, e `alvo > base` nos demais casos.
+
+| Operação | Gate avaliado depois de | Exige unlock (consumido) quando | Efeito extra |
+|---|---|---|---|
+| `POST /profiles/{id}/switch` | 404 e ownership (`switch_profile.py:43-53`), antes de `update_current_profile` (`:55-62`) | `exceeds(alvo.maturity_limit, L)` | todo switch zera a janela do device |
+| `PUT /profiles/{id}` | 404, ownership e aplicação dos campos (`update_profile.py:36-56`), antes do save (`:58`) | (i) **alarga**: `exceeds(depois, antes)` no alvo, qualquer que seja a sessão; (ii) muda, por valor, o limite de **outro** perfil a partir de sessão com `L` não nulo, mesmo estreitando | se (i), solta na mesma UoW as outras sessões presas ao alvo (`current_profile_id` e janela a NULL), exceto a do chamador |
+| `POST /profiles` | build (`create_profile.py:29-35`) e checagem do D2 | `exceeds(novo.maturity_limit, L)` | — |
+| `DELETE /profiles/{id}` | 404, ownership e 409 de último perfil (`delete_profile.py:47-63`) | o alvo tem limite, ou `L` não é nulo | — |
+| avatar (`profile_routes.py:172-229`) | sem gate | — | resíduo cosmético |
+
+A ACL não entra em nenhuma linha (D5). O gate compara o limite resultante, nunca
+a presença do campo: o front envia `name`, `is_kids` e `allowed_library_ids` em
+todo submit, e um rename passa sem PIN. Ownership vem antes do gate, como o role
+vem antes na suspensão de admin, para que nenhum dos dois vire oráculo de PIN.
+
+O `PUT` que alarga exige unlock qualquer que seja a sessão porque a criança numa
+sessão irrestrita removeria o limite do próprio perfil e o levaria ao tablet,
+cuja sessão já aponta para ele — o device que "nunca passaria" por um guard de
+saída. Alargar solta as outras sessões porque o guard de entrada não reavalia
+vínculo: o switch só grava `current_profile_id`
+(`sqlalchemy_access_token_repository.py:98-105`), e um tablet que entrou no
+perfil do responsável enquanto ele estava estreitado a 10 seguiria nele, já
+irrestrito, pelos 90 dias do token (`config/settings.py:160-166`). Sem o D9, a
+sobra da janela depois de o responsável voltar ao perfil da criança seria a
+mesma saída.
+
+**Correções ao texto original.**
+
+- **Local do gate de admin (linhas 56 e 218).** O gate vai dentro de
+  `current_admin_user` (`identity/infrastructure/auth/fastapi_users.py:34-57`),
+  depois da checagem de role, e não no shim `authenticated_admin`: cinco rotas
+  de `admin_user_routes.py` dependem de `current_admin_user` direto (`:54`,
+  `:74`, `:99`, `:114`, `:134`), entre elas `POST /api/v1/admin/users`.
+  `authenticated_admin` (`:80-88`) continua composto sobre ele sem repetir o
+  gate, e `public.py` continua reexportando o guard real
+  (`test_public_contract.py:30`). A suspensão cobre também
+  `AuthenticatedUser.is_admin` (`:60-65`), cujo único consumidor,
+  `library_routes.py:155`, decide se os `paths` absolutos saem na resposta. A
+  resposta é 403 `PARENTAL_PIN_REQUIRED`, nunca 401.
+- **Saem `exit_requires_pin` e `PROFILE.EXIT_PROTECTION_REQUIRES_LIMIT` (linha
+  44).** A decisão 9 adota guard de entrada e declara o de saída insuficiente;
+  campo e invariante não serão implementados. Os rule codes novos seguem o
+  prefixo `IDENTITY.*` de `identity/domain/rule_codes.py:10-32`:
+  `IDENTITY.PARENTAL.PIN_REQUIRED`, `…PIN_INVALID`, `…PIN_LOCKED`,
+  `…PIN_NOT_CONFIGURED` e `…PIN_IN_USE`.
+- **"Toda rota administrativa dos 11 módulos" (linha 84)** são 78 rotas (método
+  e path) em 6 módulos: 5 em `identity` via `current_admin_user` direto e 73 via
+  `authenticated_admin`, em `media`, `settings`, `streaming`, `library` e
+  `catalog_requests`.
+- **Contagem de perfis (linhas 6, 21 e 56).** "9 perfis" e "o usuário admin
+  possui 4 dos 9 perfis" contam soft-deleted. Pelo critério da Emenda 2 são 7
+  perfis vivos, 2 deles do admin; o argumento da decisão 8 não muda.
+- **A linha 20 está desatualizada.** `GET /api/v1/libraries` hoje exige sessão
+  (`library_routes.py:60-63`) e esvazia `paths` para não admin, mas qualquer
+  membro ainda enumera os `lib_xxx`. Com D5, a ACL segue não vinculante.
+- **Vetor e referência da decisão 8 (linhas 56 e 95).**
+  `PATCH /api/v1/admin/movies/{id}/rating` não existe em develop. Os vetores
+  reais de auto-desbloqueio por admin já existem sem ele: relink de filme e de série
+  (`admin_relink_routes.py:119`, `:198`) e promote-to-series (`:140`) forçam
+  enrich e regravam a certificação; `define_episode_segments`
+  (`admin_segments_routes.py:35`) aponta episódio de série permitida para um
+  arquivo 18+; `PATCH /api/v1/admin/settings/content-rating`
+  (`admin_settings_routes.py:241`) seguido de enrich forçado troca a jurisdição;
+  `POST /api/v1/admin/users` (`admin_user_routes.py:70-92`) cria conta. A
+  referência `_metadata_field_merge.py:86-88` hoje é `set_certification`, em
+  `:134-160`.
+- **Shape do payload de perfil (linha 100).** Não fica idêntico: a 4.1 acrescenta
+  `maturity_limit` (aditivo), e o teste de contrato fixa as 9 chaves `id`,
+  `user_id`, `name`, `avatar_url`, `is_kids`, `maturity_limit`,
+  `allowed_library_ids`, `created_at` e `updated_at`. `is_kids` enviado em
+  `POST` ou `PUT` passa a ser aceito e ignorado.
+- **PIN de exatamente 6 dígitos (linha 85).** Desvio de "4 a 6 dígitos" (D4): no
+  orçamento da escada, cerca de 45 tentativas no pior dia, 4 dígitos cairiam em
+  ~111 dias em média, 6 em ~30 anos. A validação é `^[0-9]{6}$`, nunca
+  `str.isdigit()`, que aceita dígitos Unicode.
+
+**Lockout e janelas (D4).**
+
+- Estado por token, em `access_tokens`: `parental_failed_attempts`,
+  `parental_lockouts` (degrau da escada), `parental_locked_until` (fim do
+  **último** bloqueio, mantido depois de vencer porque o decaimento conta a
+  partir dele) e `parental_unlock_until`. As colunas NOT NULL têm
+  `server_default`, porque o login da FastAPI Users insere só `token` e
+  `user_id`.
+- Janelas em **epoch UTC inteiro**, em segundos, não DATETIME: a comparação
+  precisa ser atômica em SQL, e os formatos de texto medidos divergem entre
+  colunas (`access_tokens.created_at` com microssegundos, `profiles.updated_at`
+  sem).
+- Parâmetros: 5 tentativas; bloqueio de `min(5 min × 2^degrau, 24 h)`;
+  decaimento 24 h depois do fim do último bloqueio; janela de 5 min. PIN certo
+  zera as tentativas e encerra o bloqueio acionado pela própria tentativa, sem
+  descer a escada.
+- A reserva da tentativa é um único `UPDATE ... RETURNING` **antes** do
+  `verify`, commitado antes de qualquer raise — senão o rollback da UoW desfaz o
+  incremento. Concedida é ter voltado linha: neste stack `rowcount` vale -1 com
+  `RETURNING`, e tratar `rowcount == 0` como bloqueio seria fail-open.
+- `retry_after_seconds` do 403 `PARENTAL_PIN_LOCKED` vai em
+  `details[0].metadata`, porque `CoreException.to_dict` não serializa `tags` nem
+  `message_params`.
+
+**Mitigações adiadas com o override manual.** O override de classificação —
+`PATCH /api/v1/admin/movies/{id}/rating`, `rating_source = MANUAL`, a exceção
+MANUAL em `set_certification` e a worklist — sai da série e vira série própria
+**depois da 4.4**: o endpoint nunca nasce antes do gate de admin, e o gate não
+depende dele. Até lá ficam em aberto quatro mitigações deste ADR: o atalho de
+classificação em `CONTENT_RESTRICTED_UNRATED` (linha 65), o override como
+"válvula de correção" (linha 81), a worklist contra catálogo restrito vazio
+(linha 93) e a proteção contra re-enrich (linha 95).
+
+**Critério de liberação sem elas:** sob qualquer limite, os 100 filmes (de 644)
+e as 2 séries (de 57) vivos sem `minimum_age` ficam ocultos pela decisão 3, e o
+operador aceita isso até a série de override.
+
+**Resíduos declarados.**
+
+- **Outra conta da casa (D6).** O logout é livre (`src/main.py:546-550`), e a
+  criança que conhece a senha de outra conta entra por ela. A D10 impede criar
+  essa conta pela sessão irrestrita, mas não cobre as que já existem. É o limite
+  que a linha 85 já admite: quem tem a senha desfaz tudo.
+- **Senha e sessões (D11).** Não há rota para trocar senha, nem para encerrar
+  outras sessões, nem throttling de senha (login e rotas de PIN). Senha vazada e
+  device esquecido só se resolvem pelo operador no banco até a série de senha.
+- **Orçamento do lockout (D4).** Cerca de 45 tentativas no 1º dia e ~5 por dia
+  depois. Login novo cria token novo e recomeça a escada: forçando um por dia,
+  ~45 por dia, com o device visivelmente travado.
+- **Device solto (D12).** Volta ao seletor pelo 401 existente, com um flash de
+  `/login` e o cache do front inteiro limpo.
+- **ACL não vinculante (D5).** Qualquer sessão da conta grava ou atravessa
+  `allowed_library_ids` em `POST`, `PUT` e switch. Sob limite, uma biblioteca a
+  mais só entrega títulos dentro do limite, e os sem classificação seguem
+  ocultos.
+- **Fora dos BCs (D8).** `in_catalog` (`search_tmdb_titles.py:171-196`) revela
+  que a casa tem o título; a notificação de chegada (`on_media_enriched.py:152-160`,
+  em `catalog_requests`) mostra título e `media_id` a todos os perfis da conta;
+  o feed "Em breve"
+  (`catalog_request_routes.py:168-173`) é por usuário. Nenhum entrega
+  reprodução: o detalhe continua 403.
+- **Avatar sem gate.** A criança troca o avatar do responsável.
+
+**Corte da série.**
+
+| PR | Repo | Escopo | Observável ao deployar |
+|---|---|---|---|
+| 4.0 | back | esta emenda | — |
+| 4.1 | back | `Profile.maturity_limit`, `is_kids` derivado, migration de `profiles` | payload ganha `maturity_limit: null`; `is_kids` de `POST` e `PUT` é ignorado |
+| 4.2 | back | `users.parental_pin_hash`; definir e remover PIN com senha | aditivo: rotas de PIN e `parental_pin_configured` em `/users/me` |
+| 4.3 | back | unlock com lockout por device, colunas em `access_tokens`, `ParentalGate` | aditivo: `POST` e `DELETE /api/v1/parental/unlock` |
+| 4.4 | back | suspensão de admin em `current_admin_user`, com D10 | inerte sem PIN; `/users/me` ganha `admin_access` |
+| 4.5 | back | limite gravável, gate nos quatro caminhos de perfil, desligamento de sessões | limite gravável, 409 sem PIN; gate inerte sem PIN |
+| F0 | web | classificação dos erros do gate, sem retry em 401, 403 e 404, reset do cache do perfil ativo | só UX |
+| F1 | web | seletor de limite no formulário, `admin_access` no lugar de role, flag `PARENTAL_CONTROLS_ENABLED` desligada | não |
+| F2 | web | desafio e setup do PIN, mesma flag; depende do F1 | não |
+| F3 | web | liga a flag | sim |
+
+- **Backend linear.** 4.1, 4.2 e 4.3 criam uma revisão cada, encadeadas a partir
+  de `a7e4c91d20b8`; PRs paralelas gerariam duas heads e quebrariam
+  `make migrate`.
+- **Dormência por dado, não por flag.** Todo gate é inerte enquanto
+  `users.parental_pin_hash` for NULL, e com D2 o limite só é gravável com PIN.
+  Não há flag de runtime no backend.
+- **4.4 antes da 4.5**, para o limite nascer gravável com os vetores de admin já
+  fechados.
+- **Migrations à mão**, com `op.add_column` e CHECK inline, e downgrade com
+  `op.drop_column`. O `render_as_batch` de `migrations/env.py:48, 60` faz o
+  autogenerate omitir o CHECK, e recriar a tabela por batch com FK ligada é
+  destrutivo: em `profiles`, zera o `current_profile_id` das sessões; em
+  `users`, apaga perfis e sessões por CASCADE.
+
+**Ordem de deploy segura.** Topologia: merge, `git pull` no checkout do app
+(uvicorn com `--reload`) e `make migrate` manual.
+
+- **Passo 0, antes da série.** No planejamento, o checkout do app estava em
+  `4af647e` (#419), 17 merges atrás, e o banco em `f1a6d0c72e93`. Fazer backup,
+  deployar o develop atual, rodar `make migrate` até `a7e4c91d20b8` e validar
+  sem nenhum limite: catálogo igual e nenhum 500. Isso separa o risco das PRs 1
+  a 3d do risco da PR 4.
+- **Passo 1: F0**, neutro com qualquer backend.
+- **Passo 2: 4.1, 4.2 e 4.3**, uma por vez, com
+  `git pull --ff-only && make migrate` encadeados. Entre o reload e o fim do
+  migrate há 500, nunca 401, e ninguém é deslogado: na 4.1, em tudo que carrega
+  `ProfileModel` inteiro
+  (catálogo, progresso e coleções incluídos); na 4.2 e na 4.3, nas rotas com
+  `current_active_user` e no login.
+- **Passo 3: 4.4 e 4.5**, sem migration.
+- **Passo 4: F1 e F2**, com a flag desligada.
+- **Passo 5: F3**, ligando a flag.
+- **Passo 6: operador**, nesta ordem: configura o PIN; põe limite num perfil de
+  teste e roda a matriz de validação da 4.5; com backup, **revoga as sessões
+  antigas** de cada conta que recebe perfil limitado
+  (`DELETE FROM access_tokens` filtrando pelo `user_id` da conta) e loga de novo
+  em cada device; opcionalmente limpa o cache HLS (`DELETE /api/v1/admin/hls-cache`); só
+  então libera perfis reais, sob o critério de liberação acima.
+
+A revogação é obrigatória porque o gate é de entrada: a conta admin tem 29
+tokens válidos, todos no perfil irrestrito, e sem ela todo device usado nos
+últimos 90 dias segue ali. É manual porque não há rota que encerre outras
+sessões. E vem depois do PIN e do limite porque, antes deles, o login novo entra
+no perfil irrestrito sem PIN (D1).
+
+**Rollback.** Antes de existir PIN ou limite, tudo é reversível: as três
+migrations são aditivas e o downgrade é `op.drop_column`. Depois do PIN,
+desligar a flag do front deixa a UI sem desafio, e desfazer passa a ser remover
+os limites e depois o PIN, com a senha (D2). Reverter a 4.4 ou a 4.5 com PIN
+gravado remove o gate: é fail-open explícito e precisa estar declarado no PR de
+revert.
 
 ## Histórico de Revisões
 
@@ -410,3 +678,4 @@ leituras que precisam de dados de exibição.
 | 2026-09-12 | Lucas | Emenda 5, levantada no planejamento da PR 3a |
 | 2026-09-13 | Lucas | Emenda 6, levantada nas PRs 3d (#428-#434) |
 | 2026-09-13 | Lucas | Risco de cache entre perfis resolvido com `no-store` em respostas JSON e `private, no-cache` nos sprites de scrub-preview; item correspondente do checklist da PR 4 marcado |
+| 2026-09-13 | Lucas | Emenda 7, decisões e correções do planejamento da PR 4 |
