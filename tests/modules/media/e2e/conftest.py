@@ -6,6 +6,7 @@ Mirrors the settings/identity e2e setup: in-memory SQLite shared via
 not run (we don't want the real scheduler boot to fire under test).
 """
 
+import json
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 
@@ -98,7 +99,12 @@ _password_hash = PasswordHash.recommended()
 def seed_user_with_profile(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> Callable[..., Awaitable[SeededUser]]:
-    """Factory fixture: insert a verified user + default profile."""
+    """Factory fixture: insert a verified user + default profile.
+
+    The profile's ACL and maturity limit default to what a profile
+    without either gets (deny-all, unrestricted); tests that go through
+    the production viewing policy pass their own.
+    """
 
     async def _seed(
         *,
@@ -106,6 +112,8 @@ def seed_user_with_profile(
         password: str = "password-strong",
         profile_name: str = "Alice",
         is_admin: bool = False,
+        allowed_library_ids: list[str] | None = None,
+        maturity_limit: int | None = None,
     ) -> SeededUser:
         user_external = UserId.generate().value
         profile_external = ProfileId.generate().value
@@ -128,6 +136,8 @@ def seed_user_with_profile(
                 user_id=user.id,
                 name=profile_name,
                 is_kids=False,
+                allowed_library_ids=json.dumps(allowed_library_ids or []),
+                maturity_limit=maturity_limit,
             )
             session.add(profile)
             await session.commit()

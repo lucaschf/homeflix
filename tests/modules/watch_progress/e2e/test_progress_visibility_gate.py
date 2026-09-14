@@ -3,13 +3,13 @@
 Drives the real progress routes over the in-process ASGI transport
 against an in-memory database.
 
-``Profile`` has no maturity limit yet, so the production
-``ProfileViewingPolicyAdapter`` can only build library-only policies.
 The first class overrides the watch progress container's
-``profile_viewing_policy`` provider with a policy that carries a limit —
-the only way to see the age axis end to end. The second class runs
-without the override, so it also proves the composition root hands the
-container an Identity UoW factory.
+``profile_viewing_policy`` provider with a policy that carries a limit,
+pinning the age-axis contract independently of how a profile stores
+its limit. The other classes run without the override, so they also
+prove the composition root hands the container an Identity UoW factory;
+``TestProgressGateWithProfileMaturityLimit`` seeds the limit on the
+profile, so it reaches the gate through the production adapter.
 """
 
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -491,3 +491,39 @@ class TestProgressGateWithProductionPolicy:
 
         assert response.status_code == 200
         assert [item["media_id"] for item in response.json()["data"]] == [movie_id]
+
+
+@pytest.mark.e2e
+class TestProgressGateWithProfileMaturityLimit:
+    """No override: the limit stored on the profile is what the gate applies."""
+
+    async def test_put_above_the_profile_limit_is_404_like_a_missing_movie(
+        self,
+        client: AsyncClient,
+        login_with_active_profile: _Login,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        title = "Sixteen Plus Movie"
+        movie_id = await _seed_movie(session_factory, title=title, age=16)
+        await login_with_active_profile(allowed_library_ids=[_LIBRARY_ID], maturity_limit=_LIMIT)
+
+        restricted = await client.put(PROGRESS_PATH, json=_save_body(movie_id))
+        missing = await client.put(PROGRESS_PATH, json=_save_body(_MISSING_MOVIE_ID))
+
+        _assert_not_found_like_missing(restricted, missing, requested_id=movie_id)
+        assert title not in restricted.text
+        assert await _live_progress_media_ids(session_factory) == set()
+
+    async def test_put_within_the_profile_limit_returns_200(
+        self,
+        client: AsyncClient,
+        login_with_active_profile: _Login,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        movie_id = await _seed_movie(session_factory, title="Ten Plus Movie", age=10)
+        await login_with_active_profile(allowed_library_ids=[_LIBRARY_ID], maturity_limit=_LIMIT)
+
+        response = await client.put(PROGRESS_PATH, json=_save_body(movie_id))
+
+        assert response.status_code == 200
+        assert await _live_progress_media_ids(session_factory) == {movie_id}

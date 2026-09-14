@@ -6,6 +6,7 @@ from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.library_id import LibraryId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
@@ -23,19 +24,24 @@ class TestProfileCreate:
         assert profile.id is None
         assert profile.user_id == uid
         assert profile.name == ProfileName("Lucas")
+        assert profile.maturity_limit is None
         assert profile.is_kids is False
         assert profile.avatar_url is None
 
-    def test_should_create_kids_profile(self):
+    def test_should_create_with_avatar(self):
         profile = Profile.create(
             user_id=_user_id(),
             name=ProfileName("Bia"),
-            is_kids=True,
             avatar_url="https://example.com/avatar.png",
         )
 
-        assert profile.is_kids is True
         assert profile.avatar_url == "https://example.com/avatar.png"
+
+    def test_factory_should_not_accept_a_kids_flag(self):
+        with pytest.raises(TypeError):
+            Profile.create(  # type: ignore[call-arg]
+                user_id=_user_id(), name=ProfileName("Bia"), is_kids=True
+            )
 
 
 class TestProfileImmutability:
@@ -54,13 +60,20 @@ class TestProfileImmutability:
         assert original.name == ProfileName("Old")
         assert renamed.name == ProfileName("New")
 
-    def test_with_kids_flag_should_return_new_instance(self):
+    def test_with_maturity_limit_should_return_new_instance(self):
         original = Profile.create(user_id=_user_id(), name=ProfileName("L"))
 
-        kids = original.with_kids_flag(is_kids=True)
+        limited = original.with_maturity_limit(AgeRating(10))
 
-        assert kids.is_kids is True
-        assert original.is_kids is False
+        assert limited.maturity_limit == AgeRating(10)
+        assert original.maturity_limit is None
+
+    def test_with_maturity_limit_can_clear_to_none(self):
+        limited = Profile.create(user_id=_user_id(), name=ProfileName("L")).with_maturity_limit(
+            AgeRating(10)
+        )
+
+        assert limited.with_maturity_limit(None).maturity_limit is None
 
     def test_with_avatar_should_set_url(self):
         original = Profile.create(user_id=_user_id(), name=ProfileName("L"))
@@ -77,6 +90,62 @@ class TestProfileImmutability:
         cleared = original.with_avatar(None)
 
         assert cleared.avatar_url is None
+
+
+class TestProfileMaturityLimit:
+    """``maturity_limit`` is stored; ``is_kids`` is only ever derived from it."""
+
+    @pytest.mark.parametrize(
+        ("limit", "expected"),
+        [(None, False), (0, True), (12, True), (13, False), (18, False)],
+    )
+    def test_is_kids_is_derived_from_the_limit(self, limit, expected):
+        profile = Profile.create(user_id=_user_id(), name=ProfileName("L")).with_maturity_limit(
+            None if limit is None else AgeRating(limit)
+        )
+
+        assert profile.is_kids is expected
+
+    def test_is_kids_follows_a_limit_change(self):
+        kid = Profile.create(user_id=_user_id(), name=ProfileName("L")).with_maturity_limit(
+            AgeRating(12)
+        )
+
+        assert kid.is_kids is True
+        assert kid.with_maturity_limit(AgeRating(14)).is_kids is False
+
+    def test_is_kids_is_not_a_serialized_field(self):
+        # A computed field would enter the dump that ``with_updates``
+        # re-validates under ``extra="forbid"`` and break every ``with_*``.
+        profile = Profile.create(user_id=_user_id(), name=ProfileName("L")).with_maturity_limit(
+            AgeRating(12)
+        )
+
+        assert "is_kids" not in profile.model_dump()
+        assert profile.model_dump()["maturity_limit"] == 12
+
+    def test_with_helpers_preserve_the_limit(self):
+        limited = Profile.create(user_id=_user_id(), name=ProfileName("L")).with_maturity_limit(
+            AgeRating(14)
+        )
+
+        renamed = limited.with_name(ProfileName("New"))
+        regranted = renamed.with_allowed_library_ids(["lib_movies123456"])
+        reavatared = regranted.with_avatar("https://x/y.png")
+
+        assert renamed.maturity_limit == AgeRating(14)
+        assert regranted.maturity_limit == AgeRating(14)
+        assert reavatared.maturity_limit == AgeRating(14)
+
+    def test_should_reject_a_stored_kids_flag(self):
+        with pytest.raises(DomainValidationException):
+            Profile(user_id=_user_id(), name=ProfileName("L"), is_kids=True)  # type: ignore[call-arg]
+
+    def test_should_reject_a_limit_off_the_scale(self):
+        profile = Profile.create(user_id=_user_id(), name=ProfileName("L"))
+
+        with pytest.raises(DomainValidationException):
+            profile.with_updates(maturity_limit=22)
 
 
 class TestProfileEquality:
@@ -193,9 +262,24 @@ class TestProfileViewingPolicy:
 
         assert profile.viewing_policy().denies_everything is True
 
-    def test_should_not_restrict_maturity_yet(self):
-        # ``Profile`` carries no maturity limit until PR 4, so the age
-        # axis must stay open or every catalog read would change today.
+    def test_should_carry_the_maturity_limit(self):
+        # The age axis is wired here and nowhere else: every BC's
+        # adapter returns this policy as is.
+        profile = Profile.create(
+            user_id=_user_id(), name=ProfileName("L"), allowed_library_ids=["lib_movies123456"]
+        ).with_maturity_limit(AgeRating(12))
+
+        policy = profile.viewing_policy()
+
+        assert policy.maturity_limit == AgeRating(12)
+        assert policy.restricts_maturity is True
+        assert policy == ViewingPolicy(
+            allowed_library_ids=["lib_movies123456"], maturity_limit=AgeRating(12)
+        )
+
+    def test_should_not_restrict_maturity_without_a_limit(self):
+        # ``None`` is every profile that predates the limit: the age axis
+        # must stay open or their catalog would change.
         profile = Profile.create(
             user_id=_user_id(), name=ProfileName("L"), allowed_library_ids=["lib_movies123456"]
         )
@@ -204,6 +288,16 @@ class TestProfileViewingPolicy:
 
         assert policy.restricts_maturity is False
         assert policy.maturity_limit is None
+
+    def test_should_follow_a_limit_change(self):
+        limited = Profile.create(
+            user_id=_user_id(), name=ProfileName("L"), allowed_library_ids=["lib_movies123456"]
+        ).with_maturity_limit(AgeRating(10))
+
+        assert limited.with_maturity_limit(AgeRating(16)).viewing_policy().maturity_limit == (
+            AgeRating(16)
+        )
+        assert limited.with_maturity_limit(None).viewing_policy().restricts_maturity is False
 
     def test_should_follow_an_acl_replacement(self):
         # Derived on every call, so a revoked library cannot linger in

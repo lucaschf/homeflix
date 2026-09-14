@@ -29,7 +29,6 @@ class CreateProfileUseCase:
         profile = Profile.create(
             user_id=UserId(input_dto.user_id),
             name=ProfileName(input_dto.name),
-            is_kids=input_dto.is_kids,
             avatar_url=input_dto.avatar_url,
             allowed_library_ids=input_dto.allowed_library_ids,
         )

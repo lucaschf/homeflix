@@ -1,7 +1,7 @@
 """Integration tests for SqlAlchemyProfileRepository."""
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
@@ -12,6 +12,7 @@ from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.modules.identity.infrastructure.persistence.models.profile_model import (
     ProfileModel,
 )
+from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.library_id import LibraryId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
@@ -41,7 +42,7 @@ class TestSqlAlchemyProfileRepositorySave:
         assert saved.id.prefix == "prf"
         assert saved.user_id == owner.id
         assert saved.name == ProfileName("Lucas")
-        assert saved.is_kids is False
+        assert saved.maturity_limit is None
 
     async def test_should_round_trip_through_find_by_id(
         self, uow_factory: IdentityUnitOfWorkFactory
@@ -54,9 +55,8 @@ class TestSqlAlchemyProfileRepositorySave:
                 Profile.create(
                     user_id=owner.id,
                     name=ProfileName("Kids"),
-                    is_kids=True,
                     avatar_url="https://example.com/k.png",
-                )
+                ).with_maturity_limit(AgeRating(14))
             )
 
         async with uow_factory() as uow:
@@ -66,7 +66,7 @@ class TestSqlAlchemyProfileRepositorySave:
         assert found is not None
         assert found.id == saved.id
         assert found.user_id == owner.id
-        assert found.is_kids is True
+        assert found.maturity_limit == AgeRating(14)
         assert found.avatar_url == "https://example.com/k.png"
 
     async def test_save_should_update_existing_profile(
@@ -91,6 +91,62 @@ class TestSqlAlchemyProfileRepositorySave:
 
         assert after is not None
         assert after.name == ProfileName("New")
+
+    async def test_save_should_persist_a_maturity_limit_change(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+    ):
+        # ``update_model`` must write the column: forgetting it raises
+        # nothing and silently keeps the old limit.
+        owner = await _seed_user(uow_factory)
+        assert owner.id is not None
+
+        async with uow_factory() as uow:
+            original = await uow.profiles.save(
+                Profile.create(user_id=owner.id, name=ProfileName("Kid")).with_maturity_limit(
+                    AgeRating(14)
+                )
+            )
+
+        async with uow_factory() as uow:
+            await uow.profiles.save(original.with_maturity_limit(AgeRating(10)))
+
+        async with uow_factory() as uow:
+            assert original.id is not None
+            after = await uow.profiles.find_by_id(original.id)
+
+        assert after is not None
+        assert after.maturity_limit == AgeRating(10)
+        stored = await db_session.execute(
+            select(ProfileModel.maturity_limit, ProfileModel.is_kids).where(
+                ProfileModel.external_id == original.id.value
+            )
+        )
+        assert stored.one() == (10, True)
+
+    async def test_save_should_persist_clearing_the_maturity_limit(
+        self, uow_factory: IdentityUnitOfWorkFactory
+    ):
+        owner = await _seed_user(uow_factory)
+        assert owner.id is not None
+
+        async with uow_factory() as uow:
+            original = await uow.profiles.save(
+                Profile.create(user_id=owner.id, name=ProfileName("Kid")).with_maturity_limit(
+                    AgeRating(10)
+                )
+            )
+
+        async with uow_factory() as uow:
+            await uow.profiles.save(original.with_maturity_limit(None))
+
+        async with uow_factory() as uow:
+            assert original.id is not None
+            after = await uow.profiles.find_by_id(original.id)
+
+        assert after is not None
+        assert after.maturity_limit is None
 
     async def test_save_should_reject_when_owning_user_does_not_exist(
         self, uow_factory: IdentityUnitOfWorkFactory

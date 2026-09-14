@@ -31,6 +31,12 @@ Nós iremos introduzir um novo bounded context **`identity`** (em `src/modules/i
 - `Profile` é a **entidade de contexto de personalização**, filha de `User`. Carrega nome, avatar, flag `is_kids`, e (futuramente) `allowed_library_ids`.
 - Outros bounded contexts (`watch_progress`, `collections`, `preferences`) referenciam **apenas `ProfileId`** — nunca `UserId`. `User` controla CRUD de profiles, `Profile` é o ponto de ancoragem de toda telemetria de uso.
 
+> **Nota (ADR-035, 2026-09-14):** `is_kids` deixou de ser gravado como entrada — é
+> derivado de `Profile.maturity_limit` (limite ≤ 12), conforme ADR-035 decisão 4 e
+> Emenda 7; a ACL de bibliotecas continua existindo como segundo eixo. O texto acima
+> também descreve `Profile` como filha de `User`: no código ela é aggregate root
+> próprio, que referencia o dono por `user_id`.
+
 ### (2) Identificação — UUID interno + prefixed external_id
 
 - O banco armazena `User.id` como `UUID` (mantendo compatibilidade nativa com FastAPI Users) e adiciona uma coluna `external_id VARCHAR` indexada no formato `usr_xxxxxxxxxxxx`.

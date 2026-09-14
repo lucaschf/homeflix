@@ -3,7 +3,7 @@
 import uuid
 
 from fastapi_users_db_sqlalchemy.generics import GUID
-from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.persistence.base import BaseWithUUID
@@ -23,8 +23,11 @@ class ProfileModel(BaseWithUUID):
             so deleting an account also removes its profiles.
         name: Display name shown in the profile picker (1..50 chars).
         avatar_url: Optional URL to an avatar image.
-        is_kids: Marks the profile as kids-mode (UX hint independent
-            of the ACL).
+        is_kids: Kids flag derived from ``maturity_limit`` on every
+            write. Nothing reads it back; it is kept so a downgrade
+            that drops ``maturity_limit`` finds a coherent flag.
+        maturity_limit: Highest minimum age (0..21) the profile may
+            watch, or NULL for unrestricted (ADR-035).
         allowed_library_ids: JSON-encoded list of library external_ids
             (``lib_xxx``) this profile may see in the catalog. Stored
             as TEXT/JSON rather than a join table because reads are
@@ -48,6 +51,17 @@ class ProfileModel(BaseWithUUID):
         Boolean,
         nullable=False,
         default=False,
+    )
+    # Column-level CHECK, as the migration adds it: SQLite can only drop
+    # a column whose CHECK belongs to that column, so a table-level one
+    # would make a schema built from this model impossible to downgrade.
+    maturity_limit: Mapped[int | None] = mapped_column(
+        Integer,
+        CheckConstraint(
+            "maturity_limit IS NULL OR maturity_limit BETWEEN 0 AND 21",
+            name="ck_profiles_maturity_limit_range",
+        ),
+        nullable=True,
     )
     allowed_library_ids: Mapped[str] = mapped_column(
         Text,

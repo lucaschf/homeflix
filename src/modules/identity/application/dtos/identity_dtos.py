@@ -21,13 +21,18 @@ from src.modules.identity.domain.value_objects.user_role import UserRole
 
 @dataclass(frozen=True)
 class ProfileOutput:
-    """Full representation of a profile returned to API consumers."""
+    """Full representation of a profile returned to API consumers.
+
+    ``is_kids`` is derived from ``maturity_limit`` (ADR-035) and kept
+    on the wire so existing clients keep reading it.
+    """
 
     id: str
     user_id: str
     name: str
     avatar_url: str | None
     is_kids: bool
+    maturity_limit: int | None
     allowed_library_ids: list[str]
     created_at: str
     updated_at: str
@@ -48,7 +53,6 @@ class CreateProfileInput:
 
     user_id: str
     name: str
-    is_kids: bool = False
     avatar_url: str | None = None
     allowed_library_ids: list[str] | None = None
 
@@ -78,7 +82,6 @@ class UpdateProfileInput:
     user_id: str
     profile_id: str
     name: str | None = None
-    is_kids: bool | None = None
     avatar_url: str | None = None
     allowed_library_ids: list[str] | None = None
 

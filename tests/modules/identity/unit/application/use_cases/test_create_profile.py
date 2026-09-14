@@ -28,12 +28,13 @@ class TestCreateProfileUseCase:
         assert output.id.startswith("prf_")
         assert output.user_id == caller_id.value
         assert output.name == "Lucas"
+        assert output.maturity_limit is None
         assert output.is_kids is False
         assert output.avatar_url is None
         # Repository was actually written through:
         assert await fake_uow.profiles.count_for_user(caller_id) == 1
 
-    async def test_should_propagate_kids_flag_and_avatar_url(
+    async def test_should_propagate_avatar_url(
         self,
         fake_uow_factory: FakeIdentityUnitOfWorkFactory,
     ):
@@ -44,12 +45,10 @@ class TestCreateProfileUseCase:
             CreateProfileInput(
                 user_id=caller_id.value,
                 name="Bia",
-                is_kids=True,
                 avatar_url="https://example.com/bia.png",
             )
         )
 
-        assert output.is_kids is True
         assert output.avatar_url == "https://example.com/bia.png"
 
     async def test_should_assign_distinct_external_ids_to_multiple_profiles(

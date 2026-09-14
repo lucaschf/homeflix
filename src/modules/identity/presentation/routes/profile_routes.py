@@ -86,7 +86,6 @@ async def create_profile(
         CreateProfileInput(
             user_id=user.external_id,
             name=body.name,
-            is_kids=body.is_kids,
             avatar_url=body.avatar_url,
             allowed_library_ids=body.allowed_library_ids,
         ),
@@ -115,7 +114,6 @@ async def update_profile(
             user_id=user.external_id,
             profile_id=profile_id,
             name=body.name,
-            is_kids=body.is_kids,
             avatar_url=body.avatar_url,
             allowed_library_ids=body.allowed_library_ids,
         ),

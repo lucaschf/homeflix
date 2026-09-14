@@ -16,10 +16,13 @@ from src.modules.identity.application.use_cases.create_profile import (
 from src.modules.identity.application.use_cases.update_profile import (
     UpdateProfileUseCase,
 )
+from src.modules.identity.domain.entities.profile import Profile
+from src.modules.identity.domain.value_objects.profile_name import ProfileName
+from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
-from .conftest import FakeIdentityUnitOfWorkFactory
+from .conftest import FakeIdentityUnitOfWork, FakeIdentityUnitOfWorkFactory
 
 
 class TestUpdateProfileUseCase:
@@ -32,7 +35,6 @@ class TestUpdateProfileUseCase:
             CreateProfileInput(
                 user_id=caller_id.value,
                 name="Lucas",
-                is_kids=False,
                 avatar_url="https://x/old.png",
             )
         )
@@ -49,26 +51,34 @@ class TestUpdateProfileUseCase:
         assert output.id == original.id
         assert output.name == "Luc"  # changed
         assert output.avatar_url == "https://x/old.png"  # unchanged
-        assert output.is_kids is False  # unchanged
+        assert output.maturity_limit is None  # unchanged
 
-    async def test_should_update_kids_flag_only(
-        self, fake_uow_factory: FakeIdentityUnitOfWorkFactory
+    async def test_should_keep_the_maturity_limit_on_a_partial_update(
+        self,
+        fake_uow: FakeIdentityUnitOfWork,
+        fake_uow_factory: FakeIdentityUnitOfWorkFactory,
     ):
         caller_id = UserId.generate()
-        creator = CreateProfileUseCase(uow_factory=fake_uow_factory)
-        original = await creator.execute(CreateProfileInput(user_id=caller_id.value, name="Kids"))
+        limited = await fake_uow.profiles.save(
+            Profile.create(user_id=caller_id, name=ProfileName("Kids")).with_maturity_limit(
+                AgeRating(12)
+            )
+        )
+        assert limited.id is not None
 
         use_case = UpdateProfileUseCase(uow_factory=fake_uow_factory)
         output = await use_case.execute(
             UpdateProfileInput(
                 user_id=caller_id.value,
-                profile_id=original.id,
-                is_kids=True,
+                profile_id=limited.id.value,
+                name="Renamed",
+                allowed_library_ids=["lib_movies123456"],
             )
         )
 
+        assert output.name == "Renamed"
+        assert output.maturity_limit == 12
         assert output.is_kids is True
-        assert output.name == "Kids"  # unchanged
 
     async def test_should_raise_when_profile_does_not_exist(
         self, fake_uow_factory: FakeIdentityUnitOfWorkFactory

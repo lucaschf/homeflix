@@ -67,15 +67,15 @@ class TestCollectionsProfileViewingPolicyAdapter:
         assert profile.id is not None
         policy = await adapter.find_for_profile(profile.id)
         assert policy == ViewingPolicy.unrestricted(granted)
-        # ``Profile`` has no maturity limit yet, so the age axis is open.
+        # The profile is seeded without a limit, so the age axis is open.
         assert policy.maturity_limit is None
 
     async def test_should_return_the_policy_the_profile_derives(
         self,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        # ``Profile.viewing_policy()`` is the single source; once it
-        # grows the maturity axis, the adapter must carry it unchanged.
+        # ``Profile.viewing_policy()`` is the single source, maturity
+        # axis included; the adapter must carry it unchanged.
         factory = SqlAlchemyIdentityUnitOfWorkFactory(session_factory)
         profile = await _seed_profile(
             factory,

@@ -108,6 +108,7 @@ def seed_user_with_profile(
     async def _seed(
         *,
         allowed_library_ids: list[str],
+        maturity_limit: int | None = None,
         email: str = "alice@example.com",
         password: str = "password-strong",
     ) -> SeededUser:
@@ -134,6 +135,7 @@ def seed_user_with_profile(
                     name="Alice",
                     is_kids=False,
                     allowed_library_ids=json.dumps(allowed_library_ids),
+                    maturity_limit=maturity_limit,
                 )
             )
             await session.commit()
@@ -155,8 +157,12 @@ def login_with_active_profile(
 ) -> Callable[..., Awaitable[SeededUser]]:
     """Factory fixture: seed a user, log in and switch to its profile."""
 
-    async def _login(*, allowed_library_ids: list[str]) -> SeededUser:
-        user = await seed_user_with_profile(allowed_library_ids=allowed_library_ids)
+    async def _login(
+        *, allowed_library_ids: list[str], maturity_limit: int | None = None
+    ) -> SeededUser:
+        user = await seed_user_with_profile(
+            allowed_library_ids=allowed_library_ids, maturity_limit=maturity_limit
+        )
         login = await client.post(
             LOGIN_PATH,
             data={"username": user.email, "password": user.password},

@@ -48,8 +48,6 @@ class UpdateProfileUseCase:
             updated = existing
             if input_dto.name is not None:
                 updated = updated.with_name(ProfileName(input_dto.name))
-            if input_dto.is_kids is not None:
-                updated = updated.with_kids_flag(is_kids=input_dto.is_kids)
             if input_dto.avatar_url is not None:
                 updated = updated.with_avatar(input_dto.avatar_url)
             if input_dto.allowed_library_ids is not None:

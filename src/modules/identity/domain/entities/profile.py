@@ -14,6 +14,7 @@ from src.modules.identity.domain.value_objects.profile_name import (  # noqa: TC
     ProfileName,
 )
 from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.value_objects.age_rating import AgeRating  # noqa: TCH001
 from src.shared_kernel.value_objects.library_id import LibraryId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId  # noqa: TCH001
@@ -34,14 +35,15 @@ class Profile(AggregateRoot[ProfileId]):
     Attributes:
         id: External profile ID (``prf_xxx``). Database stores a UUID.
         user_id: Owner's external ID. Required and immutable after
-            creation (renaming a profile or changing kids flag uses
-            the ``with_*`` helpers; transferring ownership is not a
-            supported operation).
+            creation (renaming a profile or changing its maturity limit
+            uses the ``with_*`` helpers; transferring ownership is not
+            a supported operation).
         name: Display name shown in the profile picker.
         avatar_url: Optional URL to an avatar image.
-        is_kids: Marks the profile as kids-mode. Independent of the
-            ACL list — the kids flag is a UX hint; the ACL is the
-            actual authorization gate.
+        maturity_limit: Highest minimum age this profile may watch, or
+            ``None`` for unrestricted (ADR-035). Every profile that
+            predates the feature has ``None``. The kids flag is no
+            longer stored: :attr:`is_kids` is derived from this limit.
         allowed_library_ids: Typed ``LibraryId`` ACL (``lib_xxx``) of
             the libraries this profile may see in the catalog. Raw
             strings are converted (and validated) on assignment, so a
@@ -67,7 +69,7 @@ class Profile(AggregateRoot[ProfileId]):
     user_id: UserId
     name: ProfileName
     avatar_url: str | None = None
-    is_kids: bool = False
+    maturity_limit: AgeRating | None = None
     allowed_library_ids: list[LibraryId] = Field(default_factory=list)
 
     @field_validator("allowed_library_ids", mode="before")
@@ -78,13 +80,28 @@ class Profile(AggregateRoot[ProfileId]):
             return []
         return [item if isinstance(item, LibraryId) else LibraryId(item) for item in v]
 
+    @property
+    def is_kids(self) -> bool:
+        """Whether this profile reads as a kids profile.
+
+        Derived from :attr:`maturity_limit` (ADR-035) rather than
+        stored, so there is no second write path that could disagree
+        with the limit. A plain ``@property`` on purpose: a computed
+        field would enter ``model_dump()`` and break every ``with_*``
+        helper, which re-validates the dump under ``extra="forbid"``.
+
+        Returns:
+            ``True`` when a limit of 12 or lower applies; ``False`` for
+            an unrestricted profile or a higher limit.
+        """
+        return self.maturity_limit is not None and self.maturity_limit.value <= 12
+
     @classmethod
     def create(
         cls,
         user_id: UserId,
         name: ProfileName,
         *,
-        is_kids: bool = False,
         avatar_url: str | None = None,
         allowed_library_ids: Sequence[str | LibraryId] | None = None,
     ) -> Profile:
@@ -92,7 +109,6 @@ class Profile(AggregateRoot[ProfileId]):
         return cls(
             user_id=user_id,
             name=name,
-            is_kids=is_kids,
             avatar_url=avatar_url,
             allowed_library_ids=list(allowed_library_ids) if allowed_library_ids else [],
         )
@@ -101,9 +117,17 @@ class Profile(AggregateRoot[ProfileId]):
         """Return a copy with the given name."""
         return self.with_updates(name=name)
 
-    def with_kids_flag(self, *, is_kids: bool) -> Self:
-        """Return a copy with the kids flag toggled."""
-        return self.with_updates(is_kids=is_kids)
+    def with_maturity_limit(self, limit: AgeRating | None) -> Self:
+        """Return a copy with the given maturity limit.
+
+        Args:
+            limit: The highest minimum age the profile may watch, or
+                ``None`` to make it unrestricted.
+
+        Returns:
+            A new profile carrying ``limit``.
+        """
+        return self.with_updates(maturity_limit=limit)
 
     def with_avatar(self, avatar_url: str | None) -> Self:
         """Return a copy with the given avatar URL (or ``None`` to clear)."""
@@ -130,11 +154,14 @@ class Profile(AggregateRoot[ProfileId]):
         architecture test holds the adapters to it.
 
         Returns:
-            A policy carrying this profile's library ACL. An empty ACL
-            yields a deny-all policy (ADR-035 §5). ``Profile`` has no
-            maturity limit yet, so the age axis is unrestricted.
+            A policy carrying this profile's library ACL and maturity
+            limit. An empty ACL yields a deny-all policy (ADR-035 §5);
+            a ``None`` limit leaves the age axis unrestricted.
         """
-        return ViewingPolicy(allowed_library_ids=self.allowed_library_ids)
+        return ViewingPolicy(
+            allowed_library_ids=self.allowed_library_ids,
+            maturity_limit=self.maturity_limit,
+        )
 
 
 __all__ = ["Profile"]
