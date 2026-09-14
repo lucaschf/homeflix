@@ -22,6 +22,12 @@ class DeleteProfileAvatarUseCase:
     the caller. The storage call is idempotent so a second delete on
     an already-cleared profile succeeds without error — the response
     just returns the (still-empty) profile.
+
+    The maturity limit is never written here: ``save`` leaves an existing
+    profile's limit as stored, so clearing the avatar of a profile read
+    before a concurrent limit change cannot undo it (ADR-035). Nor does
+    ``save`` restore a profile deleted after that read: the call answers
+    :class:`ProfileNotFoundException` (HTTP 404) instead.
     """
 
     def __init__(
@@ -50,6 +56,11 @@ class DeleteProfileAvatarUseCase:
                 )
             updated = existing.with_avatar(None)
             saved = await uow.profiles.save(updated)
+            if saved is None:
+                raise ProfileNotFoundException.for_resource(
+                    resource_type="Profile",
+                    resource_id=input_dto.profile_id,
+                )
 
         # Storage delete after the row update so a partial failure
         # leaves the profile pointing at a valid (or absent) file

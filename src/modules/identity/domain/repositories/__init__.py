@@ -3,6 +3,7 @@
 from src.modules.identity.domain.repositories.access_token_repository import (
     AccessTokenRepository,
     AccessTokenSnapshot,
+    ParentalSessionSnapshot,
     ParentalSessionState,
     PinAttemptReservation,
 )
@@ -14,6 +15,7 @@ from src.modules.identity.domain.repositories.user_repository import UserReposit
 __all__ = [
     "AccessTokenRepository",
     "AccessTokenSnapshot",
+    "ParentalSessionSnapshot",
     "ParentalSessionState",
     "PinAttemptReservation",
     "ProfileRepository",

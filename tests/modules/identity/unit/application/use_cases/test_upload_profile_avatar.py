@@ -16,10 +16,16 @@ from src.modules.identity.application.use_cases.create_profile import (
 from src.modules.identity.application.use_cases.upload_profile_avatar import (
     UploadProfileAvatarUseCase,
 )
+from src.modules.identity.domain.entities.profile import Profile
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
-from .conftest import FakeAvatarStorage, FakeIdentityUnitOfWork, FakeIdentityUnitOfWorkFactory
+from .conftest import (
+    FakeAvatarStorage,
+    FakeIdentityUnitOfWork,
+    FakeIdentityUnitOfWorkFactory,
+    seed_account,
+)
 
 
 class TestUploadProfileAvatarUseCase:
@@ -29,7 +35,7 @@ class TestUploadProfileAvatarUseCase:
         fake_uow_factory: FakeIdentityUnitOfWorkFactory,
         fake_avatar_storage: FakeAvatarStorage,
     ) -> None:
-        owner_id = UserId.generate()
+        owner_id = await seed_account(fake_uow_factory)
         creator = CreateProfileUseCase(uow_factory=fake_uow_factory)
         profile = await creator.execute(CreateProfileInput(user_id=owner_id.value, name="Lucas"))
 
@@ -75,12 +81,46 @@ class TestUploadProfileAvatarUseCase:
         # Storage was never touched on the early-fail path.
         assert fake_avatar_storage.saved == []
 
+    async def test_a_profile_deleted_before_the_save_is_not_found_and_stays_deleted(
+        self,
+        fake_uow: FakeIdentityUnitOfWork,
+        fake_uow_factory: FakeIdentityUnitOfWorkFactory,
+        fake_avatar_storage: FakeAvatarStorage,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # ADR-035: the save never restores it, so the upload answers 404.
+        owner_id = await seed_account(fake_uow_factory)
+        creator = CreateProfileUseCase(uow_factory=fake_uow_factory)
+        target = await creator.execute(CreateProfileInput(user_id=owner_id.value, name="Lucas"))
+        save = fake_uow.profiles.save
+
+        async def deleted_first(profile: Profile) -> Profile | None:
+            await fake_uow.profiles.delete(ProfileId(target.id))
+            return await save(profile)
+
+        monkeypatch.setattr(fake_uow.profiles, "save", deleted_first)
+        use_case = UploadProfileAvatarUseCase(
+            uow_factory=fake_uow_factory, avatar_storage=fake_avatar_storage
+        )
+
+        with pytest.raises(ProfileNotFoundException):
+            await use_case.execute(
+                UploadProfileAvatarInput(
+                    user_id=owner_id.value,
+                    profile_id=target.id,
+                    content=b"x",
+                    declared_mime_type="image/png",
+                )
+            )
+
+        assert await fake_uow.profiles.find_by_id(ProfileId(target.id)) is None
+
     async def test_should_reject_cross_user_upload(
         self,
         fake_uow_factory: FakeIdentityUnitOfWorkFactory,
         fake_avatar_storage: FakeAvatarStorage,
     ) -> None:
-        owner_id = UserId.generate()
+        owner_id = await seed_account(fake_uow_factory)
         intruder_id = UserId.generate()
         creator = CreateProfileUseCase(uow_factory=fake_uow_factory)
         target = await creator.execute(CreateProfileInput(user_id=owner_id.value, name="Lucas"))

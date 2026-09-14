@@ -16,7 +16,9 @@ class UserRepository(ABC):
     ``SQLAlchemyUserDatabase`` (registration, password reset, email
     verification). This repository covers domain-driven reads and the
     domain-mutable fields (``role``, ``is_active``), the narrow
-    ``set_parental_pin_hash`` write, plus the admin surface
+    ``set_parental_pin_hash`` and ``clear_unused_parental_pin_hash``
+    writes, the account lock the parental changes serialise on
+    (``lock_for_parental_change``), plus the admin surface
     (``list_paginated``, ``count_active_admins``, ``soft_delete``) that
     the ``/api/v1/admin/users`` endpoints drive.
     """
@@ -62,6 +64,54 @@ class UserRepository(ABC):
         Returns:
             ``True`` when a non-deleted user was updated, ``False`` when
             the user does not exist or is soft-deleted.
+        """
+        ...
+
+    @abstractmethod
+    async def clear_unused_parental_pin_hash(self, user_id: UserId) -> bool:
+        """Clear a live user's parental PIN hash unless a profile still has a limit.
+
+        One conditional write, so removing the PIN and setting a limit
+        cannot interleave into a limit left without a PIN (ADR-035,
+        Amendment 7 D2): the statement clears the hash only while no live
+        profile of the account has a maturity limit. Like
+        ``set_parental_pin_hash`` it touches only the hash (and
+        ``updated_at``) and never restores a soft-deleted user.
+
+        Args:
+            user_id: The user's external ID (``usr_xxx``).
+
+        Returns:
+            ``True`` when this call cleared the hash of a live user (with or
+            without a PIN before); ``False`` when the user does not exist,
+            is soft-deleted, or a live profile of theirs has a limit.
+        """
+        ...
+
+    @abstractmethod
+    async def lock_for_parental_change(self, user_id: UserId) -> bool:
+        """Lock a live account against other parental changes until the transaction ends.
+
+        The contract of the parental gate (ADR-035, Amendment 7): this is the
+        **first statement** of the Unit of Work of every operation the gate
+        decides on — switching, creating, updating and deleting a profile —
+        and of the write of setting or removing the PIN. Everything such an
+        operation reads after it, in the same transaction, stays as read
+        until the transaction commits or rolls back, because every other one
+        on the account waits here. So two of them never interleave: a gate
+        never combines a session read before a concurrent change with
+        profiles or a PIN read after it, and never decides on a state that
+        changes before its write lands. Called after a read of the same
+        transaction, it would not cover what changed before it.
+
+        Writes nothing observable on the account.
+
+        Args:
+            user_id: The account's external ID (``usr_xxx``).
+
+        Returns:
+            ``True`` when a live account was locked; ``False`` when it does
+            not exist or is soft-deleted, which locks nothing.
         """
         ...
 

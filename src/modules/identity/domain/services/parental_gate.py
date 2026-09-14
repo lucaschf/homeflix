@@ -25,6 +25,10 @@ UNLOCK_WINDOW = timedelta(minutes=5)
 """How long a correct PIN unlocks the device that entered it, with no renewal."""
 
 
+def _value(limit: AgeRating | None) -> int | None:
+    return None if limit is None else limit.value
+
+
 @dataclass(frozen=True)
 class LockoutPolicy:
     """Per-device lockout ladder for wrong parental PINs (Amendment 7 D4).
@@ -170,6 +174,70 @@ class ParentalGate:
         if target is None:
             return True
         return target.value > baseline.value
+
+    @staticmethod
+    def update_requires_unlock(
+        *,
+        before: AgeRating | None,
+        after: AgeRating | None,
+        target_is_active: bool,
+        session_limit: AgeRating | None,
+    ) -> bool:
+        """Whether editing a profile's limit needs an unlock (Amendment 7, decision 9).
+
+        Two changes need one. Widening the profile, from any session: a child
+        on an unrestricted session would otherwise lift the limit of the
+        profile another device is already on. And, from a session acting
+        under a limit, changing another profile's limit at all, even
+        narrowing it. The limits are compared by value, so an edit that
+        leaves the limit as it was never needs an unlock.
+
+        Args:
+            before: The profile's limit before the edit; ``None`` is
+                unrestricted.
+            after: The limit the edit leaves; ``None`` is unrestricted.
+            target_is_active: Whether the edited profile is the one selected
+                on the session.
+            session_limit: The limit the session acts under
+                (:meth:`session_limit`).
+
+        Returns:
+            ``True`` when the edit widens the profile, or changes the limit of
+            another profile from a limited session.
+
+        Example:
+            >>> ParentalGate.update_requires_unlock(
+            ...     before=AgeRating(14), after=AgeRating(12),
+            ...     target_is_active=True, session_limit=AgeRating(14),
+            ... )
+            False
+        """
+        if ParentalGate.exceeds(after, before):
+            return True
+        changed = _value(after) != _value(before)
+        return changed and not target_is_active and session_limit is not None
+
+    @staticmethod
+    def delete_requires_unlock(
+        *,
+        target_limit: AgeRating | None,
+        session_limit: AgeRating | None,
+    ) -> bool:
+        """Whether deleting a profile needs an unlock (Amendment 7, decision 9).
+
+        Deleting a limited profile lifts its limit for good, and a session
+        acting under a limit may delete no profile at all.
+
+        Args:
+            target_limit: The limit of the profile to delete.
+            session_limit: The limit the session acts under
+                (:meth:`session_limit`).
+
+        Returns:
+            ``True`` when the profile has a limit or the session acts under
+            one.
+        """
+        return target_limit is not None or session_limit is not None
 
     @staticmethod
     def admin_access(

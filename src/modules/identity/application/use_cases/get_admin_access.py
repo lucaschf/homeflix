@@ -25,8 +25,14 @@ class GetAdminAccessUseCase:
     as the Amendment 7 matrix in :meth:`ParentalGate.admin_access` states.
     An account without a PIN keeps the plain role, and costs no query.
 
-    With a PIN, the decision reads exactly two things: the session's
-    parental state and the account's live profiles. A selected profile
+    With a PIN, the decision reads the session's parental state and the
+    account's live profiles in one statement
+    (``AccessTokenRepository.get_parental_snapshot``). Read in two, a
+    widening committed between them — which also detaches this session from
+    the widened profile — would pair the session still on that profile with
+    the profile already unrestricted, and grant a read no request order
+    grants; admin requests take no account lock, so the single snapshot is
+    what keeps them consistent without serialising them. A selected profile
     missing from that list was soft-deleted and counts as ``AgeRating(0)``.
     The unlock window is read, never spent (Amendment 7 D9).
     """
@@ -59,15 +65,15 @@ class GetAdminAccessUseCase:
 
         user_id = UserId(input_dto.user_id)
         async with self._uow_factory() as uow:
-            state = await uow.access_tokens.get_parental_state(input_dto.session_token)
-            profiles = await uow.profiles.find_by_user(user_id)
-        if state is None or state.user_id != user_id:
+            snapshot = await uow.access_tokens.get_parental_snapshot(input_dto.session_token)
+        if snapshot is None or snapshot.state.user_id != user_id:
             return AdminAccessLevel.SUSPENDED
 
+        state = snapshot.state
         access = ParentalGate.admin_access(
             pin_configured=input_dto.parental_pin_configured,
             active_profile_id=state.current_profile_id,
-            account_profiles=profiles,
+            account_profiles=snapshot.account_profiles,
             unlock_until=state.unlock_until,
             now=self._clock(),
             is_write=input_dto.is_write,

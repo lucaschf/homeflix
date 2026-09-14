@@ -40,6 +40,21 @@ class ProfileOutput:
 
 
 @dataclass(frozen=True)
+class MaturityLimitChange:
+    """A requested change to a profile's maturity limit.
+
+    Wrapped so an update can tell "leave the limit alone" (no change at
+    all) from "remove the limit" (a change to ``None``).
+
+    Attributes:
+        value: The new limit in years (0 to 21), or ``None`` to make the
+            profile unrestricted.
+    """
+
+    value: int | None
+
+
+@dataclass(frozen=True)
 class CreateProfileInput:
     """Input for ``CreateProfileUseCase``.
 
@@ -50,12 +65,21 @@ class CreateProfileInput:
     aggregate's default" (an empty list — the ACL is default-deny).
     Pass an explicit list at creation time to grant access right
     away.
+
+    ``maturity_limit`` is the new profile's limit in years, or ``None``
+    for unrestricted (ADR-035). ``session_token`` identifies the device
+    the parental gate reads and whose unlock a gated creation spends; a
+    secret, kept out of ``repr()``. ``None`` means the call runs outside a
+    session, such as an operator script: the gate then has no unlock to
+    spend and treats the session as the strictest one.
     """
 
     user_id: str
     name: str
     avatar_url: str | None = None
     allowed_library_ids: list[str] | None = None
+    maturity_limit: int | None = None
+    session_token: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -78,6 +102,10 @@ class UpdateProfileInput:
     ``allowed_library_ids=None`` follows the same omitted-vs-cleared
     convention: ``None`` means "don't touch the ACL"; an explicit
     empty list ``[]`` means "revoke access to every library".
+
+    ``maturity_limit=None`` also means "don't touch the limit"; removing
+    the limit is ``MaturityLimitChange(None)``. ``session_token`` is as on
+    :class:`CreateProfileInput`.
     """
 
     user_id: str
@@ -85,14 +113,20 @@ class UpdateProfileInput:
     name: str | None = None
     avatar_url: str | None = None
     allowed_library_ids: list[str] | None = None
+    maturity_limit: MaturityLimitChange | None = None
+    session_token: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
 class DeleteProfileInput:
-    """Input for ``DeleteProfileUseCase``."""
+    """Input for ``DeleteProfileUseCase``.
+
+    ``session_token`` is as on :class:`CreateProfileInput`.
+    """
 
     user_id: str
     profile_id: str
+    session_token: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -321,6 +355,7 @@ __all__ = [
     "ListProfilesForUserInput",
     "ListUsersInput",
     "LockParentalInput",
+    "MaturityLimitChange",
     "ProfileOutput",
     "RemoveParentalPinInput",
     "SetParentalPinInput",

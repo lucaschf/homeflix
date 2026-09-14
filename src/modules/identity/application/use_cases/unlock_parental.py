@@ -30,8 +30,7 @@ class UnlockParentalUseCase:
     day; a correct PIN clears the attempts and ends a lock in force but does
     not lower the ladder.
 
-    Nothing reads the window yet: the admin and profile gates that consume
-    it arrive in later changes.
+    The admin gate reads the window; the gated profile operations spend it.
 
     The steps are ordered so that neither a rollback nor concurrency can
     hand attempts back:

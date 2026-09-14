@@ -1,10 +1,13 @@
 """Access token repository interface and its read DTOs."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
+from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.services.parental_gate import LockoutPolicy
+from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -65,6 +68,20 @@ class ParentalSessionState:
 
 
 @dataclass(frozen=True)
+class ParentalSessionSnapshot:
+    """A session's parental state and its account's live profiles, read as one state.
+
+    Attributes:
+        state: The session's parental state.
+        account_profiles: The live profiles of the account owning the session,
+            ordered by name.
+    """
+
+    state: ParentalSessionState
+    account_profiles: Sequence[Profile]
+
+
+@dataclass(frozen=True)
 class PinAttemptReservation:
     """Outcome of reserving one PIN attempt on a session.
 
@@ -116,14 +133,23 @@ class AccessTokenRepository(ABC):
         self,
         token: str,
         profile_id: ProfileId | None,
+        *,
+        expected_limit: AgeRating | None,
     ) -> bool:
-        """Set the active profile for an existing session.
+        """Set the active profile for an existing session, atomically (compare-and-set).
 
         Internally resolves ``profile_id`` to the row's internal UUID
         before issuing the UPDATE. Passing ``None`` clears the current
         profile (used when a profile is deleted while it was active in
         a sibling session — enforced via ``ON DELETE SET NULL``, but
         callable explicitly too).
+
+        Entering a profile is one conditional write: it takes effect only
+        while the target is live and still has ``expected_limit``, the
+        limit the parental gate decided on. A limit changed after the gate
+        read it (a widening that already detached the sessions on the
+        profile) makes the call return ``False`` instead of landing the
+        session on a profile the gate never saw (ADR-035, Amendment 7 D9).
 
         The same UPDATE closes the session's parental unlock window: every
         switch, whatever its target, starts the new profile without a
@@ -132,10 +158,17 @@ class AccessTokenRepository(ABC):
         Args:
             token: The session token to update.
             profile_id: The profile to make active, or ``None``.
+            expected_limit: The target's maturity limit as the caller read
+                it; ``None`` is unrestricted. Ignored when ``profile_id`` is
+                ``None``.
 
         Returns:
-            ``True`` if a row was updated, ``False`` if no session
-            with that token exists.
+            ``True`` if the row was updated; ``False`` if no session with
+            that token exists, or the target is soft-deleted or no longer
+            has ``expected_limit``.
+
+        Raises:
+            ValueError: If no profile has ``profile_id``.
         """
         ...
 
@@ -164,6 +197,25 @@ class AccessTokenRepository(ABC):
 
         Returns:
             The state, or ``None`` if the token is unknown.
+        """
+        ...
+
+    @abstractmethod
+    async def get_parental_snapshot(self, token: str) -> ParentalSessionSnapshot | None:
+        """Read the session's parental state and its account's live profiles, together.
+
+        Exists for a gate that decides on both without the account lock
+        (``UserRepository.lock_for_parental_change``): read apart, a change
+        committed between the two reads — a widening of the session's
+        profile, which also detaches the session — would combine the session
+        as it was before with the profiles as they are after, a state no
+        request ever saw. Read together, both come from one snapshot.
+
+        Args:
+            token: The session token.
+
+        Returns:
+            The snapshot, or ``None`` if the token is unknown.
         """
         ...
 
@@ -244,10 +296,31 @@ class AccessTokenRepository(ABC):
         """
         ...
 
+    @abstractmethod
+    async def detach_profile_sessions(self, profile_id: ProfileId, *, except_token: str) -> int:
+        """Drop every other session off a profile that was just widened.
+
+        The switch guard only checks a profile's limit when a session enters
+        it, so a device already on a profile would keep it once widened
+        (ADR-035, Amendment 7 D9 and D12). Each matching session loses its
+        selected profile and its unlock window, and nothing else: the attempt
+        counter, the lock and the ladder stay, so being detached never earns
+        PIN attempts. A detached device is back to "no profile selected".
+
+        Args:
+            profile_id: The widened profile.
+            except_token: The session making the change, which stays on it.
+
+        Returns:
+            How many sessions were detached.
+        """
+        ...
+
 
 __all__ = [
     "AccessTokenRepository",
     "AccessTokenSnapshot",
+    "ParentalSessionSnapshot",
     "ParentalSessionState",
     "PinAttemptReservation",
 ]

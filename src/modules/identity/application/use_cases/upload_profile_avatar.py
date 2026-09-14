@@ -25,6 +25,12 @@ class UploadProfileAvatarUseCase:
     the ``AvatarStoragePort`` adapter; size/MIME violations bubble
     as :class:`InvalidAvatarImageError` / :class:`AvatarTooLargeError`
     which the route translates to HTTP 415 / 413.
+
+    The maturity limit is never written here: ``save`` leaves an existing
+    profile's limit as stored, so an upload decided on a profile read
+    before a concurrent limit change cannot undo it (ADR-035). Nor does
+    ``save`` restore a profile deleted after that read: the upload answers
+    :class:`ProfileNotFoundException` (HTTP 404) instead.
     """
 
     def __init__(
@@ -76,6 +82,11 @@ class UploadProfileAvatarUseCase:
                 )
             updated = current.with_avatar(avatar_url)
             saved = await uow.profiles.save(updated)
+            if saved is None:
+                raise ProfileNotFoundException.for_resource(
+                    resource_type="Profile",
+                    resource_id=input_dto.profile_id,
+                )
 
         return profile_to_output(saved)
 
