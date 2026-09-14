@@ -34,11 +34,15 @@ from src.modules.identity.application.use_cases.get_user_detail import (
     GetUserDetailUseCase,
 )
 from src.modules.identity.application.use_cases.list_users import ListUsersUseCase
+from src.modules.identity.application.use_cases.lock_parental import LockParentalUseCase
 from src.modules.identity.application.use_cases.remove_parental_pin import (
     RemoveParentalPinUseCase,
 )
 from src.modules.identity.application.use_cases.set_parental_pin import (
     SetParentalPinUseCase,
+)
+from src.modules.identity.application.use_cases.unlock_parental import (
+    UnlockParentalUseCase,
 )
 from src.modules.identity.application.use_cases.update_user_role import (
     UpdateUserRoleUseCase,
@@ -181,4 +185,15 @@ class IdentityContainer(containers.DeclarativeContainer):
         RemoveParentalPinUseCase,
         uow_factory=identity_unit_of_work_factory,
         password_hasher=password_hasher,
+    )
+
+    unlock_parental = providers.Factory(
+        UnlockParentalUseCase,
+        uow_factory=identity_unit_of_work_factory,
+        password_hasher=password_hasher,
+    )
+
+    lock_parental = providers.Factory(
+        LockParentalUseCase,
+        uow_factory=identity_unit_of_work_factory,
     )

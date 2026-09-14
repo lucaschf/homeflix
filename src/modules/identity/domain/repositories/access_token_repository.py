@@ -1,9 +1,10 @@
-"""Access token repository interface and its read DTO."""
+"""Access token repository interface and its read DTOs."""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 
+from src.modules.identity.domain.services.parental_gate import LockoutPolicy
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -36,13 +37,65 @@ class AccessTokenSnapshot:
     created_at: datetime
 
 
+@dataclass(frozen=True)
+class ParentalSessionState:
+    """Parental-control state of one session, i.e. one device (ADR-035).
+
+    Attributes:
+        user_id: External ID of the user owning this session.
+        current_profile_id: External ID of the profile selected on the
+            session, or ``None``. Read as stored: it may point at a
+            soft-deleted profile, which the gate must not mistake for
+            "no profile selected".
+        failed_attempts: Wrong PINs counted towards the next lock.
+        lockouts: The session's step on the lockout ladder.
+        locked_until: End of the **last** lock, kept after it passes
+            because the ladder decays from it. The session is locked
+            while this is later than now.
+        unlock_until: End of the unlock window opened by a correct PIN, or
+            ``None``.
+    """
+
+    user_id: UserId
+    current_profile_id: ProfileId | None
+    failed_attempts: int
+    lockouts: int
+    locked_until: datetime | None
+    unlock_until: datetime | None
+
+
+@dataclass(frozen=True)
+class PinAttemptReservation:
+    """Outcome of reserving one PIN attempt on a session.
+
+    Attributes:
+        granted: Whether the attempt was counted and the PIN may be checked.
+            ``False`` means a lock is in force (or the session is gone):
+            the PIN must not be checked.
+        failed_attempts: The session's attempt counter after the
+            reservation, including this attempt when granted.
+        locked_until: When denied, the end of the lock in force — ``None``
+            only when no session has the token. When granted, the end of
+            the lock this very attempt started, or ``None`` if it started
+            none.
+    """
+
+    granted: bool
+    failed_attempts: int
+    locked_until: datetime | None
+
+
 class AccessTokenRepository(ABC):
     """Repository interface for ``access_tokens``.
 
     Covers the operations our domain code needs (read snapshot, switch
-    profile, cleanup). FastAPI Users' own auth flow goes through its
-    ``SQLAlchemyAccessTokenDatabase`` adapter directly — the two share
-    the underlying table without conflict.
+    profile, cleanup, parental unlock and lockout). FastAPI Users' own
+    auth flow goes through its ``SQLAlchemyAccessTokenDatabase`` adapter
+    directly — the two share the underlying table without conflict.
+
+    Every parental write is one conditional statement on the session row,
+    so concurrent requests on the same device cannot race each other past
+    the lockout or spend one unlock twice.
     """
 
     @abstractmethod
@@ -72,6 +125,10 @@ class AccessTokenRepository(ABC):
         a sibling session — enforced via ``ON DELETE SET NULL``, but
         callable explicitly too).
 
+        The same UPDATE closes the session's parental unlock window: every
+        switch, whatever its target, starts the new profile without a
+        leftover unlock (ADR-035, Amendment 7 D9).
+
         Args:
             token: The session token to update.
             profile_id: The profile to make active, or ``None``.
@@ -98,5 +155,99 @@ class AccessTokenRepository(ABC):
         """
         ...
 
+    @abstractmethod
+    async def get_parental_state(self, token: str) -> ParentalSessionState | None:
+        """Read the session's parental-control state.
 
-__all__ = ["AccessTokenRepository", "AccessTokenSnapshot"]
+        Args:
+            token: The session token.
+
+        Returns:
+            The state, or ``None`` if the token is unknown.
+        """
+        ...
+
+    @abstractmethod
+    async def reserve_pin_attempt(
+        self,
+        token: str,
+        *,
+        now: datetime,
+        policy: LockoutPolicy,
+    ) -> PinAttemptReservation:
+        """Count one PIN attempt, unless the session is locked, atomically.
+
+        One conditional write, before the PIN is checked: a lock that has
+        passed restarts the attempt counter, a ladder quiet for
+        ``policy.decay`` after its last lock returns to step zero, and the
+        attempt that reaches ``policy.max_attempts`` starts a lock of
+        ``policy.lock_duration(step)`` and climbs one step. The caller must
+        commit the reservation before raising anything, or a rollback would
+        hand the attempt back.
+
+        Args:
+            token: The session token.
+            now: The current time (timezone-aware).
+            policy: The lockout ladder to apply.
+
+        Returns:
+            The reservation; see :class:`PinAttemptReservation`.
+        """
+        ...
+
+    @abstractmethod
+    async def record_pin_success(
+        self,
+        token: str,
+        *,
+        now: datetime,
+        unlock_until: datetime,
+    ) -> None:
+        """Record a correct PIN: open the unlock window and clear the attempts.
+
+        Also ends a lock in force — the one the correct attempt itself may
+        have started — while keeping the end of the last lock and the
+        ladder step, which a correct PIN never lowers (Amendment 7 D4).
+
+        Args:
+            token: The session token.
+            now: The current time (timezone-aware).
+            unlock_until: End of the unlock window.
+        """
+        ...
+
+    @abstractmethod
+    async def consume_unlock(self, token: str, *, now: datetime) -> bool:
+        """Spend the session's unlock window, atomically.
+
+        Args:
+            token: The session token.
+            now: The current time (timezone-aware).
+
+        Returns:
+            ``True`` if a window still open at ``now`` was closed by this
+            call; ``False`` if there was none, it had passed, or a
+            concurrent call spent it first.
+        """
+        ...
+
+    @abstractmethod
+    async def clear_unlock(self, token: str) -> None:
+        """Close the session's unlock window, if any.
+
+        Touches only the window: the attempt counter, the lock and the
+        ladder are left as they are, so closing the window is never a way
+        to earn more attempts.
+
+        Args:
+            token: The session token.
+        """
+        ...
+
+
+__all__ = [
+    "AccessTokenRepository",
+    "AccessTokenSnapshot",
+    "ParentalSessionState",
+    "PinAttemptReservation",
+]

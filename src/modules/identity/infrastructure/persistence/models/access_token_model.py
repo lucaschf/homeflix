@@ -17,7 +17,7 @@ from fastapi_users_db_sqlalchemy.access_token import (
     SQLAlchemyBaseAccessTokenTableUUID,
 )
 from fastapi_users_db_sqlalchemy.generics import GUID
-from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKey, Integer, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.persistence.base import BaseSecret
@@ -39,6 +39,14 @@ class AccessTokenModel(SQLAlchemyBaseAccessTokenTableUUID, BaseSecret):
           ``ON DELETE SET NULL``. Updated by the profile-switch use
           case; lets each session carry its own active profile so
           multi-device usage with different profiles works correctly.
+        - Parental unlock and lockout state, per session and so per
+          device (ADR-035, Amendment 7 D4): ``parental_failed_attempts``,
+          ``parental_lockouts`` (the ladder step), ``parental_locked_until``
+          (end of the last lock, kept after it passes) and
+          ``parental_unlock_until``. Times are integer epoch seconds (UTC)
+          so the lockout can compare them atomically in SQL. The NOT NULL
+          counters carry a server default because FastAPI Users' login
+          inserts only ``token`` and ``user_id``.
     """
 
     __tablename__ = "access_tokens"
@@ -54,6 +62,18 @@ class AccessTokenModel(SQLAlchemyBaseAccessTokenTableUUID, BaseSecret):
         ForeignKey("profiles.id", ondelete="SET NULL"),
         nullable=True,
     )
+    parental_failed_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    parental_lockouts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    parental_locked_until: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    parental_unlock_until: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 __all__ = ["AccessTokenModel"]

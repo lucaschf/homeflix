@@ -7,6 +7,7 @@ from src.modules.identity.presentation.schemas.admin_user_schemas import (
 from src.modules.identity.presentation.schemas.parental_schemas import (
     RemoveParentalPinRequest,
     SetParentalPinRequest,
+    UnlockParentalRequest,
 )
 from src.modules.identity.presentation.schemas.profile_schemas import (
     CreateProfileRequest,
@@ -19,6 +20,7 @@ __all__ = [
     "CreateProfileRequest",
     "RemoveParentalPinRequest",
     "SetParentalPinRequest",
+    "UnlockParentalRequest",
     "UpdateProfileRequest",
     "UpdateUserRoleRequest",
     "UserRead",

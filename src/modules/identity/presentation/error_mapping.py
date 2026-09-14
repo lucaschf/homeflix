@@ -19,6 +19,13 @@ IDENTITY_HTTP_STATUSES: dict[str, int] = {
     "USER_CANNOT_DELETE_SELF": 409,
     "USER_CANNOT_DEMOTE_LAST_ADMIN": 409,
     "ACCOUNT_PASSWORD_INVALID": 403,
+    # Parental controls (ADR-035): 403 or 409, never 401 — the web client
+    # reads any 401 as an expired session.
+    "PARENTAL_PIN_REQUIRED": 403,
+    "PARENTAL_PIN_INVALID": 403,
+    "PARENTAL_PIN_LOCKED": 403,
+    "PARENTAL_PIN_NOT_CONFIGURED": 409,
+    "PARENTAL_PIN_IN_USE": 409,
 }
 
 
