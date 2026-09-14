@@ -11,9 +11,9 @@ file delivery. The envelopes come from both places Starlette turns
 exceptions into responses — the route itself (403 on the maturity axis
 and 404 from a use case, 401 from the session guard) and
 ``ExceptionMiddleware`` (404 on an unmatched path, 405) — so a
-middleware mounted inside the latter fails here. ``Profile`` has no
-maturity limit yet, so the 403 needs the media container's
-``profile_viewing_policy`` overridden, as in the media detail gate e2e.
+middleware mounted inside the latter fails here. The 403 test overrides
+the media container's ``profile_viewing_policy``, as in the media detail
+gate e2e, to pin the header independently of seeded profile data.
 Artwork storage and the HLS cache are swapped for in-memory fakes; both
 routes are public, so they need no login.
 """

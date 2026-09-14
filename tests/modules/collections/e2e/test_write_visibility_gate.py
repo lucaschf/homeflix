@@ -3,11 +3,10 @@
 Drives the real watchlist and custom-list write routes over the
 in-process ASGI transport against an in-memory database.
 
-``Profile`` has no maturity limit yet, so the production
-``ProfileViewingPolicyAdapter`` can only build library-only policies.
 The first class overrides the collections container's
-``profile_viewing_policy`` provider with a policy that carries a limit —
-the only way to see the age axis end to end. The second class runs
+``profile_viewing_policy`` provider with a policy that carries a limit,
+to pin the age axis end to end independently of how a profile stores
+its limit. The second class runs
 without the override, so it also proves the composition root hands the
 container an Identity UoW factory and that the write use cases are wired
 to the provider and to the media lookup.

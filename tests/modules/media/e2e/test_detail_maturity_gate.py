@@ -1,12 +1,12 @@
 """End-to-end tests for the detail and playback maturity gate (ADR-035 §11).
 
 Drives the real routes over the in-process ASGI transport against an
-in-memory database. ``Profile`` has no maturity limit yet, so the
-production ``ProfileViewingPolicyAdapter`` can only build library-only
-policies and the 403 is unreachable in production; the media
-container's ``profile_viewing_policy`` provider is overridden with a
-policy that carries a limit, which is the only way to see the contract
-the web client will receive.
+in-memory database. Most classes override the media container's
+``profile_viewing_policy`` provider with a policy that carries a limit,
+to pin the contract the web client receives independently of how a
+profile stores its limit. ``TestDetailMaturityGateWithProfileLimit``
+runs without the override: the seeded profile's own ``maturity_limit``
+reaches the gate through the production adapter.
 
 Covers both surfaces that reach ``GetMovieByIdUseCase`` /
 ``GetSeriesByIdUseCase``: the catalog detail routes, and the streaming
@@ -167,8 +167,9 @@ async def _seed_series(
 async def _login_with_active_profile(
     client: AsyncClient,
     seed: Callable[..., Awaitable[SeededUser]],
+    **profile: object,
 ) -> None:
-    user = await seed()
+    user = await seed(**profile)
     login = await client.post(
         LOGIN_PATH,
         data={"username": user.email, "password": user.password},
@@ -280,6 +281,53 @@ class TestDetailMaturityGate:
             session_factory, title="Ten Plus Movie", certification=_certification("10", 10)
         )
         await _login_with_active_profile(client, seed_user_with_profile)
+
+        response = await client.get(f"/api/v1/movies/{movie_id}")
+
+        assert response.status_code == 200
+        assert response.json()["data"]["title"] == "Ten Plus Movie"
+
+
+@pytest.mark.e2e
+class TestDetailMaturityGateWithProfileLimit:
+    """No override: the limit stored on the profile is what the gate applies."""
+
+    async def test_movie_above_the_profile_limit_returns_403(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        title = "Sixteen Plus Movie"
+        movie_id = await _seed_movie(
+            session_factory, title=title, certification=_certification("16", 16)
+        )
+        await _login_with_active_profile(
+            client,
+            seed_user_with_profile,
+            allowed_library_ids=[_LIBRARY_ID],
+            maturity_limit=_LIMIT,
+        )
+
+        response = await client.get(f"/api/v1/movies/{movie_id}")
+
+        _assert_maturity_403(response, title=title, required_age=16)
+
+    async def test_movie_within_the_profile_limit_returns_200(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        movie_id = await _seed_movie(
+            session_factory, title="Ten Plus Movie", certification=_certification("10", 10)
+        )
+        await _login_with_active_profile(
+            client,
+            seed_user_with_profile,
+            allowed_library_ids=[_LIBRARY_ID],
+            maturity_limit=_LIMIT,
+        )
 
         response = await client.get(f"/api/v1/movies/{movie_id}")
 

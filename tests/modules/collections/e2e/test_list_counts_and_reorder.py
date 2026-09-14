@@ -3,10 +3,9 @@
 Drives the real custom-list routes over the in-process ASGI transport
 against an in-memory database.
 
-``Profile`` has no maturity limit yet, so the production
-``ProfileViewingPolicyAdapter`` can only build library-only policies.
 Tests that need the age axis override the collections container's
-``profile_viewing_policy`` provider with a policy that carries a limit;
+``profile_viewing_policy`` provider with a policy that carries a limit,
+to pin the contract independently of how a profile stores its limit;
 the same requests without the override go through the real adapter,
 which also proves the lists read and the rename are wired to the
 provider and to the media lookup.

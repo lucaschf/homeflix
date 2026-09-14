@@ -3,13 +3,13 @@
 Drives the real watchlist and custom-list routes over the in-process
 ASGI transport against an in-memory database.
 
-``Profile`` has no maturity limit yet, so the production
-``ProfileViewingPolicyAdapter`` can only build library-only policies.
-Tests that need the age axis override the collections container's
+Most tests that need the age axis override the collections container's
 ``profile_viewing_policy`` provider with a policy that carries a limit;
 the same requests without the override go through the real adapter,
 which also proves the composition root hands the container an Identity
 UoW factory and that every list read is wired to the provider.
+``TestListReadsWithProfileMaturityLimit`` seeds the limit on the
+profile itself, so it reaches the reads through that real adapter.
 
 Rows are seeded straight through the repositories, not the write
 routes, so these reads do not depend on how the writes are gated.
@@ -379,3 +379,39 @@ class TestListReadsWithProductionPolicy:
         assert response.status_code == 200
         assert _ids(response) == [ids[_TEN_TITLE]]
         assert _OTHER_SHELF_TITLE not in response.text
+
+
+@pytest.mark.e2e
+class TestListReadsWithProfileMaturityLimit:
+    """No override: the limit stored on the profile is what the reads apply."""
+
+    async def test_watchlist_omits_title_above_the_profile_limit(
+        self,
+        client: AsyncClient,
+        login_with_active_profile: _Login,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        ids = await _seed_catalog(session_factory)
+        user = await login_with_active_profile(
+            allowed_library_ids=[_LIBRARY_ID], maturity_limit=_LIMIT
+        )
+        now = datetime.now(UTC)
+        await _seed_watchlist(
+            session_factory,
+            profile_id=user.profile_external_id,
+            media_id=ids[_TEN_TITLE],
+            added_at=now - timedelta(hours=1),
+        )
+        await _seed_watchlist(
+            session_factory,
+            profile_id=user.profile_external_id,
+            media_id=ids[_SIXTEEN_TITLE],
+            added_at=now,
+        )
+
+        response = await client.get(WATCHLIST_PATH)
+
+        assert response.status_code == 200
+        assert _ids(response) == [ids[_TEN_TITLE]]
+        assert _SIXTEEN_TITLE not in response.text
+        assert ids[_SIXTEEN_TITLE] not in response.text

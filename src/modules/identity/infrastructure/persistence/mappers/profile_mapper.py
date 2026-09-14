@@ -19,6 +19,7 @@ from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.modules.identity.infrastructure.persistence.models.profile_model import (
     ProfileModel,
 )
+from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.library_id import LibraryId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
@@ -79,6 +80,39 @@ def _decode_allowed_libraries(profile_external_id: str, raw: str | None) -> list
     return valid
 
 
+def _decode_maturity_limit(profile_external_id: str, raw: int | None) -> AgeRating | None:
+    """Decode the ``maturity_limit`` column into an ``AgeRating``.
+
+    NULL is the only value that means unrestricted. Anything else that
+    is not a whole number within the scale — out of range, a float, a
+    string — resolves to ``AgeRating(0)``, the most restrictive limit,
+    and is logged at WARNING. Mapping a corrupted value to ``None``
+    would silently lift every restriction on the profile, so the decode
+    fails closed, like :func:`_decode_allowed_libraries`.
+
+    Args:
+        profile_external_id: The profile's external ID, for the log.
+        raw: The value loaded from the column. Typed as the column is
+            mapped, but SQLite does not enforce column types, so the
+            decode does not trust the annotation.
+
+    Returns:
+        ``None`` for NULL, the decoded limit for a valid value, or
+        ``AgeRating(0)`` for anything else.
+    """
+    if raw is None:
+        return None
+    try:
+        return AgeRating(raw)
+    except DomainValidationException:
+        _logger.warning(
+            "[identity] Invalid maturity_limit; coercing to the most restrictive limit",
+            profile_external_id=profile_external_id,
+            raw=raw,
+        )
+        return AgeRating(AgeRating.MIN)
+
+
 class ProfileMapper:
     """Bidirectional mapper for ``Profile`` ↔ ``ProfileModel``."""
 
@@ -107,6 +141,7 @@ class ProfileMapper:
             name=entity.name.value,
             avatar_url=entity.avatar_url,
             is_kids=entity.is_kids,
+            maturity_limit=None if entity.maturity_limit is None else entity.maturity_limit.value,
             allowed_library_ids=json.dumps(
                 [library_id.value for library_id in entity.allowed_library_ids]
             ),
@@ -131,7 +166,7 @@ class ProfileMapper:
             user_id=UserId(user_external_id),
             name=ProfileName(model.name),
             avatar_url=model.avatar_url,
-            is_kids=model.is_kids,
+            maturity_limit=_decode_maturity_limit(model.external_id, model.maturity_limit),
             allowed_library_ids=_decode_allowed_libraries(
                 model.external_id, model.allowed_library_ids
             ),
@@ -158,6 +193,9 @@ class ProfileMapper:
         model.name = entity.name.value
         model.avatar_url = entity.avatar_url
         model.is_kids = entity.is_kids
+        model.maturity_limit = (
+            None if entity.maturity_limit is None else entity.maturity_limit.value
+        )
         model.allowed_library_ids = json.dumps(
             [library_id.value for library_id in entity.allowed_library_ids]
         )

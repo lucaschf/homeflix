@@ -6,7 +6,7 @@ catalog by profile keeps a local ``ProfileViewingPolicyAdapter``
 field by field from ``Profile``. A new axis — the maturity limit — would
 then have to be remembered in each copy, and a forgotten one would
 leave its BC fail-open on that axis with no test failing, since no
-production policy carries the axis yet.
+production policy carried the axis yet.
 
 The rule, for every
 ``src/modules/*/infrastructure/acl/profile_viewing_policy_adapter.py``:

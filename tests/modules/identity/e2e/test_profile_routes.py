@@ -9,6 +9,7 @@ invariant, and the session-row update on profile switch.
 import uuid
 from collections.abc import Awaitable, Callable
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -55,6 +56,21 @@ async def _profile_uuid_for_external(
         return result.scalar_one_or_none()
 
 
+async def _stored_limit_and_flag(
+    session_factory: async_sessionmaker[AsyncSession],
+    external_id: str,
+) -> tuple[int | None, bool]:
+    """Return the stored ``(maturity_limit, is_kids)`` of a profile row."""
+    async with session_factory() as session:
+        result = await session.execute(
+            select(ProfileModel.maturity_limit, ProfileModel.is_kids).where(
+                ProfileModel.external_id == external_id
+            )
+        )
+        limit, is_kids = result.one()
+        return limit, is_kids
+
+
 class TestListProfiles:
     async def test_should_return_owned_profiles_with_prefixed_ids(
         self,
@@ -75,6 +91,35 @@ class TestListProfiles:
         assert items[0]["name"] == "Lucas"
         assert items[0]["user_id"] == user.user_external_id
 
+    async def test_should_return_the_profile_contract_keys(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ):
+        # The web client reads this payload; the shape only grows on
+        # purpose. ``maturity_limit`` joined it with ADR-035, and
+        # ``is_kids`` stays as a derived field.
+        user = await seed_user_with_profile()
+        await _login(client, user)
+
+        items = (await client.get(PROFILES_PATH)).json()["data"]
+
+        assert [set(item) for item in items] == [
+            {
+                "id",
+                "user_id",
+                "name",
+                "avatar_url",
+                "is_kids",
+                "maturity_limit",
+                "allowed_library_ids",
+                "created_at",
+                "updated_at",
+            }
+        ]
+        assert items[0]["maturity_limit"] is None
+        assert items[0]["is_kids"] is False
+
     async def test_should_return_401_when_unauthenticated(self, client: AsyncClient):
         response = await client.get(PROFILES_PATH)
         assert response.status_code == 401
@@ -91,7 +136,7 @@ class TestCreateProfile:
 
         response = await client.post(
             PROFILES_PATH,
-            json={"name": "Kids", "is_kids": True},
+            json={"name": "Kids"},
         )
 
         assert response.status_code == 201
@@ -101,11 +146,52 @@ class TestCreateProfile:
         assert created["id"].startswith("prf_")
         assert created["user_id"] == user.user_external_id
         assert created["name"] == "Kids"
-        assert created["is_kids"] is True
 
         # Listing now returns 2 profiles for this user.
         listing = (await client.get(PROFILES_PATH)).json()["data"]
         assert len(listing) == 2
+
+    async def test_should_accept_and_ignore_a_kids_flag(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+    ):
+        # ``is_kids`` is derived from the maturity limit now (ADR-035);
+        # the web client still sends it, so it must not be a 422.
+        user = await seed_user_with_profile()
+        await _login(client, user)
+
+        response = await client.post(PROFILES_PATH, json={"name": "Kids", "is_kids": True})
+
+        assert response.status_code == 201
+        created = response.json()["data"]
+        assert created["is_kids"] is False
+        assert created["maturity_limit"] is None
+        assert await _stored_limit_and_flag(session_factory, created["id"]) == (None, False)
+
+    @pytest.mark.parametrize("limit", [12, 21])
+    async def test_should_accept_and_ignore_a_maturity_limit(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+        limit: int,
+    ):
+        """A maturity limit in the body is accepted and ignored.
+
+        PR 4.5 flips this test on purpose when it opens the gated write.
+        """
+        user = await seed_user_with_profile()
+        await _login(client, user)
+
+        response = await client.post(PROFILES_PATH, json={"name": "Kids", "maturity_limit": limit})
+
+        assert response.status_code == 201
+        created = response.json()["data"]
+        assert created["is_kids"] is False
+        assert created["maturity_limit"] is None
+        assert await _stored_limit_and_flag(session_factory, created["id"]) == (None, False)
 
     async def test_should_reject_blank_name(
         self,
@@ -174,8 +260,60 @@ class TestUpdateProfile:
         updated = response.json()["data"]
         assert updated["id"] == user.profile_external_id
         assert updated["name"] == "New"
-        # is_kids unchanged because it was not supplied
+        assert updated["maturity_limit"] is None
+
+    async def test_should_accept_and_ignore_a_kids_flag(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+    ):
+        user = await seed_user_with_profile(profile_name="Old")
+        await _login(client, user)
+
+        response = await client.put(
+            f"{PROFILES_PATH}/{user.profile_external_id}",
+            json={"name": "Kid", "is_kids": True},
+        )
+
+        assert response.status_code == 200
+        updated = response.json()["data"]
+        assert updated["name"] == "Kid"
         assert updated["is_kids"] is False
+        assert updated["maturity_limit"] is None
+        assert await _stored_limit_and_flag(session_factory, user.profile_external_id) == (
+            None,
+            False,
+        )
+
+    @pytest.mark.parametrize("limit", [10, 21])
+    async def test_should_accept_and_ignore_a_maturity_limit(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+        limit: int,
+    ):
+        """A maturity limit in the body is accepted and ignored.
+
+        PR 4.5 flips this test on purpose when it opens the gated write.
+        """
+        user = await seed_user_with_profile()
+        await _login(client, user)
+
+        response = await client.put(
+            f"{PROFILES_PATH}/{user.profile_external_id}",
+            json={"maturity_limit": limit},
+        )
+
+        assert response.status_code == 200
+        updated = response.json()["data"]
+        assert updated["is_kids"] is False
+        assert updated["maturity_limit"] is None
+        assert await _stored_limit_and_flag(session_factory, user.profile_external_id) == (
+            None,
+            False,
+        )
 
     async def test_should_return_404_when_profile_does_not_exist(
         self,

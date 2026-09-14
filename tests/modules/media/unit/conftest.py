@@ -89,9 +89,8 @@ class FakeProfileViewingPolicyPort(ProfileViewingPolicyPort):
     """In-memory implementation of ``ProfileViewingPolicyPort`` for tests.
 
     Stores a ``profile_id -> list[library_id]`` mapping and resolves
-    ``find_for_profile`` against it into a library-only
-    ``ViewingPolicy`` — the only shape the production adapter builds
-    while ``Profile`` has no maturity limit. Unmapped profile ids
+    ``find_for_profile`` against it into a ``ViewingPolicy``; the fake
+    builds library-only policies. Unmapped profile ids
     resolve to an empty policy — matching the production adapter's
     deny-all-on-miss semantics. Tests that want the inclusion path map
     the configured test profile to ``[_LIBRARY_ID]``
