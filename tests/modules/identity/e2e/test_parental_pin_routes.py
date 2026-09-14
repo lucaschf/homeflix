@@ -62,7 +62,7 @@ async def _stored_hash(
 
 
 class TestParentalPinLifecycle:
-    async def test_me_should_add_only_the_pin_flag_to_its_shape(
+    async def test_me_should_add_only_the_parental_fields_to_its_shape(
         self,
         client: AsyncClient,
         seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
@@ -80,6 +80,7 @@ class TestParentalPinLifecycle:
             "is_verified",
             "active_profile_id",
             "parental_pin_configured",
+            "admin_access",
         }
         assert response.json()["data"]["parental_pin_configured"] is False
 
