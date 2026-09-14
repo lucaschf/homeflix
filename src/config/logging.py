@@ -47,7 +47,11 @@ def _setup_structlog(*, json_logs: bool, log_level: str) -> None:
         # Production: JSON output for log aggregators
         processors: list[Processor] = [
             *shared_processors,
-            structlog.processors.dict_tracebacks,
+            # Structured tracebacks without frame locals: request bodies and
+            # credentials live in locals, and ``dict_tracebacks`` renders them.
+            structlog.processors.ExceptionRenderer(
+                structlog.tracebacks.ExceptionDictTransformer(show_locals=False)
+            ),
             structlog.processors.JSONRenderer(),
         ]
     else:
