@@ -15,6 +15,7 @@ payloads.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from src.modules.identity.domain.value_objects.user_role import UserRole
 
@@ -278,12 +279,44 @@ class LockParentalInput:
     session_token: str = field(repr=False)
 
 
+class AdminAccessLevel(StrEnum):
+    """What administrator authority a session holds right now (ADR-035).
+
+    ``NONE`` for an account without the admin role; for an administrator,
+    ``GRANTED`` or ``SUSPENDED`` as the parental gate decides.
+    """
+
+    NONE = "none"
+    GRANTED = "granted"
+    SUSPENDED = "suspended"
+
+
+@dataclass(frozen=True)
+class GetAdminAccessInput:
+    """Input for ``GetAdminAccessUseCase`` and ``EnsureAdminAuthorityUseCase``.
+
+    ``role`` and ``parental_pin_configured`` come from the account the
+    request already authenticated, so the use case never reads it again.
+    ``session_token`` identifies the device whose selected profile and
+    unlock window count; a secret, kept out of ``repr()``. ``is_write`` says
+    whether the request changes state (Amendment 7 D10).
+    """
+
+    user_id: str
+    role: UserRole
+    parental_pin_configured: bool
+    session_token: str = field(repr=False)
+    is_write: bool = False
+
+
 __all__ = [
+    "AdminAccessLevel",
     "CreateAdminUserInput",
     "CreateProfileInput",
     "DeleteAdminUserInput",
     "DeleteProfileAvatarInput",
     "DeleteProfileInput",
+    "GetAdminAccessInput",
     "GetUserDetailInput",
     "ListProfilesForUserInput",
     "ListUsersInput",

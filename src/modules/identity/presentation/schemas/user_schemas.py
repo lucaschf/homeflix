@@ -11,6 +11,7 @@ from typing import Self
 
 from pydantic import BaseModel
 
+from src.modules.identity.application.dtos.identity_dtos import AdminAccessLevel
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 
 
@@ -28,6 +29,11 @@ class UserRead(BaseModel):
     ``parental_pin_configured`` tells the frontend whether the account
     has a parental PIN (ADR-035). It is derived from the stored hash,
     which itself is never part of this shape.
+
+    ``admin_access`` is the admin read authority of the caller's session
+    (``none``, ``granted`` or ``suspended``), so the frontend gates admin UI
+    on what the parental gate allows rather than on ``role`` (ADR-035,
+    Amendment 7).
     """
 
     id: str
@@ -37,15 +43,23 @@ class UserRead(BaseModel):
     is_verified: bool
     active_profile_id: str | None = None
     parental_pin_configured: bool
+    admin_access: AdminAccessLevel
 
     @classmethod
-    def from_model(cls, user: UserModel, active_profile_id: str | None = None) -> Self:
+    def from_model(
+        cls,
+        user: UserModel,
+        active_profile_id: str | None = None,
+        *,
+        admin_access: AdminAccessLevel,
+    ) -> Self:
         """Project a ``UserModel`` into the API response shape.
 
         Only the prefixed ``external_id`` is exposed as ``id`` — the
         database UUID never leaves infrastructure. ``active_profile_id``
-        is supplied by the route after a session-token lookup; the
-        schema itself stays decoupled from access-token storage.
+        and ``admin_access`` are supplied by the route after a
+        session-token lookup; the schema itself stays decoupled from
+        access-token storage.
         """
         return cls(
             id=user.external_id,
@@ -55,6 +69,7 @@ class UserRead(BaseModel):
             is_verified=user.is_verified,
             active_profile_id=active_profile_id,
             parental_pin_configured=user.parental_pin_hash is not None,
+            admin_access=admin_access,
         )
 
 

@@ -30,6 +30,12 @@ from src.modules.identity.application.use_cases.create_admin_user import (
 from src.modules.identity.application.use_cases.delete_admin_user import (
     DeleteAdminUserUseCase,
 )
+from src.modules.identity.application.use_cases.ensure_admin_authority import (
+    EnsureAdminAuthorityUseCase,
+)
+from src.modules.identity.application.use_cases.get_admin_access import (
+    GetAdminAccessUseCase,
+)
 from src.modules.identity.application.use_cases.get_user_detail import (
     GetUserDetailUseCase,
 )
@@ -196,4 +202,16 @@ class IdentityContainer(containers.DeclarativeContainer):
     lock_parental = providers.Factory(
         LockParentalUseCase,
         uow_factory=identity_unit_of_work_factory,
+    )
+
+    # Resolved by the admin route guards in ``infrastructure/auth`` through
+    # ``app.state.container`` as well as by ``/users/me``.
+    get_admin_access = providers.Factory(
+        GetAdminAccessUseCase,
+        uow_factory=identity_unit_of_work_factory,
+    )
+
+    ensure_admin_authority = providers.Factory(
+        EnsureAdminAuthorityUseCase,
+        get_admin_access=get_admin_access,
     )
