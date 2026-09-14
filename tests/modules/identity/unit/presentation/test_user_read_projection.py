@@ -52,3 +52,31 @@ class TestUserReadFromModel:
         assert projected.role == "member"
         assert projected.is_active is False
         assert projected.is_verified is True
+
+
+class TestUserReadParentalPin:
+    def _model(self, parental_pin_hash: str | None) -> UserModel:
+        return UserModel(
+            id=uuid.uuid4(),
+            external_id="usr_2xK9mPqR7nL4",
+            email="parent@example.com",
+            hashed_password="$argon2id$dummy",
+            is_active=True,
+            is_superuser=False,
+            is_verified=True,
+            role="member",
+            parental_pin_hash=parental_pin_hash,
+        )
+
+    def test_should_report_no_pin_when_the_hash_is_null(self):
+        projected = UserRead.from_model(self._model(None))
+
+        assert projected.parental_pin_configured is False
+
+    def test_should_report_a_pin_without_exposing_the_hash(self):
+        projected = UserRead.from_model(self._model("$argon2id$v=19$pin-hash"))
+
+        assert projected.parental_pin_configured is True
+        dumped = projected.model_dump_json()
+        assert "pin-hash" not in dumped
+        assert "parental_pin_hash" not in dumped

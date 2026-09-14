@@ -37,6 +37,10 @@ class User(AggregateRoot[UserId]):
         hashed_password: BCrypt hash maintained by FastAPI Users.
             ``None`` is reserved for users who only authenticate via
             OAuth (deferred to a future PR).
+        parental_pin_hash: Hash of the household's parental PIN, or
+            ``None`` when no PIN is configured (ADR-035). The PIN belongs
+            to the account, not to a profile; the plaintext is never
+            stored.
 
     Example:
         >>> user = User.create(email=Email("admin@homeflix.local"),
@@ -53,6 +57,12 @@ class User(AggregateRoot[UserId]):
     is_superuser: bool = False
     is_verified: bool = False
     hashed_password: str | None = None
+    parental_pin_hash: str | None = None
+
+    @property
+    def has_parental_pin(self) -> bool:
+        """Whether the account has a parental PIN configured."""
+        return self.parental_pin_hash is not None
 
     @classmethod
     def create(

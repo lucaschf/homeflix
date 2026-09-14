@@ -12,7 +12,7 @@ from typing import Self
 
 import pytest
 
-from src.modules.identity.application.ports import AvatarStoragePort
+from src.modules.identity.application.ports import AvatarStoragePort, PasswordHasherPort
 from src.modules.identity.application.unit_of_work import (
     IdentityUnitOfWork,
     IdentityUnitOfWorkFactory,
@@ -43,9 +43,21 @@ class FakeUserRepository(UserRepository):
     async def save(self, user: User) -> User:
         if user.id is None:
             user = user.with_updates(id=UserId.generate())
+        elif user.id in self._items:
+            # Like the real repository, an update never writes the PIN hash.
+            user = user.with_updates(
+                parental_pin_hash=self._items[user.id].parental_pin_hash,
+                updated_at=user.updated_at,
+            )
         self._items[user.id] = user
         self._deleted.discard(user.id)
         return user
+
+    async def set_parental_pin_hash(self, user_id: UserId, hashed: str | None) -> bool:
+        if user_id not in self._items or user_id in self._deleted:
+            return False
+        self._items[user_id] = self._items[user_id].with_updates(parental_pin_hash=hashed)
+        return True
 
     async def find_by_id(self, user_id: UserId) -> User | None:
         if user_id in self._deleted:
@@ -187,7 +199,11 @@ class FakeAccessTokenRepository(AccessTokenRepository):
 
 
 class FakeIdentityUnitOfWork(IdentityUnitOfWork):
-    """In-memory UoW combining the three fake repositories."""
+    """In-memory UoW combining the three fake repositories.
+
+    ``active`` is ``True`` only inside ``async with``, so a test can tell
+    whether a call happened inside a transaction.
+    """
 
     def __init__(self) -> None:
         self.users = FakeUserRepository()
@@ -195,8 +211,10 @@ class FakeIdentityUnitOfWork(IdentityUnitOfWork):
         self.access_tokens = FakeAccessTokenRepository()
         self.committed = False
         self.rolled_back = False
+        self.active = False
 
     async def __aenter__(self) -> Self:
+        self.active = True
         return self
 
     async def __aexit__(
@@ -205,6 +223,7 @@ class FakeIdentityUnitOfWork(IdentityUnitOfWork):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
+        self.active = False
         if exc_type is None:
             self.committed = True
         else:
@@ -230,6 +249,27 @@ class FakeIdentityUnitOfWorkFactory(IdentityUnitOfWorkFactory):
 
     def __call__(self) -> IdentityUnitOfWork:
         return self._uow
+
+
+class FakePasswordHasher(PasswordHasherPort):
+    """Deterministic ``PasswordHasherPort`` that records every verification.
+
+    ``hash`` is a reversible tag (``hashed::<plain>``) so tests can tell a
+    stored hash from the plaintext it came from; ``verify_calls`` lets a
+    test prove a verification never happened.
+    """
+
+    def __init__(self) -> None:
+        self.verify_calls: list[str] = []
+
+    def hash(self, password: str) -> str:
+        return f"hashed::{password}"
+
+    def verify(self, plain: str, hashed: str) -> bool:
+        self.verify_calls.append(hashed)
+        # Not ``self.hash(plain)``: a test recording ``hash`` calls must see
+        # only the use case's own.
+        return hashed == f"hashed::{plain}"
 
 
 class FakeAvatarStorage(AvatarStoragePort):
@@ -276,3 +316,9 @@ def fake_uow_factory(fake_uow: FakeIdentityUnitOfWork) -> FakeIdentityUnitOfWork
 def fake_avatar_storage() -> FakeAvatarStorage:
     """Fresh in-memory ``AvatarStoragePort`` per test."""
     return FakeAvatarStorage()
+
+
+@pytest.fixture
+def fake_password_hasher() -> FakePasswordHasher:
+    """Fresh recording ``PasswordHasherPort`` per test."""
+    return FakePasswordHasher()

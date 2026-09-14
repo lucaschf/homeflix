@@ -24,6 +24,10 @@ class UserRead(BaseModel):
     ``None`` while the session has not yet selected a profile
     (post-login, pre-picker), and switches to a prefixed ``prf_xxx``
     once the user hits ``POST /profiles/{id}/switch``.
+
+    ``parental_pin_configured`` tells the frontend whether the account
+    has a parental PIN (ADR-035). It is derived from the stored hash,
+    which itself is never part of this shape.
     """
 
     id: str
@@ -32,6 +36,7 @@ class UserRead(BaseModel):
     is_active: bool
     is_verified: bool
     active_profile_id: str | None = None
+    parental_pin_configured: bool
 
     @classmethod
     def from_model(cls, user: UserModel, active_profile_id: str | None = None) -> Self:
@@ -49,6 +54,7 @@ class UserRead(BaseModel):
             is_active=user.is_active,
             is_verified=user.is_verified,
             active_profile_id=active_profile_id,
+            parental_pin_configured=user.parental_pin_hash is not None,
         )
 
 

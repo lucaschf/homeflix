@@ -81,6 +81,26 @@ class TestUserImmutability:
         assert verified.is_verified is True
 
 
+class TestUserParentalPin:
+    def test_should_have_no_parental_pin_by_default(self):
+        user = User.create(email=Email("a@b.com"))
+
+        assert user.parental_pin_hash is None
+        assert user.has_parental_pin is False
+
+    def test_a_stored_hash_should_mean_a_pin_is_configured(self):
+        user = User(email=Email("a@b.com"), parental_pin_hash="$argon2id$pin")
+
+        assert user.has_parental_pin is True
+
+    def test_other_copies_should_keep_the_pin(self):
+        with_pin = User(email=Email("a@b.com"), parental_pin_hash="$argon2id$pin")
+
+        promoted = with_pin.with_role(UserRole.ADMIN)
+
+        assert promoted.parental_pin_hash == "$argon2id$pin"
+
+
 class TestUserEquality:
     def test_users_without_id_should_not_be_equal(self):
         a = User.create(email=Email("a@b.com"))

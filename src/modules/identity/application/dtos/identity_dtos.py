@@ -14,7 +14,7 @@ payloads.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.modules.identity.domain.value_objects.user_role import UserRole
 
@@ -227,6 +227,32 @@ class DeleteAdminUserInput:
     acting_admin_id: str
 
 
+@dataclass(frozen=True)
+class SetParentalPinInput:
+    """Input for ``SetParentalPinUseCase``.
+
+    ``current_password`` and ``pin`` are plaintext secrets, kept out of
+    this object's ``repr()``. That masks only the ``repr``: a traceback
+    renderer that dumps frame locals can still show the raw values held
+    by other frames, such as the framework's request body.
+    """
+
+    user_id: str
+    current_password: str = field(repr=False)
+    pin: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class RemoveParentalPinInput:
+    """Input for ``RemoveParentalPinUseCase``.
+
+    ``current_password`` is a plaintext secret, kept out of ``repr()``.
+    """
+
+    user_id: str
+    current_password: str = field(repr=False)
+
+
 __all__ = [
     "CreateAdminUserInput",
     "CreateProfileInput",
@@ -237,6 +263,8 @@ __all__ = [
     "ListProfilesForUserInput",
     "ListUsersInput",
     "ProfileOutput",
+    "RemoveParentalPinInput",
+    "SetParentalPinInput",
     "SwitchProfileInput",
     "UpdateProfileInput",
     "UpdateUserRoleInput",

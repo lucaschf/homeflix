@@ -188,6 +188,7 @@ class TestRegistryCoverage:
         import src.building_blocks.application.errors
         import src.building_blocks.domain.errors
         import src.building_blocks.infrastructure.errors
+        import src.modules.identity.application.errors
         import src.modules.identity.domain.errors
         import src.modules.media.application.errors  # noqa: F401
         from src.building_blocks.domain.errors import CoreException

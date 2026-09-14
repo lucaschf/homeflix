@@ -124,7 +124,22 @@ class CannotDeleteSelfError(ApplicationException):
     message_code: str = IdentityRuleCodes.USER_CANNOT_DELETE_SELF
 
 
+@dataclass
+class AccountPasswordInvalidError(ForbiddenOperationException):
+    """The account password supplied to confirm a sensitive change is wrong.
+
+    Maps to HTTP 403, never 401: the session is valid, and the frontend
+    treats any 401 as an expired session and signs the user out. Raised
+    by the parental PIN use cases, which require the account password to
+    set, replace or remove the PIN (ADR-035, Amendment 7 D3).
+    """
+
+    code: str = "ACCOUNT_PASSWORD_INVALID"
+    message_code: str = IdentityRuleCodes.ACCOUNT_PASSWORD_INVALID
+
+
 __all__ = [
+    "AccountPasswordInvalidError",
     "CannotDeleteLastProfileError",
     "CannotDeleteSelfError",
     "NoActiveProfileSelectedError",
