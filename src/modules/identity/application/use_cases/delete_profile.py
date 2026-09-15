@@ -17,7 +17,6 @@ from src.modules.identity.application.use_cases._profile_gate import (
     spend_unlock,
     utc_now,
 )
-from src.modules.identity.domain.services.parental_gate import ParentalGate
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -40,12 +39,14 @@ class DeleteProfileUseCase:
       profile so that ``get_current_profile`` always has something
       to resolve. Deleting the last remaining profile raises
       :class:`CannotDeleteLastProfileError` (HTTP 409).
-    - **Parental gate** (ADR-035, Amendment 7): on an account with a
-      parental PIN, deleting a limited profile, or deleting any profile
-      from a session acting under a limit, needs an unlock on this device,
-      which the deletion spends → ``ParentalPinRequiredError`` (HTTP 403).
-      It runs after the ownership and last-profile guards, so neither
-      answer depends on the PIN, and before the profile is deleted.
+    - **Parental gate** (ADR-035, Amendment 8): on an account with a
+      parental PIN, deleting any profile needs an unlock on this device,
+      whatever the limits of the profile and of the session, and the
+      deletion spends it → ``ParentalPinRequiredError`` (HTTP 403).
+      Deleting a profile orphans its watch history and lists, so no
+      session deletes one without the PIN. It runs after the not-found,
+      ownership and last-profile guards, so none of those answers depends
+      on the PIN, and before the profile is deleted.
 
     Cascade-deletes the profile's uploaded avatar file via the
     storage port. The port's ``delete`` is idempotent so the call
@@ -88,10 +89,7 @@ class DeleteProfileUseCase:
                 )
 
             session = await read_gate_session(uow, caller_id, input_dto.session_token)
-            if session.pin_configured and ParentalGate.delete_requires_unlock(
-                target_limit=existing.maturity_limit,
-                session_limit=session.limit,
-            ):
+            if session.pin_configured:
                 await spend_unlock(uow, session, now=self._clock())
 
             await uow.profiles.delete(target_id)

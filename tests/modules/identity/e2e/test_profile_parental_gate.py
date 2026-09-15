@@ -486,6 +486,48 @@ class TestCreate:
 
 
 class TestDelete:
+    """Amendment 8: with a PIN, every deletion needs an unlock, and spends it."""
+
+    async def test_an_unrestricted_session_needs_an_unlock_to_delete_an_unrestricted_profile(
+        self,
+        client: AsyncClient,
+        session_factory: Factory,
+        parent: SeededUser,
+    ) -> None:
+        guest = await _add_profile(session_factory, parent, "Guest", None)
+        other_guest = await _add_profile(session_factory, parent, "Other guest", None)
+        # No profile of the account is limited, so entering the parent's
+        # profile is free and leaves the session unrestricted, with no unlock.
+        assert (await _switch(client, parent.profile_external_id)).status_code == 204
+
+        refused = await client.delete(f"{PROFILES_PATH}/{guest}")
+        assert await _is_live(session_factory, guest)
+        await _unlock(client)
+        deleted = await client.delete(f"{PROFILES_PATH}/{guest}")
+        spent = await client.delete(f"{PROFILES_PATH}/{other_guest}")
+
+        _assert_pin_required(refused)
+        assert deleted.status_code == 204
+        assert not await _is_live(session_factory, guest)
+        _assert_pin_required(spent)
+        assert await _is_live(session_factory, other_guest)
+
+    async def test_without_a_pin_an_unrestricted_profile_is_deleted_with_no_unlock(
+        self,
+        client: AsyncClient,
+        session_factory: Factory,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+    ) -> None:
+        user = await seed_user_with_profile(email="nopin@example.com")
+        await _login(client, user)
+        guest = await _add_profile(session_factory, user, "Guest", None)
+        assert (await _switch(client, user.profile_external_id)).status_code == 204
+
+        response = await client.delete(f"{PROFILES_PATH}/{guest}")
+
+        assert response.status_code == 204, response.text
+        assert not await _is_live(session_factory, guest)
+
     async def test_deleting_a_limited_profile_needs_an_unlock(
         self,
         client: AsyncClient,
@@ -505,13 +547,15 @@ class TestDelete:
         assert deleted.status_code == 204
         assert not await _is_live(session_factory, kid)
 
+    @pytest.mark.parametrize("limit", [None, 12], ids=["unrestricted", "limited"])
     async def test_the_last_profile_answers_409_before_the_gate(
         self,
         client: AsyncClient,
         session_factory: Factory,
         parent: SeededUser,
+        limit: int | None,
     ) -> None:
-        await _set_profile(session_factory, parent.profile_external_id, maturity_limit=12)
+        await _set_profile(session_factory, parent.profile_external_id, maturity_limit=limit)
 
         response = await client.delete(f"{PROFILES_PATH}/{parent.profile_external_id}")
 
@@ -519,6 +563,27 @@ class TestDelete:
             409,
             "CANNOT_DELETE_LAST_PROFILE",
         )
+
+    async def test_not_found_and_ownership_answer_before_the_gate(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: Factory,
+        parent: SeededUser,
+    ) -> None:
+        await _add_profile(session_factory, parent, "Guest", None)
+        stranger = await seed_user_with_profile(email="stranger@example.com")
+        await _add_profile(session_factory, stranger, "Stranger guest", None)
+        assert (await _switch(client, parent.profile_external_id)).status_code == 204
+
+        missing = await client.delete(f"{PROFILES_PATH}/{ProfileId.generate().value}")
+        foreign = await client.delete(f"{PROFILES_PATH}/{stranger.profile_external_id}")
+
+        assert [(r.status_code, r.json()["code"]) for r in (missing, foreign)] == [
+            (404, "PROFILE_NOT_FOUND"),
+            (403, "PROFILE_OWNERSHIP_VIOLATION"),
+        ]
+        assert await _is_live(session_factory, stranger.profile_external_id)
 
 
 # ─── the PIN invariant ─────────────────────────────────────

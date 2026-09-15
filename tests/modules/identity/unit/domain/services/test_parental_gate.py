@@ -233,26 +233,6 @@ class TestUpdateRequiresUnlock:
         assert (decide(16), decide(0), decide(None)) == (True, True, False)
 
 
-class TestDeleteRequiresUnlock:
-    @pytest.mark.parametrize(
-        ("target", "session", "expected"),
-        [
-            pytest.param(12, None, True, id="limited-target"),
-            pytest.param(0, None, True, id="zero-target"),
-            pytest.param(None, 12, True, id="limited-session"),
-            pytest.param(None, 0, True, id="zero-session"),
-            pytest.param(None, None, False, id="unrestricted-both"),
-        ],
-    )
-    def test_delete(self, target: int | None, session: int | None, expected: bool) -> None:
-        assert (
-            ParentalGate.delete_requires_unlock(
-                target_limit=_age(target), session_limit=_age(session)
-            )
-            is expected
-        )
-
-
 class TestAdminAccess:
     """The matrix of Amendment 7 (decision 8 widened by D10)."""
 

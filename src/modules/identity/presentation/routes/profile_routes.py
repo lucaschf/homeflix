@@ -153,9 +153,9 @@ async def delete_profile(
 
     Returns 403 if the caller does not own the profile and 409 if
     deletion would leave the user without any active profile. On an
-    account with a parental PIN, deleting a limited profile, or deleting
-    from a session acting under a limit, is 403 ``PARENTAL_PIN_REQUIRED``
-    until the device is unlocked (ADR-035).
+    account with a parental PIN, deleting any profile is 403
+    ``PARENTAL_PIN_REQUIRED`` until the device is unlocked, and each
+    deletion spends the unlock (ADR-035).
     """
     await use_case.execute(
         DeleteProfileInput(

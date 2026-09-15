@@ -669,6 +669,31 @@ os limites e depois o PIN, com a senha (D2). Reverter a 4.4 ou a 4.5 com PIN
 gravado remove o gate: é fail-open explícito e precisa estar declarado no PR de
 revert.
 
+### 8. Apagar perfil exige unlock sempre que a conta tem PIN
+
+A linha `DELETE /profiles/{id}` da tabela "Decisão 9 por operação" (Emenda 7)
+pedia unlock só quando o alvo tinha limite ou `L` não era nulo. Sob a sessão
+irrestrita do responsável, quem estivesse na frente da TV apagava sem PIN
+qualquer perfil irrestrito da conta. Nenhum limite é alargado, mas apagar é
+destrutivo e não tem volta pela UI: o Continue Watching, a watchlist e as listas
+do perfil ficam órfãos.
+
+**Decisão do dono.** Em conta com PIN configurado, apagar **qualquer** perfil
+exige unlock, consumido atomicamente como nas outras operações gateadas (D9),
+qualquer que seja o limite do alvo ou da sessão. Sem PIN nada muda: apagar
+segue livre. A linha da tabela passa a ser:
+
+| Operação | Gate avaliado depois de | Exige unlock (consumido) quando | Efeito extra |
+|---|---|---|---|
+| `DELETE /profiles/{id}` | 404, ownership e 409 de último perfil (`delete_profile.py`) | sempre | — |
+
+A ordem não muda: 404, ownership e 409 respondem antes do gate, então nenhuma
+dessas respostas depende do PIN, e a recusa segue 403 `PARENTAL_PIN_REQUIRED`,
+nunca 401. Reduzida a regra a "a conta tem PIN",
+`ParentalGate.delete_requires_unlock` sai do domínio e o use case consome o
+unlock direto. O front não muda: a exclusão em `ManageProfiles.tsx` já passa por
+`useParentalUnlock().run`, que abre o desafio no 403.
+
 ## Histórico de Revisões
 
 | Data | Autor | Mudança |
@@ -679,3 +704,4 @@ revert.
 | 2026-09-13 | Lucas | Emenda 6, levantada nas PRs 3d (#428-#434) |
 | 2026-09-13 | Lucas | Risco de cache entre perfis resolvido com `no-store` em respostas JSON e `private, no-cache` nos sprites de scrub-preview; item correspondente do checklist da PR 4 marcado |
 | 2026-09-13 | Lucas | Emenda 7, decisões e correções do planejamento da PR 4 |
+| 2026-09-15 | Lucas | Emenda 8, apagar qualquer perfil exige unlock em conta com PIN |
