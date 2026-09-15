@@ -94,7 +94,22 @@ class Profile(AggregateRoot[ProfileId]):
             ``True`` when a limit of 12 or lower applies; ``False`` for
             an unrestricted profile or a higher limit.
         """
-        return self.maturity_limit is not None and self.maturity_limit.value <= 12
+        return self.limit_reads_as_kids(self.maturity_limit)
+
+    @staticmethod
+    def limit_reads_as_kids(limit: AgeRating | None) -> bool:
+        """Whether a maturity limit makes a profile read as a kids profile.
+
+        The rule behind :attr:`is_kids`, for a writer that sets a limit
+        without the entity at hand and must keep the stored flag derived.
+
+        Args:
+            limit: The maturity limit, or ``None`` for unrestricted.
+
+        Returns:
+            ``True`` for a limit of 12 or lower; ``False`` otherwise.
+        """
+        return limit is not None and limit.value <= 12
 
     @classmethod
     def create(
@@ -104,12 +119,14 @@ class Profile(AggregateRoot[ProfileId]):
         *,
         avatar_url: str | None = None,
         allowed_library_ids: Sequence[str | LibraryId] | None = None,
+        maturity_limit: AgeRating | None = None,
     ) -> Profile:
         """Build a fresh ``Profile`` (id assigned at persistence time)."""
         return cls(
             user_id=user_id,
             name=name,
             avatar_url=avatar_url,
+            maturity_limit=maturity_limit,
             allowed_library_ids=list(allowed_library_ids) if allowed_library_ids else [],
         )
 

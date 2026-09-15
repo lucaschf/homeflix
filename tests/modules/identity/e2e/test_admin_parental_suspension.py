@@ -7,8 +7,10 @@ profile of the account has a limit (D10). A suspension is 403
 ``PARENTAL_PIN_REQUIRED``, never 401, and the unlock window is read, not
 spent (D9).
 
-Limits are written straight to the database: no route writes a maturity
-limit yet. The PIN goes through its real route.
+Limits are written straight to the database, so a test starts from the
+account it needs without spending unlocks on the profile routes. The PIN goes
+through its real route. Entering the unrestricted profile while a limited one
+exists needs an unlock, which the switch spends (decision 9).
 """
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
@@ -270,6 +272,7 @@ class TestUnderTheUnrestrictedProfileWithALimitedSibling:
     async def _on_the_parent(
         self, client: AsyncClient, admin: SeededUser, kid_profile: str
     ) -> None:
+        await _unlock(client)
         await _switch(client, admin.profile_external_id)
 
     async def test_reads_are_granted_and_writes_need_an_unlock(
@@ -341,6 +344,7 @@ class TestLibraryPaths:
         admin: SeededUser,
         kid_profile: str,
     ) -> None:
+        await _unlock(client)
         await _switch(client, admin.profile_external_id)
         await _unlock(client)
         library = await client.post(LIBRARIES_PATH, json=_LIBRARY_BODY)
@@ -383,6 +387,7 @@ class TestMeReportsAdminAccess:
         admin: SeededUser,
         kid_profile: str,
     ) -> None:
+        await _unlock(client)
         await _switch(client, admin.profile_external_id)
         on_parent = (await client.get(ME_PATH)).json()["data"]["admin_access"]
         await _switch(client, kid_profile)
@@ -395,7 +400,11 @@ class TestMeReportsAdminAccess:
 
 
 class TestQueryCost:
-    """Without a PIN the gate costs nothing; with one, exactly two queries."""
+    """Without a PIN the gate costs nothing; with one, exactly one query.
+
+    The session and the account's live profiles come from a single snapshot,
+    so a widening cannot commit between them.
+    """
 
     @pytest.mark.parametrize(
         "path",
@@ -404,7 +413,7 @@ class TestQueryCost:
             pytest.param(ADMIN_USERS_PATH, id="current_admin_user"),
         ],
     )
-    async def test_a_pin_adds_exactly_two_queries_to_an_admin_request(
+    async def test_a_pin_adds_exactly_one_query_to_an_admin_request(
         self,
         client: AsyncClient,
         session_factory: async_sessionmaker[AsyncSession],
@@ -424,7 +433,7 @@ class TestQueryCost:
         await _set_pin(client, user)
         with_pin = await _measure()
 
-        assert len(with_pin) == len(without_pin) + 2, with_pin
+        assert len(with_pin) == len(without_pin) + 1, with_pin
 
 
 class TestNever401:
@@ -444,6 +453,8 @@ class TestNever401:
             ("GET", ME_PATH, None),
         ]
         for profile in (None, admin.profile_external_id, kid_profile):
+            if profile == admin.profile_external_id:
+                await _unlock(client)
             if profile is not None:
                 await _switch(client, profile)
             for method, path, body in requests:

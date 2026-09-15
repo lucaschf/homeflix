@@ -1,8 +1,8 @@
 """Integration tests for SqlAlchemyProfileRepository."""
 
 import pytest
-from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
 from src.modules.identity.domain.entities.profile import Profile
@@ -11,6 +11,9 @@ from src.modules.identity.domain.value_objects.email import Email
 from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.modules.identity.infrastructure.persistence.models.profile_model import (
     ProfileModel,
+)
+from src.modules.identity.infrastructure.persistence.repositories.sqlalchemy_profile_repository import (
+    SqlAlchemyProfileRepository,
 )
 from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.library_id import LibraryId
@@ -92,61 +95,115 @@ class TestSqlAlchemyProfileRepositorySave:
         assert after is not None
         assert after.name == ProfileName("New")
 
-    async def test_save_should_persist_a_maturity_limit_change(
+    @pytest.mark.parametrize("carried", [10, None], ids=["narrower", "unrestricted"])
+    async def test_save_should_leave_the_stored_maturity_limit_of_an_existing_profile(
         self,
         uow_factory: IdentityUnitOfWorkFactory,
         db_session: AsyncSession,
+        carried: int | None,
     ):
-        # ``update_model`` must write the column: forgetting it raises
-        # nothing and silently keeps the old limit.
+        # ADR-035: only ``set_maturity_limit`` writes the limit of an existing
+        # profile, so an entity carrying another limit (read before a
+        # concurrent change) cannot write it back through a rename.
         owner = await _seed_user(uow_factory)
         assert owner.id is not None
 
         async with uow_factory() as uow:
             original = await uow.profiles.save(
                 Profile.create(user_id=owner.id, name=ProfileName("Kid")).with_maturity_limit(
-                    AgeRating(14)
+                    AgeRating(12)
                 )
             )
 
+        stale = original.with_maturity_limit(None if carried is None else AgeRating(carried))
         async with uow_factory() as uow:
-            await uow.profiles.save(original.with_maturity_limit(AgeRating(10)))
+            saved = await uow.profiles.save(stale.with_name(ProfileName("Renamed")))
 
-        async with uow_factory() as uow:
-            assert original.id is not None
-            after = await uow.profiles.find_by_id(original.id)
-
-        assert after is not None
-        assert after.maturity_limit == AgeRating(10)
+        assert (saved.name, saved.maturity_limit) == (ProfileName("Renamed"), AgeRating(12))
+        assert original.id is not None
         stored = await db_session.execute(
-            select(ProfileModel.maturity_limit, ProfileModel.is_kids).where(
+            select(ProfileModel.name, ProfileModel.maturity_limit, ProfileModel.is_kids).where(
                 ProfileModel.external_id == original.id.value
             )
         )
-        assert stored.one() == (10, True)
+        assert tuple(stored.one()) == ("Renamed", 12, True)
 
-    async def test_save_should_persist_clearing_the_maturity_limit(
-        self, uow_factory: IdentityUnitOfWorkFactory
+    @pytest.mark.parametrize("renamed", [True, False], ids=["with-a-change", "without-a-change"])
+    async def test_save_should_never_restore_a_soft_deleted_profile(
+        self, uow_factory: IdentityUnitOfWorkFactory, db_session: AsyncSession, renamed: bool
     ):
+        # ADR-035: an entity read before a concurrent delete must not bring the
+        # profile back, with its limit, maybe after its PIN was removed.
         owner = await _seed_user(uow_factory)
         assert owner.id is not None
-
         async with uow_factory() as uow:
             original = await uow.profiles.save(
                 Profile.create(user_id=owner.id, name=ProfileName("Kid")).with_maturity_limit(
-                    AgeRating(10)
+                    AgeRating(12)
                 )
             )
-
+        assert original.id is not None
         async with uow_factory() as uow:
-            await uow.profiles.save(original.with_maturity_limit(None))
+            await uow.profiles.delete(original.id)
 
+        stale = original.with_name(ProfileName("Renamed")) if renamed else original
         async with uow_factory() as uow:
-            assert original.id is not None
-            after = await uow.profiles.find_by_id(original.id)
+            saved = await uow.profiles.save(stale)
 
-        assert after is not None
-        assert after.maturity_limit is None
+        assert saved is None
+        stored = await db_session.execute(
+            select(ProfileModel.name, ProfileModel.deleted_at).where(
+                ProfileModel.external_id == original.id.value
+            )
+        )
+        name, deleted_at = stored.one()
+        assert (name, deleted_at is not None) == ("Kid", True)
+
+    async def test_save_should_not_write_a_profile_deleted_after_its_lookup(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        session_factory: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        # The delete lands between the lookup and the UPDATE: the UPDATE's own
+        # condition refuses the row, instead of a reload finding it gone.
+        owner = await _seed_user(uow_factory)
+        assert owner.id is not None
+        async with uow_factory() as uow:
+            original = await uow.profiles.save(
+                Profile.create(user_id=owner.id, name=ProfileName("Kid"))
+            )
+        assert original.id is not None
+        profile_id = original.id
+        update_live = SqlAlchemyProfileRepository._update_live
+        updates: list[bool] = []
+
+        async def deleted_meanwhile(
+            repository: SqlAlchemyProfileRepository, existing: ProfileModel, profile: Profile
+        ) -> bool:
+            await repository._session.execute(
+                update(ProfileModel)
+                .where(ProfileModel.external_id == profile_id.value)
+                .values(deleted_at=func.current_timestamp())
+            )
+            updates.append(await update_live(repository, existing, profile))
+            return updates[-1]
+
+        monkeypatch.setattr(SqlAlchemyProfileRepository, "_update_live", deleted_meanwhile)
+
+        async with session_factory() as session:
+            saved = await SqlAlchemyProfileRepository(session).save(
+                original.with_name(ProfileName("Renamed"))
+            )
+            await session.commit()
+
+        async with session_factory() as session:
+            name = await session.scalar(
+                select(ProfileModel.name).where(ProfileModel.external_id == profile_id.value)
+            )
+        assert saved is None
+        assert updates == [False]
+        assert name == "Kid"
 
     async def test_save_should_reject_when_owning_user_does_not_exist(
         self, uow_factory: IdentityUnitOfWorkFactory
@@ -304,6 +361,152 @@ class TestSqlAlchemyProfileRepositorySave:
 
         assert after is not None
         assert after.allowed_library_ids == []
+
+
+class TestSqlAlchemyProfileRepositorySetMaturityLimit:
+    """The compare-and-set limit write (ADR-035, Amendment 7 D2 and D9)."""
+
+    async def _profile(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        limit: int | None,
+        *,
+        pin: bool = True,
+    ) -> ProfileId:
+        async with uow_factory() as uow:
+            owner = await uow.users.save(
+                User(
+                    email=Email("owner@example.com"),
+                    hashed_password="hp",
+                    parental_pin_hash="$argon2id$pin-hash" if pin else None,
+                )
+            )
+            assert owner.id is not None
+            saved = await uow.profiles.save(
+                Profile.create(
+                    user_id=owner.id,
+                    name=ProfileName("Kid"),
+                    maturity_limit=None if limit is None else AgeRating(limit),
+                )
+            )
+        assert saved.id is not None
+        return saved.id
+
+    async def _row(self, db_session: AsyncSession, profile_id: ProfileId) -> tuple[object, ...]:
+        db_session.expire_all()
+        result = await db_session.execute(
+            select(ProfileModel.maturity_limit, ProfileModel.is_kids).where(
+                ProfileModel.external_id == profile_id.value
+            )
+        )
+        return tuple(result.one())
+
+    @pytest.mark.parametrize(("new", "is_kids"), [(10, True), (16, False), (None, False)])
+    async def test_should_write_the_limit_and_the_derived_flag(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+        new: int | None,
+        is_kids: bool,
+    ):
+        profile_id = await self._profile(uow_factory, 12)
+
+        async with uow_factory() as uow:
+            written = await uow.profiles.set_maturity_limit(
+                profile_id,
+                expected=AgeRating(12),
+                new=None if new is None else AgeRating(new),
+            )
+
+        assert written is True
+        assert await self._row(db_session, profile_id) == (new, is_kids)
+
+    @pytest.mark.parametrize("expected", [14, None])
+    async def test_should_not_write_when_the_limit_is_no_longer_the_expected_one(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+        expected: int | None,
+    ):
+        profile_id = await self._profile(uow_factory, 12)
+
+        async with uow_factory() as uow:
+            written = await uow.profiles.set_maturity_limit(
+                profile_id,
+                expected=None if expected is None else AgeRating(expected),
+                new=AgeRating(10),
+            )
+
+        assert written is False
+        assert await self._row(db_session, profile_id) == (12, True)
+
+    async def test_should_not_write_a_limit_on_an_account_without_a_pin(
+        self, uow_factory: IdentityUnitOfWorkFactory, db_session: AsyncSession
+    ):
+        profile_id = await self._profile(uow_factory, None, pin=False)
+
+        async with uow_factory() as uow:
+            written = await uow.profiles.set_maturity_limit(
+                profile_id, expected=None, new=AgeRating(12)
+            )
+
+        assert written is False
+        assert await self._row(db_session, profile_id) == (None, False)
+
+    async def test_should_remove_a_limit_on_an_account_without_a_pin(
+        self, uow_factory: IdentityUnitOfWorkFactory, db_session: AsyncSession
+    ):
+        # Removing a limit never needs the PIN, so a stray limit can be undone.
+        profile_id = await self._profile(uow_factory, 12, pin=False)
+
+        async with uow_factory() as uow:
+            written = await uow.profiles.set_maturity_limit(
+                profile_id, expected=AgeRating(12), new=None
+            )
+
+        assert written is True
+        assert await self._row(db_session, profile_id) == (None, False)
+
+    async def test_should_not_write_a_soft_deleted_profile(
+        self, uow_factory: IdentityUnitOfWorkFactory, db_session: AsyncSession
+    ):
+        profile_id = await self._profile(uow_factory, 12)
+        async with uow_factory() as uow:
+            await uow.profiles.delete(profile_id)
+
+        async with uow_factory() as uow:
+            written = await uow.profiles.set_maturity_limit(
+                profile_id, expected=AgeRating(12), new=AgeRating(10)
+            )
+
+        assert written is False
+        assert await self._row(db_session, profile_id) == (12, True)
+
+    async def test_a_model_already_in_the_session_should_carry_the_new_limit(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        session_factory: async_sessionmaker[AsyncSession],
+    ):
+        # A later ``save`` in the same transaction reloads from the session:
+        # an unsynchronised model would report the old limit.
+        profile_id = await self._profile(uow_factory, 12)
+
+        async with session_factory() as session:
+            repository = SqlAlchemyProfileRepository(session)
+            loaded = (
+                await session.execute(
+                    select(ProfileModel).where(ProfileModel.external_id == profile_id.value)
+                )
+            ).scalar_one()
+            entity = await repository.find_by_id(profile_id)
+            assert entity is not None
+
+            await repository.set_maturity_limit(profile_id, expected=AgeRating(12), new=None)
+            saved = await repository.save(entity.with_name(ProfileName("Renamed")))
+
+            assert loaded.maturity_limit is None
+            assert (saved.name, saved.maturity_limit) == (ProfileName("Renamed"), None)
+            await session.rollback()
 
 
 class TestSqlAlchemyProfileRepositoryReads:

@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Row, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import Row, event, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
 from src.modules.identity.domain.entities.profile import Profile
@@ -22,6 +22,7 @@ from src.modules.identity.infrastructure.persistence.models.profile_model import
     ProfileModel,
 )
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -201,7 +202,9 @@ class TestUpdateCurrentProfile:
 
         assert profile.id is not None
         async with uow_factory() as uow:
-            ok = await uow.access_tokens.update_current_profile(token, profile.id)
+            ok = await uow.access_tokens.update_current_profile(
+                token, profile.id, expected_limit=None
+            )
 
         assert ok is True
         async with uow_factory() as uow:
@@ -234,7 +237,7 @@ class TestUpdateCurrentProfile:
         )
 
         async with uow_factory() as uow:
-            ok = await uow.access_tokens.update_current_profile(token, None)
+            ok = await uow.access_tokens.update_current_profile(token, None, expected_limit=None)
 
         assert ok is True
         async with uow_factory() as uow:
@@ -273,7 +276,7 @@ class TestUpdateCurrentProfile:
 
         async with uow_factory() as uow:
             ok = await uow.access_tokens.update_current_profile(
-                token, profile.id if to_profile else None
+                token, profile.id if to_profile else None, expected_limit=None
             )
 
         assert ok is True
@@ -283,7 +286,9 @@ class TestUpdateCurrentProfile:
         self, uow_factory: IdentityUnitOfWorkFactory
     ):
         async with uow_factory() as uow:
-            ok = await uow.access_tokens.update_current_profile("ghost-token", profile_id=None)
+            ok = await uow.access_tokens.update_current_profile(
+                "ghost-token", profile_id=None, expected_limit=None
+            )
 
         assert ok is False
 
@@ -300,7 +305,89 @@ class TestUpdateCurrentProfile:
 
         with pytest.raises(ValueError, match="does not exist"):
             async with uow_factory() as uow:
-                await uow.access_tokens.update_current_profile(token, ProfileId.generate())
+                await uow.access_tokens.update_current_profile(
+                    token, ProfileId.generate(), expected_limit=None
+                )
+
+
+class TestUpdateCurrentProfileCompareAndSet:
+    """The switch lands only on the limit the gate read (ADR-035, Amendment 7 D9)."""
+
+    async def _session_and_target(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+        stored_limit: int | None,
+    ) -> tuple[str, Profile]:
+        owner = await _seed_user(uow_factory)
+        assert owner.id is not None
+        async with uow_factory() as uow:
+            target = await uow.profiles.save(
+                Profile.create(
+                    user_id=owner.id,
+                    name=ProfileName("Target"),
+                    maturity_limit=None if stored_limit is None else AgeRating(stored_limit),
+                )
+            )
+        token = _new_token()
+        await _insert_access_token(
+            db_session,
+            token=token,
+            user_uuid=await _user_uuid(db_session, owner.id.value),
+            unlock_until=_epoch(_NOW + timedelta(minutes=5)),
+        )
+        return token, target
+
+    @pytest.mark.parametrize(
+        ("stored", "expected", "switched"),
+        [(10, 10, True), (None, None, True), (10, 12, False), (10, None, False), (None, 10, False)],
+    )
+    async def test_should_switch_only_while_the_target_has_the_expected_limit(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+        stored: int | None,
+        expected: int | None,
+        switched: bool,
+    ):
+        token, target = await self._session_and_target(uow_factory, db_session, stored)
+        assert target.id is not None
+        unlock_before = (await _parental_row(db_session, token))[3]
+
+        async with uow_factory() as uow:
+            ok = await uow.access_tokens.update_current_profile(
+                token,
+                target.id,
+                expected_limit=None if expected is None else AgeRating(expected),
+            )
+
+        assert ok is switched
+        async with uow_factory() as uow:
+            snap = await uow.access_tokens.get_by_token(token)
+        assert snap is not None
+        assert snap.current_profile_id == (target.id if switched else None)
+        assert (await _parental_row(db_session, token))[3] == (None if switched else unlock_before)
+
+    async def test_should_refuse_a_soft_deleted_target(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+    ):
+        token, target = await self._session_and_target(uow_factory, db_session, None)
+        assert target.id is not None
+        async with uow_factory() as uow:
+            await uow.profiles.delete(target.id)
+
+        async with uow_factory() as uow:
+            ok = await uow.access_tokens.update_current_profile(
+                token, target.id, expected_limit=None
+            )
+
+        assert ok is False
+        async with uow_factory() as uow:
+            snap = await uow.access_tokens.get_by_token(token)
+        assert snap is not None
+        assert snap.current_profile_id is None
 
 
 class TestDeleteOlderThan:
@@ -433,6 +520,103 @@ class TestGetParentalState:
     ):
         async with uow_factory() as uow:
             assert await uow.access_tokens.get_parental_state("ghost-token") is None
+
+
+class TestGetParentalSnapshot:
+    async def test_should_read_the_state_and_the_live_profiles_in_one_statement(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
+    ):
+        # Read in two statements, a commit between them could pair the session
+        # as it was with the profiles as they became (ADR-035, Amendment 7).
+        owner = await _seed_user(uow_factory)
+        other = await _seed_user(uow_factory, email="other@example.com")
+        assert owner.id is not None and other.id is not None
+        async with uow_factory() as uow:
+            kid = await uow.profiles.save(
+                Profile.create(
+                    user_id=owner.id, name=ProfileName("Kid"), maturity_limit=AgeRating(12)
+                )
+            )
+            parent = await uow.profiles.save(
+                Profile.create(user_id=owner.id, name=ProfileName("Parent"))
+            )
+            gone = await uow.profiles.save(
+                Profile.create(user_id=owner.id, name=ProfileName("Gone"))
+            )
+            await uow.profiles.save(Profile.create(user_id=other.id, name=ProfileName("Stranger")))
+            assert gone.id is not None
+            await uow.profiles.delete(gone.id)
+        assert kid.id is not None
+        token = _new_token()
+        await _insert_access_token(
+            db_session,
+            token=token,
+            user_uuid=await _user_uuid(db_session, owner.id.value),
+            current_profile_uuid=await _profile_uuid(db_session, kid.id.value),
+            failed_attempts=2,
+            unlock_until=_epoch(_NOW + timedelta(minutes=5)),
+        )
+        statements: list[str] = []
+
+        def record(*args: Any) -> None:
+            statements.append(args[2])
+
+        engine = session_factory.kw["bind"].sync_engine
+        event.listen(engine, "before_cursor_execute", record)
+        try:
+            async with uow_factory() as uow:
+                snapshot = await uow.access_tokens.get_parental_snapshot(token)
+        finally:
+            event.remove(engine, "before_cursor_execute", record)
+
+        assert len(statements) == 1
+        assert snapshot is not None
+        assert snapshot.state.user_id == owner.id
+        assert snapshot.state.current_profile_id == kid.id
+        assert snapshot.state.failed_attempts == 2
+        assert snapshot.state.unlock_until == _NOW + timedelta(minutes=5)
+        assert [(p.id, p.maturity_limit) for p in snapshot.account_profiles] == [
+            (kid.id, AgeRating(12)),
+            (parent.id, None),
+        ]
+
+    async def test_should_keep_the_id_of_a_soft_deleted_selection(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+    ):
+        owner = await _seed_user(uow_factory)
+        assert owner.id is not None
+        async with uow_factory() as uow:
+            profile = await uow.profiles.save(
+                Profile.create(user_id=owner.id, name=ProfileName("Kid"))
+            )
+        assert profile.id is not None
+        token = _new_token()
+        await _insert_access_token(
+            db_session,
+            token=token,
+            user_uuid=await _user_uuid(db_session, owner.id.value),
+            current_profile_uuid=await _profile_uuid(db_session, profile.id.value),
+        )
+        async with uow_factory() as uow:
+            assert await uow.profiles.delete(profile.id) is True
+
+        async with uow_factory() as uow:
+            snapshot = await uow.access_tokens.get_parental_snapshot(token)
+
+        assert snapshot is not None
+        assert snapshot.state.current_profile_id == profile.id
+        assert snapshot.account_profiles == []
+
+    async def test_should_return_none_for_unknown_token(
+        self, uow_factory: IdentityUnitOfWorkFactory
+    ):
+        async with uow_factory() as uow:
+            assert await uow.access_tokens.get_parental_snapshot("ghost-token") is None
 
 
 class TestReservePinAttempt:
@@ -641,3 +825,93 @@ class TestClearUnlock:
             await uow.access_tokens.clear_unlock(token)
 
         assert tuple(await _parental_row(db_session, token)) == (5, 2, locked_until, None)
+
+
+class TestDetachProfileSessions:
+    async def test_other_sessions_on_the_profile_lose_only_the_profile_and_the_window(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+    ):
+        # Amendment 7 D9/D12: widening a profile drops the other devices on
+        # it. The drop never touches the lockout state, so it earns no
+        # attempts, and it spares the caller and sessions on other profiles.
+        owner = await _seed_user(uow_factory)
+        assert owner.id is not None
+        async with uow_factory() as uow:
+            widened = await uow.profiles.save(
+                Profile.create(user_id=owner.id, name=ProfileName("Widened"))
+            )
+            other = await uow.profiles.save(
+                Profile.create(user_id=owner.id, name=ProfileName("Other"))
+            )
+        assert widened.id is not None
+        assert other.id is not None
+        owner_uuid = await _user_uuid(db_session, owner.id.value)
+        widened_uuid = await _profile_uuid(db_session, widened.id.value)
+        other_uuid = await _profile_uuid(db_session, other.id.value)
+        locked_until = _epoch(_NOW + timedelta(minutes=10))
+        unlock_until = _epoch(_NOW + timedelta(minutes=5))
+        caller, tablet, phone, fresh = (_new_token() for _ in range(4))
+        for token, profile_uuid in (
+            (caller, widened_uuid),
+            (tablet, widened_uuid),
+            (phone, other_uuid),
+            (fresh, None),
+        ):
+            await _insert_access_token(
+                db_session,
+                token=token,
+                user_uuid=owner_uuid,
+                current_profile_uuid=profile_uuid,
+                failed_attempts=4,
+                lockouts=2,
+                locked_until=locked_until,
+                unlock_until=unlock_until,
+            )
+
+        async with uow_factory() as uow:
+            detached = await uow.access_tokens.detach_profile_sessions(
+                widened.id, except_token=caller
+            )
+
+        async def full_row(token: str) -> tuple[Any, ...]:
+            db_session.expire_all()
+            result = await db_session.execute(
+                select(
+                    AccessTokenModel.user_id,
+                    AccessTokenModel.current_profile_id,
+                    AccessTokenModel.parental_failed_attempts,
+                    AccessTokenModel.parental_lockouts,
+                    AccessTokenModel.parental_locked_until,
+                    AccessTokenModel.parental_unlock_until,
+                ).where(AccessTokenModel.token == token)
+            )
+            return tuple(result.one())
+
+        assert detached == 1
+        assert await full_row(tablet) == (owner_uuid, None, 4, 2, locked_until, None)
+        assert await full_row(caller) == (
+            owner_uuid,
+            widened_uuid,
+            4,
+            2,
+            locked_until,
+            unlock_until,
+        )
+        assert await full_row(phone) == (owner_uuid, other_uuid, 4, 2, locked_until, unlock_until)
+        assert await full_row(fresh) == (owner_uuid, None, 4, 2, locked_until, unlock_until)
+
+    async def test_no_other_session_on_the_profile_detaches_nothing(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        db_session: AsyncSession,
+    ):
+        token = await _session_for_new_user(uow_factory, db_session)
+
+        async with uow_factory() as uow:
+            detached = await uow.access_tokens.detach_profile_sessions(
+                ProfileId.generate(), except_token=token
+            )
+
+        assert detached == 0

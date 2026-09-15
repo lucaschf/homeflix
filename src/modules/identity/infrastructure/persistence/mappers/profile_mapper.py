@@ -4,8 +4,8 @@ Profile rows have a UUID primary key (for consistency with the rest of
 the identity BC) and a UUID FK ``user_id`` to ``users.id``. The domain
 only sees prefixed ``ProfileId`` / ``UserId``. The repository is
 responsible for resolving the user's UUID before calling
-``to_model``/``update_model`` — the mapper itself never does the
-lookup, keeping it dependency-free and synchronous.
+``to_model`` — the mapper itself never does the lookup, keeping it
+dependency-free and synchronous.
 """
 
 import json
@@ -175,31 +175,36 @@ class ProfileMapper:
         )
 
     @staticmethod
-    def update_model(model: ProfileModel, entity: Profile) -> ProfileModel:
-        """Apply mutable Profile fields to an existing model.
+    def update_values(entity: Profile) -> dict[str, str | None]:
+        """Return the columns an update of an existing profile writes, as stored.
 
-        ``user_id`` is intentionally NOT touched — transferring profile
-        ownership is not a supported operation. The repository should
-        not attempt to call ``update_model`` on a profile whose
-        ``user_id`` differs from the existing model.
+        The repository writes them with one conditional ``UPDATE`` rather
+        than onto a loaded model, so the write can require the row to be
+        live (``SqlAlchemyProfileRepository.save``).
+
+        ``user_id`` is intentionally NOT among them — transferring profile
+        ownership is not a supported operation.
+
+        Neither are ``maturity_limit`` and the ``is_kids`` flag derived
+        from it: ``SqlAlchemyProfileRepository.set_maturity_limit`` is their
+        only writer on an existing profile. The entity may have been read
+        before a concurrent limit change, and writing its limit here would
+        write the old one back (ADR-035).
 
         Args:
-            model: The existing model to mutate in place.
             entity: The domain entity carrying the new state.
 
         Returns:
-            The same ``model`` reference, mutated.
+            ``name``, ``avatar_url`` and ``allowed_library_ids``, keyed by
+            column name.
         """
-        model.name = entity.name.value
-        model.avatar_url = entity.avatar_url
-        model.is_kids = entity.is_kids
-        model.maturity_limit = (
-            None if entity.maturity_limit is None else entity.maturity_limit.value
-        )
-        model.allowed_library_ids = json.dumps(
-            [library_id.value for library_id in entity.allowed_library_ids]
-        )
-        return model
+        return {
+            "name": entity.name.value,
+            "avatar_url": entity.avatar_url,
+            "allowed_library_ids": json.dumps(
+                [library_id.value for library_id in entity.allowed_library_ids]
+            ),
+        }
 
 
 __all__ = ["ProfileMapper"]

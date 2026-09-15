@@ -1,5 +1,8 @@
 """DeleteProfileUseCase."""
 
+from collections.abc import Callable
+from datetime import datetime
+
 from src.modules.identity.application.dtos.identity_dtos import DeleteProfileInput
 from src.modules.identity.application.errors import (
     CannotDeleteLastProfileError,
@@ -8,6 +11,13 @@ from src.modules.identity.application.errors import (
 )
 from src.modules.identity.application.ports import AvatarStoragePort
 from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
+from src.modules.identity.application.use_cases._profile_gate import (
+    lock_account,
+    read_gate_session,
+    spend_unlock,
+    utc_now,
+)
+from src.modules.identity.domain.services.parental_gate import ParentalGate
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -15,8 +25,14 @@ from src.shared_kernel.value_objects.user_id import UserId
 class DeleteProfileUseCase:
     """Soft-delete a profile owned by the caller.
 
-    Enforces two invariants:
+    Enforces, in this order:
 
+    - **Account exists**: the Unit of Work opens with the account lock
+      (``lock_account``), before the profile is read, so the profile, the
+      session and the account's profiles the gate reads stay as read until
+      the deletion commits: every other profile or PIN change of the
+      account waits for it. A deleted account → ``UserNotFoundException``
+      (HTTP 404).
     - **Ownership**: the target profile must belong to the caller.
       Cross-user deletion raises :class:`ProfileOwnershipViolation`
       (HTTP 403).
@@ -24,6 +40,12 @@ class DeleteProfileUseCase:
       profile so that ``get_current_profile`` always has something
       to resolve. Deleting the last remaining profile raises
       :class:`CannotDeleteLastProfileError` (HTTP 409).
+    - **Parental gate** (ADR-035, Amendment 7): on an account with a
+      parental PIN, deleting a limited profile, or deleting any profile
+      from a session acting under a limit, needs an unlock on this device,
+      which the deletion spends → ``ParentalPinRequiredError`` (HTTP 403).
+      It runs after the ownership and last-profile guards, so neither
+      answer depends on the PIN, and before the profile is deleted.
 
     Cascade-deletes the profile's uploaded avatar file via the
     storage port. The port's ``delete`` is idempotent so the call
@@ -34,9 +56,11 @@ class DeleteProfileUseCase:
         self,
         uow_factory: IdentityUnitOfWorkFactory,
         avatar_storage: AvatarStoragePort,
+        clock: Callable[[], datetime] = utc_now,
     ) -> None:
         self._uow_factory = uow_factory
         self._avatar_storage = avatar_storage
+        self._clock = clock
 
     async def execute(self, input_dto: DeleteProfileInput) -> None:
         """Soft-delete the target profile after enforcing ownership and last-profile guards."""
@@ -44,6 +68,7 @@ class DeleteProfileUseCase:
         target_id = ProfileId(input_dto.profile_id)
 
         async with self._uow_factory() as uow:
+            await lock_account(uow, caller_id)
             existing = await uow.profiles.find_by_id(target_id)
             if existing is None:
                 raise ProfileNotFoundException.for_resource(
@@ -61,6 +86,13 @@ class DeleteProfileUseCase:
                 raise CannotDeleteLastProfileError(
                     message="Cannot delete your only profile",
                 )
+
+            session = await read_gate_session(uow, caller_id, input_dto.session_token)
+            if session.pin_configured and ParentalGate.delete_requires_unlock(
+                target_limit=existing.maturity_limit,
+                session_limit=session.limit,
+            ):
+                await spend_unlock(uow, session, now=self._clock())
 
             await uow.profiles.delete(target_id)
 

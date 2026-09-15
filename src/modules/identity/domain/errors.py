@@ -139,8 +139,8 @@ class ParentalPinNotConfiguredError(BusinessRuleViolationException):
 class ParentalPinInUseError(BusinessRuleViolationException):
     """The parental PIN cannot be removed while a profile still has a limit.
 
-    Reserved for the writable maturity limit (ADR-035, Amendment 7 D2): with
-    no PIN, no limit could be protected. Maps to HTTP 409.
+    ADR-035, Amendment 7 D2: with no PIN, no limit could be protected. Maps
+    to HTTP 409.
     """
 
     code: str = "PARENTAL_PIN_IN_USE"

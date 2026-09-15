@@ -102,11 +102,14 @@ class TestProfileMapperMaturityLimit:
         assert model.maturity_limit == limit
         assert model.is_kids is is_kids
 
-    @pytest.mark.parametrize(("limit", "is_kids"), [(None, False), (10, True), (16, False)])
-    def test_update_model_writes_the_limit_and_the_derived_flag(self, limit, is_kids):
-        model = ProfileMapper.to_model(_profile(AgeRating(14)), user_uuid=uuid.uuid4())
+    @pytest.mark.parametrize("stale", [12, None], ids=["entity-12", "entity-none"])
+    def test_update_values_leave_out_the_limit_and_the_flag_of_a_stale_entity(
+        self, stale: int | None
+    ):
+        # The row's limit may have changed after the entity was read with
+        # ``stale``: saving a rename of that entity must not write it back.
+        entity = _profile(None if stale is None else AgeRating(stale))
 
-        ProfileMapper.update_model(model, _profile(None if limit is None else AgeRating(limit)))
+        values = ProfileMapper.update_values(entity.with_name(ProfileName("Renamed")))
 
-        assert model.maturity_limit == limit
-        assert model.is_kids is is_kids
+        assert values == {"name": "Renamed", "avatar_url": None, "allowed_library_ids": "[]"}

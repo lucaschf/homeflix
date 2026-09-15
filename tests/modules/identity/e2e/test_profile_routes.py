@@ -25,6 +25,7 @@ from tests.modules.identity.e2e.conftest import SeededUser
 
 LOGIN_PATH = "/api/v1/auth/cookie/login"
 PROFILES_PATH = "/api/v1/profiles"
+PIN_PATH = "/api/v1/parental/pin"
 
 
 async def _login(client: AsyncClient, user: SeededUser) -> None:
@@ -33,6 +34,11 @@ async def _login(client: AsyncClient, user: SeededUser) -> None:
         data={"username": user.email, "password": user.password},
     )
     assert response.status_code == 204
+
+
+async def _set_pin(client: AsyncClient, user: SeededUser) -> None:
+    response = await client.put(PIN_PATH, json={"current_password": user.password, "pin": "904518"})
+    assert response.status_code == 204, response.text
 
 
 async def _get_active_profile_uuid(
@@ -170,28 +176,46 @@ class TestCreateProfile:
         assert created["maturity_limit"] is None
         assert await _stored_limit_and_flag(session_factory, created["id"]) == (None, False)
 
-    @pytest.mark.parametrize("limit", [12, 21])
-    async def test_should_accept_and_ignore_a_maturity_limit(
+    @pytest.mark.parametrize(("limit", "is_kids"), [(12, True), (21, False)])
+    async def test_should_store_a_maturity_limit_on_an_account_with_a_pin(
         self,
         client: AsyncClient,
         seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
         session_factory: async_sessionmaker[AsyncSession],
         limit: int,
+        is_kids: bool,
     ):
-        """A maturity limit in the body is accepted and ignored.
+        # The session acts under no limit (the account has none yet), so a
+        # limited profile needs no unlock (ADR-035, Amendment 7).
+        user = await seed_user_with_profile()
+        await _login(client, user)
+        await _set_pin(client, user)
 
-        PR 4.5 flips this test on purpose when it opens the gated write.
-        """
+        response = await client.post(PROFILES_PATH, json={"name": "Kids", "maturity_limit": limit})
+
+        assert response.status_code == 201, response.text
+        created = response.json()["data"]
+        assert (created["maturity_limit"], created["is_kids"]) == (limit, is_kids)
+        assert await _stored_limit_and_flag(session_factory, created["id"]) == (limit, is_kids)
+
+    @pytest.mark.parametrize("limit", [12, 21])
+    async def test_should_refuse_a_maturity_limit_without_a_pin(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        limit: int,
+    ):
+        # Amendment 7 D2: a limit without a PIN would protect nothing.
         user = await seed_user_with_profile()
         await _login(client, user)
 
         response = await client.post(PROFILES_PATH, json={"name": "Kids", "maturity_limit": limit})
 
-        assert response.status_code == 201
-        created = response.json()["data"]
-        assert created["is_kids"] is False
-        assert created["maturity_limit"] is None
-        assert await _stored_limit_and_flag(session_factory, created["id"]) == (None, False)
+        assert (response.status_code, response.json()["code"]) == (
+            409,
+            "PARENTAL_PIN_NOT_CONFIGURED",
+        )
+        assert len((await client.get(PROFILES_PATH)).json()["data"]) == 1
 
     async def test_should_reject_blank_name(
         self,
@@ -286,18 +310,41 @@ class TestUpdateProfile:
             False,
         )
 
+    @pytest.mark.parametrize(("limit", "is_kids"), [(10, True), (21, False)])
+    async def test_should_store_a_maturity_limit_on_an_account_with_a_pin(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+        limit: int,
+        is_kids: bool,
+    ):
+        # Limiting an unrestricted profile narrows it: no unlock is needed.
+        user = await seed_user_with_profile()
+        await _login(client, user)
+        await _set_pin(client, user)
+
+        response = await client.put(
+            f"{PROFILES_PATH}/{user.profile_external_id}",
+            json={"maturity_limit": limit},
+        )
+
+        assert response.status_code == 200, response.text
+        updated = response.json()["data"]
+        assert (updated["maturity_limit"], updated["is_kids"]) == (limit, is_kids)
+        assert await _stored_limit_and_flag(session_factory, user.profile_external_id) == (
+            limit,
+            is_kids,
+        )
+
     @pytest.mark.parametrize("limit", [10, 21])
-    async def test_should_accept_and_ignore_a_maturity_limit(
+    async def test_should_refuse_a_maturity_limit_without_a_pin(
         self,
         client: AsyncClient,
         seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
         session_factory: async_sessionmaker[AsyncSession],
         limit: int,
     ):
-        """A maturity limit in the body is accepted and ignored.
-
-        PR 4.5 flips this test on purpose when it opens the gated write.
-        """
         user = await seed_user_with_profile()
         await _login(client, user)
 
@@ -306,10 +353,10 @@ class TestUpdateProfile:
             json={"maturity_limit": limit},
         )
 
-        assert response.status_code == 200
-        updated = response.json()["data"]
-        assert updated["is_kids"] is False
-        assert updated["maturity_limit"] is None
+        assert (response.status_code, response.json()["code"]) == (
+            409,
+            "PARENTAL_PIN_NOT_CONFIGURED",
+        )
         assert await _stored_limit_and_flag(session_factory, user.profile_external_id) == (
             None,
             False,

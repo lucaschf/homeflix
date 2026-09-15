@@ -1,17 +1,23 @@
 """SQLAlchemy implementation of AccessTokenRepository."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from sqlalchemy import and_, case, delete, literal, or_, select, update
+from sqlalchemy import Row, and_, case, delete, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from src.modules.identity.domain.repositories.access_token_repository import (
     AccessTokenRepository,
     AccessTokenSnapshot,
+    ParentalSessionSnapshot,
     ParentalSessionState,
     PinAttemptReservation,
 )
 from src.modules.identity.domain.services.parental_gate import LockoutPolicy
+from src.modules.identity.infrastructure.persistence.mappers.profile_mapper import (
+    ProfileMapper,
+)
 from src.modules.identity.infrastructure.persistence.models.access_token_model import (
     AccessTokenModel,
 )
@@ -19,6 +25,7 @@ from src.modules.identity.infrastructure.persistence.models.profile_model import
     ProfileModel,
 )
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from src.shared_kernel.value_objects.user_id import UserId
 
@@ -41,6 +48,20 @@ def _from_epoch(seconds: int | None) -> datetime | None:
 
 def _whole_seconds(duration: timedelta) -> int:
     return int(duration.total_seconds())
+
+
+def _parental_state(row: Row[Any]) -> ParentalSessionState:
+    """Build the parental state from a row carrying the session's parental columns."""
+    return ParentalSessionState(
+        user_id=UserId(row.user_external_id),
+        current_profile_id=(
+            ProfileId(row.profile_external_id) if row.profile_external_id is not None else None
+        ),
+        failed_attempts=row.parental_failed_attempts,
+        lockouts=row.parental_lockouts,
+        locked_until=_from_epoch(row.parental_locked_until),
+        unlock_until=_from_epoch(row.parental_unlock_until),
+    )
 
 
 class SqlAlchemyAccessTokenRepository(AccessTokenRepository):
@@ -107,6 +128,8 @@ class SqlAlchemyAccessTokenRepository(AccessTokenRepository):
         self,
         token: str,
         profile_id: ProfileId | None,
+        *,
+        expected_limit: AgeRating | None,
     ) -> bool:
         """Set ``current_profile_id`` on the session row and close its unlock window.
 
@@ -115,26 +138,44 @@ class SqlAlchemyAccessTokenRepository(AccessTokenRepository):
         deals only with prefixed VOs. Pass ``None`` to clear. The same
         UPDATE sets ``parental_unlock_until`` to NULL (ADR-035, Amendment
         7 D9).
+
+        Entering a profile adds the compare-and-set to the ``UPDATE``: ``AND
+        EXISTS`` the target live with ``maturity_limit IS :expected_limit``,
+        ``RETURNING`` the token. Liveness is decided there, not by the UUID
+        lookup, so a target deleted meanwhile answers ``False``. SQLite admits
+        one writer at a time, so a widening either committed before this
+        statement (which then sees the new limit) or runs after this
+        transaction commits and detaches the session.
         """
+        t = AccessTokenModel
+        update_stmt = update(t).where(t.token == token)  # type: ignore[arg-type]  # fastapi-users typing
         if profile_id is None:
             profile_uuid = None
         else:
-            uuid_stmt = select(ProfileModel.id).where(
-                ProfileModel.external_id == str(profile_id),
-                ProfileModel.deleted_at.is_(None),
-            )
+            uuid_stmt = select(ProfileModel.id).where(ProfileModel.external_id == str(profile_id))
             profile_uuid = (await self._session.execute(uuid_stmt)).scalar_one_or_none()
             if profile_uuid is None:
                 raise ValueError(f"Profile {profile_id} does not exist")
+            update_stmt = update_stmt.where(
+                select(ProfileModel.id)
+                .where(
+                    ProfileModel.id == profile_uuid,
+                    ProfileModel.deleted_at.is_(None),
+                    ProfileModel.maturity_limit.is_not_distinct_from(
+                        None if expected_limit is None else expected_limit.value
+                    ),
+                )
+                .exists()
+            )
 
-        update_stmt = (
-            update(AccessTokenModel)
-            .where(AccessTokenModel.token == token)  # type: ignore[arg-type]  # fastapi-users typing
-            .values(current_profile_id=profile_uuid, parental_unlock_until=None)
-        )
-        result = await self._session.execute(update_stmt)
-        await self._session.flush()
-        return bool(result.rowcount and result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
+        switched = (
+            await self._session.execute(
+                update_stmt.values(current_profile_id=profile_uuid, parental_unlock_until=None)
+                .returning(t.token)  # type: ignore[call-overload]  # fastapi-users typing
+                .execution_options(synchronize_session=False)
+            )
+        ).first()
+        return switched is not None
 
     async def delete_older_than(self, cutoff: datetime) -> int:
         """Remove sessions whose ``created_at`` is strictly older than ``cutoff``."""
@@ -169,15 +210,52 @@ class SqlAlchemyAccessTokenRepository(AccessTokenRepository):
         row = (await self._session.execute(stmt)).first()
         if row is None:
             return None
-        return ParentalSessionState(
-            user_id=UserId(row.user_external_id),
-            current_profile_id=(
-                ProfileId(row.profile_external_id) if row.profile_external_id is not None else None
-            ),
-            failed_attempts=row.parental_failed_attempts,
-            lockouts=row.parental_lockouts,
-            locked_until=_from_epoch(row.parental_locked_until),
-            unlock_until=_from_epoch(row.parental_unlock_until),
+        return _parental_state(row)
+
+    async def get_parental_snapshot(self, token: str) -> ParentalSessionSnapshot | None:
+        """Read the parental state and the account's live profiles in one ``SELECT``.
+
+        The session row, joined to its user and LEFT-joined to its selected
+        profile as in :meth:`get_parental_state`, is LEFT-joined again to
+        every live profile of the same user: one row per live profile, or a
+        single row without one. In SQLite a single statement reads a single
+        snapshot, so no commit can land between the session and the
+        profiles.
+        """
+        t = AccessTokenModel
+        selected = aliased(ProfileModel)
+        live = aliased(ProfileModel, name="live_profile")
+        stmt = (
+            select(
+                UserModel.external_id.label("user_external_id"),
+                selected.external_id.label("profile_external_id"),
+                t.parental_failed_attempts,
+                t.parental_lockouts,
+                t.parental_locked_until,
+                t.parental_unlock_until,
+                live,
+            )
+            .select_from(t)
+            .join(UserModel, t.user_id == UserModel.id)
+            .join(selected, t.current_profile_id == selected.id, isouter=True)
+            .join(
+                live,
+                and_(live.user_id == t.user_id, live.deleted_at.is_(None)),
+                isouter=True,
+            )
+            .where(t.token == token)  # type: ignore[arg-type]  # fastapi-users typing
+            .order_by(live.name)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        if not rows:
+            return None
+        return ParentalSessionSnapshot(
+            state=_parental_state(rows[0]),
+            account_profiles=[
+                ProfileMapper.to_entity(row.live_profile, user_external_id=row.user_external_id)
+                for row in rows
+                if row.live_profile is not None
+            ],
         )
 
     async def reserve_pin_attempt(
@@ -312,6 +390,30 @@ class SqlAlchemyAccessTokenRepository(AccessTokenRepository):
             .execution_options(synchronize_session=False)
         )
         await self._session.execute(stmt)
+
+    async def detach_profile_sessions(self, profile_id: ProfileId, *, except_token: str) -> int:
+        """Set ``current_profile_id`` and ``parental_unlock_until`` to NULL in one ``UPDATE``.
+
+        The profile is matched by its external id through a subquery, deleted
+        or not, so the statement is the only one sent.
+        """
+        t = AccessTokenModel
+        profile_uuid = (
+            select(ProfileModel.id)
+            .where(ProfileModel.external_id == str(profile_id))
+            .scalar_subquery()
+        )
+        stmt = (
+            update(t)
+            .where(
+                t.current_profile_id == profile_uuid,
+                t.token != except_token,  # type: ignore[arg-type]  # fastapi-users typing
+            )
+            .values(current_profile_id=None, parental_unlock_until=None)
+            .execution_options(synchronize_session=False)
+        )
+        result = await self._session.execute(stmt)
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
 
 
 __all__ = ["SqlAlchemyAccessTokenRepository"]

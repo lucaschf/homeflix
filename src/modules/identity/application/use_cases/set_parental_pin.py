@@ -29,6 +29,11 @@ class SetParentalPinUseCase:
     would write it back stale, undoing a demotion or a soft delete
     committed meanwhile; the narrow write cannot, and a user deleted
     meanwhile answers "not found".
+
+    The write transaction opens with the account lock
+    (``UserRepository.lock_for_parental_change``) that every gated profile
+    operation opens with, so a new PIN never lands between the reads of one
+    of them and its write (ADR-035, Amendment 7).
     """
 
     def __init__(
@@ -65,6 +70,8 @@ class SetParentalPinUseCase:
         hashed = self._password_hasher.hash(pin.value)
 
         async with self._uow_factory() as uow:
+            if not await uow.users.lock_for_parental_change(user_id):
+                raise UserNotFoundException.for_resource("User", input_dto.user_id)
             stored = await uow.users.set_parental_pin_hash(user_id, hashed)
         if not stored:
             raise UserNotFoundException.for_resource("User", input_dto.user_id)

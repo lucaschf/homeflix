@@ -14,6 +14,7 @@ from src.modules.identity.application.dtos.identity_dtos import (
     DeleteProfileAvatarInput,
     DeleteProfileInput,
     ListProfilesForUserInput,
+    MaturityLimitChange,
     SwitchProfileInput,
     UpdateProfileInput,
     UploadProfileAvatarInput,
@@ -77,17 +78,25 @@ async def list_profiles(
 async def create_profile(
     body: CreateProfileRequest,
     user: UserModel = Depends(current_active_user),
+    token: str = Depends(get_session_token),
     use_case: CreateProfileUseCase = Depends(
         Provide[ApplicationContainer.identity.create_profile],
     ),
 ) -> dict[str, Any]:
-    """Create a new profile owned by the authenticated user."""
+    """Create a new profile owned by the authenticated user.
+
+    A maturity limit needs a parental PIN on the account (409), and one
+    above the limit the session acts under needs an unlock on this device
+    (403 ``PARENTAL_PIN_REQUIRED``, ADR-035).
+    """
     result = await use_case.execute(
         CreateProfileInput(
             user_id=user.external_id,
             name=body.name,
             avatar_url=body.avatar_url,
             allowed_library_ids=body.allowed_library_ids,
+            maturity_limit=body.maturity_limit,
+            session_token=token,
         ),
     )
     return api_single("profile", asdict(result))
@@ -99,6 +108,7 @@ async def update_profile(
     profile_id: str,
     body: UpdateProfileRequest,
     user: UserModel = Depends(current_active_user),
+    token: str = Depends(get_session_token),
     use_case: UpdateProfileUseCase = Depends(
         Provide[ApplicationContainer.identity.update_profile],
     ),
@@ -107,7 +117,9 @@ async def update_profile(
 
     Ownership is enforced inside the use case — a caller acting on
     someone else's profile gets HTTP 403 from
-    ``ProfileOwnershipViolation``.
+    ``ProfileOwnershipViolation``. A ``maturity_limit`` sent as ``null``
+    removes the limit; an omitted one leaves it alone. The parental gate
+    (ADR-035) then decides on the limit the update leaves.
     """
     result = await use_case.execute(
         UpdateProfileInput(
@@ -116,6 +128,12 @@ async def update_profile(
             name=body.name,
             avatar_url=body.avatar_url,
             allowed_library_ids=body.allowed_library_ids,
+            maturity_limit=(
+                MaturityLimitChange(body.maturity_limit)
+                if "maturity_limit" in body.model_fields_set
+                else None
+            ),
+            session_token=token,
         ),
     )
     return api_single("profile", asdict(result))
@@ -126,6 +144,7 @@ async def update_profile(
 async def delete_profile(
     profile_id: str,
     user: UserModel = Depends(current_active_user),
+    token: str = Depends(get_session_token),
     use_case: DeleteProfileUseCase = Depends(
         Provide[ApplicationContainer.identity.delete_profile],
     ),
@@ -133,10 +152,17 @@ async def delete_profile(
     """Soft-delete a profile.
 
     Returns 403 if the caller does not own the profile and 409 if
-    deletion would leave the user without any active profile.
+    deletion would leave the user without any active profile. On an
+    account with a parental PIN, deleting a limited profile, or deleting
+    from a session acting under a limit, is 403 ``PARENTAL_PIN_REQUIRED``
+    until the device is unlocked (ADR-035).
     """
     await use_case.execute(
-        DeleteProfileInput(user_id=user.external_id, profile_id=profile_id),
+        DeleteProfileInput(
+            user_id=user.external_id,
+            profile_id=profile_id,
+            session_token=token,
+        ),
     )
 
 

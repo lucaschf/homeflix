@@ -30,7 +30,11 @@ from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.user_id import UserId
 
-from .conftest import FakeIdentityUnitOfWork, FakeIdentityUnitOfWorkFactory
+from .conftest import (
+    FakeIdentityUnitOfWork,
+    FakeIdentityUnitOfWorkFactory,
+    record_repository_calls,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -70,13 +74,11 @@ def _use_case(factory: FakeIdentityUnitOfWorkFactory) -> GetAdminAccessUseCase:
     return GetAdminAccessUseCase(uow_factory=factory, clock=lambda: _NOW)
 
 
-def _spy_reads(fake_uow: FakeIdentityUnitOfWork) -> tuple[AsyncMock, AsyncMock]:
-    """Count the two reads the decision is allowed to make."""
-    state = AsyncMock(wraps=fake_uow.access_tokens.get_parental_state)
-    profiles = AsyncMock(wraps=fake_uow.profiles.find_by_user)
-    fake_uow.access_tokens.get_parental_state = state  # type: ignore[method-assign]
-    fake_uow.profiles.find_by_user = profiles  # type: ignore[method-assign]
-    return state, profiles
+def _spy_reads(fake_uow: FakeIdentityUnitOfWork) -> AsyncMock:
+    """Count the one read the decision is allowed to make."""
+    snapshot = AsyncMock(wraps=fake_uow.access_tokens.get_parental_snapshot)
+    fake_uow.access_tokens.get_parental_snapshot = snapshot  # type: ignore[method-assign]
+    return snapshot
 
 
 class TestWithoutTheGate:
@@ -87,13 +89,12 @@ class TestWithoutTheGate:
         fake_uow_factory: FakeIdentityUnitOfWorkFactory,
         pin: bool,
     ) -> None:
-        state, profiles = _spy_reads(fake_uow)
+        snapshot = _spy_reads(fake_uow)
 
         access = await _use_case(fake_uow_factory).execute(_input(role=UserRole.MEMBER, pin=pin))
 
         assert access is AdminAccessLevel.NONE
-        state.assert_not_awaited()
-        profiles.assert_not_awaited()
+        snapshot.assert_not_awaited()
 
     @pytest.mark.parametrize("is_write", [False, True])
     async def test_admin_without_pin_is_granted_and_reads_nothing(
@@ -105,30 +106,30 @@ class TestWithoutTheGate:
         # Even a limited profile on the session: with no PIN the gate is inert.
         kid = await _profile(fake_uow, "Kid", 10)
         fake_uow.access_tokens.seed(token=_TOKEN, user_id=_OWNER, current_profile_id=kid.id)
-        state, profiles = _spy_reads(fake_uow)
+        snapshot = _spy_reads(fake_uow)
 
         access = await _use_case(fake_uow_factory).execute(_input(pin=False, is_write=is_write))
 
         assert access is AdminAccessLevel.GRANTED
-        state.assert_not_awaited()
-        profiles.assert_not_awaited()
+        snapshot.assert_not_awaited()
 
 
 class TestWithAPin:
-    async def test_reads_the_session_and_the_live_profiles_once_each(
+    async def test_reads_the_session_and_the_live_profiles_in_one_snapshot(
         self,
         fake_uow: FakeIdentityUnitOfWork,
         fake_uow_factory: FakeIdentityUnitOfWorkFactory,
     ) -> None:
+        # Read apart, a widening committed between the two reads would pair
+        # the session still on the widened profile with its new limit.
         parent = await _profile(fake_uow, "Parent", None)
         fake_uow.access_tokens.seed(token=_TOKEN, user_id=_OWNER, current_profile_id=parent.id)
-        state, profiles = _spy_reads(fake_uow)
+        calls = record_repository_calls(fake_uow)
 
         access = await _use_case(fake_uow_factory).execute(_input())
 
         assert access is AdminAccessLevel.GRANTED
-        state.assert_awaited_once_with(_TOKEN)
-        profiles.assert_awaited_once_with(_OWNER)
+        assert calls == ["access_tokens.get_parental_snapshot"]
 
     @pytest.mark.parametrize(
         ("active", "read", "write"),

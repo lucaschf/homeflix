@@ -107,7 +107,7 @@ async def current_admin_user(
     2. Without a parental PIN the gate is inert: the admin passes with no
        query (ADR-035, Amendment 7 D2 — no limit exists without a PIN).
     3. With a PIN, the parental gate decides from the session's selected
-       profile and unlock window, in exactly two queries. Writes
+       profile and unlock window, in exactly one query. Writes
        (anything but ``GET``, ``HEAD`` and ``OPTIONS``) also need an unlock
        while any live profile of the account has a limit (D10). The unlock
        is read, never spent (D9).

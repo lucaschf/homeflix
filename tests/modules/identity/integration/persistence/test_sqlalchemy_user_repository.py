@@ -1,15 +1,20 @@
 """Integration tests for SqlAlchemyUserRepository."""
 
+from datetime import UTC, datetime
+
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.modules.identity.application.unit_of_work import IdentityUnitOfWorkFactory
+from src.modules.identity.domain.entities.profile import Profile
 from src.modules.identity.domain.entities.user import User
 from src.modules.identity.domain.value_objects.email import Email
+from src.modules.identity.domain.value_objects.profile_name import ProfileName
 from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
+from src.shared_kernel.value_objects.age_rating import AgeRating
 from src.shared_kernel.value_objects.user_id import UserId
 
 
@@ -286,3 +291,181 @@ class TestSqlAlchemyUserRepositoryParentalPin:
 
         with pytest.raises(IntegrityError, match="ck_users_parental_pin_hash_not_empty"):
             await self._set_pin_hash(uow_factory, user, "")
+
+
+class TestSqlAlchemyUserRepositoryClearUnusedParentalPin:
+    """The PIN removal guarded by the account's limits (ADR-035, Amendment 7 D2)."""
+
+    async def _user_with_profiles(
+        self, uow_factory: IdentityUnitOfWorkFactory, *limits: int | None
+    ) -> User:
+        async with uow_factory() as uow:
+            user = await uow.users.save(
+                User(
+                    email=Email("parent@example.com"),
+                    hashed_password="hp",
+                    parental_pin_hash="$argon2id$pin-hash",
+                )
+            )
+            assert user.id is not None
+            for index, limit in enumerate(limits):
+                await uow.profiles.save(
+                    Profile.create(
+                        user_id=user.id,
+                        name=ProfileName(f"Profile {index}"),
+                        maturity_limit=None if limit is None else AgeRating(limit),
+                    )
+                )
+        return user
+
+    async def _pin_hash(self, uow_factory: IdentityUnitOfWorkFactory, user: User) -> str | None:
+        assert user.id is not None
+        async with uow_factory() as uow:
+            found = await uow.users.find_by_id(user.id)
+        assert found is not None
+        return found.parental_pin_hash
+
+    async def test_should_clear_the_pin_when_no_profile_has_a_limit(
+        self, uow_factory: IdentityUnitOfWorkFactory
+    ):
+        user = await self._user_with_profiles(uow_factory, None, None)
+        assert user.id is not None
+
+        async with uow_factory() as uow:
+            cleared = await uow.users.clear_unused_parental_pin_hash(user.id)
+
+        assert cleared is True
+        assert await self._pin_hash(uow_factory, user) is None
+
+    async def test_should_keep_the_pin_while_a_live_profile_has_a_limit(
+        self, uow_factory: IdentityUnitOfWorkFactory
+    ):
+        user = await self._user_with_profiles(uow_factory, None, 12)
+        assert user.id is not None
+
+        async with uow_factory() as uow:
+            cleared = await uow.users.clear_unused_parental_pin_hash(user.id)
+
+        assert cleared is False
+        assert await self._pin_hash(uow_factory, user) == "$argon2id$pin-hash"
+
+    async def test_a_deleted_limited_profile_should_not_keep_the_pin(
+        self, uow_factory: IdentityUnitOfWorkFactory
+    ):
+        user = await self._user_with_profiles(uow_factory, None)
+        assert user.id is not None
+        async with uow_factory() as uow:
+            gone = await uow.profiles.save(
+                Profile.create(
+                    user_id=user.id, name=ProfileName("Gone"), maturity_limit=AgeRating(10)
+                )
+            )
+            assert gone.id is not None
+            await uow.profiles.delete(gone.id)
+
+        async with uow_factory() as uow:
+            cleared = await uow.users.clear_unused_parental_pin_hash(user.id)
+
+        assert cleared is True
+        assert await self._pin_hash(uow_factory, user) is None
+
+    async def test_another_accounts_limit_should_not_keep_the_pin(
+        self, uow_factory: IdentityUnitOfWorkFactory
+    ):
+        user = await self._user_with_profiles(uow_factory, None)
+        assert user.id is not None
+        async with uow_factory() as uow:
+            other = await uow.users.save(
+                User.create(email=Email("other@example.com"), hashed_password="hp")
+            )
+            assert other.id is not None
+            await uow.profiles.save(
+                Profile.create(
+                    user_id=other.id, name=ProfileName("Kid"), maturity_limit=AgeRating(10)
+                )
+            )
+
+        async with uow_factory() as uow:
+            cleared = await uow.users.clear_unused_parental_pin_hash(user.id)
+
+        assert cleared is True
+
+    async def test_should_refuse_a_soft_deleted_user_without_restoring_it(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        session_factory: async_sessionmaker[AsyncSession],
+    ):
+        user = await self._user_with_profiles(uow_factory, None)
+        assert user.id is not None
+        async with uow_factory() as uow:
+            await uow.users.soft_delete(user.id)
+
+        async with uow_factory() as uow:
+            cleared = await uow.users.clear_unused_parental_pin_hash(user.id)
+
+        assert cleared is False
+        async with session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel.deleted_at, UserModel.parental_pin_hash).where(
+                        UserModel.external_id == str(user.id)
+                    )
+                )
+            ).one()
+        assert row.deleted_at is not None
+        assert row.parental_pin_hash == "$argon2id$pin-hash"
+
+    async def test_should_report_an_unknown_user(self, uow_factory: IdentityUnitOfWorkFactory):
+        async with uow_factory() as uow:
+            cleared = await uow.users.clear_unused_parental_pin_hash(UserId.generate())
+
+        assert cleared is False
+
+
+class TestSqlAlchemyUserRepositoryLockForParentalChange:
+    """What the lock answers.
+
+    That it makes the other writers wait is pinned in
+    ``tests/modules/identity/integration/application/test_parental_gate_serialization.py``.
+    """
+
+    async def test_should_lock_a_live_user_without_changing_the_row(
+        self,
+        uow_factory: IdentityUnitOfWorkFactory,
+        session_factory: async_sessionmaker[AsyncSession],
+    ):
+        async with uow_factory() as uow:
+            user = await uow.users.save(User.create(email=Email("a@b.com"), hashed_password="hp"))
+        assert user.id is not None
+        # Backdate the row: the insert and the lock would otherwise land in
+        # the same second, and SQLite's CURRENT_TIMESTAMP could not show a
+        # lock that bumps ``updated_at``.
+        async with session_factory() as session:
+            await session.execute(
+                update(UserModel).values(updated_at=datetime(2000, 1, 1, tzinfo=UTC))
+            )
+            await session.commit()
+        columns = (UserModel.external_id, UserModel.updated_at, UserModel.parental_pin_hash)
+        async with session_factory() as session:
+            before = tuple((await session.execute(select(*columns))).one())
+
+        async with uow_factory() as uow:
+            locked = await uow.users.lock_for_parental_change(user.id)
+
+        async with session_factory() as session:
+            after = tuple((await session.execute(select(*columns))).one())
+        assert locked is True
+        assert after == before
+
+    async def test_should_refuse_a_soft_deleted_user(self, uow_factory: IdentityUnitOfWorkFactory):
+        async with uow_factory() as uow:
+            user = await uow.users.save(User.create(email=Email("a@b.com"), hashed_password="hp"))
+            assert user.id is not None
+            await uow.users.soft_delete(user.id)
+
+        async with uow_factory() as uow:
+            assert await uow.users.lock_for_parental_change(user.id) is False
+
+    async def test_should_refuse_an_unknown_user(self, uow_factory: IdentityUnitOfWorkFactory):
+        async with uow_factory() as uow:
+            assert await uow.users.lock_for_parental_change(UserId.generate()) is False

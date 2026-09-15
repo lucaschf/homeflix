@@ -1,6 +1,7 @@
 """SQLAlchemy implementation of UserRepository."""
 
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,9 @@ from src.modules.identity.domain.value_objects.email import Email
 from src.modules.identity.domain.value_objects.user_role import UserRole
 from src.modules.identity.infrastructure.persistence.mappers.user_mapper import (
     UserMapper,
+)
+from src.modules.identity.infrastructure.persistence.models.profile_model import (
+    ProfileModel,
 )
 from src.modules.identity.infrastructure.persistence.models.user_model import UserModel
 from src.shared_kernel.value_objects.user_id import UserId
@@ -23,8 +27,9 @@ class SqlAlchemyUserRepository(UserRepository):
     is fully written; an existing one only gets its domain-mutable
     fields touched (``role``, ``is_active``) so FastAPI Users-owned
     fields stay intact. An existing user's ``parental_pin_hash`` is
-    written only by ``set_parental_pin_hash``. Transaction commit is the
-    UoW's responsibility.
+    written only by ``set_parental_pin_hash`` and
+    ``clear_unused_parental_pin_hash``. Transaction commit is the UoW's
+    responsibility.
     """
 
     def __init__(self, session: AsyncSession) -> None:
@@ -83,6 +88,74 @@ class SqlAlchemyUserRepository(UserRepository):
         result = await self._session.execute(stmt)
         await self._session.flush()
         return bool(result.rowcount)  # type: ignore[attr-defined]  # SQLAlchemy DML CursorResult
+
+    async def clear_unused_parental_pin_hash(self, user_id: UserId) -> bool:
+        """Clear the PIN hash in one ``UPDATE`` guarded by ``NOT EXISTS`` a live limit.
+
+        ``WHERE external_id = :id AND deleted_at IS NULL AND NOT EXISTS (a
+        live profile of this user with a maturity limit)``, ``RETURNING`` the
+        row id; ``rowcount`` is ``-1`` with ``RETURNING`` on this stack.
+        SQLite admits one writer at a time, so a limit write racing this
+        statement either committed before it (the subquery sees the limit)
+        or runs after this transaction commits and finds no PIN. Under
+        PostgreSQL READ COMMITTED the subquery would not see a limit written
+        by a transaction still open, and the two writes would need a row lock
+        on the user.
+        """
+        limited = (
+            select(ProfileModel.id)
+            .where(
+                ProfileModel.user_id == UserModel.id,
+                ProfileModel.deleted_at.is_(None),
+                ProfileModel.maturity_limit.is_not(None),
+            )
+            .exists()
+        )
+        stmt = (
+            update(UserModel)
+            .where(
+                UserModel.external_id == str(user_id),
+                UserModel.deleted_at.is_(None),
+                ~limited,
+            )
+            .values(parental_pin_hash=None, updated_at=func.now())
+            .returning(UserModel.id)  # type: ignore[call-overload]  # fastapi-users typing
+            .execution_options(synchronize_session=False)
+        )
+        return (await self._session.execute(stmt)).first() is not None
+
+    async def lock_for_parental_change(self, user_id: UserId) -> bool:
+        """Lock the live account's row, by dialect, and report whether one was found.
+
+        **SQLite** (what the app runs on, and what the tests pin) has no row
+        locks. The statement is a no-op ``UPDATE`` of the row — ``external_id``
+        and ``updated_at`` set to themselves, the latter explicitly so the
+        column's ``onupdate`` does not fire — ``WHERE external_id = :id AND
+        deleted_at IS NULL RETURNING id``. As the transaction's first write it
+        takes the database's RESERVED lock, which no other connection can take
+        until this transaction ends: every other write, gated or not, waits
+        (up to the busy timeout) instead of committing between this
+        transaction's reads. A read made before it would not be covered,
+        which is why it must be the first statement.
+
+        **PostgreSQL**: ``SELECT id ... FOR UPDATE`` on the same row. Only the
+        transactions that take this lock wait for it, which is all the
+        operations of the contract; the compare-and-sets of the limit, PIN and
+        switch writes stay as defence in depth. Not exercised by the tests.
+        """
+        live = (UserModel.external_id == str(user_id), UserModel.deleted_at.is_(None))
+        stmt: Any
+        if self._session.get_bind().dialect.name == "sqlite":
+            stmt = (
+                update(UserModel)
+                .where(*live)
+                .values(external_id=UserModel.external_id, updated_at=UserModel.updated_at)
+                .returning(UserModel.id)  # type: ignore[call-overload]  # fastapi-users typing
+                .execution_options(synchronize_session=False)
+            )
+        else:
+            stmt = select(UserModel.id).where(*live).with_for_update()  # type: ignore[call-overload]  # fastapi-users typing
+        return (await self._session.execute(stmt)).first() is not None
 
     async def find_by_id(self, user_id: UserId) -> User | None:
         """Look up a non-deleted user by external ID."""

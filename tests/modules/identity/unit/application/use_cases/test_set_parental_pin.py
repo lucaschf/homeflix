@@ -108,16 +108,26 @@ class TestSetParentalPinTransactions:
     ) -> None:
         # Saving the entity read before the (slow) password check writes back
         # a stale user, undoing a concurrent demotion or soft delete. Each
-        # call records whether a Unit of Work was open when it ran.
+        # call records whether a Unit of Work was open when it ran. The write
+        # transaction opens with the account lock the gated profile
+        # operations take (ADR-035, Amendment 7).
         user = await _seed(fake_uow, fake_password_hasher)
         calls: list[tuple[str, bool]] = []
         users, hasher = fake_uow.users, fake_password_hasher
-        find_by_id, write = users.find_by_id, users.set_parental_pin_hash
+        find_by_id, lock, write = (
+            users.find_by_id,
+            users.lock_for_parental_change,
+            users.set_parental_pin_hash,
+        )
         verify, hash_ = hasher.verify, hasher.hash
 
         async def recording_find_by_id(user_id: UserId) -> User | None:
             calls.append(("read", fake_uow.active))
             return await find_by_id(user_id)
+
+        async def recording_lock(user_id: UserId) -> bool:
+            calls.append(("lock", fake_uow.active))
+            return await lock(user_id)
 
         async def recording_write(user_id: UserId, hashed: str | None) -> bool:
             calls.append(("write", fake_uow.active))
@@ -132,6 +142,7 @@ class TestSetParentalPinTransactions:
             return hash_(password)
 
         monkeypatch.setattr(users, "find_by_id", recording_find_by_id)
+        monkeypatch.setattr(users, "lock_for_parental_change", recording_lock)
         monkeypatch.setattr(users, "set_parental_pin_hash", recording_write)
         monkeypatch.setattr(hasher, "verify", recording_verify)
         monkeypatch.setattr(hasher, "hash", recording_hash)
@@ -142,7 +153,13 @@ class TestSetParentalPinTransactions:
             SetParentalPinInput(user_id=str(user.id), current_password=_PASSWORD, pin=_PIN),
         )
 
-        assert calls == [("read", True), ("verify", False), ("hash", False), ("write", True)]
+        assert calls == [
+            ("read", True),
+            ("verify", False),
+            ("hash", False),
+            ("lock", True),
+            ("write", True),
+        ]
         save.assert_not_awaited()
 
     async def test_user_gone_at_the_narrow_write_should_raise_not_found(

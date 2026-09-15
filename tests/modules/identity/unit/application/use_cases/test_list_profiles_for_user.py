@@ -12,7 +12,7 @@ from src.modules.identity.application.use_cases.list_profiles_for_user import (
 )
 from src.shared_kernel.value_objects.user_id import UserId
 
-from .conftest import FakeIdentityUnitOfWorkFactory
+from .conftest import FakeIdentityUnitOfWorkFactory, seed_account
 
 
 class TestListProfilesForUserUseCase:
@@ -28,7 +28,7 @@ class TestListProfilesForUserUseCase:
     async def test_should_return_profiles_ordered_by_name(
         self, fake_uow_factory: FakeIdentityUnitOfWorkFactory
     ):
-        caller_id = UserId.generate()
+        caller_id = await seed_account(fake_uow_factory)
         creator = CreateProfileUseCase(uow_factory=fake_uow_factory)
         for name in ("Charlie", "Alice", "Bob"):
             await creator.execute(CreateProfileInput(user_id=caller_id.value, name=name))
@@ -41,8 +41,8 @@ class TestListProfilesForUserUseCase:
     async def test_should_isolate_profiles_by_caller(
         self, fake_uow_factory: FakeIdentityUnitOfWorkFactory
     ):
-        alice = UserId.generate()
-        bob = UserId.generate()
+        alice = await seed_account(fake_uow_factory)
+        bob = await seed_account(fake_uow_factory)
         creator = CreateProfileUseCase(uow_factory=fake_uow_factory)
         await creator.execute(CreateProfileInput(user_id=alice.value, name="Alice's"))
         await creator.execute(CreateProfileInput(user_id=alice.value, name="Alice's Kids"))

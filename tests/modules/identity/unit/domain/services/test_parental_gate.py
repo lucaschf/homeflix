@@ -139,6 +139,120 @@ class TestSessionLimit:
         assert ParentalGate.session_limit(None, [_profile(v) for v in limits]) is None
 
 
+class TestUpdateRequiresUnlock:
+    """Amendment 7, decision 9: the ``PUT`` row."""
+
+    @pytest.mark.parametrize(
+        ("before", "after"),
+        [
+            pytest.param(12, 14, id="raised"),
+            pytest.param(12, None, id="removed"),
+            pytest.param(0, 1, id="above-zero"),
+        ],
+    )
+    @pytest.mark.parametrize("target_is_active", [True, False])
+    @pytest.mark.parametrize("session", [None, 12, 21])
+    def test_widening_needs_an_unlock_from_any_session(
+        self,
+        before: int,
+        after: int | None,
+        target_is_active: bool,
+        session: int | None,
+    ) -> None:
+        assert (
+            ParentalGate.update_requires_unlock(
+                before=_age(before),
+                after=_age(after),
+                target_is_active=target_is_active,
+                session_limit=_age(session),
+            )
+            is True
+        )
+
+    @pytest.mark.parametrize(
+        ("before", "after"),
+        [
+            pytest.param(12, 12, id="same-limit"),
+            pytest.param(None, None, id="still-unrestricted"),
+            pytest.param(0, 0, id="still-zero"),
+        ],
+    )
+    @pytest.mark.parametrize("target_is_active", [True, False])
+    @pytest.mark.parametrize("session", [None, 0, 12])
+    def test_an_unchanged_limit_needs_no_unlock(
+        self,
+        before: int | None,
+        after: int | None,
+        target_is_active: bool,
+        session: int | None,
+    ) -> None:
+        # A rename sends the other fields as they were: only the resulting
+        # limit counts, never the presence of a field.
+        assert (
+            ParentalGate.update_requires_unlock(
+                before=_age(before),
+                after=_age(after),
+                target_is_active=target_is_active,
+                session_limit=_age(session),
+            )
+            is False
+        )
+
+    @pytest.mark.parametrize(
+        ("before", "after"),
+        [pytest.param(14, 12, id="narrowed"), pytest.param(None, 10, id="limited")],
+    )
+    def test_narrowing_the_active_profile_needs_no_unlock(
+        self, before: int | None, after: int
+    ) -> None:
+        assert (
+            ParentalGate.update_requires_unlock(
+                before=_age(before),
+                after=_age(after),
+                target_is_active=True,
+                session_limit=_age(before),
+            )
+            is False
+        )
+
+    @pytest.mark.parametrize(
+        ("before", "after"),
+        [pytest.param(14, 12, id="narrowed"), pytest.param(None, 10, id="limited")],
+    )
+    def test_narrowing_another_profile_needs_an_unlock_only_from_a_limited_session(
+        self, before: int | None, after: int
+    ) -> None:
+        def decide(session: int | None) -> bool:
+            return ParentalGate.update_requires_unlock(
+                before=_age(before),
+                after=_age(after),
+                target_is_active=False,
+                session_limit=_age(session),
+            )
+
+        assert (decide(16), decide(0), decide(None)) == (True, True, False)
+
+
+class TestDeleteRequiresUnlock:
+    @pytest.mark.parametrize(
+        ("target", "session", "expected"),
+        [
+            pytest.param(12, None, True, id="limited-target"),
+            pytest.param(0, None, True, id="zero-target"),
+            pytest.param(None, 12, True, id="limited-session"),
+            pytest.param(None, 0, True, id="zero-session"),
+            pytest.param(None, None, False, id="unrestricted-both"),
+        ],
+    )
+    def test_delete(self, target: int | None, session: int | None, expected: bool) -> None:
+        assert (
+            ParentalGate.delete_requires_unlock(
+                target_limit=_age(target), session_limit=_age(session)
+            )
+            is expected
+        )
+
+
 class TestAdminAccess:
     """The matrix of Amendment 7 (decision 8 widened by D10)."""
 

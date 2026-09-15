@@ -75,7 +75,8 @@ async def remove_parental_pin(
     """Remove the account's parental PIN.
 
     Returns 204, also when no PIN was configured. A wrong account password
-    is 403 ``ACCOUNT_PASSWORD_INVALID``. A POST rather than a DELETE so the
+    is 403 ``ACCOUNT_PASSWORD_INVALID``, and a live profile with a maturity
+    limit is 409 ``PARENTAL_PIN_IN_USE``. A POST rather than a DELETE so the
     password travels in a request body.
     """
     await use_case.execute(
