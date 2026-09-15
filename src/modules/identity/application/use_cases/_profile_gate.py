@@ -1,4 +1,4 @@
-"""Internal helper: the parental gate on the profile operations (ADR-035, Amendment 7).
+"""Internal helper: the parental gate on the profile operations (ADR-035, Amendments 7 and 8).
 
 Switching, creating, updating and deleting a profile share how the gate is
 read and spent; the rules deciding when switching, creating or updating needs
