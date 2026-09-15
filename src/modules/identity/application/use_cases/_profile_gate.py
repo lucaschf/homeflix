@@ -1,10 +1,11 @@
 """Internal helper: the parental gate on the profile operations (ADR-035, Amendment 7).
 
 Switching, creating, updating and deleting a profile share how the gate is
-read and spent; the rule deciding when each one needs an unlock lives in
-:class:`ParentalGate`. Everything here runs inside the operation's own Unit of
-Work, before its write, so a refused operation writes nothing and an unlock is
-spent only together with the change it pays for.
+read and spent; the rules deciding when switching, creating or updating needs
+an unlock live in :class:`ParentalGate`, and deleting needs one whenever the
+account has a PIN (Amendment 8). Everything here runs inside the operation's
+own Unit of Work, before its write, so a refused operation writes nothing and
+an unlock is spent only together with the change it pays for.
 
 **The account lock.** Each of those operations opens its Unit of Work with
 :func:`lock_account`, before any read — the gate's included — and keeps it until

@@ -218,28 +218,6 @@ class ParentalGate:
         return changed and not target_is_active and session_limit is not None
 
     @staticmethod
-    def delete_requires_unlock(
-        *,
-        target_limit: AgeRating | None,
-        session_limit: AgeRating | None,
-    ) -> bool:
-        """Whether deleting a profile needs an unlock (Amendment 7, decision 9).
-
-        Deleting a limited profile lifts its limit for good, and a session
-        acting under a limit may delete no profile at all.
-
-        Args:
-            target_limit: The limit of the profile to delete.
-            session_limit: The limit the session acts under
-                (:meth:`session_limit`).
-
-        Returns:
-            ``True`` when the profile has a limit or the session acts under
-            one.
-        """
-        return target_limit is not None or session_limit is not None
-
-    @staticmethod
     def admin_access(
         *,
         pin_configured: bool,

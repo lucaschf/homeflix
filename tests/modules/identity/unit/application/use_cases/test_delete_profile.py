@@ -148,46 +148,41 @@ class TestDeleteProfileUseCase:
 
 
 class TestDeleteParentalGate:
-    """Amendment 7, decision 9: the ``DELETE`` row, on an account with a PIN."""
+    """Amendment 8: on an account with a PIN, every deletion needs an unlock."""
 
     @pytest.fixture
     async def owner(self, fake_uow_factory: FakeIdentityUnitOfWorkFactory) -> UserId:
         return await seed_account(fake_uow_factory, parental_pin_hash="hashed::904518")
 
-    async def test_deleting_a_limited_profile_is_refused_and_it_stays_alive(
+    @pytest.mark.parametrize(
+        ("session", "target"),
+        [
+            pytest.param(None, None, id="unrestricted-session-unrestricted-target"),
+            pytest.param(None, 12, id="unrestricted-session-limited-target"),
+            pytest.param(12, None, id="limited-session-unrestricted-target"),
+            pytest.param(12, 10, id="limited-session-limited-target"),
+        ],
+    )
+    async def test_any_deletion_without_an_unlock_is_refused_and_the_profile_stays_alive(
         self,
         fake_uow: FakeIdentityUnitOfWork,
         fake_uow_factory: FakeIdentityUnitOfWorkFactory,
         fake_avatar_storage: FakeAvatarStorage,
         owner: UserId,
+        session: int | None,
+        target: int | None,
     ) -> None:
-        parent = await _profile(fake_uow, owner, "Parent", None)
-        kid = await _profile(fake_uow, owner, "Kid", 12)
-        fake_uow.access_tokens.seed(token=_TOKEN, user_id=owner, current_profile_id=parent)
+        active = await _profile(fake_uow, owner, "Active", session)
+        doomed = await _profile(fake_uow, owner, "Doomed", target)
+        fake_uow.access_tokens.seed(token=_TOKEN, user_id=owner, current_profile_id=active)
 
         with pytest.raises(ParentalPinRequiredError):
-            await _use_case(fake_uow_factory, fake_avatar_storage).execute(_delete(owner, kid))
+            await _use_case(fake_uow_factory, fake_avatar_storage).execute(_delete(owner, doomed))
 
-        assert await fake_uow.profiles.find_by_id(kid) is not None
+        assert await fake_uow.profiles.find_by_id(doomed) is not None
         assert fake_avatar_storage.deleted == []
 
-    async def test_a_limited_session_may_delete_no_profile(
-        self,
-        fake_uow: FakeIdentityUnitOfWork,
-        fake_uow_factory: FakeIdentityUnitOfWorkFactory,
-        fake_avatar_storage: FakeAvatarStorage,
-        owner: UserId,
-    ) -> None:
-        kid = await _profile(fake_uow, owner, "Kid", 12)
-        parent = await _profile(fake_uow, owner, "Parent", None)
-        fake_uow.access_tokens.seed(token=_TOKEN, user_id=owner, current_profile_id=kid)
-
-        with pytest.raises(ParentalPinRequiredError):
-            await _use_case(fake_uow_factory, fake_avatar_storage).execute(_delete(owner, parent))
-
-        assert await fake_uow.profiles.find_by_id(parent) is not None
-
-    async def test_an_unrestricted_session_deletes_an_unrestricted_profile_freely(
+    async def test_an_unlock_pays_for_one_deletion_and_is_spent(
         self,
         fake_uow: FakeIdentityUnitOfWork,
         fake_uow_factory: FakeIdentityUnitOfWorkFactory,
@@ -196,23 +191,7 @@ class TestDeleteParentalGate:
     ) -> None:
         parent = await _profile(fake_uow, owner, "Parent", None)
         guest = await _profile(fake_uow, owner, "Guest", None)
-        await _profile(fake_uow, owner, "Kid", 12)
-        fake_uow.access_tokens.seed(token=_TOKEN, user_id=owner, current_profile_id=parent)
-
-        await _use_case(fake_uow_factory, fake_avatar_storage).execute(_delete(owner, guest))
-
-        assert await fake_uow.profiles.find_by_id(guest) is None
-
-    async def test_an_unlock_pays_for_the_deletion_and_is_spent(
-        self,
-        fake_uow: FakeIdentityUnitOfWork,
-        fake_uow_factory: FakeIdentityUnitOfWorkFactory,
-        fake_avatar_storage: FakeAvatarStorage,
-        owner: UserId,
-    ) -> None:
-        parent = await _profile(fake_uow, owner, "Parent", None)
-        kid = await _profile(fake_uow, owner, "Kid", 12)
-        other_kid = await _profile(fake_uow, owner, "Other kid", 10)
+        other_guest = await _profile(fake_uow, owner, "Other guest", None)
         fake_uow.access_tokens.seed(
             token=_TOKEN,
             user_id=owner,
@@ -221,25 +200,44 @@ class TestDeleteParentalGate:
         )
         use_case = _use_case(fake_uow_factory, fake_avatar_storage)
 
-        await use_case.execute(_delete(owner, kid))
+        await use_case.execute(_delete(owner, guest))
         with pytest.raises(ParentalPinRequiredError):
-            await use_case.execute(_delete(owner, other_kid))
+            await use_case.execute(_delete(owner, other_guest))
 
-        assert await fake_uow.profiles.find_by_id(kid) is None
-        assert await fake_uow.profiles.find_by_id(other_kid) is not None
+        assert await fake_uow.profiles.find_by_id(guest) is None
+        assert await fake_uow.profiles.find_by_id(other_guest) is not None
+        assert fake_avatar_storage.deleted == [guest.value]
 
-    async def test_the_last_profile_guard_answers_before_the_gate(
+    async def test_not_found_answers_before_the_gate(
         self,
         fake_uow: FakeIdentityUnitOfWork,
         fake_uow_factory: FakeIdentityUnitOfWorkFactory,
         fake_avatar_storage: FakeAvatarStorage,
         owner: UserId,
     ) -> None:
-        kid = await _profile(fake_uow, owner, "Kid", 12)
-        fake_uow.access_tokens.seed(token=_TOKEN, user_id=owner, current_profile_id=kid)
+        parent = await _profile(fake_uow, owner, "Parent", None)
+        await _profile(fake_uow, owner, "Guest", None)
+        fake_uow.access_tokens.seed(token=_TOKEN, user_id=owner, current_profile_id=parent)
+
+        with pytest.raises(ProfileNotFoundException):
+            await _use_case(fake_uow_factory, fake_avatar_storage).execute(
+                _delete(owner, ProfileId.generate())
+            )
+
+    @pytest.mark.parametrize("limit", [None, 12], ids=["unrestricted", "limited"])
+    async def test_the_last_profile_guard_answers_before_the_gate(
+        self,
+        fake_uow: FakeIdentityUnitOfWork,
+        fake_uow_factory: FakeIdentityUnitOfWorkFactory,
+        fake_avatar_storage: FakeAvatarStorage,
+        owner: UserId,
+        limit: int | None,
+    ) -> None:
+        only = await _profile(fake_uow, owner, "Only", limit)
+        fake_uow.access_tokens.seed(token=_TOKEN, user_id=owner, current_profile_id=only)
 
         with pytest.raises(CannotDeleteLastProfileError):
-            await _use_case(fake_uow_factory, fake_avatar_storage).execute(_delete(owner, kid))
+            await _use_case(fake_uow_factory, fake_avatar_storage).execute(_delete(owner, only))
 
     async def test_ownership_answers_before_the_gate(
         self,
@@ -248,13 +246,13 @@ class TestDeleteParentalGate:
         fake_avatar_storage: FakeAvatarStorage,
         owner: UserId,
     ) -> None:
-        kid = await _profile(fake_uow, owner, "Kid", 12)
+        parent = await _profile(fake_uow, owner, "Parent", None)
         stranger = await seed_account(fake_uow_factory)
         await _profile(fake_uow, stranger, "Stranger", None)
-        strangers_kid = await _profile(fake_uow, stranger, "Stranger kid", 10)
-        fake_uow.access_tokens.seed(token=_TOKEN, user_id=owner, current_profile_id=kid)
+        strangers_guest = await _profile(fake_uow, stranger, "Stranger guest", None)
+        fake_uow.access_tokens.seed(token=_TOKEN, user_id=owner, current_profile_id=parent)
 
         with pytest.raises(ProfileOwnershipViolation):
             await _use_case(fake_uow_factory, fake_avatar_storage).execute(
-                _delete(owner, strangers_kid)
+                _delete(owner, strangers_guest)
             )
