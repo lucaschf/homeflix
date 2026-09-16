@@ -111,7 +111,22 @@ Para os requisitos completos (incluindo o que ainda é planejado), veja
   ([ADR-010](adr/ADR-010-identity-bounded-context.md) /
   [ADR-011](adr/ADR-011-authentication-strategy.md)).
 - **ACL por perfil** — cada perfil enxerga apenas as bibliotecas permitidas
-  (`allowed_library_ids`), com flag de perfil infantil e avatares.
+  (`allowed_library_ids`), com avatares por perfil. O eixo estrutural compõe por
+  AND com o eixo etário abaixo, deny-wins.
+- **Controle parental por faixa etária** — cada perfil carrega um limite de idade
+  (`maturity_limit`) aplicado como gate único no catálogo, na busca, no playback,
+  no progresso e nas listas; o filtro é projetado em SQL a partir da mesma regra
+  de domínio. A certificação vem normalizada do provider com o sistema de
+  classificação persistido junto do rótulo, e título sem certificação
+  normalizável equivale a 18+. Perfil sem limite continua irrestrito
+  ([ADR-035](adr/ADR-035-per-profile-maturity-gate.md)).
+- **PIN parental por conta** — entrar num perfil irrestrito ou de limite maior
+  que o atual exige o PIN do lar, com janela de unlock curta e lockout por
+  dispositivo (errar no tablet não tranca a TV). Criar, editar, trocar e apagar
+  perfil passam pelo mesmo gate.
+- **Autoridade de admin suspensa** enquanto um perfil restrito está ativo na
+  sessão, salvo unlock parental válido — as rotas admin e o `is_admin` exposto ao
+  front respondem ao contexto de perfil, não só ao papel do usuário.
 - **Catalog Requests ("Em breve")** — pedidos de títulos ausentes com
   **subscriptions multi-usuário e fanout**, resolvidos quando o scanner encontra
   o título ([ADR-022](adr/ADR-022-catalog-requests-subscriptions-fanout.md)).
