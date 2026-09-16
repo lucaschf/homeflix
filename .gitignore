@@ -133,9 +133,12 @@ tmp/
 temp/
 *.tmp
 
-# Claude Code context
-CLAUDE.md
+# Claude Code — local settings/hooks only.
+# CLAUDE.md is versioned on purpose: it is the project context that
+# collaborators, remote sessions and CI review share.
 .claude/
+
+# Runtime cache
 hls_cache/
 
 # Specs and evidence (local references only)
