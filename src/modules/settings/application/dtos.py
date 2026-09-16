@@ -42,6 +42,29 @@ class SettingDetail:
 
 
 @dataclass(frozen=True)
+class AvatarLimits:
+    """What a client needs to check an avatar before uploading it.
+
+    Deliberately narrower than :class:`AvatarConfig`: ``storage_subdir``
+    is a server filesystem path and stays on the admin surface.
+
+    Attributes:
+        max_size_bytes: The exact threshold the upload route refuses
+            above, so a client applies the server's predicate instead of
+            re-deriving it from megabytes and disagreeing on the factor.
+        max_size_mb: The same cap as the admin panel states it, for a
+            human-readable message.
+        size_pixels: Side length of the square the upload is centre-
+            cropped and scaled to, so a client can preview what it gets
+            back rather than what it sent.
+    """
+
+    max_size_bytes: int
+    max_size_mb: int
+    size_pixels: int
+
+
+@dataclass(frozen=True)
 class UpdateSettingInput:
     """Input for :class:`UpdateSettingUseCase`.
 
@@ -55,4 +78,4 @@ class UpdateSettingInput:
     acting_admin_id: str
 
 
-__all__ = ["SettingDetail", "UpdateSettingInput"]
+__all__ = ["AvatarLimits", "SettingDetail", "UpdateSettingInput"]

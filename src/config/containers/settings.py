@@ -10,6 +10,7 @@ from typing import Any
 from dependency_injector import containers, providers
 
 from src.modules.settings.application.use_cases import (
+    GetAvatarLimitsUseCase,
     ListSettingsUseCase,
     UpdateSettingUseCase,
 )
@@ -29,6 +30,9 @@ class SettingsContainer(containers.DeclarativeContainer):
           DB-backed facade consumed by HLS / scheduler / avatar.
         - Admin use cases that back ``GET`` and ``PATCH`` on
           ``/api/v1/admin/settings`` (phase 4).
+        - The member-facing avatar-limits read, which goes through
+          :class:`RuntimeSettings` rather than the UoW so it reports the
+          cap the upload path actually enforces.
     """
 
     session_factory = providers.Dependency[Any]()
@@ -52,4 +56,9 @@ class SettingsContainer(containers.DeclarativeContainer):
         UpdateSettingUseCase,
         uow_factory=settings_unit_of_work_factory,
         runtime_settings=runtime_settings,
+    )
+
+    get_avatar_limits = providers.Factory(
+        GetAvatarLimitsUseCase,
+        avatar_config=runtime_settings,
     )
