@@ -1,10 +1,11 @@
 """Identity application-level exceptions.
 
 Application errors (not-found, forbidden, unauthorized, conflict) raised by
-the identity use cases. They reuse the shared application-exception bases
-from ``building_blocks`` so the global handler maps them to the correct HTTP
-status (keyed by ``code``, ADR-012) without per-BC wiring. Domain-invariant
-violations raised by the domain layer live in ``domain/errors.py`` instead.
+the identity use cases, and by the adapters behind their ports. They reuse
+the shared application-exception bases from ``building_blocks`` so the global
+handler maps them to the correct HTTP status (keyed by ``code``, ADR-012)
+without per-BC wiring. Domain-invariant violations raised by the domain layer
+live in ``domain/errors.py`` instead.
 """
 
 from dataclasses import dataclass
@@ -138,10 +139,43 @@ class AccountPasswordInvalidError(ForbiddenOperationException):
     message_code: str = IdentityRuleCodes.ACCOUNT_PASSWORD_INVALID
 
 
+@dataclass
+class AvatarTooLargeError(ApplicationException):
+    """The uploaded avatar exceeds the configured size cap.
+
+    Maps to HTTP 413. Raised by the ``AvatarStoragePort`` adapter, which
+    owns the byte validation, before the image is decoded. The cap is
+    operator-tunable, and a client can read it from
+    ``GET /api/v1/settings/avatar`` to check the file before spending the
+    upload. Status registered in
+    ``modules/identity/presentation/error_mapping.py`` (ADR-012).
+    """
+
+    code: str = "AVATAR_TOO_LARGE"
+    message_code: str = IdentityRuleCodes.AVATAR_TOO_LARGE
+
+
+@dataclass
+class InvalidAvatarImageError(ApplicationException):
+    """The uploaded bytes are not a supported image.
+
+    Maps to HTTP 415. Covers both a declared MIME outside the allow-list
+    and bytes that do not decode as JPEG / PNG / WebP — the declared MIME
+    comes from the browser, so only the decode is authoritative. Status
+    registered in ``modules/identity/presentation/error_mapping.py``
+    (ADR-012).
+    """
+
+    code: str = "AVATAR_INVALID_IMAGE"
+    message_code: str = IdentityRuleCodes.AVATAR_INVALID_IMAGE
+
+
 __all__ = [
     "AccountPasswordInvalidError",
+    "AvatarTooLargeError",
     "CannotDeleteLastProfileError",
     "CannotDeleteSelfError",
+    "InvalidAvatarImageError",
     "NoActiveProfileSelectedError",
     "NoActiveSessionError",
     "ProfileNotFoundException",

@@ -113,7 +113,16 @@ class TestUploadAvatar:
             AVATAR_PATH.format(profile_id=user.profile_external_id), files=files
         )
 
+        # The status comes from the registry (ADR-012), and the body
+        # carries the rule's own code — not one derived from the status,
+        # which is what a route-level ``HTTPException`` used to produce.
         assert resp.status_code == 413
+        body = resp.json()
+        assert (body["code"], body["type"]) == ("AVATAR_TOO_LARGE", "request_too_large_error")
+        # Exactly the v3 envelope: no FastAPI ``detail`` key surviving
+        # alongside it, and a message to show.
+        assert set(body) == {"type", "message", "code"}
+        assert body["message"]
 
     async def test_should_return_415_for_disallowed_mime(
         self,
@@ -130,6 +139,8 @@ class TestUploadAvatar:
         )
 
         assert resp.status_code == 415
+        assert resp.json()["code"] == "AVATAR_INVALID_IMAGE"
+        assert resp.json()["type"] == "invalid_request_error"
 
     async def test_should_return_415_when_bytes_are_not_an_image(
         self,
@@ -145,7 +156,10 @@ class TestUploadAvatar:
             AVATAR_PATH.format(profile_id=user.profile_external_id), files=files
         )
 
+        # A declared MIME on the allow-list that does not decode lands on
+        # the same code: only the decode is authoritative.
         assert resp.status_code == 415
+        assert resp.json()["code"] == "AVATAR_INVALID_IMAGE"
 
     async def test_should_return_401_when_unauthenticated(
         self,

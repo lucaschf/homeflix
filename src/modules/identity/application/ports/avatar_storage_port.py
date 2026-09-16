@@ -11,27 +11,18 @@ A future S3 / object-store implementation would just be another
 adapter satisfying the same contract — the port deliberately
 returns a relative URL string rather than a filesystem path so
 the domain never assumes the file lives on the local disk.
+
+The two rejections an adapter may raise —
+:class:`~src.modules.identity.application.errors.AvatarTooLargeError` and
+:class:`~src.modules.identity.application.errors.InvalidAvatarImageError`
+— live with the module's other application exceptions, so each carries a
+stable ``code`` the registry turns into 413 / 415 (ADR-012). Nothing on
+this path names an HTTP status.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-
-
-class InvalidAvatarImageError(Exception):
-    """Raised when the uploaded bytes don't decode as a supported image.
-
-    The use case translates this into HTTP 415 (Unsupported Media
-    Type). Distinct from the size-check exception so the route can
-    surface a precise error message.
-    """
-
-
-class AvatarTooLargeError(Exception):
-    """Raised when the uploaded payload exceeds the configured cap.
-
-    Translated by the use case into HTTP 413 (Payload Too Large).
-    """
 
 
 class AvatarStoragePort(ABC):
@@ -85,8 +76,4 @@ class AvatarStoragePort(ABC):
         ...
 
 
-__all__ = [
-    "AvatarStoragePort",
-    "AvatarTooLargeError",
-    "InvalidAvatarImageError",
-]
+__all__ = ["AvatarStoragePort"]

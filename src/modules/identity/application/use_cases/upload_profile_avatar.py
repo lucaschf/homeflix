@@ -23,8 +23,9 @@ class UploadProfileAvatarUseCase:
     :class:`ProfileOwnershipViolation` (HTTP 403). The actual byte
     validation (image decode, MIME allow-list, size cap) lives on
     the ``AvatarStoragePort`` adapter; size/MIME violations bubble
-    as :class:`InvalidAvatarImageError` / :class:`AvatarTooLargeError`
-    which the route translates to HTTP 415 / 413.
+    as :class:`InvalidAvatarImageError` / :class:`AvatarTooLargeError`,
+    whose codes the registry maps to HTTP 415 / 413 (ADR-012). Nothing
+    on this path names a status.
 
     The maturity limit is never written here: ``save`` leaves an existing
     profile's limit as stored, so an upload decided on a profile read

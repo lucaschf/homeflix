@@ -19,10 +19,6 @@ from src.modules.identity.application.dtos.identity_dtos import (
     UpdateProfileInput,
     UploadProfileAvatarInput,
 )
-from src.modules.identity.application.ports import (
-    AvatarTooLargeError,
-    InvalidAvatarImageError,
-)
 from src.modules.identity.application.use_cases.create_profile import (
     CreateProfileUseCase,
 )
@@ -203,31 +199,27 @@ async def upload_profile_avatar(
 ) -> dict[str, Any]:
     """Upload a new avatar image for the given profile.
 
-    Multipart upload accepting JPEG / PNG / WebP. The server
-    validates the bytes (Pillow decode), centre-crops to a square
-    and persists as WebP. Bad MIME → 415; oversized payload → 413;
-    cross-user upload → 403; unknown profile → 404.
+    Multipart upload accepting JPEG / PNG / WebP. The server validates
+    the bytes (Pillow decode), centre-crops to a square and persists as
+    WebP.
+
+    Every rejection travels as a typed exception the global handler maps
+    through the registry (ADR-012), so this route names no status:
+    oversized payload → ``AVATAR_TOO_LARGE`` (413); bad MIME or bytes
+    that are not an image → ``AVATAR_INVALID_IMAGE`` (415); cross-user
+    upload → ``PROFILE_OWNERSHIP_VIOLATION`` (403); unknown profile →
+    ``PROFILE_NOT_FOUND`` (404). Clients get a stable ``code`` to branch
+    on instead of one derived from the status.
     """
     content = await file.read()
-    try:
-        result = await use_case.execute(
-            UploadProfileAvatarInput(
-                user_id=user.external_id,
-                profile_id=profile_id,
-                content=content,
-                declared_mime_type=file.content_type or "application/octet-stream",
-            ),
-        )
-    except AvatarTooLargeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=str(exc),
-        ) from exc
-    except InvalidAvatarImageError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=str(exc),
-        ) from exc
+    result = await use_case.execute(
+        UploadProfileAvatarInput(
+            user_id=user.external_id,
+            profile_id=profile_id,
+            content=content,
+            declared_mime_type=file.content_type or "application/octet-stream",
+        ),
+    )
     return api_single("profile", asdict(result))
 
 
