@@ -380,18 +380,23 @@ leituras que precisam de dados de exibição.
 
 **Checklist da PR 4 (limite etário no perfil).**
 
-- [ ] `Profile.viewing_policy()` é o único ponto a mudar; o teste de fonte única
-  garante que nenhum adapter monta a política por fora.
-- [ ] Os e2e de `watch_progress` e `collections` passam a rodar também **sem**
-  override do port, com perfil semeado com limite.
+- [x] `Profile.viewing_policy()` é o único ponto a mudar; o teste de fonte única
+  garante que nenhum adapter monta a política por fora — entregue: a derivação
+  vive no agregado e `tests/architecture/test_profile_viewing_policy_single_source.py`
+  varre por AST os `profile_viewing_policy_adapter.py` de cada BC.
+- [x] Os e2e de `watch_progress` e `collections` passam a rodar também **sem**
+  override do port, com perfil semeado com limite — entregue: as duas conftests
+  aceitam `maturity_limit` no login e as classes sem override exercitam o
+  adapter real.
 - [x] `Cache-Control: no-store` nos endpoints filtrados — entregue antes da PR 4:
   middleware global marca `no-store` em toda resposta JSON sem `Cache-Control`
   própria (envelopes 4xx incluídos) e os sprites de scrub-preview, únicas
   respostas não-JSON com gate de perfil, saem com `private, no-cache`.
-- [ ] Riscos conhecidos fora dos BCs acima, a classificar antes de liberar limite
+- [x] Riscos conhecidos fora dos BCs acima, a classificar antes de liberar limite
   para perfis reais: `in_catalog` de `/catalog/lookup` como oráculo de existência
   de título restrito; notificação de chegada de título por `user_id`, visível a
-  todos os perfis da conta; feed "Em breve" por usuário.
+  todos os perfis da conta; feed "Em breve" por usuário — classificados na
+  Emenda 7 (D8): os três são resíduo aceito.
 - [ ] Frontend: `useUpdateProfile` (`homeflix-web/src/api/auth.ts`) invalida só
   `authKeys.profiles`; ao mudar a política do perfil ativo precisa invalidar
   watchlist, Continue Watching e catálogo. As mutations de progresso e coleções
@@ -400,20 +405,28 @@ leituras que precisam de dados de exibição.
 - [ ] Follow-up no `homeflix-web`: `docs/list-follow-share-contract.md` ainda diz
   que a visão do dono é irrestrita e que `hidden_count` reflete todos os itens
   restritos; ambos contradizem esta emenda.
-- [ ] Gate de admin na raiz: dentro de `current_admin_user`, cobrindo as 78
+- [x] Gate de admin na raiz: dentro de `current_admin_user`, cobrindo as 78
   rotas admin e `AuthenticatedUser.is_admin`, com escrita admin exigindo unlock
-  sob perfil irrestrito quando a conta tem perfil limitado (Emenda 7, D10).
-- [ ] PIN nos quatro bypasses de perfil (switch, `PUT`, `POST` e `DELETE`), com
+  sob perfil irrestrito quando a conta tem perfil limitado (Emenda 7, D10) —
+  entregue: a dependência consulta `GetAdminAccessUseCase` e
+  `AuthenticatedUser.is_admin` só é verdadeiro sob autoridade admin.
+- [x] PIN nos quatro bypasses de perfil (switch, `PUT`, `POST` e `DELETE`), com
   consumo atômico do unlock e desligamento das outras sessões presas a um perfil
-  alargado (Emenda 7, D9 e D12).
-- [ ] Migrations de `profiles`, `users` e `access_tokens` escritas à mão com
+  alargado (Emenda 7, D9 e D12) — entregue: o gate gasta a janela por
+  `consume_unlock` e a ampliação chama `detach_profile_sessions`; apagar exige
+  unlock sempre que a conta tem PIN (Emenda 8).
+- [x] Migrations de `profiles`, `users` e `access_tokens` escritas à mão com
   `op.add_column` e CHECK inline, testadas com FK ligada sobre o schema da
-  revisão anterior, nunca sobre o `create_all` do head.
+  revisão anterior, nunca sobre o `create_all` do head — entregue nas três
+  revisões de 2026-09-13/14, cobertas por
+  `tests/infrastructure/migrations/test_identity_parental_migrations.py` com
+  `PRAGMA foreign_keys=ON`.
 - [ ] Revogação das sessões antigas de cada conta que recebe perfil limitado, no
   deploy, depois do PIN e do limite (Emenda 7, D11).
 - [ ] D8 aplicado: `in_catalog`, notificação de chegada e "Em breve" aceitos
   como resíduo; o front esconde "Pedir título", "Em breve" e o sino quando o
-  perfil ativo tem limite (follow-up não bloqueante do F3).
+  perfil ativo tem limite (follow-up não bloqueante do F3) — no backend nada
+  muda por decisão; resta a parte de front, no `homeflix-web`.
 
 ### 7. PR 4: limite, PIN e suspensão de admin — decisões e correções de planejamento
 
@@ -705,3 +718,4 @@ unlock direto. O front não muda: a exclusão em `ManageProfiles.tsx` já passa 
 | 2026-09-13 | Lucas | Risco de cache entre perfis resolvido com `no-store` em respostas JSON e `private, no-cache` nos sprites de scrub-preview; item correspondente do checklist da PR 4 marcado |
 | 2026-09-13 | Lucas | Emenda 7, decisões e correções do planejamento da PR 4 |
 | 2026-09-15 | Lucas | Emenda 8, apagar qualquer perfil exige unlock em conta com PIN |
+| 2026-09-16 | Lucas | Checklist da PR 4 marcado com o que a série entregou; seguem abertos os itens de `homeflix-web` e a revogação de sessões no deploy |
