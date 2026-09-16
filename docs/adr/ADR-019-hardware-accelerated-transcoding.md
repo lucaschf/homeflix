@@ -25,8 +25,8 @@ O HomeFlix já tem infraestrutura para tunables operacionais persistidos (ADR-01
 **Vamos delegar à GPU todo trabalho de ffmpeg que seja decode/encode de vídeo, controlado por um único knob persistido `StreamingConfig.hw_accel`.**
 
 - **Novo Value Object** `HardwareAccel` (StrEnum: `auto` | `nvenc` | `off`), campo `hw_accel` em `StreamingConfig`, default `auto`. Persistido como JSON em `app_settings`; retrocompatível (chave ausente → `auto`, sem migration).
-  - `auto` — sonda funcionalmente o NVENC uma vez (encode sintético descartável via `lavfi`) e usa se funcionar; senão cai para software. Default seguro: host sem GPU NVIDIA fica em software sozinho.
-  - `nvenc` — força NVENC, pulando o probe. Encoder quebrado vira falha de transcode (sem fallback silencioso).
+  - `auto` — sonda funcionalmente o NVENC uma vez (encode sintético descartável via `lavfi`) e usa se funcionar; senão cai para software. Default seguro: host sem GPU NVIDIA fica em software sozinho. *(vale para o HLS; ver Emenda 3 para o sprite)*
+  - `nvenc` — força NVENC, pulando o probe. Encoder quebrado vira falha de transcode (sem fallback silencioso). *(não vale mais — ver Emenda 2)*
   - `off` — força software, ignorando qualquer GPU (CI, containers sem `--gpus`, A/B).
 - **HLS transcode** (`hls_service.py`): caminho full-GPU para fontes que precisam de re-encode — `-hwaccel cuda -hwaccel_output_format cuda` (decode NVDEC) → `scale_cuda=format=nv12` (conversão 10→8 bit em VRAM) → `h264_nvenc -preset p5 -tune hq -rc vbr -cq 19 -spatial_aq 1`. O fallback de software sai do `ultrafast` para `superfast -crf 20 -pix_fmt yuv420p`.
 - **Sprites de scrub-preview** (`thumbnail_service.py`): o decode do filme inteiro vai para a NVDEC (`-hwaccel cuda`, decode-only — os filtros `scale`/`pad`/`tile` seguem na CPU sobre frames já baixados, pois `tile` não tem equivalente CUDA e o custo pós-downscale é pequeno). Com retry automático em software numa falha rápida de hwaccel e **sem** retry em timeout.
@@ -58,15 +58,15 @@ NVENC/NVDEC aceleram apenas vídeo; áudio, legenda de texto e fingerprinting s�
 ### Negativas
 
 - Acopla a qualidade/custo do streaming à presença de uma GPU NVIDIA + driver + build de ffmpeg com NVENC. Em outros vendors (Intel QSV, AMD AMF, VAAPI) o `auto` não detecta nada e fica em software.
-- O caminho HLS full-GPU **não tem fallback de software por-arquivo**: uma fonte que a NVDEC não decodifica falha aquele transcode (escape hatch: `hw_accel=off`).
+- O caminho HLS full-GPU **não tem fallback de software por-arquivo**: uma fonte que a NVDEC não decodifica falha aquele transcode (escape hatch: `hw_accel=off`). *(não vale mais — ver Emenda 1)*
 - Matriz de teste cresce: caminhos GPU não rodam em CI sem GPU (cobertos por testes que mockam o probe/detecção).
 
 ### Riscos
 
 | Risco | Probabilidade | Impacto | Mitigação |
 |-------|---------------|---------|-----------|
-| Fonte não-decodável pela NVDEC quebra o transcode HLS | Baixa (biblioteca é codec mainstream) | Médio | `hw_accel=off`; fallback per-arquivo é follow-up |
-| Probe NVENC passa mas encode real falha sob contenção de sessões | Baixa | Médio | `nvenc` força sem probe; `off` como escape; falha vira erro de geração, não corrupção |
+| Fonte não-decodável pela NVDEC quebra o transcode HLS | Baixa (biblioteca é codec mainstream) | Médio | `hw_accel=off`; fallback per-arquivo é follow-up *(entregue — ver Emenda 1)* |
+| Probe NVENC passa mas encode real falha sob contenção de sessões | Baixa | Médio | `nvenc` força sem probe; `off` como escape; falha vira erro de geração, não corrupção *(hoje a falha cai para software — ver Emendas 1 e 2)* |
 | Limites de sessões NVENC concorrentes (cards consumer) | Baixa (uso pessoal, poucas sessões) | Baixo | Eviction de ffmpeg idle já existente (ADR de runtime settings) |
 
 ## Alternativas Consideradas
@@ -98,6 +98,7 @@ Transcodar tudo uma vez para H.264 8-bit, deixando o playback como puro remux.
 ## Referências
 
 - PR backend: lucaschf/homeflix#274
+- PR do fallback de software por-arquivo: lucaschf/homeflix#304 — ver Emendas
 - PR admin (knob no frontend): lucaschf/homeflix-web#165
 - ADR-013 (Runtime Settings persistidos), ADR-014 (Aggregate por bucket), ADR-008 (direção de dependência entre módulos)
 - `docs/roadmap.md` — Phase 3.2 (Hardware transcoding VAAPI/NVENC)
@@ -120,3 +121,89 @@ hwaccel_args = ["-hwaccel", "cuda"] if use_hwaccel else []
 ```
 
 Extensão futura natural: trocar `HardwareAccel` por uma seleção mais rica (`qsv`, `amf`, `vaapi`) e/ou adicionar `max_transcode_height`, sem mudar a fronteira da decisão (encoder configurável + fallback de software).
+
+---
+
+## Emendas
+
+Correções levantadas depois da decisão, registradas aqui em vez de reescritas
+silenciosamente no texto original.
+
+### 1. O fallback de software por-arquivo deixou de ser follow-up
+
+A consequência negativa *"o caminho HLS full-GPU **não tem fallback de software
+por-arquivo**"* e a mitigação do risco 1 (*"fallback per-arquivo é follow-up"*)
+descreviam o estado de 2026-06-14. O follow-up entrou onze dias depois, no PR
+lucaschf/homeflix#304, e hoje o comportamento é o oposto do que aqueles dois
+trechos afirmam.
+
+`HlsService.ensure_playlist` resolve a elegibilidade **antes** de tentar — depois
+da falha não há como saber se a GPU estava em jogo — e, num `RuntimeError` de
+uma tentativa que era HW-elegível, apaga o diretório do bucket, mata os ffmpeg
+daquele hash e repete com `force_software=True`, o que força o ramo `libx264`
+no `TranscodeCommandBuilder.build_video_cmd`:
+
+```python
+hw_eligible = self._would_use_hw_transcode(file_path, start)
+try:
+    await self._generate_and_wait(file_path, start, path_hash, force_software=False, end=end)
+except RuntimeError:
+    if not hw_eligible:
+        raise
+    _logger.warning("HW transcode failed for %s (start=%d) — retrying in software", ...)
+    shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
+    self._kill_processes(path_hash)
+    await self._generate_and_wait(file_path, start, path_hash, force_software=True, end=end)
+```
+
+Falha de software não é retentada: repetiria o mesmo erro. O que muda no texto
+original:
+
+- `hw_accel=off` **não é mais o único escape hatch** para uma fonte que a NVDEC
+  não decodifica — ela degrada sozinha, sem intervenção do operador.
+- O custo migra de disponibilidade para latência: aquele play paga a tentativa
+  HW perdida, o `rmtree` do bucket e um encode do zero.
+- Isso **não é memoizado por arquivo**. O bucket é `(file_path, start, end)`,
+  então cada seek para uma posição nova na mesma fonte problemática repete a
+  tentativa HW antes de cair no libx264. Um cache de "esta fonte não roda na
+  NVDEC" resolveria; não existe.
+- O risco 1 continua real, mas rebaixado de "quebra o transcode" para "primeiro
+  play de cada bucket mais lento".
+
+Coberto em `tests/modules/streaming/unit/infrastructure/streaming/test_hls_service.py`
+(`test_falls_back_to_software_on_hw_failure`,
+`test_no_software_retry_when_not_hw_eligible`).
+
+### 2. `hw_accel=nvenc` não significa mais "GPU ou nada" no HLS
+
+Efeito colateral da Emenda 1, não uma decisão tomada explicitamente.
+`_would_use_hw_transcode` consulta apenas `use_nvenc()`, que devolve `True` para
+o modo forçado sem olhar o probe. O fallback cobre portanto **também** o modo
+`nvenc`, e a definição do membro na Decisão — *"encoder quebrado vira falha de
+transcode (sem fallback silencioso)"* — deixou de descrever o HLS.
+
+Sobrou de `nvenc`: ele ainda pula o probe funcional — é o que o modo compra
+hoje. Caiu: a falha não sobe mais. Vira um `WARNING` (`"HW transcode failed …
+— retrying in software"`) e um encode de CPU. Numa máquina com encoder quebrado
+o sintoma passa a ser CPU saturada e uma linha de log, não erro no player —
+exatamente o cenário que o modo forçado existia para tornar visível.
+
+`off` continua sendo o único modo que garante que nenhuma tentativa de GPU
+acontece. Se "GPU ou nada" voltar a ser desejável como ferramenta de
+diagnóstico, precisa de decisão nova: ou a elegibilidade passa a ler o modo
+(forçado ⇒ sem fallback), ou entra um quarto membro. Nenhuma das duas está
+feita.
+
+### 3. O caminho do sprite não consulta o probe funcional
+
+Menor, mas contradiz a definição de `auto` na Decisão.
+`ThumbnailGenerationService` resolve o hwaccel com
+`snapshot.hw_accel != HW_ACCEL_OFF`; `use_nvenc()` nunca é chamado ali, logo o
+probe do NVENC nunca roda nesse caminho.
+
+É defensável — o sprite só *decodifica* (NVDEC) e o probe testa o *encoder*
+(NVENC), então reprovar o sprite por um encoder ausente seria um falso negativo.
+Mas o efeito não é o "senão cai para software" que o texto promete: num host
+sem GPU NVIDIA em `auto`, cada sprite gasta um ffmpeg com `-hwaccel cuda` que
+falha antes do passe de CPU. Custo real de um spawn perdido por sprite, com o
+retry já previsto na decisão absorvendo o resultado.
