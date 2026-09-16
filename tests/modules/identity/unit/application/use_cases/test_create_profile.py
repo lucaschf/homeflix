@@ -75,23 +75,6 @@ class TestCreateProfileUseCase:
         # Repository was actually written through:
         assert await fake_uow.profiles.count_for_user(caller_id) == 1
 
-    async def test_should_propagate_avatar_url(
-        self,
-        fake_uow_factory: FakeIdentityUnitOfWorkFactory,
-    ):
-        caller_id = await seed_account(fake_uow_factory)
-        use_case = CreateProfileUseCase(uow_factory=fake_uow_factory)
-
-        output = await use_case.execute(
-            CreateProfileInput(
-                user_id=caller_id.value,
-                name="Bia",
-                avatar_url="https://example.com/bia.png",
-            )
-        )
-
-        assert output.avatar_url == "https://example.com/bia.png"
-
     async def test_should_assign_distinct_external_ids_to_multiple_profiles(
         self,
         fake_uow_factory: FakeIdentityUnitOfWorkFactory,

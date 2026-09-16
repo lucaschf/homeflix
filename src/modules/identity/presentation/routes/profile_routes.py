@@ -93,7 +93,6 @@ async def create_profile(
         CreateProfileInput(
             user_id=user.external_id,
             name=body.name,
-            avatar_url=body.avatar_url,
             allowed_library_ids=body.allowed_library_ids,
             maturity_limit=body.maturity_limit,
             session_token=token,
@@ -126,7 +125,6 @@ async def update_profile(
             user_id=user.external_id,
             profile_id=profile_id,
             name=body.name,
-            avatar_url=body.avatar_url,
             allowed_library_ids=body.allowed_library_ids,
             maturity_limit=(
                 MaturityLimitChange(body.maturity_limit)

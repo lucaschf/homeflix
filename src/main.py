@@ -58,7 +58,7 @@ from src.modules.notifications.presentation.routes import notification_router
 from src.modules.preferences.presentation.routes.preferences_routes import (
     router as preferences_router,
 )
-from src.modules.settings.presentation.routes import admin_settings_router
+from src.modules.settings.presentation.routes import admin_settings_router, settings_router
 from src.modules.streaming.presentation.routes import (
     admin_now_playing_router,
     admin_subtitle_ocr_router,
@@ -130,6 +130,7 @@ WIRED_ROUTE_MODULES: tuple[str, ...] = (
     "src.modules.identity.presentation.routes.profile_routes",
     "src.modules.identity.presentation.routes.users_routes",
     "src.modules.settings.presentation.routes.admin_settings_routes",
+    "src.modules.settings.presentation.routes.settings_routes",
 )
 
 
@@ -541,6 +542,7 @@ def create_app() -> FastAPI:
     app.include_router(notification_router)
     app.include_router(library_router)
     app.include_router(preferences_router)
+    app.include_router(settings_router)
 
     # Identity — FastAPI Users built-in cookie auth (login/logout) plus
     # the custom users / profiles surface that returns prefixed external

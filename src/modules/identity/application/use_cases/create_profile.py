@@ -69,7 +69,6 @@ class CreateProfileUseCase:
         profile = Profile.create(
             user_id=caller_id,
             name=ProfileName(input_dto.name),
-            avatar_url=input_dto.avatar_url,
             allowed_library_ids=input_dto.allowed_library_ids,
             maturity_limit=(
                 None if input_dto.maturity_limit is None else AgeRating(input_dto.maturity_limit)

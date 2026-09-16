@@ -16,14 +16,21 @@ class CreateProfileRequest(BaseModel):
     integer: ``true``, ``"12"`` and ``12.0`` are rejected rather than
     coerced into a limit.
 
-    ``is_kids`` is no longer a field: it is derived from the profile's
-    maturity limit (ADR-035). Clients that still send it are not
-    rejected — undeclared fields are ignored — but the value is
-    discarded.
+    ``avatar_url`` is not a field. The avatar is set only by uploading
+    bytes to ``POST /api/v1/profiles/{id}/avatar``, which stores them and
+    derives the URL itself (ADR-018 — the boundary validates instead of
+    trusting a string). Accepting one from the client let any
+    authenticated caller point a profile at an arbitrary third-party
+    host, which every household member's picker then fetched on each
+    render, handing that host their IP and User-Agent.
+
+    ``is_kids`` is no longer a field either: it is derived from the
+    profile's maturity limit (ADR-035). Clients that still send either
+    one are not rejected — undeclared fields are ignored — but the value
+    is discarded.
     """
 
     name: str = Field(min_length=1, max_length=50)
-    avatar_url: str | None = Field(default=None, max_length=500)
     allowed_library_ids: list[str] | None = Field(default=None)
     maturity_limit: StrictInt | None = Field(default=None, ge=0, le=21)
 
@@ -41,12 +48,12 @@ class UpdateProfileRequest(BaseModel):
     only an omitted field leaves it alone. The route tells the two apart
     through ``model_fields_set``. It is a strict integer from 0 to 21.
 
-    ``is_kids`` is accepted and ignored, as on create: it is derived
-    from the maturity limit (ADR-035).
+    ``avatar_url`` and ``is_kids`` are accepted and ignored, as on
+    create: the avatar is owned by the upload route and the kids flag is
+    derived from the maturity limit. See :class:`CreateProfileRequest`.
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=50)
-    avatar_url: str | None = Field(default=None, max_length=500)
     allowed_library_ids: list[str] | None = Field(default=None)
     maturity_limit: StrictInt | None = Field(default=None, ge=0, le=21)
 

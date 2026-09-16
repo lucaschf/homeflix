@@ -103,7 +103,7 @@ class LocalAvatarStorage(AvatarStoragePort):
     ) -> str:
         """Validate + resize + persist + return the cache-busted URL."""
         config = await self._runtime_settings.avatar()
-        max_size_bytes = config.max_size_mb * 1024 * 1024
+        max_size_bytes = config.max_size_bytes
         if len(content) > max_size_bytes:
             raise AvatarTooLargeError(
                 f"avatar exceeds {max_size_bytes} byte cap (got {len(content)} bytes)"

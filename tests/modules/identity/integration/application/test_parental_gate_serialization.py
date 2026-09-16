@@ -276,7 +276,6 @@ def _put(
     limit: Any = _UNSET,
     name: str | None = None,
     libraries: list[str] | None = None,
-    avatar_url: str | None = None,
 ) -> Operation:
     async def run(uow_factory: IdentityUnitOfWorkFactory) -> object:
         return await UpdateProfileUseCase(uow_factory, clock=_clock).execute(
@@ -284,7 +283,6 @@ def _put(
                 user_id=str(home.user_id),
                 profile_id=home.profile(target),
                 name=name,
-                avatar_url=avatar_url,
                 allowed_library_ids=libraries,
                 maturity_limit=None if limit is _UNSET else MaturityLimitChange(limit),
                 session_token=token,
@@ -630,7 +628,6 @@ def _other_field_write(home: _Household, kind: str) -> Operation:
     return {
         "rename": _put(home, _TABLET, "Kid", name="Renamed"),
         "libraries": _put(home, _TABLET, "Kid", libraries=["lib_2xK9mPqR7nL4"]),
-        "avatar-url": _put(home, _TABLET, "Kid", avatar_url="https://example.com/kid.png"),
         "avatar-upload": _upload_avatar(home, "Kid"),
         "avatar-delete": _delete_avatar(home, "Kid"),
     }[kind]
@@ -638,10 +635,8 @@ def _other_field_write(home: _Household, kind: str) -> Operation:
 
 # The profile routes take the account lock, so the delete waits for them; the
 # avatar routes do not, so the delete lands first and they find no profile.
-_SERIALISED_BY_THE_LOCK = {"rename", "libraries", "avatar-url"}
-_OTHER_FIELD_WRITES = sorted(
-    ["rename", "libraries", "avatar-url", "avatar-upload", "avatar-delete"]
-)
+_SERIALISED_BY_THE_LOCK = {"rename", "libraries"}
+_OTHER_FIELD_WRITES = sorted(["rename", "libraries", "avatar-upload", "avatar-delete"])
 
 
 class TestAWriteOfOtherFieldsNeverRestoresADeletedProfile:

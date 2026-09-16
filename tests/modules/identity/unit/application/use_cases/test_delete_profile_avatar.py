@@ -27,6 +27,20 @@ from .conftest import (
     seed_account,
 )
 
+_SEEDED_AVATAR = "/api/v1/profiles/x/avatar?v=42"
+
+
+async def _stamp_avatar(fake_uow: FakeIdentityUnitOfWork, profile_id: str) -> None:
+    """Give a profile an avatar the way ``UploadProfileAvatarUseCase`` does.
+
+    The request schemas no longer carry ``avatar_url``, so the upload
+    path — read the profile, ``with_avatar``, save — is the only writer
+    of the field and the honest way to reach a "has an avatar" state.
+    """
+    stored = await fake_uow.profiles.find_by_id(ProfileId(profile_id))
+    assert stored is not None
+    await fake_uow.profiles.save(stored.with_avatar(_SEEDED_AVATAR))
+
 
 class TestDeleteProfileAvatarUseCase:
     async def test_should_clear_avatar_url_and_delete_file(
@@ -39,13 +53,8 @@ class TestDeleteProfileAvatarUseCase:
         creator = CreateProfileUseCase(uow_factory=fake_uow_factory)
         # Seed the profile with a non-null avatar so the test
         # observes a real "before / after" transition.
-        seeded = await creator.execute(
-            CreateProfileInput(
-                user_id=owner_id.value,
-                name="Lucas",
-                avatar_url="/api/v1/profiles/x/avatar?v=42",
-            )
-        )
+        seeded = await creator.execute(CreateProfileInput(user_id=owner_id.value, name="Lucas"))
+        await _stamp_avatar(fake_uow, seeded.id)
 
         use_case = DeleteProfileAvatarUseCase(
             uow_factory=fake_uow_factory, avatar_storage=fake_avatar_storage
@@ -112,11 +121,8 @@ class TestDeleteProfileAvatarUseCase:
         # ADR-035: the save never restores it, so the call answers 404.
         owner_id = await seed_account(fake_uow_factory)
         creator = CreateProfileUseCase(uow_factory=fake_uow_factory)
-        target = await creator.execute(
-            CreateProfileInput(
-                user_id=owner_id.value, name="Lucas", avatar_url="/api/v1/profiles/x/avatar?v=42"
-            )
-        )
+        target = await creator.execute(CreateProfileInput(user_id=owner_id.value, name="Lucas"))
+        await _stamp_avatar(fake_uow, target.id)
         save = fake_uow.profiles.save
 
         async def deleted_first(profile: Profile) -> Profile | None:

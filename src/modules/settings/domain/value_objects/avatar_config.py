@@ -35,5 +35,19 @@ class AvatarConfig(CompoundValueObject):
     max_size_mb: int = Field(default=2, ge=1, le=20)
     size_pixels: int = Field(default=256, ge=64, le=1024)
 
+    @property
+    def max_size_bytes(self) -> int:
+        """The cap in bytes — the exact threshold an upload is refused above.
+
+        The one place megabytes become bytes, so the limit a client is
+        told and the limit the storage adapter enforces cannot drift
+        apart. A plain ``@property`` on purpose: a computed field would
+        enter ``model_dump()`` and land in the persisted setting row.
+
+        Returns:
+            :attr:`max_size_mb` in binary megabytes.
+        """
+        return self.max_size_mb * 1024 * 1024
+
 
 __all__ = ["AvatarConfig"]
