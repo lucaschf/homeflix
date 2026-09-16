@@ -77,6 +77,18 @@ async def _stored_limit_and_flag(
         return limit, is_kids
 
 
+async def _stored_avatar_url(
+    session_factory: async_sessionmaker[AsyncSession],
+    external_id: str,
+) -> str | None:
+    """Return the stored ``avatar_url`` of a profile row."""
+    async with session_factory() as session:
+        result = await session.execute(
+            select(ProfileModel.avatar_url).where(ProfileModel.external_id == external_id)
+        )
+        return result.scalar_one()
+
+
 class TestListProfiles:
     async def test_should_return_owned_profiles_with_prefixed_ids(
         self,
@@ -175,6 +187,39 @@ class TestCreateProfile:
         assert created["is_kids"] is False
         assert created["maturity_limit"] is None
         assert await _stored_limit_and_flag(session_factory, created["id"]) == (None, False)
+
+    @pytest.mark.parametrize(
+        "avatar_url",
+        [
+            "https://tracker.example.com/pixel.png",
+            "//tracker.example.com/pixel.png",
+            "/api/v1/profiles/prf_000000000000/avatar",
+        ],
+        ids=["absolute", "protocol-relative", "another-profiles-path"],
+    )
+    async def test_should_accept_and_ignore_a_client_supplied_avatar_url(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+        avatar_url: str,
+    ):
+        # The avatar is owned by the upload route, which derives the URL
+        # from the bytes it stored. A URL taken from the body let any
+        # authenticated caller aim every household member's picker at a
+        # third-party host. Not a 422 — the field is simply not read.
+        user = await seed_user_with_profile()
+        await _login(client, user)
+
+        response = await client.post(
+            PROFILES_PATH,
+            json={"name": "Kids", "avatar_url": avatar_url},
+        )
+
+        assert response.status_code == 201
+        created = response.json()["data"]
+        assert created["avatar_url"] is None
+        assert await _stored_avatar_url(session_factory, created["id"]) is None
 
     @pytest.mark.parametrize(("limit", "is_kids"), [(12, True), (21, False)])
     async def test_should_store_a_maturity_limit_on_an_account_with_a_pin(
@@ -361,6 +406,27 @@ class TestUpdateProfile:
             None,
             False,
         )
+
+    async def test_should_accept_and_ignore_a_client_supplied_avatar_url(
+        self,
+        client: AsyncClient,
+        seed_user_with_profile: Callable[..., Awaitable[SeededUser]],
+        session_factory: async_sessionmaker[AsyncSession],
+    ):
+        # Same as on create: the update route does not read the field,
+        # so it cannot overwrite an uploaded avatar with a remote URL.
+        user = await seed_user_with_profile()
+        await _login(client, user)
+
+        response = await client.put(
+            f"{PROFILES_PATH}/{user.profile_external_id}",
+            json={"name": "Renamed", "avatar_url": "https://tracker.example.com/pixel.png"},
+        )
+
+        assert response.status_code == 200
+        updated = response.json()["data"]
+        assert (updated["name"], updated["avatar_url"]) == ("Renamed", None)
+        assert await _stored_avatar_url(session_factory, user.profile_external_id) is None
 
     async def test_should_return_404_when_profile_does_not_exist(
         self,

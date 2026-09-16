@@ -76,7 +76,6 @@ class CreateProfileInput:
 
     user_id: str
     name: str
-    avatar_url: str | None = None
     allowed_library_ids: list[str] | None = None
     maturity_limit: int | None = None
     session_token: str | None = field(default=None, repr=False)
@@ -95,9 +94,11 @@ class UpdateProfileInput:
 
     All fields after ``profile_id`` are optional — only supplied
     fields are updated; omitted fields retain their current value.
-    ``avatar_url=None`` is **not** treated as "clear the avatar"; use
-    a sentinel-typed payload at the route layer if explicit clearing
-    is needed.
+
+    There is no ``avatar_url``: the avatar is written only by
+    ``UploadProfileAvatarUseCase`` / ``DeleteProfileAvatarUseCase``, from
+    a URL ``AvatarStoragePort`` produced, so no caller can store one of
+    its own choosing.
 
     ``allowed_library_ids=None`` follows the same omitted-vs-cleared
     convention: ``None`` means "don't touch the ACL"; an explicit
@@ -111,7 +112,6 @@ class UpdateProfileInput:
     user_id: str
     profile_id: str
     name: str | None = None
-    avatar_url: str | None = None
     allowed_library_ids: list[str] | None = None
     maturity_limit: MaturityLimitChange | None = None
     session_token: str | None = field(default=None, repr=False)

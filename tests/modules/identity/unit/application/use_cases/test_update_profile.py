@@ -100,7 +100,7 @@ class TestUpdateProfileUseCase:
             CreateProfileInput(
                 user_id=caller_id.value,
                 name="Lucas",
-                avatar_url="https://x/old.png",
+                allowed_library_ids=[_LIBRARY],
             )
         )
 
@@ -115,7 +115,7 @@ class TestUpdateProfileUseCase:
 
         assert output.id == original.id
         assert output.name == "Luc"  # changed
-        assert output.avatar_url == "https://x/old.png"  # unchanged
+        assert output.allowed_library_ids == [_LIBRARY]  # unchanged
         assert output.maturity_limit is None  # unchanged
 
     async def test_should_keep_the_maturity_limit_on_a_partial_update(
