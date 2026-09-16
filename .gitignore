@@ -133,9 +133,13 @@ tmp/
 temp/
 *.tmp
 
-# Claude Code context
-CLAUDE.md
-.claude/
+# Claude Code. Shared project context is versioned on purpose — CLAUDE.md at
+# the root and the skills below — so collaborators, remote sessions and CI
+# review all get it. Local settings and hooks stay out.
+.claude/*
+!.claude/skills/
+
+# Runtime cache
 hls_cache/
 
 # Specs and evidence (local references only)
