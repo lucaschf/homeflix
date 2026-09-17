@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock
 import pytest
 from PIL import Image
 
-from src.modules.identity.application.ports import (
+from src.modules.identity.application.errors import (
     AvatarTooLargeError,
     InvalidAvatarImageError,
 )

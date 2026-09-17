@@ -19,6 +19,11 @@ IDENTITY_HTTP_STATUSES: dict[str, int] = {
     "USER_CANNOT_DELETE_SELF": 409,
     "USER_CANNOT_DEMOTE_LAST_ADMIN": 409,
     "ACCOUNT_PASSWORD_INVALID": 403,
+    # Avatar upload: the status says which byte check refused the file.
+    # 413 and 415 are not defaults of any base class, so both entries are
+    # load-bearing rather than restatements.
+    "AVATAR_TOO_LARGE": 413,
+    "AVATAR_INVALID_IMAGE": 415,
     # Parental controls (ADR-035): 403 or 409, never 401 — the web client
     # reads any 401 as an expired session.
     "PARENTAL_PIN_REQUIRED": 403,

@@ -22,10 +22,12 @@ from typing import TYPE_CHECKING
 from PIL import Image, UnidentifiedImageError
 
 from src.config.logging import get_logger
-from src.modules.identity.application.ports.avatar_storage_port import (
-    AvatarStoragePort,
+from src.modules.identity.application.errors import (
     AvatarTooLargeError,
     InvalidAvatarImageError,
+)
+from src.modules.identity.application.ports.avatar_storage_port import (
+    AvatarStoragePort,
 )
 
 if TYPE_CHECKING:
