@@ -267,13 +267,17 @@ def _apply_season_metadata(
     if updates:
         season = season.with_updates(**updates)
 
-    # Enrich episodes — track TMDB index separately to handle multi-segment files
+    # Enrich episodes — the TMDB number is the local number shifted by the
+    # extra segments of earlier multi-segment files. Anchoring on the local
+    # number (not a running counter) keeps a missing local file from
+    # shifting metadata onto every episode after it.
     if meta.episodes:
         ep_by_num = {e.episode_number: e for e in meta.episodes}  # int keys from API
         sorted_episodes = sorted(season.episodes, key=lambda e: e.episode_number.value)
-        tmdb_idx = 1  # TMDB episode numbering starts at 1
+        extra_segments = 0
         new_episodes = []
         for ep in sorted_episodes:
+            tmdb_idx = ep.episode_number.value + extra_segments
             segment_count = _detect_multi_episode(ep.title.value)
             if segment_count > 1:
                 enriched_ep = _apply_multi_episode_metadata(
@@ -283,7 +287,7 @@ def _apply_season_metadata(
                 ep_meta = ep_by_num.get(tmdb_idx)
                 enriched_ep = _apply_episode_metadata(ep, ep_meta, policy=policy) if ep_meta else ep
             new_episodes.append(enriched_ep)
-            tmdb_idx += segment_count
+            extra_segments += segment_count - 1
         season = season.with_updates(episodes=new_episodes)
 
     return season

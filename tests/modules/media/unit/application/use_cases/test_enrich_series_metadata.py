@@ -499,6 +499,100 @@ class TestEnrichSeriesMetadata:
         assert ep.duration.value == 1320
 
 
+def _make_season_series(local_titles: dict[int, str]) -> Series:
+    """Build a one-season series whose episodes are keyed by local number."""
+    series = Series.create(library_id=_LIBRARY_ID, title="Some Show", start_year=2001)
+    assert series.id is not None
+    season = Season(series_id=series.id, season_number=1)
+    for number, title in local_titles.items():
+        season = season.with_episode(
+            Episode(
+                series_id=series.id,
+                season_number=1,
+                episode_number=number,
+                title=Title(title),
+                duration=Duration(0),
+                files=[
+                    MediaFile(
+                        file_path=FilePath(f"/series/show/s01e{number:02d}.avi"),
+                        file_size=300_000,
+                        resolution=Resolution("480p"),
+                        is_primary=True,
+                    ),
+                ],
+            )
+        )
+    return series.with_season(season)
+
+
+def _make_season_metadata(tmdb_titles: list[str]) -> MediaMetadata:
+    """Build provider metadata for one season, numbered from 1."""
+    return MediaMetadata(
+        title="Some Show",
+        tmdb_id=4242,
+        seasons=[
+            SeasonMetadata(
+                season_number=1,
+                episodes=[
+                    EpisodeMetadata(
+                        season_number=1,
+                        episode_number=number,
+                        title=title,
+                        synopsis=f"Synopsis of {title}.",
+                    )
+                    for number, title in enumerate(tmdb_titles, start=1)
+                ],
+            ),
+        ],
+    )
+
+
+async def _enrich(series: Series, metadata: MediaMetadata) -> Series:
+    mocks = make_media_uow_mock()
+    mocks.series.find_by_id.return_value = series
+    mocks.series.save.side_effect = lambda s: s
+
+    provider = AsyncMock(spec=MetadataProvider)
+    provider.search_series.return_value = metadata
+
+    use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+    await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+    saved: Series = mocks.series.save.call_args[0][0]
+    return saved
+
+
+def _synopses_by_number(series: Series) -> dict[int, str | None]:
+    return {ep.episode_number.value: ep.synopsis for ep in series.seasons[0].episodes}
+
+
+@pytest.mark.unit
+class TestEpisodeNumberGaps:
+    """A missing local episode must not shift metadata onto its successors."""
+
+    @pytest.mark.asyncio
+    async def test_should_match_by_episode_number_across_a_gap(self) -> None:
+        series = _make_season_series({1: "Episode 1", 3: "Episode 3", 4: "Episode 4"})
+        metadata = _make_season_metadata(["First", "Second", "Third", "Fourth"])
+
+        saved = await _enrich(series, metadata)
+
+        assert _synopses_by_number(saved) == {
+            1: "Synopsis of First.",
+            3: "Synopsis of Third.",
+            4: "Synopsis of Fourth.",
+        }
+
+    @pytest.mark.asyncio
+    async def test_should_keep_multi_segment_offset_after_a_gap(self) -> None:
+        # Local E1 holds TMDB 1+2, so local E3 is TMDB 4 (E2 missing = TMDB 3).
+        series = _make_season_series({1: "First - Second", 3: "Episode 3"})
+        metadata = _make_season_metadata(["First", "Second", "Third", "Fourth"])
+
+        saved = await _enrich(series, metadata)
+
+        assert _synopses_by_number(saved)[3] == "Synopsis of Fourth."
+
+
 @pytest.mark.unit
 class TestDetectMultiEpisode:
     """Tests for _detect_multi_episode helper."""
