@@ -1,6 +1,7 @@
 """Use case for enriching a series with external metadata."""
 
 import logging
+from dataclasses import replace
 from datetime import date
 
 from src.building_blocks.application.errors import ResourceNotFoundException
@@ -274,6 +275,15 @@ def _apply_season_metadata(
     if meta.episodes:
         ep_by_num = {e.episode_number: e for e in meta.episodes}  # int keys from API
         sorted_episodes = sorted(season.episodes, key=lambda e: e.episode_number.value)
+        split_factor = _detect_split_factor(sorted_episodes, meta.episodes)
+        if split_factor > 1:
+            return season.with_updates(
+                episodes=[
+                    _apply_split_episode_metadata(ep, ep_by_num, split_factor, policy=policy)
+                    for ep in sorted_episodes
+                ]
+            )
+
         extra_segments = 0
         new_episodes = []
         for ep in sorted_episodes:
@@ -291,6 +301,86 @@ def _apply_season_metadata(
         season = season.with_updates(episodes=new_episodes)
 
     return season
+
+
+_MAX_SEGMENTS = 4
+_SPLIT_TITLE_SEPARATOR = " / "
+
+
+def _detect_split_factor(local: list[Episode], provider: list[EpisodeMetadata]) -> int:
+    """Detect a season whose provider episodes are each split across local files.
+
+    The inverse of :func:`_detect_multi_episode`: cartoons that air two
+    stories per slot are often listed by the provider as one episode
+    titled ``"A / B"`` but ripped as one file per story. It is assumed when
+    the highest local number fits ``factor`` files per provider episode
+    *and* most provider titles carry exactly ``factor`` parts — the count
+    alone could just be an incomplete provider listing.
+
+    Returns:
+        Local files per provider episode (1 = no split).
+    """
+    if not local or not provider:
+        return 1
+    provider_count = max(m.episode_number for m in provider)
+    highest_local = max(ep.episode_number.value for ep in local)
+    for factor in range(2, _MAX_SEGMENTS + 1):
+        if provider_count * (factor - 1) < highest_local <= provider_count * factor:
+            paired = sum(1 for m in provider if len(_split_title(m.title)) == factor)
+            return factor if paired * 2 > len(provider) else 1
+    return 1
+
+
+def _split_title(title: str | None) -> list[str]:
+    if not title:
+        return []
+    return [p.strip() for p in title.split(_SPLIT_TITLE_SEPARATOR) if p.strip()]
+
+
+def _segment_title(title: str | None, part: int, factor: int) -> str | None:
+    """Pick the ``part``-th story of a provider title (``"A / B"`` → ``"B"``).
+
+    A provider title that isn't split (e.g. a two-part special) is kept
+    whole with a ``(Part n)`` suffix so the local files stay distinguishable.
+    """
+    if not title:
+        return None
+    parts = _split_title(title)
+    if len(parts) == factor:
+        return parts[part]
+    return f"{title} (Part {part + 1})"
+
+
+def _apply_split_episode_metadata(
+    episode: Episode,
+    ep_by_num: dict[int, EpisodeMetadata],
+    factor: int,
+    *,
+    policy: MergePolicy = MergePolicy.FILL_IF_EMPTY,
+) -> Episode:
+    """Apply one story of a split provider episode to a local file.
+
+    Local ``n`` is story ``(n - 1) % factor`` of provider episode
+    ``(n - 1) // factor + 1``, so a missing local file leaves its
+    neighbours aligned. Titles are split per story and the runtime is
+    divided; synopsis, still and air date describe the whole slot and are
+    shared by every story.
+    """
+    index = episode.episode_number.value - 1
+    meta = ep_by_num.get(index // factor + 1)
+    if meta is None:
+        return episode
+    part = index % factor
+    segment = replace(
+        meta,
+        title=_segment_title(meta.title, part, factor),
+        duration_seconds=meta.duration_seconds // factor if meta.duration_seconds else None,
+        localized={
+            lang: replace(fields, title=_segment_title(fields.title, part, factor))
+            for lang, fields in meta.localized.items()
+        },
+    )
+    return _apply_episode_metadata(episode, segment, policy=policy)
 
 
 def _detect_multi_episode(title: str) -> int:
