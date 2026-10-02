@@ -23,11 +23,12 @@ ferramenta funcional de gerenciamento de mídia.
 
 ## Bounded Contexts
 
-São 9 bounded contexts em `src/modules/`: Media Catalog, Library Management,
-Watch Progress, Collections, Catalog Requests, Identity, Notifications,
-Preferences e Settings. A regra de dependência é
-`modules → shared_kernel → building_blocks`; módulos não se importam entre si —
-comunicação via Read Port + ACL (ADR-009).
+São 11 bounded contexts em `src/modules/`: Media Catalog, Library Management,
+Metadata, Streaming, Watch Progress, Collections, Catalog Requests, Identity,
+Notifications, Preferences e Settings. A regra de dependência é
+`modules → shared_kernel → building_blocks`; leituras entre módulos passam por
+Read Port + ACL (ADR-009) e por contratos de presentation publicados (ADR-024),
+e reações cruzadas por eventos de domínio.
 
 !!! note "Documentação viva"
     Esta doc é derivada do código, não uma fonte independente de verdade.
