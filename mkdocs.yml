@@ -121,3 +121,4 @@ nav:
       - adr/ADR-033-repository-interface-segregation.md
       - adr/ADR-034-artwork-responsive-variants.md
       - adr/ADR-035-per-profile-maturity-gate.md
+      - adr/ADR-036-split-provider-episodes.md

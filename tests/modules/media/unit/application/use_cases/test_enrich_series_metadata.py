@@ -593,6 +593,109 @@ class TestEpisodeNumberGaps:
         assert _synopses_by_number(saved)[3] == "Synopsis of Fourth."
 
 
+def _generic_locals(*numbers: int) -> dict[int, str]:
+    return {n: f"Episode {n}" for n in numbers}
+
+
+def _titles_by_number(series: Series) -> dict[int, str]:
+    return {ep.episode_number.value: ep.title.value for ep in series.seasons[0].episodes}
+
+
+@pytest.mark.unit
+class TestSplitEpisodes:
+    """Each provider episode "A / B" is split across two consecutive local files."""
+
+    _PROVIDER_TITLES = (
+        "How It Began",
+        "Cat and Mouse / Stinky Tofu",
+        "Lost and Found / Sister Act",
+    )
+
+    @pytest.mark.asyncio
+    async def test_should_give_each_local_file_its_own_segment(self) -> None:
+        series = _make_season_series(_generic_locals(1, 2, 3, 4, 5, 6))
+        metadata = _make_season_metadata(list(self._PROVIDER_TITLES))
+
+        saved = await _enrich(series, metadata)
+
+        assert _titles_by_number(saved) == {
+            1: "How It Began (Part 1)",
+            2: "How It Began (Part 2)",
+            3: "Cat and Mouse",
+            4: "Stinky Tofu",
+            5: "Lost and Found",
+            6: "Sister Act",
+        }
+        assert _synopses_by_number(saved)[4] == "Synopsis of Cat and Mouse / Stinky Tofu."
+
+    @pytest.mark.asyncio
+    async def test_should_keep_segments_aligned_across_a_gap(self) -> None:
+        series = _make_season_series(_generic_locals(1, 2, 3, 5, 6))
+        metadata = _make_season_metadata(list(self._PROVIDER_TITLES))
+
+        saved = await _enrich(series, metadata)
+
+        assert _titles_by_number(saved)[5] == "Lost and Found"
+        assert _titles_by_number(saved)[6] == "Sister Act"
+
+    @pytest.mark.asyncio
+    async def test_should_split_localized_title_and_duration(self) -> None:
+        series = _make_season_series(_generic_locals(1, 2))
+        metadata = MediaMetadata(
+            title="Some Show",
+            tmdb_id=4242,
+            seasons=[
+                SeasonMetadata(
+                    season_number=1,
+                    episodes=[
+                        EpisodeMetadata(
+                            season_number=1,
+                            episode_number=1,
+                            title="Cat and Mouse / Stinky Tofu",
+                            duration_seconds=1320,
+                            localized={
+                                "pt-BR": LocalizedTextFields(
+                                    title="Gato e Rato / O Queijo Fedido",
+                                    synopsis="Duas histórias.",
+                                ),
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        )
+
+        saved = await _enrich(series, metadata)
+
+        second = saved.seasons[0].episodes[1]
+        assert second.get_title("pt-BR") == "O Queijo Fedido"
+        assert second.get_synopsis("pt-BR") == "Duas histórias."
+        assert second.duration.value == 660
+
+    @pytest.mark.asyncio
+    async def test_should_not_split_when_provider_titles_are_not_paired(self) -> None:
+        series = _make_season_series(_generic_locals(1, 2, 3, 4))
+        metadata = _make_season_metadata(["First", "Second"])
+
+        saved = await _enrich(series, metadata)
+
+        assert _titles_by_number(saved) == {
+            1: "First",
+            2: "Second",
+            3: "Episode 3",
+            4: "Episode 4",
+        }
+
+    @pytest.mark.asyncio
+    async def test_should_not_split_when_local_count_matches_provider(self) -> None:
+        series = _make_season_series(_generic_locals(1, 2))
+        metadata = _make_season_metadata(["A / B", "C / D"])
+
+        saved = await _enrich(series, metadata)
+
+        assert _titles_by_number(saved) == {1: "A / B", 2: "C / D"}
+
+
 @pytest.mark.unit
 class TestDetectMultiEpisode:
     """Tests for _detect_multi_episode helper."""

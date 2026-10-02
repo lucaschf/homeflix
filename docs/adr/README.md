@@ -45,6 +45,7 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-033](./ADR-033-repository-interface-segregation.md) | Interface Segregation em Repositórios | ✅ Aceito | 2026-08-16 |
 | [ADR-034](./ADR-034-artwork-responsive-variants.md) | Variantes Responsivas de Artwork Espelhado | ✅ Aceito | 2026-09-08 |
 | [ADR-035](./ADR-035-per-profile-maturity-gate.md) | Faixa Etária por Perfil como Gate de Catálogo e Playback | ✅ Aceito | 2026-09-12 |
+| [ADR-036](./ADR-036-split-provider-episodes.md) | Episódios do Provider Divididos em Vários Arquivos | ✅ Aceito | 2026-10-01 |
 
 ## Como Criar um Novo ADR
 
