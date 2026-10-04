@@ -50,7 +50,7 @@ _DEFAULT_RETRY_AFTER_SECONDS = 60
 
 
 class _BudgetSpentError(GatewayTimeoutException):
-    """The caller's budget ran out before this call could be sent.
+    """The caller's budget ran out, before the call was sent or while it was in flight.
 
     A subtype so the best-effort helpers (translation overlays, season
     payloads, collection details) can tell it apart from a provider failure:
@@ -58,6 +58,12 @@ class _BudgetSpentError(GatewayTimeoutException):
     the budget ran out would save a partial enrichment that a non-forced run
     never revisits. It propagates instead, and the whole call fails (ADR-038).
     """
+
+
+def _budget_spent() -> bool:
+    """Whether the caller declared a budget and it has run out."""
+    remaining = remaining_seconds()
+    return remaining is not None and remaining <= 0
 
 
 def _reraise_if_budget_spent(exc: GatewayException) -> None:
@@ -293,16 +299,27 @@ class TmdbClient(MetadataProvider):
                     internal_message="Caller budget exhausted; not sent",
                 )
             cap = min(cap, remaining)
+        # When the caller's budget is what bounds this call, running out of
+        # it mid-flight is a spent budget, not a provider timeout: the
+        # best-effort helpers must let it through (see _BudgetSpentError).
+        cut_by_budget = cap < _CALL_TOTAL_SECONDS
         try:
             async with asyncio.timeout(cap):
                 return await self._client.get(f"{self._base_url}{path}", params=params)
         except TimeoutError as exc:
-            raise GatewayTimeoutException(
+            error = _BudgetSpentError if cut_by_budget else GatewayTimeoutException
+            raise error(
                 message="TMDB request timed out",
                 gateway_name=_GATEWAY_NAME,
                 internal_message=f"Call exceeded its {cap:.1f}s cap",
             ) from exc
         except httpx.TimeoutException as exc:
+            if _budget_spent():
+                raise _BudgetSpentError(
+                    message="TMDB request timed out",
+                    gateway_name=_GATEWAY_NAME,
+                    internal_message=f"{type(exc).__name__} after the budget ran out",
+                ) from exc
             raise GatewayTimeoutException(
                 message="TMDB request timed out",
                 gateway_name=_GATEWAY_NAME,

@@ -281,3 +281,20 @@ class TestSpentBudgetIsNotAPartialSuccess:
             await harness.client.get_movie_localized(27205)
 
         assert harness.sends == 1
+
+    async def test_localized_fetch_fails_when_the_budget_runs_out_mid_overlay(self) -> None:
+        """An overlay still in flight when the budget expires is not a skipped locale."""
+        details = _response(200)
+        details.json.return_value = _movie_details()
+
+        async def respond(_url: str, *, params: dict[str, object]) -> MagicMock:
+            if params.get("language") not in (None, "en-US"):
+                await asyncio.sleep(10)  # the pt-BR overlay hangs
+            return details
+
+        harness = _Harness([])
+        harness.http.get = AsyncMock(side_effect=respond)
+
+        with pytest.raises(GatewayTimeoutException):
+            async with deadline(0.2):
+                await harness.client.get_movie_localized(27205)
