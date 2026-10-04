@@ -47,6 +47,7 @@ Um ADR (Architecture Decision Record) documenta uma decisão arquitetural signif
 | [ADR-035](./ADR-035-per-profile-maturity-gate.md) | Faixa Etária por Perfil como Gate de Catálogo e Playback | ✅ Aceito | 2026-09-12 |
 | [ADR-036](./ADR-036-split-provider-episodes.md) | Episódios do Provider Divididos em Vários Arquivos | ✅ Aceito | 2026-10-01 |
 | [ADR-037](./ADR-037-import-linter-boundary-contracts.md) | Fronteiras entre Bounded Contexts Verificadas por import-linter | ✅ Aceito | 2026-10-04 |
+| [ADR-038](./ADR-038-provider-call-budget-and-rate-limit.md) | Orçamento de Tempo, Retry-After e Retry nas Chamadas ao TMDB | ✅ Aceito | 2026-10-04 |
 
 ## Como Criar um Novo ADR
 

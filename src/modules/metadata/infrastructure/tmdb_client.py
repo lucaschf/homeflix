@@ -1,12 +1,15 @@
 """TMDB API client implementing MetadataProvider port."""
 
 import asyncio
-from collections.abc import Sequence
+import math
+import random
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from typing import Any, Literal, cast
 
 import httpx
 
+from src.building_blocks.application.deadline import remaining_seconds
 from src.building_blocks.infrastructure.errors import (
     GatewayBadResponseException,
     GatewayException,
@@ -14,6 +17,7 @@ from src.building_blocks.infrastructure.errors import (
     GatewayTimeoutException,
     GatewayUnavailableException,
 )
+from src.building_blocks.infrastructure.retry_after_gate import RetryAfterGate
 from src.modules.metadata.application.ports.metadata_provider_port import (
     CollectionDetailMetadata,
     CollectionMetadata,
@@ -28,6 +32,44 @@ from src.modules.metadata.infrastructure.tmdb_response_mapper import TmdbRespons
 from src.shared_kernel.value_objects import MediaType
 
 _GATEWAY_NAME = "TMDB"
+
+# Per-phase httpx limits. ``read`` bounds the gap between two chunks, not the
+# whole response, so a server that trickles bytes would never trip it; the
+# total cap below bounds the call as a whole (ADR-038).
+_HTTP_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
+_CALL_TOTAL_SECONDS = 15.0
+
+# One retry per call, for timeouts and 5xx only, and only when the caller's
+# budget still fits the backoff plus a full call. 4xx is definitive; 429 is
+# handled by the Retry-After gate, never by this retry.
+_MAX_ATTEMPTS = 2
+_RETRY_BACKOFF_SECONDS = (0.5, 1.5)
+
+# TMDB sends ``Retry-After`` with its 429s; this covers a response without it.
+_DEFAULT_RETRY_AFTER_SECONDS = 60
+
+
+class _BudgetSpentError(GatewayTimeoutException):
+    """The caller's budget ran out, before the call was sent or while it was in flight.
+
+    A subtype so the best-effort helpers (translation overlays, season
+    payloads, collection details) can tell it apart from a provider failure:
+    skipping one locale because TMDB failed is fine, but skipping it because
+    the budget ran out would save a partial enrichment that a non-forced run
+    never revisits. It propagates instead, and the whole call fails (ADR-038).
+    """
+
+
+def _budget_spent() -> bool:
+    """Whether the caller declared a budget and it has run out."""
+    remaining = remaining_seconds()
+    return remaining is not None and remaining <= 0
+
+
+def _reraise_if_budget_spent(exc: GatewayException) -> None:
+    """Let a spent budget through a best-effort ``except GatewayException``."""
+    if isinstance(exc, _BudgetSpentError):
+        raise exc
 
 
 def _parse_retry_after(value: str | None) -> int | None:
@@ -46,6 +88,22 @@ def _parse_retry_after(value: str | None) -> int | None:
     except (ValueError, AttributeError):
         return None
     return seconds if seconds >= 0 else None
+
+
+def _retry_after_seconds(resp: httpx.Response) -> int:
+    """Return the response's ``Retry-After``, or the default when absent."""
+    retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
+    return retry_after if retry_after is not None else _DEFAULT_RETRY_AFTER_SECONDS
+
+
+def _wait_fits(seconds: float) -> bool:
+    """Whether waiting ``seconds`` and then a full call fit the caller's budget.
+
+    Waiting out a Retry-After only to have the budget cut the call that
+    follows would spend the whole budget for nothing.
+    """
+    remaining = remaining_seconds()
+    return remaining is not None and seconds + _CALL_TOTAL_SECONDS <= remaining
 
 
 def _image_language_filter(language: str) -> str:
@@ -92,6 +150,13 @@ class TmdbClient(MetadataProvider):
     retry/rate-limit/error translation, and JSON parsing, then delegates
     every payload → DTO shaping to :class:`TmdbResponseMapper`.
 
+    Every request goes through :meth:`_get`, which speaks TMDB's protocol
+    under the caller's time budget (ADR-038): it honours ``Retry-After``
+    through a gate shared by all callers, caps each call, and retries a
+    timeout or 5xx once. It only waits or retries when the caller declared
+    a budget with :func:`~src.building_blocks.application.deadline.deadline`
+    and the wait fits in it; without a budget it fails fast.
+
     Localized enrichment always fetches English as the base metadata,
     then overlays one translation per configured non-English locale
     (``supported_locales`` from ``Settings``). Each overlay is stored
@@ -118,7 +183,10 @@ class TmdbClient(MetadataProvider):
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
-        self._client = httpx.AsyncClient(timeout=30.0)
+        self._client = httpx.AsyncClient(timeout=_HTTP_TIMEOUT)
+        # Shared by every caller of this client: one 429 throttles them all.
+        self._gate = RetryAfterGate()
+        self._sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
         self._supported_locales = list(supported_locales)
         # English is the base metadata, so it never appears as an
         # overlay. Everything else becomes one extra details fetch.
@@ -142,19 +210,32 @@ class TmdbClient(MetadataProvider):
         path: str,
         params: dict[str, str | int],
     ) -> httpx.Response:
-        """Perform a GET against TMDB, translating transport failures.
+        """Perform a GET against TMDB under the caller's time budget.
 
-        Wraps httpx transport-level errors (timeouts, connection / DNS
-        failures) into the matching :class:`GatewayException` subtype so
-        this ACL never leaks a raw ``httpx`` error past the boundary —
-        the global handler can then surface ``503`` / ``504`` instead of
-        a generic ``500`` ("the provider is down" is not "our server
-        crashed").
+        Transport failures become the matching :class:`GatewayException`
+        subtype, so this ACL never leaks a raw ``httpx`` error past the
+        boundary — the global handler can then surface ``503`` / ``504``
+        instead of a generic ``500``.
 
-        HTTP *status* errors are deliberately NOT raised here: the
-        response is returned as-is so a caller can inspect the status
-        (e.g. tell a genuine ``404`` apart from a provider outage) before
-        deciding whether to call :meth:`_raise_for_status`.
+        Inside a declared budget (ADR-038):
+
+        * a closed Retry-After gate is waited out if the wait plus a full
+          call fit;
+        * a ``429`` closes the gate and is sent again after the wait, if the
+          wait plus a full call fit;
+        * a timeout, transport error or ``5xx`` is retried with jitter if a
+          backoff plus a full call still fit.
+
+        A call sends at most ``_MAX_ATTEMPTS`` times in total, ``429`` and
+        transient failures counted together.
+
+        Without a budget nothing waits or retries. A closed gate raises
+        :class:`GatewayRateLimitException` before sending.
+
+        HTTP *status* errors are deliberately NOT raised here: the final
+        response is returned as-is so a caller can inspect the status (e.g.
+        tell a genuine ``404`` apart from a provider outage) before deciding
+        whether to call :meth:`_raise_for_status`.
 
         Args:
             path: Request path relative to the API base (e.g.
@@ -162,16 +243,83 @@ class TmdbClient(MetadataProvider):
             params: Query parameters, already including the api key.
 
         Returns:
-            The raw ``httpx.Response``, regardless of status code.
+            The last ``httpx.Response``, regardless of status code.
 
         Raises:
-            GatewayTimeoutException: The request timed out.
+            GatewayRateLimitException: The gate is closed and the wait does
+                not fit the caller's budget.
+            GatewayTimeoutException: The request timed out (after the retry,
+                when one fit).
+            GatewayUnavailableException: TMDB could not be reached (after the
+                retry, when one fit).
+        """
+        attempt = 1
+        while True:
+            await self._wait_for_gate()
+            try:
+                resp = await self._send(path, params)
+            except (GatewayTimeoutException, GatewayUnavailableException):
+                if not self._retry_fits(attempt):
+                    raise
+            else:
+                if resp.status_code == httpx.codes.TOO_MANY_REQUESTS:
+                    self._gate.close_for(_retry_after_seconds(resp))
+                    wait = self._gate.seconds_until_open()
+                    if attempt >= _MAX_ATTEMPTS or not _wait_fits(wait):
+                        return resp
+                    attempt += 1
+                    continue
+                if resp.status_code < httpx.codes.INTERNAL_SERVER_ERROR:
+                    return resp
+                if not self._retry_fits(attempt):
+                    return resp
+            await self._sleep(random.uniform(*_RETRY_BACKOFF_SECONDS))
+            attempt += 1
+
+    async def _send(self, path: str, params: dict[str, str | int]) -> httpx.Response:
+        """Send one GET, bounded by the per-call cap and the caller's budget.
+
+        The call is cut at ``_CALL_TOTAL_SECONDS`` or at what is left of the
+        caller's budget, whichever comes first, so the provider can never
+        hold the caller past the budget it declared.
+
+        Raises:
+            GatewayTimeoutException: The caller's budget is already spent, a
+                phase timed out, or the call hit its cap.
             GatewayUnavailableException: TMDB could not be reached
                 (connection refused, DNS failure, protocol error).
         """
+        cap = _CALL_TOTAL_SECONDS
+        remaining = remaining_seconds()
+        if remaining is not None:
+            if remaining <= 0:
+                raise _BudgetSpentError(
+                    message="TMDB request timed out",
+                    gateway_name=_GATEWAY_NAME,
+                    internal_message="Caller budget exhausted; not sent",
+                )
+            cap = min(cap, remaining)
+        # When the caller's budget is what bounds this call, running out of
+        # it mid-flight is a spent budget, not a provider timeout: the
+        # best-effort helpers must let it through (see _BudgetSpentError).
+        cut_by_budget = cap < _CALL_TOTAL_SECONDS
         try:
-            return await self._client.get(f"{self._base_url}{path}", params=params)
+            async with asyncio.timeout(cap):
+                return await self._client.get(f"{self._base_url}{path}", params=params)
+        except TimeoutError as exc:
+            error = _BudgetSpentError if cut_by_budget else GatewayTimeoutException
+            raise error(
+                message="TMDB request timed out",
+                gateway_name=_GATEWAY_NAME,
+                internal_message=f"Call exceeded its {cap:.1f}s cap",
+            ) from exc
         except httpx.TimeoutException as exc:
+            if _budget_spent():
+                raise _BudgetSpentError(
+                    message="TMDB request timed out",
+                    gateway_name=_GATEWAY_NAME,
+                    internal_message=f"{type(exc).__name__} after the budget ran out",
+                ) from exc
             raise GatewayTimeoutException(
                 message="TMDB request timed out",
                 gateway_name=_GATEWAY_NAME,
@@ -183,6 +331,35 @@ class TmdbClient(MetadataProvider):
                 gateway_name=_GATEWAY_NAME,
                 internal_message=f"{type(exc).__name__}: {exc}",
             ) from exc
+
+    async def _wait_for_gate(self) -> None:
+        """Wait out a closed Retry-After gate, or fail fast if it does not fit.
+
+        Raises:
+            GatewayRateLimitException: The gate is closed and the wait does
+                not fit the caller's budget (or there is no budget).
+        """
+        wait = self._gate.seconds_until_open()
+        if wait <= 0:
+            return
+        if not _wait_fits(wait):
+            raise GatewayRateLimitException(
+                message="TMDB rate limit exceeded",
+                gateway_name=_GATEWAY_NAME,
+                retry_after_seconds=math.ceil(wait),
+                internal_message="Retry-After gate still closed; not sent",
+            )
+        await self._sleep(wait)
+
+    @staticmethod
+    def _retry_fits(attempt: int) -> bool:
+        """Whether a transient failure on ``attempt`` may be retried."""
+        if attempt >= _MAX_ATTEMPTS:
+            return False
+        remaining = remaining_seconds()
+        return remaining is not None and remaining >= (
+            _RETRY_BACKOFF_SECONDS[1] + _CALL_TOTAL_SECONDS
+        )
 
     @staticmethod
     def _raise_for_status(resp: httpx.Response) -> None:
@@ -211,11 +388,10 @@ class TmdbClient(MetadataProvider):
         internal = f"HTTP {status} from {resp.request.url}"
 
         if status == httpx.codes.TOO_MANY_REQUESTS:
-            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
             raise GatewayRateLimitException(
                 message="TMDB rate limit exceeded",
                 gateway_name=_GATEWAY_NAME,
-                retry_after_seconds=retry_after if retry_after is not None else 60,
+                retry_after_seconds=_retry_after_seconds(resp),
                 internal_message=internal,
             )
         if status == httpx.codes.GATEWAY_TIMEOUT:
@@ -456,7 +632,8 @@ class TmdbClient(MetadataProvider):
             if resp.status_code != 200:
                 return None
             data = self._json(resp)
-        except GatewayException:
+        except GatewayException as exc:
+            _reraise_if_budget_spent(exc)
             return None
 
         return self._mapper.shape_localized_movie_fields(data, locale)
@@ -489,7 +666,8 @@ class TmdbClient(MetadataProvider):
             if resp.status_code != 200:
                 return None
             data = self._json(resp)
-        except GatewayException:
+        except GatewayException as exc:
+            _reraise_if_budget_spent(exc)
             return None
         if not isinstance(data, dict):
             return None
@@ -579,7 +757,8 @@ class TmdbClient(MetadataProvider):
             if resp.status_code != 200:
                 return []
             coll = self._json(resp).get("belongs_to_collection")
-        except GatewayException:
+        except GatewayException as exc:
+            _reraise_if_budget_spent(exc)
             return []
         if not isinstance(coll, dict):
             return []
@@ -595,7 +774,8 @@ class TmdbClient(MetadataProvider):
             if resp.status_code != 200:
                 return []
             parts = self._json(resp).get("parts") or []
-        except GatewayException:
+        except GatewayException as exc:
+            _reraise_if_budget_spent(exc)
             return []
         ids: list[int] = []
         for part in parts:
@@ -628,7 +808,8 @@ class TmdbClient(MetadataProvider):
             if resp.status_code != 200:
                 return []
             results = self._json(resp).get("results") or []
-        except GatewayException:
+        except GatewayException as exc:
+            _reraise_if_budget_spent(exc)
             return []
         ids: list[int] = []
         for item in results:
@@ -679,7 +860,8 @@ class TmdbClient(MetadataProvider):
             if resp.status_code != 200:
                 return None
             data = self._json(resp)
-        except GatewayException:
+        except GatewayException as exc:
+            _reraise_if_budget_spent(exc)
             return None
         return self._mapper.shape_person(data)
 
@@ -723,7 +905,8 @@ class TmdbClient(MetadataProvider):
             if resp.status_code != 200:
                 return {}
             translations = self._json(resp).get("translations", [])
-        except GatewayException:
+        except GatewayException as exc:
+            _reraise_if_budget_spent(exc)
             return {}
         return self._mapper.shape_translated_titles(translations, title_key)
 
@@ -748,7 +931,8 @@ class TmdbClient(MetadataProvider):
             if resp.status_code != 200:
                 return None
             data = self._json(resp)
-        except GatewayException:
+        except GatewayException as exc:
+            _reraise_if_budget_spent(exc)
             return None
 
         return self._mapper.shape_localized_series_fields(data, locale)
@@ -806,7 +990,8 @@ class TmdbClient(MetadataProvider):
             if resp.status_code != 200:
                 return None
             parts = self._json(resp).get("parts") or []
-        except GatewayException:
+        except GatewayException as exc:
+            _reraise_if_budget_spent(exc)
             return None
         return CollectionMetadata(tmdb_id=coll_id, name=name, parts_count=len(parts))
 
@@ -895,7 +1080,8 @@ class TmdbClient(MetadataProvider):
             if language is None:
                 self._raise_for_status(resp)
             data: dict[str, Any] = self._json(resp)
-        except GatewayException:
+        except GatewayException as exc:
+            _reraise_if_budget_spent(exc)
             if language is None:
                 raise
             return None

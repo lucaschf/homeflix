@@ -53,12 +53,16 @@ class BulkEnrichOutput:
         series_enriched: Number of series successfully enriched.
         skipped: Number of items skipped (already enriched).
         errors: List of error messages.
+        aborted_reason: Why the run stopped before the end (provider rate
+            limit, a streak of provider failures, the batch budget), or
+            ``None`` when every item was attempted.
     """
 
     movies_enriched: int
     series_enriched: int
     skipped: int
     errors: list[str] = field(default_factory=list)
+    aborted_reason: str | None = None
 
 
 __all__ = [

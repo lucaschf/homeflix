@@ -123,3 +123,4 @@ nav:
       - adr/ADR-035-per-profile-maturity-gate.md
       - adr/ADR-036-split-provider-episodes.md
       - adr/ADR-037-import-linter-boundary-contracts.md
+      - adr/ADR-038-provider-call-budget-and-rate-limit.md

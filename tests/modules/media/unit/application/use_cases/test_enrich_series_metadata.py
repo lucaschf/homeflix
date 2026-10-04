@@ -1025,3 +1025,59 @@ class TestApplySeriesFields:
             saved.localized.to_serializable()["pt-BR"]["tagline"]
             == "Toda escolha tem consequências."
         )
+
+
+@pytest.mark.unit
+class TestEnrichSeriesOutsideTransaction:
+    """TMDB round-trips run with no Unit of Work open (ADR-038)."""
+
+    async def test_provider_is_called_with_no_transaction_open(self) -> None:
+        series = _make_series()
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.return_value = series
+        mocks.series.save.side_effect = lambda s: s
+        state = {"open": False}
+
+        async def enter(*_args: object) -> object:
+            state["open"] = True
+            return mocks.uow
+
+        async def leave(*_args: object) -> None:
+            state["open"] = False
+
+        mocks.uow.__aenter__.side_effect = enter  # type: ignore[attr-defined]
+        mocks.uow.__aexit__.side_effect = leave  # type: ignore[attr-defined]
+        seen: list[bool] = []
+
+        async def search(*_args: object) -> MediaMetadata:
+            seen.append(state["open"])
+            return _make_metadata()
+
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.side_effect = search
+        use_case = EnrichSeriesMetadataUseCase(uow_factory=mocks.factory, primary_provider=provider)
+
+        result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        assert result.enriched is True
+        assert seen == [False]
+
+    async def test_discards_its_result_when_someone_else_enriched_the_series_meanwhile(
+        self,
+    ) -> None:
+        series = _make_series()
+        enriched_meanwhile = series.with_updates(tmdb_id=TmdbId(1396))
+        mocks = make_media_uow_mock()
+        mocks.series.find_by_id.side_effect = [series, enriched_meanwhile]
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_series.return_value = _make_metadata()
+        event_bus = AsyncMock()
+        use_case = EnrichSeriesMetadataUseCase(
+            uow_factory=mocks.factory, primary_provider=provider, event_bus=event_bus
+        )
+
+        result = await use_case.execute(EnrichMediaInput(media_id=str(series.id)))
+
+        assert result.enriched is False
+        mocks.series.save.assert_not_called()
+        event_bus.publish.assert_not_awaited()

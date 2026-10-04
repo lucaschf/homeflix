@@ -806,3 +806,99 @@ class TestEnrichMovieMetadataEvents:
         await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
 
         event_bus.publish.assert_not_called()
+
+
+def _track_open_transaction(mocks: MediaUoWMocks) -> dict[str, bool]:
+    """Expose whether a Unit of Work is open, flipped by its enter/exit."""
+    state = {"open": False}
+
+    async def enter(*_args: object) -> object:
+        state["open"] = True
+        return mocks.uow
+
+    async def leave(*_args: object) -> None:
+        state["open"] = False
+
+    mocks.uow.__aenter__.side_effect = enter  # type: ignore[attr-defined]
+    mocks.uow.__aexit__.side_effect = leave  # type: ignore[attr-defined]
+    return state
+
+
+@pytest.mark.unit
+class TestEnrichMovieOutsideTransaction:
+    """TMDB round-trips run with no Unit of Work open (ADR-038).
+
+    A slow provider must not hold a database connection, and an item budget
+    that cancels the enrichment must not cancel it in the middle of a write.
+    """
+
+    async def test_provider_is_called_with_no_transaction_open(self) -> None:
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        state = _track_open_transaction(mocks)
+        seen: list[bool] = []
+
+        async def search(*_args: object) -> MediaMetadata:
+            seen.append(state["open"])
+            return _make_metadata()
+
+        provider.search_movie.side_effect = search
+
+        result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        assert result.enriched is True
+        assert seen == [False]
+
+    async def test_no_match_path_also_calls_the_provider_outside_a_transaction(self) -> None:
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        state = _track_open_transaction(mocks)
+        seen: list[bool] = []
+
+        async def miss(*_args: object) -> None:
+            seen.append(state["open"])
+
+        provider.search_movie.side_effect = miss
+        provider.search_series.side_effect = miss
+
+        result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        assert result.enriched is False
+        assert seen
+        assert not any(seen)
+        saved = mocks.movies.save.call_args[0][0]
+        assert saved.needs_enrichment_review is True
+
+    async def test_discards_its_result_when_someone_else_enriched_the_movie_meanwhile(
+        self,
+    ) -> None:
+        movie = _make_movie()
+        enriched_meanwhile = movie.with_updates(tmdb_id=TmdbId(27205))
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = _make_metadata()
+        mocks = make_media_uow_mock()
+        mocks.movies.find_by_id.side_effect = [movie, enriched_meanwhile]
+        event_bus = AsyncMock()
+        use_case = EnrichMovieMetadataUseCase(
+            uow_factory=mocks.factory, primary_provider=provider, event_bus=event_bus
+        )
+
+        result = await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        assert result.enriched is False
+        mocks.movies.save.assert_not_called()
+        event_bus.publish.assert_not_awaited()
+
+    async def test_raises_not_found_when_the_movie_disappears_meanwhile(self) -> None:
+        movie = _make_movie()
+        provider = AsyncMock(spec=MetadataProvider)
+        provider.search_movie.return_value = _make_metadata()
+        use_case, mocks = _set_up_enrichment(movie, provider)
+        mocks.movies.find_by_id.side_effect = [movie, None]
+
+        with pytest.raises(ResourceNotFoundException):
+            await use_case.execute(EnrichMediaInput(media_id=str(movie.id)))
+
+        mocks.movies.save.assert_not_called()

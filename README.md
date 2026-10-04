@@ -81,7 +81,7 @@ presentation → application → domain ← infrastructure
 | [ADR-020](docs/adr/ADR-020-pluggable-intro-detector-frame-hash.md) | Moving the intro detector port to the right level of abstraction |
 | [ADR-032](docs/adr/ADR-032-decompose-media-into-subdomains.md) | Decomposing the Media context into subdomains |
 
-All 37 are indexed in [docs/adr](docs/adr/README.md).
+All 38 are indexed in [docs/adr](docs/adr/README.md).
 
 ### Guardrails
 
