@@ -1,4 +1,4 @@
-.PHONY: help install dev test lint format migrate migration clean docs docs-install docs-build
+.PHONY: help install dev test lint lint-imports format migrate migration clean docs docs-install docs-build
 
 # Default target
 help:
@@ -17,6 +17,7 @@ help:
 	@echo "  make lint          Run linter (ruff)"
 	@echo "  make format        Format code (ruff)"
 	@echo "  make typecheck     Run type checker (mypy)"
+	@echo "  make lint-imports  Check bounded-context boundaries (import-linter)"
 	@echo ""
 	@echo "Pre-commit:"
 	@echo "  make pre-commit    Run pre-commit on all files"
@@ -68,6 +69,10 @@ lint:
 	poetry run ruff check src tests
 	poetry run ruff format --check src tests
 	bash scripts/check_domain_exceptions.sh
+	poetry run lint-imports
+
+lint-imports:
+	poetry run lint-imports
 
 check-domain-exceptions:
 	bash scripts/check_domain_exceptions.sh

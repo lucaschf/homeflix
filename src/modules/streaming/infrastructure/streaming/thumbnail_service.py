@@ -18,17 +18,17 @@ import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from src.building_blocks.infrastructure.ffmpeg_subprocess import (
+    SUBPROCESS_TEXT_KWARGS,
+    with_ffmpeg_threads,
+)
 from src.modules.streaming.application.streaming.thumbnail_vtt import (
     DEFAULT_INTERVAL_SECONDS,
     SpriteLayout,
     build_vtt,
     compute_layout,
 )
-from src.modules.streaming.infrastructure.streaming._subprocess import (
-    HW_ACCEL_OFF,
-    SUBPROCESS_TEXT_KWARGS,
-    with_ffmpeg_threads,
-)
+from src.modules.streaming.infrastructure.streaming._subprocess import HW_ACCEL_OFF
 
 if TYPE_CHECKING:
     from pathlib import Path

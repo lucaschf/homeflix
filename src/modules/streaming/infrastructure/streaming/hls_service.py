@@ -48,6 +48,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from src.building_blocks.infrastructure.ffmpeg_subprocess import with_ffmpeg_threads
 from src.modules.streaming.application.ports.hls_playlist_port import (
     HlsCacheStats,
     HlsPlaylistPort,
@@ -56,9 +57,6 @@ from src.modules.streaming.infrastructure.streaming._hls_common import (
     _VIDEO_DIR,
     BROWSER_SAFE_CODECS,
     primary_audio_index,
-)
-from src.modules.streaming.infrastructure.streaming._subprocess import (
-    with_ffmpeg_threads,
 )
 from src.modules.streaming.infrastructure.streaming.ffmpeg_process_manager import (
     FfmpegProcessManager,

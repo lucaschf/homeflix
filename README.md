@@ -81,11 +81,11 @@ presentation → application → domain ← infrastructure
 | [ADR-020](docs/adr/ADR-020-pluggable-intro-detector-frame-hash.md) | Moving the intro detector port to the right level of abstraction |
 | [ADR-032](docs/adr/ADR-032-decompose-media-into-subdomains.md) | Decomposing the Media context into subdomains |
 
-All 36 are indexed in [docs/adr](docs/adr/README.md).
+All 37 are indexed in [docs/adr](docs/adr/README.md).
 
 ### Guardrails
 
-Architecture rules that a linter cannot see are pinned by tests in [`tests/architecture/`](tests/architecture/): every route must declare an authentication guard, admin checks have a single source, and cross-context catalog reads must pass an explicit viewing policy. CI also runs ruff, mypy in strict mode, a domain-exception semantics check ([ADR-028](docs/adr/ADR-028-domain-exception-semantics.md)) and a strict docs build.
+Context boundaries are enforced by [import-linter](https://import-linter.readthedocs.io/) ([ADR-037](docs/adr/ADR-037-import-linter-boundary-contracts.md)): modules are independent except through ACL adapters and published contracts, and layers only import downward. Architecture rules that a linter cannot see are pinned by tests in [`tests/architecture/`](tests/architecture/): every route must declare an authentication guard, admin checks have a single source, and cross-context catalog reads must pass an explicit viewing policy. CI also runs ruff, mypy in strict mode, a domain-exception semantics check ([ADR-028](docs/adr/ADR-028-domain-exception-semantics.md)) and a strict docs build.
 
 ## By the numbers
 
