@@ -11,7 +11,10 @@ from src.modules.media.application.dtos.enrichment_dtos import (
 from src.modules.media.application.ports.runtime_config_ports import (
     ContentRatingConfigPort,
 )
-from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.unit_of_work import (
+    MediaUnitOfWork,
+    MediaUnitOfWorkFactory,
+)
 from src.modules.media.application.use_cases._metadata_field_merge import (
     COMMON_FILL_IF_EMPTY,
     reconcile_common_fields,
@@ -74,47 +77,59 @@ class EnrichMovieMetadataUseCase:
         Returns:
             Enrichment result with success/failure status.
         """
+        movie_id = MovieId(input_dto.media_id)
         async with self._uow_factory() as uow:
-            movie = await uow.movies.find_by_id(MovieId(input_dto.media_id))
-            if not movie:
-                raise ResourceNotFoundException.for_resource("Movie", input_dto.media_id)
+            movie = await uow.movies.find_by_id(movie_id)
+        if not movie:
+            raise ResourceNotFoundException.for_resource("Movie", input_dto.media_id)
+        if movie.tmdb_id and not input_dto.force:
+            return EnrichMediaOutput(media_id=input_dto.media_id, enriched=False, provider=None)
 
-            if movie.tmdb_id and not input_dto.force:
-                return EnrichMediaOutput(media_id=input_dto.media_id, enriched=False, provider=None)
-
-            metadata, provider_name = await self._fetch_metadata(movie)
-            if not metadata:
-                error_msg = await self._build_no_metadata_error(movie, input_dto.media_id)
+        # Provider round-trips run with no Unit of Work open (ADR-038): a
+        # slow TMDB must not hold a database connection, and a caller's
+        # budget that cancels this enrichment must not land mid-write.
+        metadata, provider_name = await self._fetch_metadata(movie)
+        if not metadata:
+            error_msg = await self._build_no_metadata_error(movie, input_dto.media_id)
+            async with self._uow_factory() as uow:
+                current = await self._reload_unless_overtaken(uow, movie_id, input_dto)
+                if current is None:
+                    return EnrichMediaOutput(
+                        media_id=input_dto.media_id, enriched=False, provider=None
+                    )
                 # Flag the movie for admin review (cleared on the next
                 # successful enrichment). Persisting on the failure
                 # path turns "log-only cross-type hints" into a
                 # queryable inbox.
-                if not movie.needs_enrichment_review:
-                    movie = movie.with_updates(needs_enrichment_review=True)
-                    await uow.movies.save(movie)
-                return EnrichMediaOutput(
-                    media_id=input_dto.media_id,
-                    enriched=False,
-                    error=error_msg,
-                )
+                if not current.needs_enrichment_review:
+                    await uow.movies.save(current.with_updates(needs_enrichment_review=True))
+            return EnrichMediaOutput(
+                media_id=input_dto.media_id,
+                enriched=False,
+                error=error_msg,
+            )
 
-            # Re-fetch with localization if TMDB provider supports it
-            if metadata.tmdb_id and hasattr(self._primary, "get_movie_localized"):
-                get_localized = self._primary.get_movie_localized
-                localized_meta: MediaMetadata | None = await get_localized(metadata.tmdb_id)
-                if localized_meta is not None:
-                    metadata = localized_meta
+        # Re-fetch with localization if TMDB provider supports it
+        if metadata.tmdb_id and hasattr(self._primary, "get_movie_localized"):
+            get_localized = self._primary.get_movie_localized
+            localized_meta: MediaMetadata | None = await get_localized(metadata.tmdb_id)
+            if localized_meta is not None:
+                metadata = localized_meta
 
-            movie = _apply_movie_metadata(
-                movie,
+        async with self._uow_factory() as uow:
+            current = await self._reload_unless_overtaken(uow, movie_id, input_dto)
+            if current is None:
+                return EnrichMediaOutput(media_id=input_dto.media_id, enriched=False, provider=None)
+            current = _apply_movie_metadata(
+                current,
                 metadata,
                 policy=MergePolicy.from_force(input_dto.force),
                 certification=await resolve_certification(metadata, self._runtime_settings),
             )
-            if movie.needs_enrichment_review:
-                movie = movie.with_updates(needs_enrichment_review=False)
-            await uow.movies.save(movie)
-            enriched_tmdb_id = movie.tmdb_id.value if movie.tmdb_id else None
+            if current.needs_enrichment_review:
+                current = current.with_updates(needs_enrichment_review=False)
+            await uow.movies.save(current)
+            enriched_tmdb_id = current.tmdb_id.value if current.tmdb_id else None
 
         # Publish outside the UoW so a slow handler doesn't hold the
         # write transaction open. ``catalog_requests`` listens for
@@ -129,6 +144,30 @@ class EnrichMovieMetadataUseCase:
             )
 
         return EnrichMediaOutput(media_id=input_dto.media_id, enriched=True, provider=provider_name)
+
+    @staticmethod
+    async def _reload_unless_overtaken(
+        uow: MediaUnitOfWork,
+        movie_id: MovieId,
+        input_dto: EnrichMediaInput,
+    ) -> Movie | None:
+        """Re-read the movie for the write, or ``None`` if another run won.
+
+        The provider was called outside any transaction, so the row may have
+        changed meanwhile. Applying the result to the fresh row keeps edits
+        made in between; a row that another enrichment already resolved is
+        left alone unless this run is a forced refresh (optimistic check,
+        ADR-038).
+
+        Raises:
+            ResourceNotFoundException: The movie was deleted meanwhile.
+        """
+        current = await uow.movies.find_by_id(movie_id)
+        if current is None:
+            raise ResourceNotFoundException.for_resource("Movie", str(movie_id))
+        if current.tmdb_id and not input_dto.force:
+            return None
+        return current
 
     async def _fetch_metadata(self, movie: Movie) -> tuple[MediaMetadata | None, str | None]:
         """Try primary provider, then fallback.

@@ -2,7 +2,9 @@
 
 import logging
 from collections.abc import Awaitable, Callable
+from typing import ClassVar
 
+from src.building_blocks.application.deadline import deadline
 from src.building_blocks.application.event_bus import EventHandler
 from src.building_blocks.domain.events import DomainEvent
 from src.modules.media.application.dtos.enrichment_dtos import EnrichMediaInput
@@ -31,6 +33,9 @@ class OnMediaCreatedHandler(EventHandler):
         ... )
     """
 
+    #: Time one auto-enrichment may take, including a provider Retry-After.
+    ENRICH_BUDGET_SECONDS: ClassVar[float] = 60.0
+
     def __init__(
         self,
         enrich_movie_factory: Callable[[], Awaitable[EnrichMovieMetadataUseCase]],
@@ -58,15 +63,18 @@ class OnMediaCreatedHandler(EventHandler):
 
         input_dto = EnrichMediaInput(media_id=event.media_id.value, force=False)
 
-        if event.media_type is MediaType.MOVIE:
-            movie_uc = await self._enrich_movie_factory()
-            result = await movie_uc.execute(input_dto)
-        elif event.media_type is MediaType.SERIES:
-            series_uc = await self._enrich_series_factory()
-            result = await series_uc.execute(input_dto)
-        else:
-            _logger.warning("Unknown media type: %s", event.media_type)
-            return
+        # Background work, not a user waiting: it may wait out a short
+        # provider Retry-After, within a bounded budget (ADR-038).
+        async with deadline(self.ENRICH_BUDGET_SECONDS):
+            if event.media_type is MediaType.MOVIE:
+                movie_uc = await self._enrich_movie_factory()
+                result = await movie_uc.execute(input_dto)
+            elif event.media_type is MediaType.SERIES:
+                series_uc = await self._enrich_series_factory()
+                result = await series_uc.execute(input_dto)
+            else:
+                _logger.warning("Unknown media type: %s", event.media_type)
+                return
 
         if result.enriched:
             _logger.info("Enriched %s %s via %s", event.media_type, event.media_id, result.provider)

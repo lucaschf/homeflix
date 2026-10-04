@@ -13,7 +13,10 @@ from src.modules.media.application.dtos.enrichment_dtos import (
 from src.modules.media.application.ports.runtime_config_ports import (
     ContentRatingConfigPort,
 )
-from src.modules.media.application.unit_of_work import MediaUnitOfWorkFactory
+from src.modules.media.application.unit_of_work import (
+    MediaUnitOfWork,
+    MediaUnitOfWorkFactory,
+)
 from src.modules.media.application.use_cases._localized_metadata_helpers import (
     merge_text_localized,
 )
@@ -81,45 +84,57 @@ class EnrichSeriesMetadataUseCase:
         Returns:
             Enrichment result with success/failure status.
         """
+        series_id = SeriesId(input_dto.media_id)
         async with self._uow_factory() as uow:
-            series = await uow.series.find_by_id(SeriesId(input_dto.media_id))
-            if not series:
-                raise ResourceNotFoundException.for_resource("Series", input_dto.media_id)
+            series = await uow.series.find_by_id(series_id)
+        if not series:
+            raise ResourceNotFoundException.for_resource("Series", input_dto.media_id)
+        if series.tmdb_id and not input_dto.force:
+            return EnrichMediaOutput(media_id=input_dto.media_id, enriched=False, provider=None)
 
-            if series.tmdb_id and not input_dto.force:
-                return EnrichMediaOutput(media_id=input_dto.media_id, enriched=False, provider=None)
-
-            metadata, provider_name = await self._fetch_metadata(series)
-            if not metadata:
+        # Provider round-trips run with no Unit of Work open (ADR-038): a
+        # slow TMDB must not hold a database connection, and a caller's
+        # budget that cancels this enrichment must not land mid-write.
+        metadata, provider_name = await self._fetch_metadata(series)
+        if not metadata:
+            async with self._uow_factory() as uow:
+                current = await self._reload_unless_overtaken(uow, series_id, input_dto)
+                if current is None:
+                    return EnrichMediaOutput(
+                        media_id=input_dto.media_id, enriched=False, provider=None
+                    )
                 # Flag for admin review (cleared on the next successful
                 # enrichment) so the unresolved series surfaces on the
                 # needs-review queue instead of silently staying bare.
-                if not series.needs_enrichment_review:
-                    series = series.with_enrichment_review_flagged()
-                    await uow.series.save(series)
-                return EnrichMediaOutput(
-                    media_id=input_dto.media_id,
-                    enriched=False,
-                    error="No metadata found from any provider",
-                )
+                if not current.needs_enrichment_review:
+                    await uow.series.save(current.with_enrichment_review_flagged())
+            return EnrichMediaOutput(
+                media_id=input_dto.media_id,
+                enriched=False,
+                error="No metadata found from any provider",
+            )
 
-            # Re-fetch with localization if provider supports it
-            if metadata.tmdb_id and hasattr(self._primary, "get_series_localized"):
-                get_localized = self._primary.get_series_localized
-                localized_meta: MediaMetadata | None = await get_localized(metadata.tmdb_id)
-                if localized_meta is not None:
-                    metadata = localized_meta
+        # Re-fetch with localization if provider supports it
+        if metadata.tmdb_id and hasattr(self._primary, "get_series_localized"):
+            get_localized = self._primary.get_series_localized
+            localized_meta: MediaMetadata | None = await get_localized(metadata.tmdb_id)
+            if localized_meta is not None:
+                metadata = localized_meta
 
-            series = _apply_series_metadata(
-                series,
+        async with self._uow_factory() as uow:
+            current = await self._reload_unless_overtaken(uow, series_id, input_dto)
+            if current is None:
+                return EnrichMediaOutput(media_id=input_dto.media_id, enriched=False, provider=None)
+            current = _apply_series_metadata(
+                current,
                 metadata,
                 policy=MergePolicy.from_force(input_dto.force),
                 certification=await resolve_certification(metadata, self._runtime_settings),
             )
-            if series.needs_enrichment_review:
-                series = series.with_updates(needs_enrichment_review=False)
-            await uow.series.save(series)
-            enriched_tmdb_id = series.tmdb_id.value if series.tmdb_id else None
+            if current.needs_enrichment_review:
+                current = current.with_updates(needs_enrichment_review=False)
+            await uow.series.save(current)
+            enriched_tmdb_id = current.tmdb_id.value if current.tmdb_id else None
 
         # Publish outside the UoW so a slow handler doesn't hold the
         # write transaction open. ``catalog_requests`` listens for
@@ -134,6 +149,30 @@ class EnrichSeriesMetadataUseCase:
             )
 
         return EnrichMediaOutput(media_id=input_dto.media_id, enriched=True, provider=provider_name)
+
+    @staticmethod
+    async def _reload_unless_overtaken(
+        uow: MediaUnitOfWork,
+        series_id: SeriesId,
+        input_dto: EnrichMediaInput,
+    ) -> Series | None:
+        """Re-read the series for the write, or ``None`` if another run won.
+
+        The provider was called outside any transaction, so the row may have
+        changed meanwhile (a scan adding episodes, another enrichment).
+        Applying the result to the fresh row keeps those changes; a row that
+        another enrichment already resolved is left alone unless this run is
+        a forced refresh (optimistic check, ADR-038).
+
+        Raises:
+            ResourceNotFoundException: The series was deleted meanwhile.
+        """
+        current = await uow.series.find_by_id(series_id)
+        if current is None:
+            raise ResourceNotFoundException.for_resource("Series", str(series_id))
+        if current.tmdb_id and not input_dto.force:
+            return None
+        return current
 
     async def _fetch_metadata(self, series: Series) -> tuple[MediaMetadata | None, str | None]:
         """Try primary provider, then fallback.
