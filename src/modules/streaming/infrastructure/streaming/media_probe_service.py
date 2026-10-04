@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from src.modules.streaming.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
+from src.building_blocks.infrastructure.ffmpeg_subprocess import SUBPROCESS_TEXT_KWARGS
 from src.shared_kernel.media_probe.media_probe_port import MediaProbePort, ProbeResult
 from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode

@@ -32,15 +32,15 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from src.building_blocks.infrastructure.ffmpeg_subprocess import (
+    SUBPROCESS_TEXT_KWARGS,
+    with_ffmpeg_threads,
+)
 from src.modules.media.application.ports.credits_detector_port import (
     CreditsDetectorPort,
     CreditsDetectorTuning,
     CreditsSignal,
     DetectedCredits,
-)
-from src.modules.streaming.infrastructure.streaming._subprocess import (
-    SUBPROCESS_TEXT_KWARGS,
-    with_ffmpeg_threads,
 )
 
 if TYPE_CHECKING:

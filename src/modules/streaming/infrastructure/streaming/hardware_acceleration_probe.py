@@ -13,11 +13,8 @@ import logging
 import subprocess
 from typing import TYPE_CHECKING
 
-from src.modules.streaming.infrastructure.streaming._subprocess import (
-    HW_ACCEL_NVENC,
-    HW_ACCEL_OFF,
-    SUBPROCESS_TEXT_KWARGS,
-)
+from src.building_blocks.infrastructure.ffmpeg_subprocess import SUBPROCESS_TEXT_KWARGS
+from src.modules.streaming.infrastructure.streaming._subprocess import HW_ACCEL_NVENC, HW_ACCEL_OFF
 
 if TYPE_CHECKING:
     from src.modules.streaming.application.ports.runtime_config_ports import HlsRuntimeConfigPort

@@ -25,6 +25,10 @@ from typing import TYPE_CHECKING
 
 from PIL import Image, ImageOps
 
+from src.building_blocks.infrastructure.ffmpeg_subprocess import (
+    SUBPROCESS_TEXT_KWARGS,
+    with_ffmpeg_threads,
+)
 from src.modules.streaming.application.ports.subtitle_ocr_port import (
     OcrTrackResult,
     SubtitleOcrOptions,
@@ -35,10 +39,6 @@ from src.modules.streaming.application.services.subtitle_ocr_paths import (
     ocr_subtitle_output_dir,
 )
 from src.modules.streaming.domain.value_objects.subtitle_ocr_outcome import SubtitleTrackOutcome
-from src.modules.streaming.infrastructure.streaming._subprocess import (
-    SUBPROCESS_TEXT_KWARGS,
-    with_ffmpeg_threads,
-)
 from src.modules.streaming.infrastructure.streaming.pgs_parser import parse_pgs
 
 if TYPE_CHECKING:

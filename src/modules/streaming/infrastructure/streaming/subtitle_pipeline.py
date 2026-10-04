@@ -22,7 +22,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING
 
-from src.modules.streaming.infrastructure.streaming._subprocess import (
+from src.building_blocks.infrastructure.ffmpeg_subprocess import (
     SUBPROCESS_TEXT_KWARGS,
     with_ffmpeg_threads,
 )

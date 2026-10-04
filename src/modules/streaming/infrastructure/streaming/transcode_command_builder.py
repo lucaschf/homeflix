@@ -13,12 +13,12 @@ import logging
 import subprocess
 from typing import TYPE_CHECKING
 
+from src.building_blocks.infrastructure.ffmpeg_subprocess import SUBPROCESS_TEXT_KWARGS
 from src.modules.streaming.infrastructure.streaming._hls_common import (
     BROWSER_SAFE_CODECS,
     SEGMENT_DURATION,
     primary_audio_index,
 )
-from src.modules.streaming.infrastructure.streaming._subprocess import SUBPROCESS_TEXT_KWARGS
 
 if TYPE_CHECKING:
     from pathlib import Path
