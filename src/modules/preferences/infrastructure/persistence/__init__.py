@@ -1,0 +1,1 @@
+"""Preferences infrastructure persistence package."""

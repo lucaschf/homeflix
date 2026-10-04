@@ -49,6 +49,9 @@ jobs:
       - name: Enforce ADR-028 domain exception semantics
         run: bash scripts/check_domain_exceptions.sh
 
+      - name: Enforce bounded-context boundaries (ADR-037)
+        run: poetry run lint-imports
+
   type-check:
     name: Type Check
     runs-on: ubuntu-latest

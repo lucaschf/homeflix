@@ -110,7 +110,8 @@ Módulo não importa de módulo. Para ler dado de outro BC:
 4. Wire em `config/containers/<bc>.py`
 
 `from src.modules.media.domain...` dentro de outro módulo é o anti-padrão
-que a ACL existe para evitar.
+que a ACL existe para evitar. O `make lint-imports` reprova (ADR-037); exceção
+nova vai em `ignore_imports` no `pyproject.toml`, citando o ADR que a autoriza.
 
 ### Identificadores são VOs, inclusive nas fronteiras (ADR-002, ADR-018)
 
@@ -154,6 +155,7 @@ Rodam no pre-commit e no CI. Todos bloqueiam.
 make lint                      # ruff check + format --check
 make typecheck                 # mypy strict em src/
 make check-domain-exceptions   # ADR-028
+make lint-imports              # fronteiras entre BCs e camadas (ADR-037)
 make test                      # pytest
 make docs-build                # mkdocs --strict
 ```

@@ -46,6 +46,18 @@ repos:
         pass_filenames: false
         require_serial: true
 
+  # import-linter — bounded-context independence and layer order (ADR-037).
+  # Same command as `make lint-imports` and the CI gate.
+  - repo: local
+    hooks:
+      - id: lint-imports
+        name: lint-imports
+        entry: poetry run lint-imports
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
+
   # Conventional commits
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v3.1.0

@@ -71,6 +71,7 @@ faker = "^22.0.0"
 ruff = "^0.2.0"
 mypy = "^1.8.0"
 pre-commit = "^3.6.0"
+import-linter = "^2.15"
 
 [tool.poetry.group.postgres]
 optional = true
@@ -177,4 +178,65 @@ ignore = [
     "S101",    # assert allowed in tests
     "PLC0415", # import not at top level (common in tests for isolation)
     "PLR2004", # magic values allowed in tests
+]
+
+[tool.importlinter]
+root_package = "src"
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Bounded contexts are independent (ADR-009, ADR-024)"
+type = "independence"
+modules = [
+    "src.modules.catalog_requests",
+    "src.modules.collections",
+    "src.modules.identity",
+    "src.modules.library",
+    "src.modules.media",
+    "src.modules.metadata",
+    "src.modules.notifications",
+    "src.modules.preferences",
+    "src.modules.settings",
+    "src.modules.streaming",
+    "src.modules.watch_progress",
+]
+ignore_imports = [
+    "src.modules.*.infrastructure.acl.** -> src.modules.**",
+    "src.modules.*.presentation.** -> src.modules.identity.presentation.public",
+    "src.modules.*.presentation.** -> src.config.containers",
+    # Known debt, frozen (ADR-037): catalog use cases still import the
+    # MetadataProvider port owned by `metadata` (ADR-032 extraction). Listed
+    # one by one so the set can only shrink.
+    "src.modules.media.application.use_cases._localized_metadata_helpers -> src.modules.metadata.application.ports.metadata_provider_port",
+    "src.modules.media.application.use_cases._metadata_field_merge -> src.modules.metadata.application.ports.metadata_provider_port",
+    "src.modules.media.application.use_cases.enrich_movie_metadata -> src.modules.metadata.application.ports.metadata_provider_port",
+    "src.modules.media.application.use_cases.enrich_series_metadata -> src.modules.metadata.application.ports.metadata_provider_port",
+    "src.modules.media.application.use_cases.get_movie_tmdb_suggestions -> src.modules.metadata.application.ports.metadata_provider_port",
+    "src.modules.media.application.use_cases.get_related_movies -> src.modules.metadata.application.ports.metadata_provider_port",
+    "src.modules.media.application.use_cases.get_related_series -> src.modules.metadata.application.ports.metadata_provider_port",
+    "src.modules.media.application.use_cases.get_series_tmdb_suggestions -> src.modules.metadata.application.ports.metadata_provider_port",
+    "src.modules.media.application.use_cases.promote_movie_to_series -> src.modules.metadata.application.ports.metadata_provider_port",
+]
+
+[[tool.importlinter.contracts]]
+name = "Layers inside each bounded context (ADR-008)"
+type = "layers"
+containers = [
+    "src.modules.catalog_requests",
+    "src.modules.collections",
+    "src.modules.identity",
+    "src.modules.library",
+    "src.modules.media",
+    "src.modules.metadata",
+    "src.modules.notifications",
+    "src.modules.preferences",
+    "src.modules.settings",
+    "src.modules.streaming",
+    "src.modules.watch_progress",
+]
+layers = [
+    "presentation",
+    "infrastructure",
+    "application",
+    "domain",
 ]
