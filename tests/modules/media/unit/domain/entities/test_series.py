@@ -352,6 +352,76 @@ class TestSeriesQuality:
         assert series.has_hdr is True
 
 
+class TestSeriesAudioLanguages:
+    """Tests for Series.audio_languages."""
+
+    @staticmethod
+    def _series_with(seasons):
+        """Build a series from ``[[episode audio languages, ...], ...]``."""
+        from src.modules.media.domain.entities import Episode, Season, Series
+        from src.modules.media.domain.value_objects import (
+            Duration,
+            FilePath,
+            MediaFile,
+            Resolution,
+            SeasonId,
+            Title,
+        )
+        from src.shared_kernel.value_objects import AudioTrack, LanguageCode
+
+        series = Series.create(library_id=_LIBRARY_ID, title="Dark", start_year=2017)
+        for season_number, episodes in enumerate(seasons, start=1):
+            season = Season(
+                id=SeasonId.generate(),
+                series_id=series.id,
+                season_number=season_number,
+                episodes=[
+                    Episode(
+                        series_id=series.id,
+                        season_number=season_number,
+                        episode_number=n,
+                        title=Title(f"Ep {n}"),
+                        duration=Duration(2700),
+                        files=[
+                            MediaFile(
+                                file_path=FilePath(f"/series/dark/s{season_number}e{n}.mkv"),
+                                file_size=1_000_000_000,
+                                resolution=Resolution("1080p"),
+                                audio_tracks=[
+                                    AudioTrack(
+                                        index=i,
+                                        language=LanguageCode(language),
+                                        codec="aac",
+                                        channels=2,
+                                    )
+                                    for i, language in enumerate(languages)
+                                ],
+                            )
+                        ],
+                    )
+                    for n, languages in enumerate(episodes, start=1)
+                ],
+            )
+            series = series.with_season(season)
+        return series
+
+    def test_should_be_empty_without_seasons(self):
+        series = self._series_with([])
+
+        assert series.audio_languages == frozenset()
+
+    def test_should_union_every_episode_across_seasons(self):
+        from src.shared_kernel.value_objects import LanguageCode
+
+        series = self._series_with([[["de"], ["de", "pt"]], [["de", "en"]]])
+
+        assert series.audio_languages == {
+            LanguageCode("de"),
+            LanguageCode("pt"),
+            LanguageCode("en"),
+        }
+
+
 class TestSeriesEquality:
     """Tests for Series equality based on ID."""
 

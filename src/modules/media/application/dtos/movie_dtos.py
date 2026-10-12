@@ -171,6 +171,10 @@ class MovieSummaryOutput:
             the movie has no file yet. Drives the card's quality badge.
         hdr: Whether any file variant is HDR. Combined with
             ``resolution`` to label the badge (``4K HDR``).
+        audio_languages: Sorted ISO 639-1 codes of every audio track
+            across the variants, ``"un"`` for a track probed without
+            a language tag. Lets the card tell a dubbed title from a
+            subtitled-only one against the viewer's preference.
         genres: List of genre strings.
         library_id: External library id (``lib_xxx``) the movie lives
             in. Read by the admin Catalog page to render the
@@ -194,6 +198,7 @@ class MovieSummaryOutput:
     backdrop_path: str | None
     resolution: str | None
     hdr: bool
+    audio_languages: list[str]
     variant_count: int
     available_resolutions: list[str]
     genres: list[str]

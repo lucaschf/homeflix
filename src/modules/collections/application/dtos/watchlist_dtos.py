@@ -50,6 +50,7 @@ class WatchlistItemOutput:
     genres: tuple[str, ...] = ()
     resolution: str | None = None
     hdr: bool = False
+    audio_languages: tuple[str, ...] = ()
     # Watched fraction in [0, 1], or None when there's no progress.
     progress: float | None = None
 
@@ -72,6 +73,7 @@ class WatchlistItemOutput:
             genres=summary.genres,
             resolution=summary.resolution,
             hdr=summary.hdr,
+            audio_languages=summary.audio_languages,
             progress=progress,
         )
 

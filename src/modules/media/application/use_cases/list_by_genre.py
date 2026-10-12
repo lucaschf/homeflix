@@ -394,6 +394,7 @@ class ListByGenreUseCase:
     def _to_output(kind: MediaType, item: Movie | Series, lang: str) -> CatalogItemOutput:
         """Convert a movie/series entity into the catalog row DTO."""
         resolution, hdr = catalog_quality(item)
+        audio_languages = sorted(language.value for language in item.audio_languages)
         if isinstance(item, Movie):
             return CatalogItemOutput(
                 id=str(item.id),
@@ -405,6 +406,7 @@ class ListByGenreUseCase:
                 backdrop_path=item.get_backdrop_path(lang),
                 resolution=resolution,
                 hdr=hdr,
+                audio_languages=audio_languages,
                 genres=item.get_genres(lang),
             )
         # Series
@@ -418,6 +420,7 @@ class ListByGenreUseCase:
             backdrop_path=item.get_backdrop_path(lang),
             resolution=resolution,
             hdr=hdr,
+            audio_languages=audio_languages,
             genres=item.get_genres(lang),
         )
 

@@ -87,6 +87,9 @@ class CatalogItemOutput:
             file, or the best across a series' episodes. ``None`` when
             nothing has a file yet. Drives the card's quality badge.
         hdr: Whether any variant behind this row is HDR.
+        audio_languages: Sorted ISO 639-1 codes of every audio track
+            behind the row, ``"un"`` for a track probed without a
+            language tag. Drives the card's subtitled-only badge.
         genres: Localized genre list — same field as in the existing
             movie/series summaries so the frontend doesn't need a
             different card component.
@@ -101,6 +104,7 @@ class CatalogItemOutput:
     backdrop_path: str | None
     resolution: str | None
     hdr: bool
+    audio_languages: list[str]
     genres: list[str]
 
 

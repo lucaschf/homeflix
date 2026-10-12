@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
     from src.modules.media.domain.value_objects import MediaFile, Resolution
+    from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 class FileVariantMixin:
@@ -56,6 +57,22 @@ class FileVariantMixin:
             format (HDR10, Dolby Vision, ...).
         """
         return any(f.hdr_format is not None for f in self.files)
+
+    @property
+    def audio_languages(self) -> frozenset[LanguageCode]:
+        """Every audio language across the file variants.
+
+        The union, not the intersection: the title can be watched in a
+        language as soon as any variant carries it. A track probed
+        without a language tag reports the prober's undetermined code,
+        which stays in the set so a caller can tell "unknown" from
+        "absent".
+
+        Returns:
+            The distinct audio track languages, empty when no variant
+            has been probed.
+        """
+        return frozenset(track.language for f in self.files for track in f.audio_tracks)
 
     @property
     def total_size(self) -> int:

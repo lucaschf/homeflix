@@ -40,6 +40,9 @@ class MediaSummary:
             ``"1080p"``). Set for movies with files; ``None`` for series
             (episode-derived, deferred).
         hdr: Whether the best file carries an HDR format. Movies only.
+        audio_languages: Sorted ISO 639-1 codes of every audio track
+            across the movie's files (``"un"`` for an untagged track).
+            Empty for series, whose episodes the lookup doesn't hydrate.
         library_id: External id (``lib_xxx``) of the library the media
             lives in, or ``None`` when unknown. Consumed by every list
             read to filter items through the caller's per-profile
@@ -62,6 +65,7 @@ class MediaSummary:
     genres: tuple[str, ...] = ()
     resolution: str | None = None
     hdr: bool = False
+    audio_languages: tuple[str, ...] = ()
     library_id: str | None = None
     minimum_age: AgeRating | None = field(kw_only=True)
 
