@@ -351,6 +351,63 @@ class TestMovieFileManagement:
 
         assert movie.has_hdr is True
 
+    def test_audio_languages_should_be_empty_without_probed_tracks(self):
+        from src.modules.media.domain.entities import Movie
+
+        movie = Movie.create(
+            library_id=_LIBRARY_ID,
+            title="Inception",
+            year=2010,
+            duration=8880,
+            file_path="/movies/inception_1080p.mkv",
+            file_size=4_000_000_000,
+            resolution="1080p",
+        )
+
+        assert movie.audio_languages == frozenset()
+
+    def test_audio_languages_should_union_every_variant(self):
+        from src.modules.media.domain.entities import Movie
+        from src.modules.media.domain.value_objects import (
+            Duration,
+            FilePath,
+            MediaFile,
+            Resolution,
+            Title,
+            Year,
+        )
+        from src.shared_kernel.value_objects import AudioTrack, LanguageCode
+
+        def track(index: int, language: str) -> AudioTrack:
+            return AudioTrack(index=index, language=LanguageCode(language), codec="aac", channels=2)
+
+        movie = Movie(
+            library_id=_LIBRARY_ID,
+            title=Title("Parasite"),
+            year=Year(2019),
+            duration=Duration(7920),
+            files=[
+                MediaFile(
+                    file_path=FilePath("/movies/parasite_1080p.mkv"),
+                    file_size=4_000_000_000,
+                    resolution=Resolution("1080p"),
+                    audio_tracks=[track(0, "ko"), track(1, "pt")],
+                ),
+                MediaFile(
+                    file_path=FilePath("/movies/parasite_4k.mkv"),
+                    file_size=20_000_000_000,
+                    resolution=Resolution("4K"),
+                    audio_tracks=[track(0, "ko"), track(1, "en")],
+                ),
+            ],
+        )
+
+        assert movie.audio_languages == {
+            LanguageCode("ko"),
+            LanguageCode("pt"),
+            LanguageCode("en"),
+        }
+
     def test_with_file_should_add_new_variant(self):
         from src.modules.media.domain.entities import Movie
         from src.modules.media.domain.value_objects import FilePath, MediaFile, Resolution

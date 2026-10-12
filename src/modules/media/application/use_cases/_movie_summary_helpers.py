@@ -24,6 +24,7 @@ def to_movie_summary(movie: Movie, lang: str = "en") -> MovieSummaryOutput:
         backdrop_path=movie.get_backdrop_path(lang),
         resolution=best.resolution.value if best else None,
         hdr=movie.has_hdr,
+        audio_languages=sorted(language.value for language in movie.audio_languages),
         variant_count=len(movie.files),
         available_resolutions=[r.value for r in movie.available_resolutions],
         genres=movie.get_genres(lang),

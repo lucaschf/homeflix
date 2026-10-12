@@ -181,6 +181,9 @@ class SeriesSummaryOutput:
             ``None`` when no episode has a file yet. Series carry no
             files of their own, so quality is episode-derived.
         hdr: Whether any episode has an HDR variant.
+        audio_languages: Sorted ISO 639-1 codes of every audio track
+            any episode carries, ``"un"`` for a track probed without a
+            language tag.
         genres: List of genre strings.
         library_id: External library id (``lib_xxx``) owning the
             series. Used by the admin Catalog "Library" column.
@@ -203,6 +206,7 @@ class SeriesSummaryOutput:
     intro_resolved_count: int
     resolution: str | None
     hdr: bool
+    audio_languages: list[str]
     genres: list[str]
     library_id: str
     tmdb_id: int | None

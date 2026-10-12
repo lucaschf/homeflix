@@ -125,6 +125,7 @@ class ListRecentlyAddedCatalogUseCase:
         mirrored in two places at most.
         """
         resolution, hdr = catalog_quality(item)
+        audio_languages = sorted(language.value for language in item.audio_languages)
         if isinstance(item, Movie):
             return CatalogItemOutput(
                 id=str(item.id),
@@ -136,6 +137,7 @@ class ListRecentlyAddedCatalogUseCase:
                 backdrop_path=item.get_backdrop_path(lang),
                 resolution=resolution,
                 hdr=hdr,
+                audio_languages=audio_languages,
                 genres=item.get_genres(lang),
             )
         return CatalogItemOutput(
@@ -148,6 +150,7 @@ class ListRecentlyAddedCatalogUseCase:
             backdrop_path=item.get_backdrop_path(lang),
             resolution=resolution,
             hdr=hdr,
+            audio_languages=audio_languages,
             genres=item.get_genres(lang),
         )
 

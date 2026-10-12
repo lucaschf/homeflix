@@ -32,8 +32,10 @@ from src.modules.media.infrastructure.persistence.sqlalchemy_unit_of_work import
 from src.shared_kernel.content_policy import ViewingPolicy
 from src.shared_kernel.value_objects import (
     AgeRating,
+    AudioTrack,
     Certification,
     ContentRating,
+    LanguageCode,
     MediaType,
     RatingSystem,
 )
@@ -174,6 +176,45 @@ class TestCollectionsMediaLookupAdapter:
         # best_file is the highest-resolution variant → 4K + its HDR.
         assert summary.resolution == "4K"
         assert summary.hdr is True
+
+    async def test_movie_audio_languages_union_every_file_sorted(
+        self,
+        db_session: AsyncSession,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        def track(index: int, language: str) -> AudioTrack:
+            return AudioTrack(index=index, language=LanguageCode(language), codec="aac", channels=2)
+
+        movie_id = MovieId.generate()
+        movie = Movie(
+            library_id=_LIBRARY_ID,
+            id=movie_id,
+            title=Title("Amélie"),
+            year=Year(2001),
+            duration=Duration(7320),
+            files=[
+                MediaFile(
+                    file_path=FilePath("/movies/amelie-1080.mkv"),
+                    file_size=1_000_000,
+                    resolution=Resolution("1080p"),
+                    is_primary=True,
+                    audio_tracks=[track(0, "fr"), track(1, "pt")],
+                ),
+                MediaFile(
+                    file_path=FilePath("/movies/amelie-4k.mkv"),
+                    file_size=4_000_000,
+                    resolution=Resolution("4K"),
+                    audio_tracks=[track(0, "fr"), track(1, "en")],
+                ),
+            ],
+        )
+        await SQLAlchemyMovieRepository(db_session).save(movie)
+        await db_session.commit()
+
+        adapter = MediaLookupAdapter(SqlAlchemyMediaUnitOfWorkFactory(session_factory))
+        summaries = await adapter.get_many([str(movie_id)], [], "en")
+
+        assert summaries[(MediaType.MOVIE, str(movie_id))].audio_languages == ("en", "fr", "pt")
 
     async def test_get_many_omits_missing_ids(
         self,

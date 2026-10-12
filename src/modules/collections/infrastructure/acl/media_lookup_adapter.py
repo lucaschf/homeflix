@@ -54,6 +54,9 @@ class MediaLookupAdapter(MediaLookupPort):
                         genres=tuple(movie.get_genres(lang)),
                         resolution=best.resolution.value if best else None,
                         hdr=best.hdr_format is not None if best else False,
+                        audio_languages=tuple(
+                            sorted(language.value for language in movie.audio_languages)
+                        ),
                         library_id=movie.library_id,
                         minimum_age=movie.minimum_age,
                     )
@@ -61,7 +64,7 @@ class MediaLookupAdapter(MediaLookupPort):
             if series_ids:
                 series_map = await uow.series.find_by_ids(list(series_ids), policy=None)
                 for media_id, series in series_map.items():
-                    # Runtime/resolution/HDR live on the series' episodes,
+                    # Runtime/resolution/HDR/audio live on the series' episodes,
                     # which the batch lookup doesn't hydrate — left null
                     # (the client hides those fields when absent).
                     result[(MediaType.SERIES, media_id)] = MediaSummary(

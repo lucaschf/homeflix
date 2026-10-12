@@ -29,6 +29,7 @@ def to_series_summary(series: Series, lang: str = "en") -> SeriesSummaryOutput:
         intro_resolved_count=series.intro_resolved_count,
         resolution=best_resolution.value if best_resolution else None,
         hdr=series.has_hdr,
+        audio_languages=sorted(language.value for language in series.audio_languages),
         genres=series.get_genres(lang),
         library_id=series.library_id,
         tmdb_id=series.tmdb_id.value if series.tmdb_id else None,

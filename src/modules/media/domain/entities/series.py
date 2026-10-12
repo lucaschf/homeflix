@@ -31,6 +31,7 @@ from src.shared_kernel.value_objects.media_type import MediaType
 
 if TYPE_CHECKING:
     from src.modules.media.domain.entities.season import Season
+    from src.shared_kernel.value_objects.language_code import LanguageCode
 
 
 class Series(AggregateRoot[SeriesId]):
@@ -258,6 +259,24 @@ class Series(AggregateRoot[SeriesId]):
             True when at least one episode carries an HDR variant.
         """
         return any(episode.has_hdr for season in self.seasons for episode in season.episodes)
+
+    @property
+    def audio_languages(self) -> frozenset[LanguageCode]:
+        """Every audio language any episode can be watched in.
+
+        Series carry no files of their own, so this unions each
+        episode's variants — the same reach-through as ``has_hdr``.
+
+        Returns:
+            The distinct audio track languages, empty when no episode
+            has a probed file yet.
+        """
+        return frozenset(
+            language
+            for season in self.seasons
+            for episode in season.episodes
+            for language in episode.audio_languages
+        )
 
     @property
     def is_ongoing(self) -> bool:
