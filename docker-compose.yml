@@ -38,8 +38,12 @@ services:
     volumes:
       # Database, thumbnails, mirrored artwork and the HLS cache.
       - ${HOMEFLIX_DATA:-./data}:/app/data
-      # Media library, read-only. HOMEFLIX_MEDIA_DIRECTORIES lists paths inside it.
-      - ${MEDIA_ROOT:?set MEDIA_ROOT in .env}:/media:ro
+      # Media library, read-only, at HOMEFLIX_MEDIA_MOUNT (default /media).
+      # HOMEFLIX_MEDIA_DIRECTORIES lists paths inside it. The database stores
+      # absolute file paths, so to reuse an existing Linux database mount the
+      # library at the same path it has on the host (MEDIA_ROOT and
+      # HOMEFLIX_MEDIA_MOUNT equal).
+      - ${MEDIA_ROOT:?set MEDIA_ROOT in .env}:${HOMEFLIX_MEDIA_MOUNT:-/media}:ro
     labels:
       # Optional PCS integration (github.com/lucaschf/pcs): with these labels
       # the container shows up in PCS by itself, which can start and stop it.
