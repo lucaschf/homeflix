@@ -34,7 +34,9 @@ artwork/
 # Not needed at runtime
 docs/
 tests/
-scripts/
+# Only the identity bootstrap scripts ship (admin / member creation).
+scripts/*
+!scripts/identity_*.py
 Makefile
 mkdocs.yml
 .pre-commit-config.yaml

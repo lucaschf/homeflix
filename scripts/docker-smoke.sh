@@ -58,6 +58,10 @@ check "ffmpeg available"
 "${compose[@]}" exec -T backend sh -c 'touch /media/x 2>/dev/null' && fail "media is writable"
 check "media mounted read-only"
 
+"${compose[@]}" exec -T -w /tmp backend python -c "import src.config.containers" || fail "src not importable outside /app"
+"${compose[@]}" exec -T backend test -f scripts/identity_create_admin.py || fail "admin bootstrap script missing"
+check "identity bootstrap scripts can run"
+
 [ "$(docker inspect -f '{{index .Config.Labels "pcs.id"}}' homeflix-backend)" = homeflix ] || fail "PCS labels missing"
 check "PCS labels present"
 
