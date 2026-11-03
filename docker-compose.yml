@@ -1,0 +1,52 @@
+# HomeFlix backend as a container. Set at least SECRET_KEY and MEDIA_ROOT in
+# .env (Docker section of .env.example), then:
+#
+#   docker compose up -d --build
+#
+# The container reads HOMEFLIX_* variables, not the app's own (APP_ENV,
+# DATABASE_URL, MEDIA_DIRECTORIES…), so the .env used by `make dev` cannot leak
+# host paths or dev settings into it.
+#
+# Production by default: it refuses to start without a real SECRET_KEY and
+# serves the session cookie as Secure (Settings validator). For a local run over
+# plain HTTP: HOMEFLIX_APP_ENV=development and HOMEFLIX_COOKIE_SECURE=false.
+services:
+  backend:
+    build: .
+    image: homeflix-backend:local
+    container_name: homeflix-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${HOMEFLIX_APP_ENV:-production}
+      DEBUG: "false"
+      LOG_LEVEL: ${HOMEFLIX_LOG_LEVEL:-INFO}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      SESSION_COOKIE_SECURE: ${HOMEFLIX_COOKIE_SECURE:-true}
+      DATABASE_URL: ${HOMEFLIX_DATABASE_URL:-sqlite+aiosqlite:////app/data/homeflix.db}
+      MEDIA_DIRECTORIES: ${HOMEFLIX_MEDIA_DIRECTORIES:-/media}
+      THUMBNAILS_DIRECTORY: /app/data/thumbnails
+      ARTWORK_STORAGE_DIRECTORY: /app/data/artwork
+      HLS_CACHE_DIRECTORY: /app/data/hls_cache
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      TMDB_BASE_URL: ${TMDB_BASE_URL:-https://api.themoviedb.org/3}
+      OMDB_API_KEY: ${OMDB_API_KEY:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-en}
+      SUPPORTED_LOCALES: ${SUPPORTED_LOCALES:-en,pt-BR}
+    ports:
+      - "${HOMEFLIX_BIND:-127.0.0.1}:${HOMEFLIX_PORT:-8005}:8005"
+    volumes:
+      # Database, thumbnails, mirrored artwork and the HLS cache.
+      - ${HOMEFLIX_DATA:-./data}:/app/data
+      # Media library, read-only. HOMEFLIX_MEDIA_DIRECTORIES lists paths inside it.
+      - ${MEDIA_ROOT:?set MEDIA_ROOT in .env}:/media:ro
+    labels:
+      # Optional PCS integration (github.com/lucaschf/pcs): with these labels
+      # the container shows up in PCS by itself, which can start and stop it.
+      # Inert metadata for anything else.
+      pcs.id: homeflix
+      pcs.code: HF_20
+      pcs.name: HomeFlix
+      pcs.group: application
+      pcs.icon: stack
+      pcs.summary: homeflix-backend

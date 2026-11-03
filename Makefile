@@ -1,4 +1,5 @@
-.PHONY: help install dev test lint lint-imports format migrate migration clean docs docs-install docs-build
+.PHONY: help install dev test lint lint-imports format migrate migration clean docs docs-install docs-build \
+        docker-build docker-up docker-down docker-logs docker-smoke
 
 # Default target
 help:
@@ -32,6 +33,13 @@ help:
 	@echo "  make docs-install  Install the MkDocs toolchain"
 	@echo "  make docs          Serve docs with live reload (http://127.0.0.1:8000)"
 	@echo "  make docs-build    Build docs (strict — the docs gate)"
+	@echo ""
+	@echo "Docker:"
+	@echo "  make docker-build  Build the backend image"
+	@echo "  make docker-up     Start the stack in the background (needs .env)"
+	@echo "  make docker-down   Stop and remove the stack"
+	@echo "  make docker-logs   Tail backend logs"
+	@echo "  make docker-smoke  Build the image and run the smoke test CI runs"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean         Remove generated files"
@@ -120,6 +128,25 @@ docs:
 
 docs-build:
 	poetry run mkdocs build --strict
+
+# =============================================================================
+# Docker
+# =============================================================================
+
+docker-build:
+	docker compose build
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
+
+docker-logs:
+	docker compose logs -f backend
+
+docker-smoke:
+	bash scripts/docker-smoke.sh
 
 # =============================================================================
 # Cleanup

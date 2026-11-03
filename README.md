@@ -107,7 +107,18 @@ make dev            # http://localhost:8005 — API docs at /docs
 
 Key settings in `.env`: `DATABASE_URL`, `MEDIA_DIRECTORIES` (comma-separated), `TMDB_API_KEY`, optional `OMDB_API_KEY`.
 
-`make help` lists the remaining targets (tests, lint, typecheck, migrations, docs). Branches start from `develop`; commits follow [Conventional Commits](https://www.conventionalcommits.org/) with the module as scope, e.g. `feat(media): …`.
+### Docker
+
+The backend also runs as a container (Python + FFmpeg, non-root, migrations on boot):
+
+```bash
+cp .env.example .env    # Docker section: MEDIA_ROOT, HOMEFLIX_MEDIA_DIRECTORIES, SECRET_KEY
+docker compose up -d --build
+```
+
+The compose file runs in production mode by default, so it needs a real `SECRET_KEY` and serves the session cookie as `Secure`. Put it behind a TLS-terminating reverse proxy. The container reads `HOMEFLIX_*` variables rather than `APP_ENV`, `DATABASE_URL` or `MEDIA_DIRECTORIES`, so the `.env` used by `make dev` does not leak host paths into it. For a local run over plain HTTP, set `HOMEFLIX_APP_ENV=development` and `HOMEFLIX_COOKIE_SECURE=false`. The media folder is mounted read-only at `/media`. The database, thumbnails, artwork and HLS cache live in `./data`. The port is published on `127.0.0.1:8005` (`HOMEFLIX_BIND`, `HOMEFLIX_PORT`). `make docker-smoke` runs the same smoke test as CI.
+
+`make help` lists the remaining targets (tests, lint, typecheck, migrations, docs, docker). Branches start from `develop`; commits follow [Conventional Commits](https://www.conventionalcommits.org/) with the module as scope, e.g. `feat(media): …`.
 
 ## Documentation
 

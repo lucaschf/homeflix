@@ -142,6 +142,9 @@ temp/
 # Runtime cache
 hls_cache/
 
+# Docker bind-mount directory (docker-compose.yml)
+/data/
+
 # Specs and evidence (local references only)
 specs/
 evidence/
