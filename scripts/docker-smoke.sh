@@ -44,7 +44,9 @@ curl -fsS "$base/health" | grep -q '"status":"healthy"' || fail "/health"
 check "/health answers"
 
 [ -s "$work/data/homeflix.db" ] || fail "no database in the data volume"
-"${compose[@]}" logs backend | grep -q "Running database migrations" || fail "migrations did not run"
+# Read the logs first: under pipefail, `logs | grep -q` fails when grep exits early (SIGPIPE).
+logs="$("${compose[@]}" logs --no-color backend)"
+grep -q "Running upgrade" <<<"$logs" || fail "migrations did not run"
 check "migrations ran into the data volume"
 
 [ "$("${compose[@]}" exec -T backend id -u)" = 1000 ] || fail "not running as uid 1000"
