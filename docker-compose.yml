@@ -54,3 +54,33 @@ services:
       pcs.group: application
       pcs.icon: stack
       pcs.summary: homeflix-backend
+
+  # The web app (lucaschf/homeflix-web), served by nginx, which forwards /api and
+  # /health to the backend so both share one origin. Optional: it starts with the
+  # "web" profile (COMPOSE_PROFILES=web in .env, or `docker compose --profile web
+  # up -d --build`). It builds straight from the repo on GitHub; point
+  # HOMEFLIX_WEB_CONTEXT at a local checkout to build that instead.
+  web:
+    profiles: [web]
+    build:
+      context: ${HOMEFLIX_WEB_CONTEXT:-https://github.com/lucaschf/homeflix-web.git#main}
+    image: homeflix-web:local
+    container_name: homeflix-web
+    restart: unless-stopped
+    environment:
+      HOMEFLIX_API: http://backend:8005
+    ports:
+      - "${HOMEFLIX_BIND:-127.0.0.1}:${HOMEFLIX_WEB_PORT:-3000}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    labels:
+      pcs.id: homeflix-web
+      pcs.code: HF_21
+      pcs.name: HomeFlix Web
+      pcs.group: application
+      pcs.icon: stack
+      pcs.summary: homeflix-web
+      pcs.depends_on: homeflix
