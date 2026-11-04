@@ -1,0 +1,51 @@
+# Git
+.git
+.github
+.gitignore
+.gitattributes
+
+# Python
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage
+coverage.xml
+
+# Environment: real values never enter the image
+.env
+.env.*
+
+# Runtime data (bind-mounted at run time)
+data/
+hls_cache/
+thumbnails/
+artwork/
+*.db
+*.sqlite
+*.sqlite3
+
+# Not needed at runtime
+docs/
+tests/
+# Only the identity bootstrap scripts ship (admin / member creation).
+scripts/*
+!scripts/identity_*.py
+Makefile
+mkdocs.yml
+.pre-commit-config.yaml
+.claude/
+CLAUDE.md
+
+# IDE / OS clutter
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+node_modules

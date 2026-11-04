@@ -52,7 +52,11 @@ class Settings(BaseSettings):
 
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8005)
-    allowed_origins: list[str] = Field(default=["http://localhost:3000", "http://localhost:5173"])
+    # ``NoDecode`` lets the ``parse_origins`` validator handle the
+    # comma-separated ``.env`` form instead of failing as invalid JSON.
+    allowed_origins: Annotated[list[str], NoDecode] = Field(
+        default=["http://localhost:3000", "http://localhost:5173"]
+    )
 
     @field_validator("allowed_origins", mode="before")
     @classmethod

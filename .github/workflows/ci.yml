@@ -180,10 +180,20 @@ jobs:
           CI: "true" # ativa o plugin git-revision-date-localized
         run: poetry run mkdocs build --strict
 
+  docker:
+    name: Docker (build and smoke test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build and smoke-test the image
+        run: bash scripts/docker-smoke.sh
+
   # Summary job that depends on all others
   ci-success:
     name: CI Success
-    needs: [lint, type-check, test, security, docs]
+    needs: [lint, type-check, test, security, docs, docker]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -192,7 +202,8 @@ jobs:
           if [[ "${{ needs.lint.result }}" != "success" ]] || \
              [[ "${{ needs.type-check.result }}" != "success" ]] || \
              [[ "${{ needs.test.result }}" != "success" ]] || \
-             [[ "${{ needs.docs.result }}" != "success" ]]; then
+             [[ "${{ needs.docs.result }}" != "success" ]] || \
+             [[ "${{ needs.docker.result }}" != "success" ]]; then
             echo "Required jobs failed"
             exit 1
           fi

@@ -161,7 +161,7 @@ rather than one large phase. Grouped by theme:
 | **Teaches** | Multi-stage builds, containerization, infra as code |
 | **Unlocks** | Reproducible dev env, CI pipeline, easy deployment, GPU passthrough for 3.2 |
 | **Scope** | Dockerfile (backend), docker-compose with SQLite volume, optional PostgreSQL profile, optional GPU runtime profile |
-| **Status** | WIP — draft in PR #104 (`feat/docker-setup`), pending review |
+| **Status** | Backend image and compose with the SQLite volume in `build/docker-setup` (supersedes PR #104); PostgreSQL and GPU profiles still open |
 
 #### 2.2 Primitive Obsession Cleanup — *in progress*
 
