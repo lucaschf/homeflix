@@ -25,8 +25,9 @@ services:
       DATABASE_URL: ${HOMEFLIX_DATABASE_URL:-sqlite+aiosqlite:////app/data/homeflix.db}
       MEDIA_DIRECTORIES: ${HOMEFLIX_MEDIA_DIRECTORIES:-/media}
       THUMBNAILS_DIRECTORY: /app/data/thumbnails
-      ARTWORK_STORAGE_DIRECTORY: /app/data/artwork
-      HLS_CACHE_DIRECTORY: /app/data/hls_cache
+      # Paths inside the container, on a writable mount. Defaults live in HOMEFLIX_DATA.
+      ARTWORK_STORAGE_DIRECTORY: ${HOMEFLIX_ARTWORK:-/app/data/artwork}
+      HLS_CACHE_DIRECTORY: ${HOMEFLIX_HLS_CACHE:-/app/data/hls_cache}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       TMDB_BASE_URL: ${TMDB_BASE_URL:-https://api.themoviedb.org/3}
       OMDB_API_KEY: ${OMDB_API_KEY:-}
@@ -38,12 +39,13 @@ services:
     volumes:
       # Database, thumbnails, mirrored artwork and the HLS cache.
       - ${HOMEFLIX_DATA:-./data}:/app/data
-      # Media library, read-only, at HOMEFLIX_MEDIA_MOUNT (default /media).
-      # HOMEFLIX_MEDIA_DIRECTORIES lists paths inside it. The database stores
-      # absolute file paths, so to reuse an existing Linux database mount the
-      # library at the same path it has on the host (MEDIA_ROOT and
-      # HOMEFLIX_MEDIA_MOUNT equal).
-      - ${MEDIA_ROOT:?set MEDIA_ROOT in .env}:${HOMEFLIX_MEDIA_MOUNT:-/media}:ro
+      # Media library at HOMEFLIX_MEDIA_MOUNT (default /media), read-only unless
+      # HOMEFLIX_MEDIA_MODE=rw. Scrub-preview sprites and OCR subtitles are written
+      # next to each video (.homeflix/, ADR-027), so read-only means no new ones;
+      # playback does not need them. HOMEFLIX_MEDIA_DIRECTORIES lists paths inside
+      # the mount. The database stores absolute file paths: to reuse an existing
+      # one, see the Docker section of .env.example.
+      - ${MEDIA_ROOT:?set MEDIA_ROOT in .env}:${HOMEFLIX_MEDIA_MOUNT:-/media}:${HOMEFLIX_MEDIA_MODE:-ro}
     labels:
       # Optional PCS integration (github.com/lucaschf/pcs): with these labels
       # the container shows up in PCS by itself, which can start and stop it.

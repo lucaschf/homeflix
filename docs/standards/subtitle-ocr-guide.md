@@ -40,6 +40,11 @@ via `PATH`). O host precisa de:
 > `FAILED` ("No tesseract language models installed") — nada é marcado
 > como processado silenciosamente.
 
+> **Docker:** a imagem não inclui tesseract, então o job pula todo tick. Para
+> usar OCR no container, além de instalar tesseract na imagem é preciso
+> `HOMEFLIX_MEDIA_MODE=rw`: com a mídia read-only o marcador `.ocr_done` não é
+> gravado, e os mesmos arquivos voltam a ser processados a cada tick.
+
 ---
 
 ## 3. Instalação (host Windows)
