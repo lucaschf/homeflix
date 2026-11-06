@@ -50,6 +50,8 @@ COPY --chown=homeflix:homeflix alembic.ini ./
 # Identity bootstrap (once per deployment), e.g.
 #   docker compose exec backend python scripts/identity_create_admin.py
 COPY --chown=homeflix:homeflix scripts/identity_*.py ./scripts/
+# Moves the paths of an existing database to this container's mount.
+COPY --chown=homeflix:homeflix scripts/rebase_media_paths.py ./scripts/
 COPY --chown=homeflix:homeflix docker/entrypoint.sh /entrypoint.sh
 
 USER homeflix

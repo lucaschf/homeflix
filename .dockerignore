@@ -34,9 +34,11 @@ artwork/
 # Not needed at runtime
 docs/
 tests/
-# Only the identity bootstrap scripts ship (admin / member creation).
+# Only the identity bootstrap scripts (admin / member creation) and the path
+# rebase for reusing an existing database ship.
 scripts/*
 !scripts/identity_*.py
+!scripts/rebase_media_paths.py
 Makefile
 mkdocs.yml
 .pre-commit-config.yaml

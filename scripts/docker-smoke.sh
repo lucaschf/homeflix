@@ -16,7 +16,7 @@ port="${SMOKE_PORT:-18005}"
 base="http://127.0.0.1:${port}"
 
 mkdir -p "$work/data" "$work/media/movies"
-chmod 0777 "$work/data"  # the container runs as uid 1000
+chmod 0777 "$work/data" "$work/media"  # the container runs as uid 1000
 
 export HOMEFLIX_APP_ENV=development HOMEFLIX_COOKIE_SECURE=false
 export SECRET_KEY="smoke-$(date +%s)"
@@ -62,7 +62,22 @@ check "media mounted read-only"
 "${compose[@]}" exec -T backend test -f scripts/identity_create_admin.py || fail "admin bootstrap script missing"
 check "identity bootstrap scripts can run"
 
+"${compose[@]}" exec -T backend python scripts/rebase_media_paths.py --from /old --to /media >/dev/null \
+  || fail "path rebase script does not run"
+check "path rebase script can run"
+
 [ "$(docker inspect -f '{{index .Config.Labels "pcs.id"}}' homeflix-backend)" = homeflix ] || fail "PCS labels missing"
 check "PCS labels present"
+
+# Start again with the optional paths set, to check they reach the container.
+export HOMEFLIX_MEDIA_MODE=rw HOMEFLIX_ARTWORK=/media/artwork HOMEFLIX_HLS_CACHE=/media/hls_cache
+"${compose[@]}" up -d --wait --wait-timeout 180 || fail "container did not restart with the optional paths"
+
+"${compose[@]}" exec -T backend touch /media/x || fail "media is read-only with HOMEFLIX_MEDIA_MODE=rw"
+check "media writable with HOMEFLIX_MEDIA_MODE=rw"
+
+[ "$("${compose[@]}" exec -T backend printenv ARTWORK_STORAGE_DIRECTORY)" = /media/artwork ] || fail "HOMEFLIX_ARTWORK ignored"
+[ "$("${compose[@]}" exec -T backend printenv HLS_CACHE_DIRECTORY)" = /media/hls_cache ] || fail "HOMEFLIX_HLS_CACHE ignored"
+check "artwork and HLS cache paths configurable"
 
 echo "docker setup: all checks passed"
