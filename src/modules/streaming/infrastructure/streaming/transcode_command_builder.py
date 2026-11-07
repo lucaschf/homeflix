@@ -106,6 +106,65 @@ def _has_leading_audio_gap(file_path: str, audio_index: int, start: int) -> bool
     return pts is not None and pts > _AUDIO_LEADING_GAP_THRESHOLD
 
 
+def _video_packets_lack_pts(file_path: str) -> bool:
+    """Whether the container stores no presentation timestamps for its video.
+
+    AVI records only DTS. Anything unknown counts as having them, which keeps
+    the command as it always was.
+
+    Args:
+        file_path: Absolute path to the source video file.
+
+    Returns:
+        ``True`` only when ffprobe reports ``N/A`` for the first video packet.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-read_intervals",
+                "%+#1",
+                "-show_entries",
+                "packet=pts_time",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                file_path,
+            ],
+            **SUBPROCESS_TEXT_KWARGS,
+            check=False,
+            timeout=10,
+        )
+    except Exception:
+        return False
+    lines: list[str] = result.stdout.strip().splitlines()
+    return lines[:1] == ["N/A"]
+
+
+def can_remux(codec: str | None, file_path: str) -> bool:
+    """Whether the video can be copied into HLS segments without re-encoding.
+
+    The browser must be able to play the codec and the container must carry
+    PTS. Copied without them, the mpegts muxer refuses the first packet
+    ("first pts and dts value must be set") and ffmpeg dies. ``-fflags +genpts``
+    gets past that, but it guesses the PTS from the DTS and misplaces B-frames:
+    measured on real H.264 in AVI, up to a third of the frames came out of
+    order, which plays without any error and judders. A decoder has the real
+    display order, so these sources are transcoded instead.
+
+    Args:
+        codec: The source's video codec, as probed.
+        file_path: Absolute path to the source video file.
+
+    Returns:
+        ``True`` when a ``-c:v copy`` of this source is safe to serve.
+    """
+    return codec in BROWSER_SAFE_CODECS and not _video_packets_lack_pts(file_path)
+
+
 def _audio_args_for(
     track: AudioTrack | None,
     start: int,
@@ -217,7 +276,7 @@ class TranscodeCommandBuilder:
         software ``libx264`` path is the fallback.
         """
         codec = self._hw_probe.probe_video_codec(file_path)
-        needs_transcode = codec not in BROWSER_SAFE_CODECS or start > 0
+        needs_transcode = start > 0 or not can_remux(codec, file_path)
 
         hwaccel_input_args: list[str] = []
         vf_args: list[str] = []

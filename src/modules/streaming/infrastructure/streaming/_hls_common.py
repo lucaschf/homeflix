@@ -9,6 +9,7 @@ module has no such dependency and stays safe to import from either side.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,6 +32,8 @@ _VIDEO_DIR = "video"
 # cleaning) these so they are never mistaken for a real bucket.
 _EVICTING_PREFIX = ".evicting-"
 
+_EXTINF_DURATION = re.compile(r"#EXTINF:(\d+(?:\.\d+)?)")
+
 
 def primary_audio_index(probe: ProbeResult) -> int:
     """Get the index of the primary audio track (first one, always index 0)."""
@@ -41,5 +44,23 @@ def _has_endlist(playlist_path: Path) -> bool:
     """Return ``True`` iff the playlist file exists and contains ``#EXT-X-ENDLIST``."""
     try:
         return "#EXT-X-ENDLIST" in playlist_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def _count_playable_segments(playlist: str) -> int:
+    """Count the segments of a playlist that hold any media.
+
+    An ffmpeg that dies on its first packet still writes its trailer: one
+    ``#EXTINF:0.000000`` segment and ``#EXT-X-ENDLIST``. Neither tag proves
+    the encode worked, but a positive duration does.
+    """
+    return sum(float(duration) > 0 for duration in _EXTINF_DURATION.findall(playlist))
+
+
+def _has_playable_segment(playlist_path: Path) -> bool:
+    """Return ``True`` iff the playlist file exists and lists a segment with media."""
+    try:
+        return _count_playable_segments(playlist_path.read_text(encoding="utf-8")) > 0
     except OSError:
         return False

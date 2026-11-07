@@ -78,11 +78,20 @@ class ProbeCacheStore:
         )
 
     @staticmethod
-    def deserialize(data: dict[str, Any]) -> ProbeResult:
-        """Reconstruct ProbeResult from cached JSON."""
+    def deserialize(data: dict[str, Any]) -> ProbeResult | None:
+        """Reconstruct ProbeResult from cached JSON.
+
+        Returns:
+            The cached probe, or ``None`` when it holds external subtitles:
+            their path is not cached, and a new probe finds them wherever
+            the library lives now.
+        """
         from src.shared_kernel.media_probe.media_probe_port import ProbeResult
         from src.shared_kernel.value_objects.language_code import LanguageCode
         from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
+
+        if any(t.get("is_external", False) for t in data.get("subtitle_tracks", [])):
+            return None
 
         audio = [
             AudioTrack(
@@ -106,29 +115,12 @@ class ProbeCacheStore:
                 title=t.get("title"),
                 is_default=t.get("is_default", False),
                 is_forced=t.get("is_forced", False),
-                is_external=t.get("is_external", False),
             )
             for t in data.get("subtitle_tracks", [])
-            if not t.get("is_external", False)
-        ]
-        ext = [
-            SubtitleTrack(
-                index=t["index"],
-                language=LanguageCode(t["language"]),
-                format=t["format"],
-                title=t.get("title"),
-                is_default=t.get("is_default", False),
-                is_forced=t.get("is_forced", False),
-                is_external=True,
-                file_path=None,
-            )
-            for t in data.get("subtitle_tracks", [])
-            if t.get("is_external", False)
         ]
         return ProbeResult(
             audio_tracks=audio,
             subtitle_tracks=subs,
-            external_subtitles=ext,
             resolution=data.get("resolution"),
         )
 
