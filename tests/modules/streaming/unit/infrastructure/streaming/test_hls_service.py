@@ -1329,6 +1329,24 @@ class TestHlsServiceFailedEncode:
         assert not (tmp_path / path_hash).exists()
 
     @pytest.mark.asyncio
+    async def test_should_explain_a_clean_exit_that_wrote_no_media(self, tmp_path: Path) -> None:
+        # A seek past the file's real end makes ffmpeg exit 0 with nothing to
+        # encode, which "FFmpeg failed (exit 0)" describes badly.
+        service, path_hash = self._service_with_playlist(tmp_path, _DEAD_ENCODE_PLAYLIST)
+        finished_ffmpeg = MagicMock(returncode=0)
+        finished_ffmpeg.poll.return_value = 0
+        finished_ffmpeg.stderr.read.return_value = b""
+
+        with (
+            patch.object(service, "_start_generation"),
+            patch.object(service._proc_mgr, "get_main_process", return_value=finished_ffmpeg),
+            pytest.raises(RuntimeError, match="no media"),
+        ):
+            await service._generate_and_wait(
+                "/series/episode.avi", 23856, path_hash, force_software=False
+            )
+
+    @pytest.mark.asyncio
     async def test_should_return_once_a_real_segment_is_listed(self, tmp_path: Path) -> None:
         service, path_hash = self._service_with_playlist(
             tmp_path, "#EXTM3U\n#EXTINF:10.427078,\nsegment_0000.ts\n"

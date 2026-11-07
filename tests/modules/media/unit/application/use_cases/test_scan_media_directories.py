@@ -101,6 +101,12 @@ def _make_use_case(
 
     variant_detector = VariantDetector()
 
+    # An unconfigured mock would stamp a MagicMock as the title's duration.
+    if isinstance(probe_service, MagicMock) and isinstance(
+        probe_service.probe_duration.return_value, MagicMock
+    ):
+        probe_service.probe_duration.return_value = None
+
     if mocks is None:
         mocks = make_media_uow_mock()
         mocks.movies.find_by_file_path.return_value = None
@@ -153,6 +159,23 @@ class TestScanMovies:
 
         assert result.movies_created == 1
         assert result.movies_updated == 0
+
+    @pytest.mark.asyncio
+    async def test_should_measure_only_the_primary_variant(self) -> None:
+        # Only the primary file's duration is stamped on the title, and the
+        # measurement reads the file's tail, so the other variants skip it.
+        probe = MagicMock(spec=MediaProbePort)
+        probe.probe.return_value = ProbeResult(resolution="1080p")
+        probe.probe_duration.return_value = 7245
+        files = [
+            _movie_file("/movies/Inception.2010.1080p.mkv", "Inception", 2010, "1080p"),
+            _movie_file("/movies/Inception.2010.4K.mkv", "Inception", 2010, "4K"),
+        ]
+        use_case, _ = _make_use_case(scanner_results=files, probe_service=probe)
+
+        await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+
+        probe.probe_duration.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_should_create_separate_movies_for_different_titles(self) -> None:
@@ -355,13 +378,16 @@ class TestRescanResolutionUpgrade:
         probe.probe.assert_called_once_with("/movies/inception.mkv")
 
     @pytest.mark.asyncio
-    async def test_should_stamp_probed_duration_on_new_movie(self) -> None:
+    async def test_should_stamp_the_measured_duration_on_new_movie(self) -> None:
         mocks = make_media_uow_mock()
         mocks.movies.find_by_file_path.side_effect = lambda _fp, **_: None
         saved: list[Movie] = []
         mocks.movies.save.side_effect = lambda m: saved.append(m) or m
         probe = MagicMock(spec=MediaProbePort)
-        probe.probe.return_value = ProbeResult(resolution="1080p", duration_seconds=7245)
+        # What the container declares can outlast the picture; the title runs
+        # as long as the measurement says.
+        probe.probe.return_value = ProbeResult(resolution="1080p", duration_seconds=47711)
+        probe.probe_duration.return_value = 7245
         files = [_movie_file("/movies/inception.mkv", "Inception", 2010, None)]
         use_case, _ = _make_use_case(scanner_results=files, mocks=mocks, probe_service=probe)
 

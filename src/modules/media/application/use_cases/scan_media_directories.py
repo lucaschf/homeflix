@@ -136,6 +136,12 @@ class ScanMediaDirectoriesUseCase:
             return None
         return await asyncio.to_thread(self._probe_service.probe, file_path)
 
+    async def _probe_duration(self, file_path: str) -> int | None:
+        """Measure how long a title runs in a worker thread, or ``None``."""
+        if self._probe_service is None:
+            return None
+        return await asyncio.to_thread(self._probe_service.probe_duration, file_path)
+
     async def _locate_scrub_preview(self, source_file_path: str) -> ImageUrl | None:
         """Resolve an already-generated scrub-preview for a source file.
 
@@ -171,10 +177,9 @@ class ScanMediaDirectoriesUseCase:
         """Build a MediaFile for a path being registered for the first time.
 
         Always probes the file so audio and subtitle tracks — including their
-        languages — are persisted on first registration. Returns the probed
-        container ``duration_seconds`` alongside the file (the caller stamps
-        it on the entity for a primary file) so a single probe serves both;
-        ``None`` when the duration could not be read.
+        languages — are persisted on first registration. Returns a primary
+        file's measured duration alongside it (the caller stamps it on the
+        entity); ``None`` for any other file, or when it could not be read.
         """
         probed = await self._probe(scanned.file_path.value)
         resolution_name = scanned.resolution or (probed.resolution if probed else None)
@@ -187,7 +192,8 @@ class ScanMediaDirectoriesUseCase:
             subtitle_tracks=list(probed.all_subtitles) if probed else [],
             is_primary=is_primary,
         )
-        return media_file, (probed.duration_seconds if probed else None)
+        duration = await self._probe_duration(scanned.file_path.value) if is_primary else None
+        return media_file, duration
 
     async def _maybe_refresh_media_file(
         self,
