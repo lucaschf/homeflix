@@ -40,10 +40,19 @@ from src.modules.streaming.infrastructure.streaming.transcode_command_builder im
     _audio_args_for,
     _first_audio_pts,
     _has_leading_audio_gap,
+    _video_packets_lack_pts,
 )
 from src.shared_kernel.media_probe.media_probe_port import ProbeResult
+from src.shared_kernel.value_objects.file_path import FilePath
 from src.shared_kernel.value_objects.language_code import LanguageCode
 from src.shared_kernel.value_objects.tracks import AudioTrack, SubtitleTrack
+
+# What ffmpeg leaves behind when it dies on its first packet: its HLS muxer still
+# writes the trailer, so one empty segment is listed and the playlist gets sealed.
+_DEAD_ENCODE_PLAYLIST = (
+    "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:0\n#EXT-X-MEDIA-SEQUENCE:0\n"
+    "#EXT-X-PLAYLIST-TYPE:EVENT\n#EXTINF:0.000000,\nsegment_0000.ts\n#EXT-X-ENDLIST\n"
+)
 
 
 def _fake_runtime_settings(
@@ -327,6 +336,19 @@ class TestHlsServiceIsComplete:
         video_dir = tmp_path / "abc123" / "video"
         video_dir.mkdir(parents=True)
         (video_dir / "playlist.m3u8").write_text("#EXTM3U\n#EXTINF:10,\nsegment_0000.ts\n")
+
+        assert service.is_complete("abc123") is False
+
+    def test_should_return_false_when_video_is_sealed_with_no_media(self, tmp_path: Path) -> None:
+        # Trusting ENDLIST here would serve this unplayable bucket forever,
+        # even after the cause of the failed encode is fixed. Incomplete means
+        # the next request regenerates it.
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
+        bucket = tmp_path / "abc123"
+        video_dir = bucket / "video"
+        video_dir.mkdir(parents=True)
+        (video_dir / "playlist.m3u8").write_text(_DEAD_ENCODE_PLAYLIST)
+        (bucket / "master.m3u8").write_text("#EXTM3U\nvideo/playlist.m3u8\n")
 
         assert service.is_complete("abc123") is False
 
@@ -664,6 +686,37 @@ class TestLeadingAudioGap:
 
 
 @pytest.mark.unit
+class TestVideoPacketsLackPts:
+    """Tests for _video_packets_lack_pts."""
+
+    @pytest.mark.parametrize(
+        ("ffprobe_output", "expected"),
+        [
+            pytest.param("N/A\n", True, id="avi-reports-no-pts"),
+            pytest.param("0.000000\n", False, id="regular-pts"),
+            pytest.param("", False, id="unreadable-stream"),
+        ],
+    )
+    def test_reads_the_first_video_packet(self, ffprobe_output: str, expected: bool) -> None:
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=ffprobe_output)
+        with patch(
+            "src.modules.streaming.infrastructure.streaming.transcode_command_builder.subprocess.run",
+            return_value=completed,
+        ) as run:
+            assert _video_packets_lack_pts("/series/episode.avi") is expected
+
+        assert "v:0" in run.call_args.args[0]
+
+    def test_assumes_timestamps_when_ffprobe_is_missing(self) -> None:
+        # Anything unknown keeps today's command for the file.
+        with patch(
+            "src.modules.streaming.infrastructure.streaming.transcode_command_builder.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            assert _video_packets_lack_pts("/series/episode.avi") is False
+
+
+@pytest.mark.unit
 class TestHlsServiceBuildVideoCmd:
     """Tests for _build_video_cmd with mocked codec probe."""
 
@@ -671,11 +724,59 @@ class TestHlsServiceBuildVideoCmd:
     def _no_leading_gap_probe(self):  # type: ignore[no-untyped-def]
         # Keep these hermetic — otherwise each start==0 build spawns a
         # real ffprobe on the fake path. The gap test patches it itself.
-        with patch(
-            "src.modules.streaming.infrastructure.streaming.transcode_command_builder._first_audio_pts",
-            return_value=None,
+        builder = "src.modules.streaming.infrastructure.streaming.transcode_command_builder"
+        with (
+            patch(f"{builder}._first_audio_pts", return_value=None),
+            patch(f"{builder}._video_packets_lack_pts", return_value=False),
         ):
             yield
+
+    def test_should_transcode_h264_when_source_has_no_pts(self, tmp_path: Path) -> None:
+        # AVI stores only DTS, so a copy dies on its first packet. -fflags +genpts
+        # gets past that but misplaces B-frames: it plays with no error and
+        # judders, so this must never go back to a remux.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with (
+            patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"),
+            patch(
+                "src.modules.streaming.infrastructure.streaming.transcode_command_builder._video_packets_lack_pts",
+                return_value=True,
+            ),
+        ):
+            cmd = service._cmd_builder.build_video_cmd("/series/episode.avi", tmp_path, probe)
+
+        assert cmd[cmd.index("-c:v") + 1] == "libx264"
+        assert "-fflags" not in cmd
+
+    @pytest.mark.parametrize(
+        ("codec", "start"),
+        [pytest.param("hevc", 0, id="other-codec"), pytest.param("h264", 300, id="seek")],
+    )
+    def test_should_not_check_pts_when_transcoding(
+        self, tmp_path: Path, codec: str, start: int
+    ) -> None:
+        # The encoder creates its own timestamps, so the extra ffprobe is waste.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "cache")
+        )
+        probe = ProbeResult(audio_tracks=[_make_audio_track()])
+
+        with (
+            patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value=codec),
+            patch(
+                "src.modules.streaming.infrastructure.streaming.transcode_command_builder._video_packets_lack_pts",
+            ) as lacks_pts,
+        ):
+            cmd = service._cmd_builder.build_video_cmd(
+                "/series/episode.avi", tmp_path, probe, start
+            )
+
+        lacks_pts.assert_not_called()
+        assert "copy" not in cmd
 
     def test_should_copy_video_for_h264(self, tmp_path: Path) -> None:
         service = HlsService(
@@ -1104,6 +1205,26 @@ class TestHlsServiceSaveAndDeserializeProbe:
         assert result.audio_tracks[1].channels == 6
         assert len(result.subtitle_tracks) == 1
 
+    def test_should_not_rebuild_a_probe_with_external_subtitles(self, tmp_path: Path) -> None:
+        # tracks.json keeps no external subtitle path, which SubtitleTrack requires.
+        probe = ProbeResult(
+            audio_tracks=[_make_audio_track()],
+            external_subtitles=[
+                SubtitleTrack(
+                    index=0,
+                    language=LanguageCode("en"),
+                    format="srt",
+                    is_external=True,
+                    file_path=FilePath("/series/episode.srt"),
+                )
+            ],
+        )
+
+        ProbeCacheStore.save(tmp_path, probe)
+        data = json.loads((tmp_path / "tracks.json").read_text())
+
+        assert ProbeCacheStore.deserialize(data) is None
+
 
 @pytest.mark.unit
 class TestHlsServiceProbeTracks:
@@ -1143,6 +1264,126 @@ class TestHlsServiceProbeTracks:
 
         probe_mock.probe.assert_called_once_with("/movies/test.mkv")
         assert len(result.audio_tracks) == 1
+
+    def test_should_probe_again_when_cached_tracks_have_external_subtitles(
+        self, tmp_path: Path
+    ) -> None:
+        # /tracks answered 422 for any title with a sidecar subtitle once it had
+        # been played. A new probe also finds the sidecar wherever the library
+        # lives now, which a path stored in the cache would not.
+        sidecar = SubtitleTrack(
+            index=0,
+            language=LanguageCode("en"),
+            format="srt",
+            is_external=True,
+            file_path=FilePath("/series/episode.srt"),
+        )
+        fresh = ProbeResult(audio_tracks=[_make_audio_track()], external_subtitles=[sidecar])
+        probe_mock = MagicMock(spec=MediaProbeService)
+        probe_mock.probe.return_value = fresh
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(),
+            cache_dir=str(tmp_path),
+            probe_service=probe_mock,
+        )
+        file_path = "/series/episode.avi"
+        bucket = tmp_path / service.get_path_hash(file_path)
+        bucket.mkdir()
+        ProbeCacheStore.save(bucket, fresh)
+
+        result = service.probe_tracks(file_path)
+
+        probe_mock.probe.assert_called_once_with(file_path)
+        assert [track.file_path for track in result.all_subtitles] == [sidecar.file_path]
+
+
+@pytest.mark.unit
+class TestHlsServiceFailedEncode:
+    """An encode that died must surface as a failure and never as a ready bucket."""
+
+    @staticmethod
+    def _service_with_playlist(tmp_path: Path, playlist: str) -> tuple[HlsService, str]:
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path))
+        path_hash = service.get_path_hash("/series/episode.avi")
+        video_dir = tmp_path / path_hash / "video"
+        video_dir.mkdir(parents=True)
+        (video_dir / "playlist.m3u8").write_text(playlist)
+        return service, path_hash
+
+    @pytest.mark.asyncio
+    async def test_should_raise_instead_of_serving_the_empty_segment(self, tmp_path: Path) -> None:
+        service, path_hash = self._service_with_playlist(tmp_path, _DEAD_ENCODE_PLAYLIST)
+        dead_ffmpeg = MagicMock(returncode=1)
+        dead_ffmpeg.poll.return_value = 1
+        dead_ffmpeg.stderr.read.return_value = b"first pts and dts value must be set"
+
+        with (
+            patch.object(service, "_start_generation"),
+            patch.object(service._proc_mgr, "get_main_process", return_value=dead_ffmpeg),
+            pytest.raises(RuntimeError, match="first pts and dts"),
+        ):
+            await service._generate_and_wait(
+                "/series/episode.avi", 0, path_hash, force_software=False
+            )
+
+        assert not (tmp_path / path_hash).exists()
+
+    @pytest.mark.asyncio
+    async def test_should_return_once_a_real_segment_is_listed(self, tmp_path: Path) -> None:
+        service, path_hash = self._service_with_playlist(
+            tmp_path, "#EXTM3U\n#EXTINF:10.427078,\nsegment_0000.ts\n"
+        )
+
+        with patch.object(service, "_start_generation"):
+            await service._generate_and_wait(
+                "/series/episode.avi", 0, path_hash, force_software=False
+            )
+
+    @pytest.mark.asyncio
+    async def test_should_regenerate_a_bucket_a_dead_encode_left_sealed(
+        self, tmp_path: Path
+    ) -> None:
+        source = tmp_path / "episode.avi"
+        source.write_bytes(b"data")
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
+        )
+        path_hash = service.get_path_hash(str(source))
+        bucket = tmp_path / "hls" / path_hash
+        (bucket / "video").mkdir(parents=True)
+        (bucket / "video" / "playlist.m3u8").write_text(_DEAD_ENCODE_PLAYLIST)
+        (bucket / "master.m3u8").write_text("#EXTM3U\nvideo/playlist.m3u8\n")
+
+        with (
+            patch.object(service, "_generate_and_wait", new=AsyncMock()) as generate,
+            patch(
+                "src.modules.streaming.infrastructure.streaming.hls_service.shutil.which",
+                return_value="ffmpeg",
+            ),
+        ):
+            await service.ensure_playlist(str(source))
+
+        generate.assert_awaited_once()
+
+    def test_should_fall_back_to_software_when_source_with_no_pts_fails_on_gpu(
+        self, tmp_path: Path
+    ) -> None:
+        # A source that cannot be remuxed goes through NVENC, so a GPU failure
+        # has to reach the libx264 retry like any other transcode.
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hw_accel=HardwareAccel.NVENC),
+            cache_dir=str(tmp_path),
+        )
+
+        with (
+            patch.object(HardwareAccelerationProbe, "use_nvenc", return_value=True),
+            patch.object(HardwareAccelerationProbe, "probe_video_codec", return_value="h264"),
+            patch(
+                "src.modules.streaming.infrastructure.streaming.transcode_command_builder._video_packets_lack_pts",
+                return_value=True,
+            ),
+        ):
+            assert service._would_use_hw_transcode("/series/episode.avi", 0) is True
 
 
 @pytest.mark.unit

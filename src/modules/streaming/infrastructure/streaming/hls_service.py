@@ -55,7 +55,7 @@ from src.modules.streaming.application.ports.hls_playlist_port import (
 )
 from src.modules.streaming.infrastructure.streaming._hls_common import (
     _VIDEO_DIR,
-    BROWSER_SAFE_CODECS,
+    _count_playable_segments,
     primary_audio_index,
 )
 from src.modules.streaming.infrastructure.streaming.ffmpeg_process_manager import (
@@ -76,6 +76,7 @@ from src.modules.streaming.infrastructure.streaming.subtitle_ocr_surfacing impor
 from src.modules.streaming.infrastructure.streaming.subtitle_pipeline import SubtitlePipeline
 from src.modules.streaming.infrastructure.streaming.transcode_command_builder import (
     TranscodeCommandBuilder,
+    can_remux,
 )
 
 if TYPE_CHECKING:
@@ -314,7 +315,7 @@ class HlsService(HlsPlaylistPort):
             return False
         if start > 0:
             return True
-        return self._hw_probe.probe_video_codec(file_path) not in BROWSER_SAFE_CODECS
+        return not can_remux(self._hw_probe.probe_video_codec(file_path), file_path)
 
     async def _generate_and_wait(
         self,
@@ -339,11 +340,10 @@ class HlsService(HlsPlaylistPort):
             if video_playlist.is_file():
                 try:
                     content = video_playlist.read_text(encoding="utf-8")
-                    # Count #EXTINF directives — these are only added by
-                    # ffmpeg AFTER a segment is fully written and renamed,
-                    # so anything counted here is safe to serve.
-                    extinf_count = content.count("#EXTINF:")
-                    if extinf_count >= _MIN_SEGMENTS_FRESH:
+                    # #EXTINF directives are only added by ffmpeg AFTER a
+                    # segment is fully written and renamed, so anything
+                    # counted here is safe to serve.
+                    if _count_playable_segments(content) >= _MIN_SEGMENTS_FRESH:
                         return
                 except OSError:
                     pass
@@ -367,7 +367,9 @@ class HlsService(HlsPlaylistPort):
         """
         path_hash = self.get_path_hash(file_path)
         cached = self.get_cached_tracks(path_hash)
-        base = self._probe_cache.deserialize(cached) if cached else self._probe.probe(file_path)
+        base = self._probe_cache.deserialize(cached) if cached else None
+        if base is None:
+            base = self._probe.probe(file_path)
         return attach_ocr_subtitles(
             base, file_path, self._runtime_settings.subtitle_ocr_snapshot_sync()
         )

@@ -22,6 +22,7 @@ from src.modules.streaming.infrastructure.streaming._hls_common import (
     _EVICTING_PREFIX,
     _VIDEO_DIR,
     _has_endlist,
+    _has_playable_segment,
 )
 
 if TYPE_CHECKING:
@@ -143,7 +144,11 @@ class HlsCacheStore:
         playlists = list(bucket.glob("*/playlist.m3u8"))
         if not playlists:
             return False
-        return all(_has_endlist(p) for p in playlists)
+        # ffmpeg seals the playlist itself even when it died on the first
+        # packet. Treated as complete, that bucket would never play again.
+        return all(_has_endlist(p) for p in playlists) and _has_playable_segment(
+            nested_video_dir / "playlist.m3u8"
+        )
 
     def get_master_playlist(self, path_hash: str) -> str | None:
         """Get master playlist content, falling back to legacy flat playlist.
