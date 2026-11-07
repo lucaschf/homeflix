@@ -425,7 +425,13 @@ class HlsService(HlsPlaylistPort):
         stderr = proc.stderr.read().decode() if proc.stderr else ""
         _logger.error("FFmpeg exited with code %d: %s", proc.returncode, stderr)
         shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
-        msg = f"FFmpeg failed (exit {proc.returncode}): {stderr}"
+        # A clean exit with nothing written is not ffmpeg failing: it found no
+        # media to encode, as when seeking past the real end of the file.
+        msg = (
+            f"FFmpeg failed (exit {proc.returncode}): {stderr}"
+            if proc.returncode
+            else "FFmpeg exited cleanly but wrote no media"
+        )
         raise RuntimeError(msg)
 
     # -- Private: generation ---------------------------------------------------
