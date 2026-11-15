@@ -1,5 +1,6 @@
 """Tests for HlsService."""
 
+import asyncio
 import hashlib
 import json
 import subprocess
@@ -1438,19 +1439,21 @@ class TestHlsServiceClearCache:
 class TestHlsServiceGetCacheStats:
     """Tests for ``HlsService.get_cache_stats``."""
 
-    def test_should_report_zero_bytes_when_cache_empty(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_should_report_zero_bytes_when_cache_empty(self, tmp_path: Path) -> None:
         service = HlsService(
             runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=100),
             cache_dir=str(tmp_path / "hls"),
         )
 
-        stats = service.get_cache_stats()
+        stats = await service.get_cache_stats()
 
         assert stats.size_bytes == 0
         assert stats.max_bytes == 100 * 1024 * 1024
         assert stats.last_cleared_at is None
 
-    def test_should_sum_file_sizes_across_nested_buckets(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_should_sum_file_sizes_across_nested_buckets(self, tmp_path: Path) -> None:
         cache = tmp_path / "hls"
         service = HlsService(
             runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=50),
@@ -1461,21 +1464,56 @@ class TestHlsServiceGetCacheStats:
         (cache / "h2" / "nested").mkdir(parents=True)
         (cache / "h2" / "nested" / "seg.ts").write_bytes(b"y" * 25)
 
-        stats = service.get_cache_stats()
+        stats = await service.get_cache_stats()
 
         assert stats.size_bytes == 35
         assert stats.max_bytes == 50 * 1024 * 1024
 
-    def test_should_expose_last_cleared_after_global_clear(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_should_expose_last_cleared_after_global_clear(self, tmp_path: Path) -> None:
         service = HlsService(
             runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
         )
 
         service.clear_cache(None)
-        stats = service.get_cache_stats()
+        stats = await service.get_cache_stats()
 
         assert stats.last_cleared_at is not None
         assert stats.last_cleared_at.tzinfo is not None
+
+    @pytest.mark.asyncio
+    async def test_should_walk_the_cache_off_the_event_loop(self, tmp_path: Path) -> None:
+        """The walk stats every cached file; on a bind mount it takes minutes.
+
+        On the event loop it froze every request, /health included, while
+        the admin overview was open, and Docker marked the backend unhealthy.
+        """
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
+        )
+        real = service._cache_store.get_cache_stats
+
+        def slow_walk() -> object:
+            time.sleep(0.5)
+            return real()
+
+        ticks = 0
+
+        async def heartbeat() -> None:
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.05)
+                ticks += 1
+
+        beat = asyncio.create_task(heartbeat())
+        try:
+            with patch.object(service._cache_store, "get_cache_stats", side_effect=slow_walk):
+                stats = await service.get_cache_stats()
+        finally:
+            beat.cancel()
+
+        assert stats.size_bytes == 0
+        assert ticks >= 5, f"event loop blocked during the cache walk ({ticks} heartbeats)"
 
 
 @pytest.mark.unit

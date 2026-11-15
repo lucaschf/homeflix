@@ -58,7 +58,7 @@ class GetOverviewStatsUseCase:
 
         review = await self._list_review.execute()
         review_count = len(review.movies)
-        cache_stats = self._hls.get_stats()
+        cache_stats = await self._hls.get_stats()
 
         last_scan = None
         if recent_scans:

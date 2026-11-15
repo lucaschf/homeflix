@@ -391,9 +391,14 @@ class HlsService(HlsPlaylistPort):
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             self._cache_store.touch_last_cleared_marker()
 
-    def get_cache_stats(self) -> HlsCacheStats:
-        """Return total bytes on disk + the configured ceiling + last clear."""
-        return self._cache_store.get_cache_stats()
+    async def get_cache_stats(self) -> HlsCacheStats:
+        """Return total bytes on disk + the configured ceiling + last clear.
+
+        The walk stats every file in the cache. On a Windows bind mount
+        that takes minutes; run on the event loop it froze every request,
+        /health included, while the admin overview was open.
+        """
+        return await asyncio.to_thread(self._cache_store.get_cache_stats)
 
     # -- Private: process management -------------------------------------------
 

@@ -27,9 +27,9 @@ class HlsCacheStatsAdapter(HlsCacheStatsReadPort):
     def __init__(self, get_hls_cache_stats: GetHlsCacheStatsUseCase) -> None:
         self._get_hls_cache_stats = get_hls_cache_stats
 
-    def get_stats(self) -> HlsCacheStatsView:
+    async def get_stats(self) -> HlsCacheStatsView:
         """Fetch the streaming cache snapshot and project it."""
-        stats = self._get_hls_cache_stats.execute()
+        stats = await self._get_hls_cache_stats.execute()
         return HlsCacheStatsView(
             size_bytes=stats.size_bytes,
             max_bytes=stats.max_bytes,

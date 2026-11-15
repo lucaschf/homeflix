@@ -32,7 +32,7 @@ async def get_hls_cache_stats(
     root server-side — fine for an on-demand call, not something
     the operator polls in a tight loop.
     """
-    stats = use_case.execute()
+    stats = await use_case.execute()
     return api_single(
         "hls_cache_stats",
         {
