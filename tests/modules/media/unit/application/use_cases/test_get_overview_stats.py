@@ -59,6 +59,7 @@ class TestGetOverviewStatsUseCase:
         review_uc = AsyncMock()
         review_uc.execute.return_value = MagicMock(movies=[1, 2, 3])  # 3-row list
         hls = MagicMock()
+        hls.get_stats = AsyncMock()
         hls.get_stats.return_value = HlsCacheStatsView(
             size_bytes=100,
             max_bytes=1000,
@@ -90,6 +91,7 @@ class TestGetOverviewStatsUseCase:
         review_uc = AsyncMock()
         review_uc.execute.return_value = MagicMock(movies=[])
         hls = MagicMock()
+        hls.get_stats = AsyncMock()
         hls.get_stats.return_value = HlsCacheStatsView(
             size_bytes=0,
             max_bytes=1000,

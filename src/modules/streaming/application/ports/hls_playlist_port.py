@@ -95,8 +95,12 @@ class HlsPlaylistPort(ABC):
         ...
 
     @abstractmethod
-    def get_cache_stats(self) -> HlsCacheStats:
-        """Return cache occupancy + configured limit + last clear time."""
+    async def get_cache_stats(self) -> HlsCacheStats:
+        """Return cache occupancy + configured limit + last clear time.
+
+        Implementations walk the cache on disk and must do it off the
+        event loop: on a bind mount the walk takes minutes.
+        """
         ...
 
 

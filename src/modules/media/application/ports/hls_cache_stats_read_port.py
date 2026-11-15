@@ -32,7 +32,7 @@ class HlsCacheStatsReadPort(ABC):
     """Read the current HLS cache occupancy without the Streaming BC."""
 
     @abstractmethod
-    def get_stats(self) -> HlsCacheStatsView:
+    async def get_stats(self) -> HlsCacheStatsView:
         """Return the current cache occupancy snapshot."""
         ...
 

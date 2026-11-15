@@ -115,7 +115,7 @@ class _FakeHlsCache(HlsPlaylistPort):
     def clear_cache(self, file_path: str | None) -> None:
         raise NotImplementedError
 
-    def get_cache_stats(self) -> HlsCacheStats:
+    async def get_cache_stats(self) -> HlsCacheStats:
         raise NotImplementedError
 
 
