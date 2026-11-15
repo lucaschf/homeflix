@@ -64,6 +64,9 @@ ENV PATH="/opt/venv/bin:$PATH" \
     HOST=0.0.0.0 \
     PORT=8005
 
+# `make up` prunes the untagged images earlier builds leave behind, by this label.
+LABEL org.opencontainers.image.title=homeflix-backend
+
 EXPOSE 8005
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --start-interval=2s --retries=3 \
