@@ -94,7 +94,11 @@ class ScanMediaDirectoriesUseCase:
         Returns:
             Summary of created and updated entities.
         """
-        scanned_files = self._file_scanner.scan_directories(input_dto.directories)
+        # The walk is blocking filesystem I/O (minutes on a Windows bind mount);
+        # on the event loop it would freeze every request, /health included.
+        scanned_files = await asyncio.to_thread(
+            self._file_scanner.scan_directories, input_dto.directories
+        )
 
         movies = [f for f in scanned_files if f.media_type == MediaType.MOVIE]
         episodes = [f for f in scanned_files if f.media_type == MediaType.EPISODE]

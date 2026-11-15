@@ -1,5 +1,7 @@
 """Tests for ScanMediaDirectoriesUseCase."""
 
+import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -1034,3 +1036,39 @@ class TestScanMediaScrubPreviewLinking:
         assert result.movies_updated == 0
         mocks.movies.save.assert_not_called()
         locator.locate.assert_not_awaited()
+
+
+@pytest.mark.unit
+class TestScanKeepsEventLoopResponsive:
+    """The directory walk must not block the event loop.
+
+    On Docker Desktop for Windows the library is a bind mount, and walking it
+    takes minutes. Run on the loop, that walk froze every request the process
+    serves, ``/health`` included, so the container went unhealthy mid-scan.
+    """
+
+    @pytest.mark.asyncio
+    async def test_should_keep_serving_while_the_walk_runs(self) -> None:
+        use_case, _ = _make_use_case()
+        walk_seconds = 0.5
+
+        def slow_walk(_directories: object) -> list[ScannedFile]:
+            time.sleep(walk_seconds)
+            return []
+
+        use_case._file_scanner.scan_directories.side_effect = slow_walk  # type: ignore[attr-defined]
+        ticks = 0
+
+        async def heartbeat() -> None:
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.05)
+                ticks += 1
+
+        beat = asyncio.create_task(heartbeat())
+        try:
+            await use_case.execute(ScanMediaInput(library_id=_LIBRARY_ID))
+        finally:
+            beat.cancel()
+
+        assert ticks >= 5, f"event loop blocked during the walk ({ticks} heartbeats)"
