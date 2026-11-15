@@ -1,5 +1,5 @@
 .PHONY: help install dev test lint lint-imports format migrate migration clean docs docs-install docs-build \
-        docker-build docker-up docker-down docker-logs docker-smoke
+        docker-build docker-up docker-down docker-logs docker-smoke up down logs ps
 
 # Default target
 help:
@@ -35,6 +35,10 @@ help:
 	@echo "  make docs-build    Build docs (strict — the docs gate)"
 	@echo ""
 	@echo "Docker:"
+	@echo "  make up            Build what changed, start, wait until healthy (FRESH=1: from scratch)"
+	@echo "  make down          Stop and remove the stack (./data stays)"
+	@echo "  make logs          Follow the stack's logs"
+	@echo "  make ps            What is running"
 	@echo "  make docker-build  Build the backend image"
 	@echo "  make docker-up     Start the stack in the background (needs .env)"
 	@echo "  make docker-down   Stop and remove the stack"
@@ -132,6 +136,26 @@ docs-build:
 # =============================================================================
 # Docker
 # =============================================================================
+
+# Bash for scripts/stack.sh. On Windows, `bash` on the PATH is often the WSL launcher in WindowsApps,
+# which can exit silently; Git Bash (Git for Windows) runs it as is. Override with SH=...
+ifeq ($(OS),Windows_NT)
+SH ?= "C:/Program Files/Git/bin/bash.exe"
+else
+SH ?= bash
+endif
+
+up:
+	$(SH) scripts/stack.sh up $(if $(FRESH),--fresh)
+
+down:
+	$(SH) scripts/stack.sh down
+
+logs:
+	$(SH) scripts/stack.sh logs
+
+ps:
+	$(SH) scripts/stack.sh ps
 
 docker-build:
 	docker compose build
