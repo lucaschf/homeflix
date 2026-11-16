@@ -25,9 +25,10 @@ services:
       DATABASE_URL: ${HOMEFLIX_DATABASE_URL:-sqlite+aiosqlite:////app/data/homeflix.db}
       MEDIA_DIRECTORIES: ${HOMEFLIX_MEDIA_DIRECTORIES:-/media}
       THUMBNAILS_DIRECTORY: /app/data/thumbnails
-      # Paths inside the container, on a writable mount. Defaults live in HOMEFLIX_DATA.
+      # Paths inside the container, on a writable mount. Artwork defaults to
+      # HOMEFLIX_DATA, the HLS cache to its named volume.
       ARTWORK_STORAGE_DIRECTORY: ${HOMEFLIX_ARTWORK:-/app/data/artwork}
-      HLS_CACHE_DIRECTORY: ${HOMEFLIX_HLS_CACHE:-/app/data/hls_cache}
+      HLS_CACHE_DIRECTORY: ${HOMEFLIX_HLS_CACHE:-/app/hls_cache}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       TMDB_BASE_URL: ${TMDB_BASE_URL:-https://api.themoviedb.org/3}
       OMDB_API_KEY: ${OMDB_API_KEY:-}
@@ -37,8 +38,12 @@ services:
     ports:
       - "${HOMEFLIX_BIND:-127.0.0.1}:${HOMEFLIX_PORT:-8005}:8005"
     volumes:
-      # Database, thumbnails, mirrored artwork and the HLS cache.
+      # Database, thumbnails and mirrored artwork.
       - ${HOMEFLIX_DATA:-./data}:/app/data
+      # HLS cache: thousands of small files the eviction sweep walks every few
+      # seconds. On a bind mount under Docker Desktop for Windows that walk takes
+      # minutes, so it gets a named volume. Losing it only costs re-encoding.
+      - hls_cache:/app/hls_cache
       # Media library at HOMEFLIX_MEDIA_MOUNT (default /media), read-only unless
       # HOMEFLIX_MEDIA_MODE=rw. Scrub-preview sprites and OCR subtitles are written
       # next to each video (.homeflix/, ADR-027), so read-only means no new ones;
@@ -86,3 +91,6 @@ services:
       pcs.icon: stack
       pcs.summary: homeflix-web
       pcs.depends_on: homeflix
+
+volumes:
+  hls_cache:
