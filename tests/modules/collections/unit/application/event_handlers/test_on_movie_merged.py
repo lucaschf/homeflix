@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from structlog.testing import capture_logs
 
 from src.modules.collections.application.event_handlers.on_movie_merged import (
     OnMovieMergedHandler,
@@ -66,3 +67,31 @@ class TestOnMovieMergedHandlerCollections:
         factory.assert_not_called()
         watchlist.rewrite_media_id.assert_not_called()
         custom_lists.rewrite_item_media_id.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_logs_the_repoint_as_a_structured_event(self) -> None:
+        factory, watchlist, custom_lists = _uow_mock()
+        watchlist.rewrite_media_id.return_value = 1
+        custom_lists.rewrite_item_media_id.return_value = 2
+
+        with capture_logs() as logs:
+            await OnMovieMergedHandler(uow_factory=factory).handle(
+                MovieMergedEvent(
+                    conflict_id="cnf_xxxxxxxxxxxx",
+                    winner_id=MovieId("mov_winneraaaaaa"),
+                    loser_id=MovieId("mov_loserbbbbbbb"),
+                ),
+            )
+
+        assert logs == [
+            {
+                "event": "Collection entries repointed to merged movie",
+                "log_level": "info",
+                "handler": "OnMovieMergedHandler",
+                "watchlist_updated": 1,
+                "lists_updated": 2,
+                "loser_id": "mov_loserbbbbbbb",
+                "winner_id": "mov_winneraaaaaa",
+                "conflict_id": "cnf_xxxxxxxxxxxx",
+            }
+        ]

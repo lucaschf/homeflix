@@ -1,17 +1,14 @@
 """Cross-BC handler: repoint watchlist / custom-list refs on a movie merge."""
 
-import logging
-
 from src.building_blocks.application.event_bus import EventHandler
 from src.building_blocks.domain.events import DomainEvent
+from src.config.logging import get_logger
 from src.modules.collections.application.unit_of_work import (
     CollectionsUnitOfWorkFactory,
 )
 from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.shared_kernel.integration_events import MovieMergedEvent
 from src.shared_kernel.value_objects import MediaType
-
-_logger = logging.getLogger(__name__)
 
 
 class OnMovieMergedHandler(EventHandler):
@@ -31,6 +28,7 @@ class OnMovieMergedHandler(EventHandler):
 
     def __init__(self, uow_factory: CollectionsUnitOfWorkFactory) -> None:
         self._uow_factory = uow_factory
+        self._logger = get_logger(handler="OnMovieMergedHandler")
 
     async def handle(self, event: DomainEvent) -> None:
         """Handle ``MovieMergedEvent``."""
@@ -52,14 +50,13 @@ class OnMovieMergedHandler(EventHandler):
             )
 
         if watchlist_updated or lists_updated:
-            _logger.info(
-                "Repointed %d watchlist + %d custom-list entries from "
-                "loser %s to winner %s (conflict %s)",
-                watchlist_updated,
-                lists_updated,
-                event.loser_id,
-                event.winner_id,
-                event.conflict_id,
+            self._logger.info(
+                "Collection entries repointed to merged movie",
+                watchlist_updated=watchlist_updated,
+                lists_updated=lists_updated,
+                loser_id=str(event.loser_id),
+                winner_id=str(event.winner_id),
+                conflict_id=event.conflict_id,
             )
 
 

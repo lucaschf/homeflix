@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from structlog.testing import capture_logs
 
 from src.modules.collections.application.event_handlers.on_movie_completed import (
     OnMovieCompletedHandler,
@@ -79,3 +80,23 @@ class TestOnMovieCompletedHandler:
 
         factory.assert_not_called()
         watchlist.remove.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_logs_the_removal_as_a_structured_event(self) -> None:
+        factory, watchlist, _ = _uow_mock()
+        watchlist.remove.return_value = True
+
+        with capture_logs() as logs:
+            await OnMovieCompletedHandler(uow_factory=factory).handle(
+                MovieCompletedEvent(profile_id=_PROFILE_ID, movie_id=_MOVIE_ID),
+            )
+
+        assert logs == [
+            {
+                "event": "Finished movie removed from watchlist",
+                "log_level": "info",
+                "handler": "OnMovieCompletedHandler",
+                "movie_id": _MOVIE_ID.value,
+                "profile_id": _PROFILE_ID.value,
+            }
+        ]

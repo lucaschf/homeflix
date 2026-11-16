@@ -1,6 +1,7 @@
 """Tests for OnUserDeletedHandler follow/list cleanup."""
 
 import pytest
+from structlog.testing import capture_logs
 from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 from src.modules.collections.application.event_handlers import OnUserDeletedHandler
@@ -35,3 +36,28 @@ class TestOnUserDeletedHandler:
         await handler.handle(UserDeletedEvent(user_id="usr_abc123def456", profile_ids=()))
 
         mocks.list_follows.delete_all_for_followers.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_logs_the_cleanup_as_a_structured_event(self) -> None:
+        mocks = make_collections_uow_mock()
+        mocks.watchlist.delete_all_for_profiles.return_value = 1
+        mocks.custom_lists.delete_all_for_profiles.return_value = 2
+        mocks.list_follows.delete_all_for_followers.return_value = 3
+
+        with capture_logs() as logs:
+            await OnUserDeletedHandler(uow_factory=mocks.factory).handle(
+                UserDeletedEvent(user_id="usr_abc123def456", profile_ids=("prf_test12345678",))
+            )
+
+        assert logs == [
+            {
+                "event": "Collections cleared for deleted user",
+                "log_level": "info",
+                "handler": "OnUserDeletedHandler",
+                "watchlist_deleted": 1,
+                "lists_deleted": 2,
+                "follows_deleted": 3,
+                "user_id": "usr_abc123def456",
+                "profile_count": 1,
+            }
+        ]

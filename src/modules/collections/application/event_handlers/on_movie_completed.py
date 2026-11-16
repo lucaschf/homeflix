@@ -1,16 +1,13 @@
 """Cross-BC handler: take a finished movie off the profile's watchlist."""
 
-import logging
-
 from src.building_blocks.application.event_bus import EventHandler
 from src.building_blocks.domain.events import DomainEvent
+from src.config.logging import get_logger
 from src.modules.collections.application.unit_of_work import (
     CollectionsUnitOfWorkFactory,
 )
 from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.shared_kernel.integration_events import MovieCompletedEvent
-
-_logger = logging.getLogger(__name__)
 
 
 class OnMovieCompletedHandler(EventHandler):
@@ -27,6 +24,7 @@ class OnMovieCompletedHandler(EventHandler):
 
     def __init__(self, uow_factory: CollectionsUnitOfWorkFactory) -> None:
         self._uow_factory = uow_factory
+        self._logger = get_logger(handler="OnMovieCompletedHandler")
 
     async def handle(self, event: DomainEvent) -> None:
         """Handle ``MovieCompletedEvent``."""
@@ -39,10 +37,10 @@ class OnMovieCompletedHandler(EventHandler):
             )
 
         if removed:
-            _logger.info(
-                "Removed finished movie %s from profile %s's watchlist",
-                event.movie_id,
-                event.profile_id,
+            self._logger.info(
+                "Finished movie removed from watchlist",
+                movie_id=str(event.movie_id),
+                profile_id=str(event.profile_id),
             )
 
 
