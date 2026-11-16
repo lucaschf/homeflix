@@ -24,6 +24,10 @@ _logger = logging.getLogger(__name__)
 
 _FFPROBE_TIMEOUT = 15  # seconds
 
+# How far before the declared end to start reading packets. The seek lands on
+# the last keyframe before it, so this only needs to clear the final frames.
+_MEDIA_END_LOOKBACK_SECONDS = 2
+
 
 @functools.lru_cache(maxsize=1)
 def _ffprobe_path() -> str | None:
@@ -158,6 +162,16 @@ _ISO639_2_TO_1: dict[str, str] = {
 }
 
 
+def _title_video_stream(streams: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Return the first video stream that is the picture and not cover art."""
+    for stream in streams:
+        if stream.get("codec_type") == "video" and not stream.get("disposition", {}).get(
+            "attached_pic"
+        ):
+            return stream
+    return None
+
+
 class MediaProbeService(MediaProbePort):
     """Probe media files for audio and subtitle track information.
 
@@ -209,6 +223,77 @@ class MediaProbeService(MediaProbePort):
             resolution=resolution,
             duration_seconds=duration,
         )
+
+    def probe_duration(self, file_path: str) -> int | None:
+        """Return how long the title runs: until its last video frame.
+
+        ``format.duration`` is the longest of all streams, and any of them can
+        outlast the picture: real files declared 13h15 for a film that ends at
+        1h32 (a subtitle cue) and 2h39 for one that ends at 1h26 (a dub muxed
+        from a longer cut). This reads the packets at the end of the video,
+        which ``probe`` must not do: it runs on every playback start, and a file
+        with a broken index takes the whole timeout to give up.
+
+        Anything that cannot be measured keeps the declared duration.
+
+        Args:
+            file_path: Absolute path to the media file.
+
+        Returns:
+            The duration in whole seconds, or ``None`` when there is none.
+        """
+        source = Path(file_path).resolve()
+        if not source.is_file():
+            return None
+        data = self._run_ffprobe(str(source))
+        declared = self._parse_duration(data)
+        video = _title_video_stream(data.get("streams", []))
+        if declared is None or video is None:
+            return declared
+        video_end = self._read_stream_end(str(source), video.get("index"), declared)
+        return min(declared, round(video_end)) if video_end else declared
+
+    @staticmethod
+    def _read_stream_end(file_path: str, stream_index: int | None, declared: int) -> float | None:
+        """Read the last timestamp of a stream, from just before the declared end.
+
+        Returns:
+            The timestamp in seconds, or ``None`` when it could not be read.
+        """
+        ffprobe = _ffprobe_path()
+        if ffprobe is None:
+            return None
+        try:
+            result = subprocess.run(
+                [
+                    ffprobe,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    str(stream_index),
+                    "-read_intervals",
+                    f"{max(declared - _MEDIA_END_LOOKBACK_SECONDS, 0)}%",
+                    "-show_entries",
+                    "packet=pts_time,dts_time",
+                    "-of",
+                    "json",
+                    file_path,
+                ],
+                **SUBPROCESS_TEXT_KWARGS,
+                check=False,
+                timeout=_FFPROBE_TIMEOUT,
+            )
+            packets = json.loads(result.stdout).get("packets", [])
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
+            _logger.warning("Could not measure the video end of %s: %s", file_path, e)
+            return None
+        times: list[float] = []
+        for packet in packets:
+            for key in ("pts_time", "dts_time"):
+                with contextlib.suppress(TypeError, ValueError):
+                    times.append(float(packet.get(key)))
+                    break
+        return max(times, default=None)
 
     @staticmethod
     def _parse_duration(data: dict[str, Any]) -> int | None:

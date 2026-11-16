@@ -1,8 +1,9 @@
 """Tests for MediaProbeService."""
 
 import json
+import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,7 +13,7 @@ from src.modules.streaming.infrastructure.streaming.media_probe_service import (
     _ffprobe_path,
     _resolution_from_dimensions,
 )
-from src.shared_kernel.media_probe.media_probe_port import ProbeResult
+from src.shared_kernel.media_probe.media_probe_port import MediaProbePort, ProbeResult
 
 
 @pytest.fixture(autouse=True)  # type: ignore[misc]
@@ -480,6 +481,175 @@ class TestMediaProbeServiceParseDuration:
     def test_ignores_zero_and_garbage(self) -> None:
         data = {"format": {"duration": "0"}, "streams": [{"duration": "N/A"}]}
         assert MediaProbeService._parse_duration(data) is None
+
+
+@pytest.mark.unit
+class TestMediaProbeServiceProbeDuration:
+    """A title runs until its last video frame, whatever the container declares.
+
+    The container's duration is the longest of all its streams, and any of them can
+    outlast the picture. Real files declared 13h15 for a film that ends at 1h32 (a
+    subtitle cue) and 2h39 for one that ends at 1h26 (a dub muxed from a longer cut).
+    The seek bar then offers time with nothing to show, and finishing the film never
+    reaches completion.
+    """
+
+    _RUN = "src.modules.streaming.infrastructure.streaming.media_probe_service.subprocess.run"
+    _FFPROBE = "src.modules.streaming.infrastructure.streaming.media_probe_service._ffprobe_path"
+    _VIDEO_AND_AUDIO: ClassVar[list[dict[str, object]]] = [
+        {"index": 0, "codec_type": "video"},
+        {"index": 1, "codec_type": "audio"},
+    ]
+
+    def _measure(
+        self,
+        tmp_path: Path,
+        packets: list[dict[str, str]],
+        *,
+        streams: list[dict[str, object]] | None = None,
+        declared: str = "47711.1",
+    ) -> tuple[int | None, MagicMock]:
+        source = tmp_path / "movie.mkv"
+        source.touch()
+        data = {"format": {"duration": declared}, "streams": streams or self._VIDEO_AND_AUDIO}
+        completed = MagicMock(stdout=json.dumps({"packets": packets}), returncode=0)
+        with (
+            patch.object(MediaProbeService, "_run_ffprobe", return_value=data),
+            patch(self._FFPROBE, return_value="ffprobe"),
+            patch(self._RUN, return_value=completed) as run,
+        ):
+            return MediaProbeService().probe_duration(str(source)), run
+
+    def test_stops_at_the_last_video_frame(self, tmp_path: Path) -> None:
+        duration, run = self._measure(
+            tmp_path, [{"pts_time": "5507.168"}, {"pts_time": "5511.6"}, {"pts_time": "5510.0"}]
+        )
+
+        assert duration == 5512
+        args = run.call_args.args[0]
+        # Only the video's packets count, so a longer dub or subtitle cannot
+        # stretch the title. Reading from just before the declared end lands on
+        # the last keyframe, which costs a normal file only its last seconds.
+        assert args[args.index("-select_streams") + 1] == "0"
+        assert args[args.index("-read_intervals") + 1] == "47709%"
+
+    def test_finds_the_video_when_it_is_not_the_first_stream(self, tmp_path: Path) -> None:
+        _, run = self._measure(
+            tmp_path,
+            [{"pts_time": "5158.0"}],
+            streams=[{"index": 0, "codec_type": "audio"}, {"index": 3, "codec_type": "video"}],
+        )
+
+        args = run.call_args.args[0]
+        assert args[args.index("-select_streams") + 1] == "3"
+
+    def test_does_not_mistake_cover_art_for_the_video(self, tmp_path: Path) -> None:
+        _, run = self._measure(
+            tmp_path,
+            [{"pts_time": "5000.0"}],
+            streams=[
+                {"index": 0, "codec_type": "video", "disposition": {"attached_pic": 1}},
+                {"index": 1, "codec_type": "video", "disposition": {"attached_pic": 0}},
+            ],
+        )
+
+        args = run.call_args.args[0]
+        assert args[args.index("-select_streams") + 1] == "1"
+
+    def test_falls_back_to_dts_when_a_packet_has_no_pts(self, tmp_path: Path) -> None:
+        duration, _ = self._measure(tmp_path, [{"pts_time": "N/A", "dts_time": "120.0"}])
+
+        assert duration == 120
+
+    def test_never_grows_past_the_declared_duration(self, tmp_path: Path) -> None:
+        # Real file: declares 5276 s with timestamps running to 9476 s.
+        duration, _ = self._measure(tmp_path, [{"pts_time": "9476.0"}], declared="5276.0")
+
+        assert duration == 5276
+
+    def test_keeps_the_declared_duration_of_a_file_with_no_video(self, tmp_path: Path) -> None:
+        duration, run = self._measure(
+            tmp_path, [], streams=[{"index": 0, "codec_type": "audio"}], declared="3000.0"
+        )
+
+        assert duration == 3000
+        run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "packets",
+        [
+            pytest.param([], id="no-packets"),
+            pytest.param([{"pts_time": "N/A"}], id="no-timestamps"),
+            pytest.param([{"pts_time": "0.0"}], id="only-a-first-frame"),
+        ],
+    )
+    def test_keeps_the_declared_duration_when_nothing_can_be_measured(
+        self, tmp_path: Path, packets: list[dict[str, str]]
+    ) -> None:
+        duration, _ = self._measure(tmp_path, packets)
+
+        assert duration == 47711
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            pytest.param(subprocess.TimeoutExpired("ffprobe", 15), id="timeout"),
+            pytest.param(OSError("failed"), id="os-error"),
+        ],
+    )
+    def test_keeps_the_declared_duration_when_the_read_fails(
+        self, tmp_path: Path, failure: Exception
+    ) -> None:
+        source = tmp_path / "movie.mkv"
+        source.touch()
+        data = {"format": {"duration": "47711.1"}, "streams": self._VIDEO_AND_AUDIO}
+        with (
+            patch.object(MediaProbeService, "_run_ffprobe", return_value=data),
+            patch(self._FFPROBE, return_value="ffprobe"),
+            patch(self._RUN, side_effect=failure),
+        ):
+            assert MediaProbeService().probe_duration(str(source)) == 47711
+
+    def test_keeps_the_declared_duration_when_the_output_is_not_json(self, tmp_path: Path) -> None:
+        source = tmp_path / "movie.mkv"
+        source.touch()
+        data = {"format": {"duration": "47711.1"}, "streams": self._VIDEO_AND_AUDIO}
+        with (
+            patch.object(MediaProbeService, "_run_ffprobe", return_value=data),
+            patch(self._FFPROBE, return_value="ffprobe"),
+            patch(self._RUN, return_value=MagicMock(stdout="truncated {", returncode=1)),
+        ):
+            assert MediaProbeService().probe_duration(str(source)) == 47711
+
+    def test_returns_none_for_a_missing_file(self, tmp_path: Path) -> None:
+        assert MediaProbeService().probe_duration(str(tmp_path / "missing.mkv")) is None
+
+    def test_probe_stays_out_of_it(self, tmp_path: Path) -> None:
+        # probe() runs on every playback start. A file with a broken index takes
+        # 15 s to give up on the tail read, which hls.js would not wait for.
+        source = tmp_path / "movie.mkv"
+        source.touch()
+        data = {"format": {"duration": "47711.1"}, "streams": self._VIDEO_AND_AUDIO}
+        with (
+            patch.object(MediaProbeService, "_run_ffprobe", return_value=data),
+            patch(self._RUN) as run,
+        ):
+            result = MediaProbeService().probe(str(source))
+
+        assert result.duration_seconds == 47711
+        run.assert_not_called()
+
+
+@pytest.mark.unit
+class TestMediaProbePortProbeDuration:
+    """The port's default for adapters with no cheaper or better way to measure."""
+
+    def test_delegates_to_the_full_probe(self) -> None:
+        class _Adapter(MediaProbePort):
+            def probe(self, file_path: str) -> ProbeResult:
+                return ProbeResult(duration_seconds=len(file_path))
+
+        assert _Adapter().probe_duration("/a.mkv") == 6
 
 
 @pytest.mark.unit

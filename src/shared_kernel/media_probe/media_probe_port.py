@@ -22,10 +22,10 @@ class ProbeResult:
             discovered next to the probed video.
         resolution: Named resolution (``"1080p"``, ``"4K"``, …) or
             ``None`` when the video stream is missing or below 360p.
-        duration_seconds: Container duration in whole seconds, or ``None``
-            when ffprobe could not read it. This is the real file
-            duration (the source of truth for playback), distinct from a
-            metadata provider's nominal runtime.
+        duration_seconds: Duration the container declares, in whole seconds,
+            or ``None`` when ffprobe could not read it. A subtitle or a dub
+            can stretch it past the picture, so use
+            :meth:`MediaProbePort.probe_duration` for how long a title runs.
     """
 
     audio_tracks: list[AudioTrack] = field(default_factory=list)
@@ -66,6 +66,17 @@ class MediaProbePort(ABC):
         a full probe.
         """
         return self.probe(file_path).resolution
+
+    def probe_duration(self, file_path: str) -> int | None:
+        """Return how long the title runs in whole seconds, or ``None``.
+
+        This is the real file duration (the source of truth for playback),
+        distinct from a metadata provider's nominal runtime. Default
+        implementation delegates to ``probe``; override when the adapter can
+        measure the media itself. It may read more of the file than ``probe``,
+        so it is meant for registering a file, not for starting playback.
+        """
+        return self.probe(file_path).duration_seconds
 
 
 __all__ = ["MediaProbePort", "ProbeResult"]
