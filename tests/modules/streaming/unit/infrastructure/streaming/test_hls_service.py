@@ -15,6 +15,7 @@ from src.modules.settings.domain.value_objects import (
     SubtitleOcrConfig,
 )
 from src.modules.streaming.infrastructure.streaming._hls_common import (
+    _EVICTING_PREFIX,
     _has_endlist,
     primary_audio_index,
 )
@@ -1601,9 +1602,55 @@ class TestHlsServiceGetCacheStats:
         with (
             patch.object(Path, "rglob", side_effect=walked),
             patch.object(Path, "iterdir", side_effect=walked),
+            patch("os.scandir", side_effect=walked),
+            patch("os.walk", side_effect=walked),
+            patch("os.listdir", side_effect=walked),
         ):
             stats = await service.get_cache_stats()
 
+        assert stats.size_bytes == 10
+
+    @pytest.mark.asyncio
+    async def test_should_count_an_evicted_bucket_a_blocked_delete_left(
+        self, tmp_path: Path
+    ) -> None:
+        """A locked file can stop eviction from deleting a bucket's trash.
+
+        Those bytes are still on disk, so the next sweep counts them until a
+        later sweep manages the delete.
+        """
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=1),
+            cache_dir=str(tmp_path),
+        )
+        for name in ("old_hash", "new_hash"):
+            (tmp_path / name).mkdir()
+            (tmp_path / name / "segment.ts").write_bytes(b"\x00" * 1_000_000)
+        service._proc_mgr._last_access["old_hash"] = 100.0
+        service._proc_mgr._last_access["new_hash"] = 200.0
+
+        with patch("shutil.rmtree"):  # the locked file blocks every delete
+            service.evict_lru()
+            service.evict_lru()
+        stats = await service.get_cache_stats()
+
+        assert (tmp_path / f"{_EVICTING_PREFIX}old_hash").exists()
+        assert stats.size_bytes == 2_000_000
+
+    @pytest.mark.asyncio
+    async def test_should_not_count_trash_the_sweep_deleted(self, tmp_path: Path) -> None:
+        cache = tmp_path / "hls"
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(cache))
+        (cache / "h1").mkdir(parents=True)
+        (cache / "h1" / "seg.ts").write_bytes(b"x" * 10)
+        trash = cache / f"{_EVICTING_PREFIX}old"
+        trash.mkdir()
+        (trash / "seg.ts").write_bytes(b"y" * 7)
+
+        service.evict_lru()
+        stats = await service.get_cache_stats()
+
+        assert not trash.exists()
         assert stats.size_bytes == 10
 
 

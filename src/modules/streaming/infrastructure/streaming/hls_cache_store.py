@@ -198,6 +198,9 @@ class HlsCacheStore:
         # Scan disk: collect (path_hash, size_bytes, last_access_time)
         buckets: list[tuple[str, int, float]] = []
         total_size = 0
+        # Bytes a blocked delete left in eviction trash: still on disk, so
+        # part of the measured size, but never a bucket to evict.
+        trash_sizes: dict[str, int] = {}
         for entry in self._cache_dir.iterdir():
             if not entry.is_dir():
                 continue
@@ -205,6 +208,8 @@ class HlsCacheStore:
                 # Leftover from a prior cleanup whose delete was blocked
                 # (locked file). Retry it now and never count it as a bucket.
                 shutil.rmtree(entry, ignore_errors=True)
+                if entry.exists():
+                    trash_sizes[entry.name] = _bucket_size(entry)
                 continue
             path_hash = entry.name
             size = _bucket_size(entry)
@@ -212,7 +217,7 @@ class HlsCacheStore:
             # Prefer in-memory access time; fall back to directory mtime
             access_time = self._process_manager.access_time(path_hash, entry.stat().st_mtime)
             buckets.append((path_hash, size, access_time))
-        sizes = {path_hash: size for path_hash, size, _ in buckets}
+        sizes = {path_hash: size for path_hash, size, _ in buckets} | trash_sizes
 
         max_cache_bytes = (
             self._runtime_settings.streaming_snapshot_sync().hls_cache_max_size_mb * 1024 * 1024

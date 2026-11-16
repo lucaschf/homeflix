@@ -24,8 +24,9 @@ class HlsCacheStats:
     when it was last cleared.
 
     Attributes:
-        size_bytes: Bytes used by the cache buckets as of the last
-            eviction sweep, or ``None`` until the first sweep after
+        size_bytes: Bytes the cache held on disk as of the last
+            eviction sweep, buckets plus any eviction trash a blocked
+            delete left behind, or ``None`` until the first sweep after
             startup ends. Never measured on demand: on a bind mount
             the walk takes minutes.
         max_bytes: Configured ceiling (from ``Settings``). The
