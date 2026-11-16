@@ -28,9 +28,9 @@ async def get_hls_cache_stats(
 ) -> dict[str, Any]:
     """Return current HLS cache size, configured limit and last-cleared.
 
-    Drives the admin System page's occupancy card. Walks the cache
-    root server-side — fine for an on-demand call, not something
-    the operator polls in a tight loop.
+    Drives the admin System page's occupancy card. ``size_bytes`` is
+    what the eviction sweep last measured, ``null`` until the first
+    sweep after startup ends; the read never walks the cache.
     """
     stats = await use_case.execute()
     return api_single(

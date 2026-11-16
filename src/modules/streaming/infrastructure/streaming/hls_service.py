@@ -384,19 +384,21 @@ class HlsService(HlsPlaylistPort):
             path_hash = self.get_path_hash(file_path)
             self._kill_processes(path_hash)
             shutil.rmtree(self._cache_dir / path_hash, ignore_errors=True)
+            self._cache_store.drop_measured_bucket(path_hash)
         else:
             for path_hash in self._proc_mgr.active_hashes():
                 self._kill_processes(path_hash)
             shutil.rmtree(self._cache_dir, ignore_errors=True)
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             self._cache_store.touch_last_cleared_marker()
+            self._cache_store.reset_measured_sizes()
 
     async def get_cache_stats(self) -> HlsCacheStats:
-        """Return total bytes on disk + the configured ceiling + last clear.
+        """Return the measured size + the configured ceiling + last clear.
 
-        The walk stats every file in the cache. On a Windows bind mount
-        that takes minutes; run on the event loop it froze every request,
-        /health included, while the admin overview was open.
+        The size is what the eviction sweep last measured, so this never
+        walks the cache. It stays off the event loop because it still
+        reads the last-clear marker from disk.
         """
         return await asyncio.to_thread(self._cache_store.get_cache_stats)
 

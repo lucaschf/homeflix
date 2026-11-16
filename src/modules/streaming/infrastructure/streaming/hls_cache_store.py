@@ -2,7 +2,8 @@
 
 Extracted from ``HlsService``. Owns the cache-root filesystem: bucket
 hashing, completeness checks, file/master-playlist reads (touching the
-access clock on hits), LRU disk eviction, and the global-clear marker.
+access clock on hits), LRU disk eviction, the size the eviction sweep
+measured, and the global-clear marker.
 
 Reads of live process state (which buckets are active, their last-access
 time) go through the injected :class:`FfmpegProcessManager` so this store
@@ -14,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import shutil
+import threading
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -57,6 +59,13 @@ class HlsCacheStore:
         self._cache_dir = cache_dir
         self._runtime_settings = runtime_settings
         self._process_manager = process_manager
+        # Bucket sizes from the last eviction sweep, read by get_cache_stats
+        # so the admin pages never walk the cache. ``None`` until the first
+        # sweep ends. A clear bumps the generation, so a sweep that started
+        # before it cannot put the cleared buckets back.
+        self._sizes_lock = threading.Lock()
+        self._measured_sizes: dict[str, int] | None = None
+        self._sizes_generation = 0
 
     def get_path_hash(self, file_path: str, start: int = 0, end: int | None = None) -> str:
         """Get the hash key for a source file at a given start offset.
@@ -178,17 +187,20 @@ class HlsCacheStore:
         Active buckets (those with running ffmpeg processes) are skipped
         to avoid deleting segments a player is currently reading.
 
+        The sweep also records each remaining bucket's size for
+        :meth:`get_cache_stats`, even with eviction disabled.
+
         Returns the list of evicted path_hashes (useful for tests).
         """
-        max_cache_bytes = (
-            self._runtime_settings.streaming_snapshot_sync().hls_cache_max_size_mb * 1024 * 1024
-        )
-        if max_cache_bytes <= 0:
-            return []
+        with self._sizes_lock:
+            generation = self._sizes_generation
 
         # Scan disk: collect (path_hash, size_bytes, last_access_time)
         buckets: list[tuple[str, int, float]] = []
         total_size = 0
+        # Bytes a blocked delete left in eviction trash: still on disk, so
+        # part of the measured size, but never a bucket to evict.
+        trash_sizes: dict[str, int] = {}
         for entry in self._cache_dir.iterdir():
             if not entry.is_dir():
                 continue
@@ -196,15 +208,22 @@ class HlsCacheStore:
                 # Leftover from a prior cleanup whose delete was blocked
                 # (locked file). Retry it now and never count it as a bucket.
                 shutil.rmtree(entry, ignore_errors=True)
+                if entry.exists():
+                    trash_sizes[entry.name] = _bucket_size(entry)
                 continue
             path_hash = entry.name
-            size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+            size = _bucket_size(entry)
             total_size += size
             # Prefer in-memory access time; fall back to directory mtime
             access_time = self._process_manager.access_time(path_hash, entry.stat().st_mtime)
             buckets.append((path_hash, size, access_time))
+        sizes = {path_hash: size for path_hash, size, _ in buckets} | trash_sizes
 
-        if total_size <= max_cache_bytes:
+        max_cache_bytes = (
+            self._runtime_settings.streaming_snapshot_sync().hls_cache_max_size_mb * 1024 * 1024
+        )
+        if max_cache_bytes <= 0 or total_size <= max_cache_bytes:
+            self._record_sizes(sizes, generation)
             return []
 
         # Sort by access time ascending — oldest first
@@ -231,8 +250,33 @@ class HlsCacheStore:
                 continue
             self._process_manager.forget_access(path_hash)
             total_size -= size
+            del sizes[path_hash]
             evicted.append(path_hash)
+        self._record_sizes(sizes, generation)
         return evicted
+
+    def _record_sizes(self, sizes: dict[str, int], generation: int) -> None:
+        """Keep a sweep's bucket sizes unless a clear ran while it walked."""
+        with self._sizes_lock:
+            if generation == self._sizes_generation:
+                self._measured_sizes = sizes
+
+    def drop_measured_bucket(self, path_hash: str) -> None:
+        """Remove a cleared bucket from the measured size right away.
+
+        Args:
+            path_hash: The bucket that was just deleted.
+        """
+        with self._sizes_lock:
+            self._sizes_generation += 1
+            if self._measured_sizes is not None:
+                self._measured_sizes.pop(path_hash, None)
+
+    def reset_measured_sizes(self) -> None:
+        """Record an empty cache right after a global clear."""
+        with self._sizes_lock:
+            self._sizes_generation += 1
+            self._measured_sizes = {}
 
     def _remove_bucket_dir(self, bucket_path: Path) -> bool:
         """Remove a bucket directory without ever exposing a partial state.
@@ -271,23 +315,17 @@ class HlsCacheStore:
         return True
 
     def get_cache_stats(self) -> HlsCacheStats:
-        """Return total bytes on disk + the configured ceiling + last clear.
+        """Return the measured size + the configured ceiling + last clear.
 
-        The walk visits every file under the cache root and sums
-        ``st_size``. Cheap enough for an admin survey — the same
-        approach already runs inside ``evict_lru`` whenever the
-        cache fills up — but not something to hammer; the admin
-        page polls on demand only.
+        The size is what the last eviction sweep measured, adjusted for
+        clears since then; this method never walks the cache. On a
+        Windows bind mount that walk takes minutes, and the admin
+        overview waited for it. ``size_bytes`` is ``None`` until the
+        first sweep after startup ends.
         """
-        total = 0
-        if self._cache_dir.exists():
-            for entry in self._cache_dir.rglob("*"):
-                if entry.is_file():
-                    try:
-                        total += entry.stat().st_size
-                    except OSError:
-                        # File raced with eviction / clear; skip.
-                        continue
+        with self._sizes_lock:
+            sizes = self._measured_sizes
+            total = None if sizes is None else sum(sizes.values())
         max_bytes = (
             self._runtime_settings.streaming_snapshot_sync().hls_cache_max_size_mb * 1024 * 1024
         )
@@ -324,6 +362,23 @@ class HlsCacheStore:
         except OSError:
             return None
         return datetime.fromtimestamp(ts, tz=UTC)
+
+
+def _bucket_size(bucket: Path) -> int:
+    """Sum a bucket's file sizes, skipping files that vanish mid-walk.
+
+    ffmpeg renames each segment into place while the sweep walks. Since
+    the admin size comes from the sweep, one renamed file must not
+    abort it.
+    """
+    total = 0
+    for entry in bucket.rglob("*"):
+        try:
+            if entry.is_file():
+                total += entry.stat().st_size
+        except OSError:
+            continue
+    return total
 
 
 __all__ = ["HlsCacheStore"]

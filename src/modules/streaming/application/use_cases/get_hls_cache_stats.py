@@ -11,8 +11,8 @@ class GetHlsCacheStatsUseCase:
 
     Used by the admin System page to render the occupancy bar and
     decide whether to surface a "running close to the limit" hint.
-    The underlying ``HlsService.get_cache_stats`` walks the cache root
-    and sums file sizes, off the event loop.
+    The underlying ``HlsService.get_cache_stats`` returns the size its
+    eviction sweep last measured, so the read never walks the cache.
     """
 
     def __init__(self, hls: HlsPlaylistPort) -> None:

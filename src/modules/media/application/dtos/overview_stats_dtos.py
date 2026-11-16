@@ -23,10 +23,11 @@ class HlsCacheSnapshot:
     """Slim HLS cache view for the Overview occupancy card.
 
     Drops ``last_cleared_at`` versus the dedicated System page —
-    the Overview just shows the ratio.
+    the Overview just shows the ratio. ``size_bytes`` is ``None``
+    while the cache size is not measured yet.
     """
 
-    size_bytes: int
+    size_bytes: int | None
     max_bytes: int
 
 
