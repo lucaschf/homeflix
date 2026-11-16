@@ -1,6 +1,5 @@
 """Tests for HlsService."""
 
-import asyncio
 import hashlib
 import json
 import subprocess
@@ -1440,11 +1439,25 @@ class TestHlsServiceGetCacheStats:
     """Tests for ``HlsService.get_cache_stats``."""
 
     @pytest.mark.asyncio
+    async def test_should_report_unmeasured_size_before_the_first_sweep(
+        self, tmp_path: Path
+    ) -> None:
+        cache = tmp_path / "hls"
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(cache))
+        (cache / "h1").mkdir(parents=True)
+        (cache / "h1" / "seg.ts").write_bytes(b"x" * 10)
+
+        stats = await service.get_cache_stats()
+
+        assert stats.size_bytes is None
+
+    @pytest.mark.asyncio
     async def test_should_report_zero_bytes_when_cache_empty(self, tmp_path: Path) -> None:
         service = HlsService(
             runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=100),
             cache_dir=str(tmp_path / "hls"),
         )
+        service.evict_lru()
 
         stats = await service.get_cache_stats()
 
@@ -1463,11 +1476,99 @@ class TestHlsServiceGetCacheStats:
         (cache / "h1" / "master.m3u8").write_bytes(b"x" * 10)
         (cache / "h2" / "nested").mkdir(parents=True)
         (cache / "h2" / "nested" / "seg.ts").write_bytes(b"y" * 25)
+        service.evict_lru()
 
         stats = await service.get_cache_stats()
 
         assert stats.size_bytes == 35
         assert stats.max_bytes == 50 * 1024 * 1024
+
+    @pytest.mark.asyncio
+    async def test_should_measure_when_eviction_is_disabled(self, tmp_path: Path) -> None:
+        cache = tmp_path / "hls"
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=0),
+            cache_dir=str(cache),
+        )
+        (cache / "h1").mkdir(parents=True)
+        (cache / "h1" / "seg.ts").write_bytes(b"x" * 10)
+
+        evicted = service.evict_lru()
+        stats = await service.get_cache_stats()
+
+        assert evicted == []
+        assert stats.size_bytes == 10
+
+    @pytest.mark.asyncio
+    async def test_should_leave_evicted_buckets_out_of_the_size(self, tmp_path: Path) -> None:
+        service = HlsService(
+            runtime_settings=_fake_runtime_settings(hls_cache_max_size_mb=1),
+            cache_dir=str(tmp_path),
+        )
+        for name in ("old_hash", "new_hash"):
+            (tmp_path / name).mkdir()
+            (tmp_path / name / "segment.ts").write_bytes(b"\x00" * 1_000_000)
+        service._proc_mgr._last_access["old_hash"] = 100.0
+        service._proc_mgr._last_access["new_hash"] = 200.0
+
+        evicted = service.evict_lru()
+        stats = await service.get_cache_stats()
+
+        assert evicted == ["old_hash"]
+        assert stats.size_bytes == 1_000_000
+
+    @pytest.mark.asyncio
+    async def test_should_report_zero_right_after_a_global_clear(self, tmp_path: Path) -> None:
+        cache = tmp_path / "hls"
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(cache))
+        (cache / "h1").mkdir(parents=True)
+        (cache / "h1" / "seg.ts").write_bytes(b"x" * 10)
+        service.evict_lru()
+
+        service.clear_cache(None)
+        stats = await service.get_cache_stats()
+
+        assert stats.size_bytes == 0
+
+    @pytest.mark.asyncio
+    async def test_should_drop_a_cleared_bucket_from_the_size(self, tmp_path: Path) -> None:
+        cache = tmp_path / "hls"
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(cache))
+        cleared = service.get_path_hash("/movies/cleared.mkv")
+        kept = service.get_path_hash("/movies/kept.mkv")
+        for path_hash, size in ((cleared, 10), (kept, 25)):
+            (cache / path_hash).mkdir(parents=True)
+            (cache / path_hash / "seg.ts").write_bytes(b"x" * size)
+        service.evict_lru()
+
+        service.clear_cache("/movies/cleared.mkv")
+        stats = await service.get_cache_stats()
+
+        assert stats.size_bytes == 25
+
+    @pytest.mark.asyncio
+    async def test_should_discard_a_sweep_that_a_clear_overtook(self, tmp_path: Path) -> None:
+        """A sweep takes minutes on a bind mount; a clear can land mid-walk.
+
+        Keeping that sweep's sizes would put the cleared buckets back into
+        the reported size until the next sweep ends.
+        """
+        cache = tmp_path / "hls"
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(cache))
+        (cache / "h1").mkdir(parents=True)
+        (cache / "h1" / "seg.ts").write_bytes(b"x" * 10)
+        real_access_time = service._proc_mgr.access_time
+
+        def clear_mid_walk(path_hash: str, default: float) -> float:
+            result = real_access_time(path_hash, default)
+            service.clear_cache(None)
+            return result
+
+        with patch.object(service._proc_mgr, "access_time", side_effect=clear_mid_walk):
+            service.evict_lru()
+        stats = await service.get_cache_stats()
+
+        assert stats.size_bytes == 0
 
     @pytest.mark.asyncio
     async def test_should_expose_last_cleared_after_global_clear(self, tmp_path: Path) -> None:
@@ -1482,38 +1583,28 @@ class TestHlsServiceGetCacheStats:
         assert stats.last_cleared_at.tzinfo is not None
 
     @pytest.mark.asyncio
-    async def test_should_walk_the_cache_off_the_event_loop(self, tmp_path: Path) -> None:
-        """The walk stats every cached file; on a bind mount it takes minutes.
+    async def test_should_not_walk_the_cache_on_read(self, tmp_path: Path) -> None:
+        """Reading the stats must not stat every cached file.
 
-        On the event loop it froze every request, /health included, while
-        the admin overview was open, and Docker marked the backend unhealthy.
+        On a Windows bind mount that walk takes minutes. The admin overview
+        waited for it, so its movies, series, users and cache cards stayed
+        loading until it ended. The size comes from the eviction sweep,
+        which walks the cache anyway.
         """
-        service = HlsService(
-            runtime_settings=_fake_runtime_settings(), cache_dir=str(tmp_path / "hls")
-        )
-        real = service._cache_store.get_cache_stats
+        cache = tmp_path / "hls"
+        service = HlsService(runtime_settings=_fake_runtime_settings(), cache_dir=str(cache))
+        (cache / "h1").mkdir(parents=True)
+        (cache / "h1" / "seg.ts").write_bytes(b"x" * 10)
+        service.evict_lru()
 
-        def slow_walk() -> object:
-            time.sleep(0.5)
-            return real()
+        walked = AssertionError("read walked the cache")
+        with (
+            patch.object(Path, "rglob", side_effect=walked),
+            patch.object(Path, "iterdir", side_effect=walked),
+        ):
+            stats = await service.get_cache_stats()
 
-        ticks = 0
-
-        async def heartbeat() -> None:
-            nonlocal ticks
-            while True:
-                await asyncio.sleep(0.05)
-                ticks += 1
-
-        beat = asyncio.create_task(heartbeat())
-        try:
-            with patch.object(service._cache_store, "get_cache_stats", side_effect=slow_walk):
-                stats = await service.get_cache_stats()
-        finally:
-            beat.cancel()
-
-        assert stats.size_bytes == 0
-        assert ticks >= 5, f"event loop blocked during the cache walk ({ticks} heartbeats)"
+        assert stats.size_bytes == 10
 
 
 @pytest.mark.unit

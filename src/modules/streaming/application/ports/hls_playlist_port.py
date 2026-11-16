@@ -24,8 +24,10 @@ class HlsCacheStats:
     when it was last cleared.
 
     Attributes:
-        size_bytes: Bytes currently used on disk under the cache
-            root (walk + sum, no per-bucket breakdown).
+        size_bytes: Bytes used by the cache buckets as of the last
+            eviction sweep, or ``None`` until the first sweep after
+            startup ends. Never measured on demand: on a bind mount
+            the walk takes minutes.
         max_bytes: Configured ceiling (from ``Settings``). The
             evictor enforces this; the admin page renders the
             ratio.
@@ -34,7 +36,7 @@ class HlsCacheStats:
             cleared globally since the marker started being kept.
     """
 
-    size_bytes: int
+    size_bytes: int | None
     max_bytes: int
     last_cleared_at: datetime | None
 
@@ -98,8 +100,9 @@ class HlsPlaylistPort(ABC):
     async def get_cache_stats(self) -> HlsCacheStats:
         """Return cache occupancy + configured limit + last clear time.
 
-        Implementations walk the cache on disk and must do it off the
-        event loop: on a bind mount the walk takes minutes.
+        Implementations return the size their eviction sweep last
+        measured and must not walk the cache on read: on a bind mount
+        the walk takes minutes.
         """
         ...
 

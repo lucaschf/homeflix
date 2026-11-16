@@ -111,3 +111,28 @@ class TestGetOverviewStatsUseCase:
 
         assert result.last_scan is None
         assert result.review_count == 0
+
+    async def test_should_pass_through_an_unmeasured_cache_size(self) -> None:
+        review_uc = AsyncMock()
+        review_uc.execute.return_value = MagicMock(movies=[])
+        hls = MagicMock()
+        hls.get_stats = AsyncMock()
+        hls.get_stats.return_value = HlsCacheStatsView(
+            size_bytes=None,
+            max_bytes=1000,
+            last_cleared_at=None,
+        )
+
+        result = await GetOverviewStatsUseCase(
+            media_uow_factory=_media_uow_factory(
+                movies_count=0,
+                series_count=0,
+                last_scan=None,
+            ),
+            user_count=_user_count_port(users_count=1),
+            list_movies_needing_review=review_uc,
+            hls_cache_stats=hls,
+        ).execute()
+
+        assert result.hls_cache.size_bytes is None
+        assert result.hls_cache.max_bytes == 1000

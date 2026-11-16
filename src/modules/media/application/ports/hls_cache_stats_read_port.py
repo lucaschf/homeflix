@@ -17,13 +17,14 @@ class HlsCacheStatsView:
     """Media-side projection of the streaming HLS cache snapshot.
 
     Attributes:
-        size_bytes: Bytes currently used on disk under the cache root.
+        size_bytes: Bytes used by the cache as last measured, or
+            ``None`` while the size is not measured yet.
         max_bytes: Configured ceiling.
         last_cleared_at: Wallclock time of the last global clear, or
             ``None``.
     """
 
-    size_bytes: int
+    size_bytes: int | None
     max_bytes: int
     last_cleared_at: datetime | None
 
