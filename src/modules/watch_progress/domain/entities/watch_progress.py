@@ -8,6 +8,7 @@ from typing import Self
 from pydantic import Field, model_validator
 
 from src.building_blocks.domain import AggregateRoot
+from src.modules.watch_progress.domain.events import WatchCompletedEvent
 from src.modules.watch_progress.domain.value_objects import (
     PlaybackPosition,
     ProgressId,
@@ -25,7 +26,8 @@ class WatchProgress(AggregateRoot[ProgressId]):
     """Tracks playback position for a movie or episode.
 
     Automatically marks as completed when position reaches 90%
-    of the total duration.
+    of the total duration, and raises :class:`WatchCompletedEvent`
+    on that transition.
 
     Example:
         >>> progress = WatchProgress.create(
@@ -99,7 +101,8 @@ class WatchProgress(AggregateRoot[ProgressId]):
     ) -> Self:
         """Return a copy with updated position and track preferences.
 
-        Automatically marks as completed if position >= 90% of duration.
+        Automatically marks as completed if position >= 90% of duration,
+        raising :class:`WatchCompletedEvent` when it was not completed yet.
 
         Args:
             position_seconds: Current playback position in seconds.
@@ -130,11 +133,17 @@ class WatchProgress(AggregateRoot[ProgressId]):
         if subtitle_track is not None:
             updates["subtitle_track"] = subtitle_track
 
-        if is_complete and not self.is_completed:
+        completes_now = is_complete and not self.is_completed
+        if completes_now:
             updates["status"] = WatchStatus.COMPLETED
             updates["completed_at"] = now
 
-        return self.with_updates(**updates)
+        updated = self.with_updates(**updates)
+        if completes_now:
+            updated.add_event(
+                WatchCompletedEvent(profile_id=self.profile_id, media_id=self.media_id)
+            )
+        return updated
 
     @classmethod
     def create(
@@ -163,7 +172,8 @@ class WatchProgress(AggregateRoot[ProgressId]):
                 ``None`` when no preference was recorded.
 
         Returns:
-            A new WatchProgress instance.
+            A new WatchProgress instance, carrying
+            :class:`WatchCompletedEvent` when it starts out completed.
         """
         now = datetime.now(UTC)
         position = PlaybackPosition(
@@ -172,7 +182,7 @@ class WatchProgress(AggregateRoot[ProgressId]):
         )
         is_complete = position.reaches_completion(_COMPLETION_THRESHOLD)
 
-        return cls(
+        progress = cls(
             id=ProgressId.generate(),
             profile_id=profile_id,
             media_id=media_id,
@@ -184,6 +194,11 @@ class WatchProgress(AggregateRoot[ProgressId]):
             last_watched_at=now,
             completed_at=now if is_complete else None,
         )
+        if is_complete:
+            progress.add_event(
+                WatchCompletedEvent(profile_id=progress.profile_id, media_id=progress.media_id)
+            )
+        return progress
 
 
 __all__ = ["WatchProgress"]

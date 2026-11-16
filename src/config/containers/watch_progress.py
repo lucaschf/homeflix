@@ -39,6 +39,9 @@ class WatchProgressContainer(containers.DeclarativeContainer):
     # short-lived Identity transactions to resolve the caller's viewing
     # policy. Use cases only see ``ProfileViewingPolicyPort``.
     identity_uow_factory = providers.Dependency[Any]()
+    # In-process event bus: saving a finished movie publishes
+    # ``MovieCompletedEvent`` for other bounded contexts.
+    event_bus = providers.Dependency[Any]()
 
     # =========================================================================
     # Unit of Work
@@ -72,6 +75,7 @@ class WatchProgressContainer(containers.DeclarativeContainer):
         uow_factory=watch_progress_unit_of_work_factory,
         media_lookup=media_lookup,
         profile_viewing_policy=profile_viewing_policy,
+        event_bus=event_bus,
     )
 
     get_progress = providers.Factory(

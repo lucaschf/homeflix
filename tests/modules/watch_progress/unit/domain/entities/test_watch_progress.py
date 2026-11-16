@@ -1,8 +1,10 @@
 """Tests for WatchProgress entity."""
 
 from src.modules.watch_progress.domain.entities import WatchProgress
+from src.modules.watch_progress.domain.events import WatchCompletedEvent
 from src.modules.watch_progress.domain.value_objects import (
     SubtitlePreference,
+    WatchableMediaId,
     WatchableMediaType,
 )
 from src.shared_kernel.value_objects.profile_id import ProfileId
@@ -105,3 +107,60 @@ class TestWatchProgress:
         )
         assert progress.media_type == "episode"
         assert progress.media_id.value == "epi_ser_abc123def456_1_2"
+
+
+class TestWatchProgressCompletionEvent:
+    """Finishing a title raises ``WatchCompletedEvent`` once, on the transition.
+
+    Collections removes a finished movie from the profile's watchlist off
+    this event, so it must not fire again while the profile rewatches it.
+    """
+
+    def test_update_into_completion_raises_the_event(self):
+        progress = _create_progress(position_seconds=1800)
+
+        completed = progress.update_position(6600)
+
+        events = completed.pull_events()
+        assert len(events) == 1
+        assert isinstance(events[0], WatchCompletedEvent)
+        assert events[0].profile_id == _PROFILE_ID
+        assert events[0].media_id == WatchableMediaId("mov_abc123def456")
+
+    def test_update_below_the_threshold_raises_nothing(self):
+        progress = _create_progress(position_seconds=1800)
+
+        assert progress.update_position(3600).pull_events() == []
+
+    def test_update_of_a_completed_title_raises_nothing(self):
+        completed = _create_progress(position_seconds=6600)
+        completed.pull_events()
+
+        rewatched = completed.update_position(6700)
+
+        assert rewatched.pull_events() == []
+
+    def test_create_already_completed_raises_the_event(self):
+        progress = _create_progress(position_seconds=6600)
+
+        events = progress.pull_events()
+        assert len(events) == 1
+        assert isinstance(events[0], WatchCompletedEvent)
+        assert events[0].media_id == WatchableMediaId("mov_abc123def456")
+
+    def test_create_in_progress_raises_nothing(self):
+        assert _create_progress(position_seconds=1800).pull_events() == []
+
+    def test_episode_completion_raises_the_event(self):
+        progress = _create_progress(
+            media_id="epi_ser_abc123def456_1_2",
+            media_type=WatchableMediaType.EPISODE,
+            position_seconds=300,
+            duration_seconds=2700,
+        )
+
+        events = progress.update_position(2600).pull_events()
+
+        assert [event.media_id for event in events] == [
+            WatchableMediaId("epi_ser_abc123def456_1_2")
+        ]
