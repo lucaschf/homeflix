@@ -2,8 +2,8 @@
 #
 # Smoke test for the Docker setup: builds the image through docker-compose.yml,
 # starts it against throwaway data and media folders, and checks that
-# migrations ran, the API answers, the healthcheck passes and the process is
-# not root. Leaves nothing behind.
+# migrations ran, the API answers, the healthcheck passes, the HLS cache sits on
+# a writable named volume and the process is not root. Leaves nothing behind.
 #
 #   scripts/docker-smoke.sh
 #
@@ -44,6 +44,18 @@ curl -fsS "$base/health" | grep -q '"status":"healthy"' || fail "/health"
 check "/health answers"
 
 [ -s "$work/data/homeflix.db" ] || fail "no database in the data volume"
+
+# The HLS cache is thousands of small files the eviction sweep stats every few
+# seconds; on a Windows bind mount that walk takes minutes. It gets a named volume,
+# which must be writable by the app user.
+cache_mount='{{range .Mounts}}{{if eq .Destination "/app/hls_cache"}}{{.Type}}{{end}}{{end}}'
+[ "$("${compose[@]}" exec -T backend printenv HLS_CACHE_DIRECTORY)" = /app/hls_cache ] \
+  || fail "HLS cache not at /app/hls_cache"
+[ "$(docker inspect -f "$cache_mount" homeflix-backend)" = volume ] \
+  || fail "HLS cache not on a named volume"
+"${compose[@]}" exec -T backend sh -c 'touch /app/hls_cache/.probe && rm /app/hls_cache/.probe' \
+  || fail "HLS cache volume not writable by the app"
+check "HLS cache on a writable named volume"
 # Read the logs first: under pipefail, `logs | grep -q` fails when grep exits early (SIGPIPE).
 logs="$("${compose[@]}" logs --no-color backend)"
 grep -q "Running upgrade" <<<"$logs" || fail "migrations did not run"

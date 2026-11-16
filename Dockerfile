@@ -43,6 +43,11 @@ RUN useradd --create-home --uid 1000 homeflix
 
 WORKDIR /app
 
+# Mount point of the HLS cache's named volume (docker-compose.yml). A new named
+# volume takes this directory's owner; without it the volume is root's and the
+# app cannot write segments.
+RUN mkdir /app/hls_cache && chown homeflix:homeflix /app/hls_cache
+
 COPY --from=builder /opt/venv /opt/venv
 COPY --chown=homeflix:homeflix src/ ./src/
 COPY --chown=homeflix:homeflix migrations/ ./migrations/
