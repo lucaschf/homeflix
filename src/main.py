@@ -324,6 +324,9 @@ async def _subscribe_event_handlers(container: ApplicationContainer) -> None:
         OnMediaEnrichedHandler,
     )
     from src.modules.collections.application.event_handlers import (
+        OnMovieCompletedHandler as CollectionsOnMovieCompletedHandler,
+    )
+    from src.modules.collections.application.event_handlers import (
         OnMovieMergedHandler as CollectionsOnMovieMergedHandler,
     )
     from src.modules.collections.application.event_handlers import (
@@ -348,6 +351,7 @@ async def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     )
     from src.shared_kernel.integration_events import (
         MediaEnrichedEvent,
+        MovieCompletedEvent,
         MovieMergedEvent,
         MoviePromotedToSeriesEvent,
         UserDeletedEvent,
@@ -426,6 +430,14 @@ async def _subscribe_event_handlers(container: ApplicationContainer) -> None:
     event_bus.subscribe(
         MoviePromotedToSeriesEvent,
         CollectionsOnMoviePromotedHandler(uow_factory=collections_uow_factory),
+    )
+
+    # A profile finished a movie: collections takes it off that profile's
+    # watchlist ("quero assistir"). Series never get here; they stay on
+    # the list until the profile removes them.
+    event_bus.subscribe(
+        MovieCompletedEvent,
+        CollectionsOnMovieCompletedHandler(uow_factory=collections_uow_factory),
     )
 
     # Cross-BC cleanup when an admin removes a user — watch_progress

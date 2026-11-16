@@ -1,5 +1,8 @@
 """Collections event handlers."""
 
+from src.modules.collections.application.event_handlers.on_movie_completed import (
+    OnMovieCompletedHandler,
+)
 from src.modules.collections.application.event_handlers.on_movie_merged import (
     OnMovieMergedHandler,
 )
@@ -11,6 +14,7 @@ from src.modules.collections.application.event_handlers.on_user_deleted import (
 )
 
 __all__ = [
+    "OnMovieCompletedHandler",
     "OnMovieMergedHandler",
     "OnMoviePromotedToSeriesHandler",
     "OnUserDeletedHandler",

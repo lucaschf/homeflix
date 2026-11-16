@@ -1,5 +1,9 @@
 """SaveProgressUseCase - Save or update watch progress."""
 
+from collections.abc import Sequence
+
+from src.building_blocks.application.event_bus import EventBus
+from src.building_blocks.domain.events import DomainEvent
 from src.modules.watch_progress.application.dtos import ProgressOutput, SaveProgressInput
 from src.modules.watch_progress.application.ports import (
     MediaLookupPort,
@@ -14,11 +18,14 @@ from src.modules.watch_progress.application.use_cases._title_gate import (
     title_of,
 )
 from src.modules.watch_progress.domain.entities import WatchProgress
+from src.modules.watch_progress.domain.events import WatchCompletedEvent
 from src.modules.watch_progress.domain.value_objects import (
     SubtitlePreference,
     WatchableMediaId,
     WatchableMediaType,
 )
+from src.shared_kernel.integration_events import MovieCompletedEvent
+from src.shared_kernel.value_objects.media_id import MovieId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
@@ -28,6 +35,10 @@ class SaveProgressUseCase:
     Progress is only recorded on a title the profile can see. The check
     runs before the progress transaction opens and applies whether or not
     a row already exists, so the answer never depends on past progress.
+
+    When the save finishes a movie, ``MovieCompletedEvent`` is published
+    after the progress transaction commits, so ``collections`` can take
+    the movie off the profile's watchlist.
     """
 
     def __init__(
@@ -35,6 +46,7 @@ class SaveProgressUseCase:
         uow_factory: WatchProgressUnitOfWorkFactory,
         media_lookup: MediaLookupPort,
         profile_viewing_policy: ProfileViewingPolicyPort,
+        event_bus: EventBus,
     ) -> None:
         """Initialize the use case.
 
@@ -42,10 +54,13 @@ class SaveProgressUseCase:
             uow_factory: Factory that opens a fresh watch progress UoW.
             media_lookup: Port for asking the catalog which titles are visible.
             profile_viewing_policy: Port resolving the caller's viewing policy.
+            event_bus: Bus that publishes ``MovieCompletedEvent`` to other
+                bounded contexts.
         """
         self._uow_factory = uow_factory
         self._media_lookup = media_lookup
         self._profile_viewing_policy = profile_viewing_policy
+        self._event_bus = event_bus
 
     async def execute(self, input_dto: SaveProgressInput) -> ProgressOutput:
         """Persist progress for the caller's profile.
@@ -85,8 +100,22 @@ class SaveProgressUseCase:
                     subtitle_track=subtitle_track,
                 )
 
+            events = progress.pull_events()
             saved = await uow.progress.save(progress)
+
+        # After the commit, so a handler never acts on progress that rolled back.
+        for event in _completed_movies(events):
+            await self._event_bus.publish(event)
         return ProgressOutput.from_entity(saved)
+
+
+def _completed_movies(events: Sequence[DomainEvent]) -> list[MovieCompletedEvent]:
+    """Translate finished movies into the published contract; episodes stay internal."""
+    return [
+        MovieCompletedEvent(profile_id=event.profile_id, movie_id=MovieId(event.media_id.value))
+        for event in events
+        if isinstance(event, WatchCompletedEvent) and event.media_id.is_movie
+    ]
 
 
 __all__ = ["SaveProgressUseCase"]

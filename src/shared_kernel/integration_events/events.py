@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from src.shared_kernel.integration_events.base import IntegrationEvent
 from src.shared_kernel.value_objects.media_id import EpisodeId, MovieId, SeriesId
 from src.shared_kernel.value_objects.media_type import MediaType
+from src.shared_kernel.value_objects.profile_id import ProfileId
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -80,6 +81,29 @@ class MovieMergedEvent(IntegrationEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
+class MovieCompletedEvent(IntegrationEvent):
+    """Emitted when a profile finishes watching a movie.
+
+    Published by ``watch_progress`` after the progress row that crossed
+    the completion threshold commits; once per completion, not again
+    while the profile rewatches the movie. Episodes publish nothing: no
+    consumer needs them, and a series is never finished for good.
+
+    Cross-BC handlers:
+        - ``collections`` removes the movie from that profile's
+          watchlist ("quero assistir"): watching it fulfils the
+          entry. Custom lists are left alone.
+
+    Attributes:
+        profile_id: Profile that finished the movie (``prf_xxx``).
+        movie_id: The finished movie (``mov_xxx``).
+    """
+
+    profile_id: ProfileId
+    movie_id: MovieId
+
+
+@dataclass(frozen=True, kw_only=True)
 class MoviePromotedToSeriesEvent(IntegrationEvent):
     """Emitted when an admin promotes a movie into a series.
 
@@ -147,6 +171,7 @@ class UserDeletedEvent(IntegrationEvent):
 
 __all__ = [
     "MediaEnrichedEvent",
+    "MovieCompletedEvent",
     "MovieMergedEvent",
     "MoviePromotedToSeriesEvent",
     "UserDeletedEvent",

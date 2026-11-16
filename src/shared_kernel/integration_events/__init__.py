@@ -8,6 +8,7 @@ module. See :mod:`src.shared_kernel.integration_events.events`.
 from src.shared_kernel.integration_events.base import IntegrationEvent
 from src.shared_kernel.integration_events.events import (
     MediaEnrichedEvent,
+    MovieCompletedEvent,
     MovieMergedEvent,
     MoviePromotedToSeriesEvent,
     UserDeletedEvent,
@@ -16,6 +17,7 @@ from src.shared_kernel.integration_events.events import (
 __all__ = [
     "IntegrationEvent",
     "MediaEnrichedEvent",
+    "MovieCompletedEvent",
     "MovieMergedEvent",
     "MoviePromotedToSeriesEvent",
     "UserDeletedEvent",

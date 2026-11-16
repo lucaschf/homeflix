@@ -417,6 +417,7 @@ Escaneia o sistema de arquivos e detecta novas mídias.
 - Adicionar/remover de qualquer tela
 - Ordenação manual (drag & drop)
 - Contador de itens na watchlist
+- Filme concluído (90% assistido) sai da watchlist do perfil que o assistiu; série fica até o usuário remover, porque novas temporadas continuam chegando. Listas personalizadas não mudam
 
 #### RF-019: Favoritar Item
 **Descrição:** O usuário pode marcar itens como favoritos.

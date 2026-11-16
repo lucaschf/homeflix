@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.building_blocks.application.errors import ResourceNotFoundException
+from src.building_blocks.application.event_bus import EventBus
 from src.modules.watch_progress.application.dtos import ProgressOutput, SaveProgressInput
 from src.modules.watch_progress.application.ports import (
     MediaLookupPort,
@@ -14,6 +15,7 @@ from src.modules.watch_progress.application.use_cases import SaveProgressUseCase
 from src.modules.watch_progress.domain.entities import WatchProgress
 from src.modules.watch_progress.domain.value_objects import WatchableMediaId, WatchableMediaType
 from src.shared_kernel.content_policy import ViewingPolicy
+from src.shared_kernel.integration_events import MovieCompletedEvent
 from src.shared_kernel.value_objects.media_id import MovieId, SeriesId
 from src.shared_kernel.value_objects.profile_id import ProfileId
 from tests.modules.watch_progress.unit.conftest import (
@@ -51,11 +53,13 @@ def _make_use_case(
     visible: set[str] | None = None,
     policy: ViewingPolicy = _POLICY,
     media_lookup: AsyncMock | None = None,
+    event_bus: AsyncMock | None = None,
 ) -> SaveProgressUseCase:
     return SaveProgressUseCase(
         uow_factory=mocks.factory,
         media_lookup=media_lookup or _media_lookup({_MOVIE_ID} if visible is None else visible),
         profile_viewing_policy=_policy_port(policy),
+        event_bus=event_bus or AsyncMock(spec=EventBus),
     )
 
 
@@ -310,3 +314,104 @@ class TestSaveProgressVisibilityGate:
         for attribute in ("resource_type", "resource_id", "code", "message_code", "message"):
             assert getattr(missing_error.value, attribute) == getattr(hidden_error.value, attribute)
         assert missing_error.value.message_code == "MOVIE_NOT_FOUND"
+
+
+class TestSaveProgressCompletionEvent:
+    """A movie that reaches completion publishes ``MovieCompletedEvent``.
+
+    Collections takes a finished movie off the profile's watchlist on it;
+    series stay on the list, so an episode publishes nothing.
+    """
+
+    @staticmethod
+    def _in_progress_movie() -> WatchProgress:
+        return WatchProgress.create(
+            profile_id=_PROFILE_ID,
+            media_id=WatchableMediaId(_MOVIE_ID),
+            media_type=WatchableMediaType.MOVIE,
+            position_seconds=1800,
+            duration_seconds=7200,
+        )
+
+    @staticmethod
+    def _published(event_bus: AsyncMock) -> list[MovieCompletedEvent]:
+        return [call.args[0] for call in event_bus.publish.await_args_list]
+
+    @pytest.mark.asyncio
+    async def test_publishes_when_a_movie_finishes(self):
+        mocks = make_watch_progress_uow_mock()
+        mocks.progress.find_by_media_id.return_value = self._in_progress_movie()
+        mocks.progress.save.side_effect = lambda p: p
+        event_bus = AsyncMock(spec=EventBus)
+
+        await _make_use_case(mocks, event_bus=event_bus).execute(_input(position_seconds=6600))
+
+        [event] = self._published(event_bus)
+        assert isinstance(event, MovieCompletedEvent)
+        assert event.profile_id == _PROFILE_ID
+        assert event.movie_id == MovieId(_MOVIE_ID)
+
+    @pytest.mark.asyncio
+    async def test_publishes_when_the_first_save_already_finishes(self):
+        mocks = make_watch_progress_uow_mock()
+        mocks.progress.find_by_media_id.return_value = None
+        mocks.progress.save.side_effect = lambda p: p
+        event_bus = AsyncMock(spec=EventBus)
+
+        await _make_use_case(mocks, event_bus=event_bus).execute(_input(position_seconds=6600))
+
+        assert [e.movie_id for e in self._published(event_bus)] == [MovieId(_MOVIE_ID)]
+
+    @pytest.mark.asyncio
+    async def test_publishes_nothing_below_completion(self):
+        mocks = make_watch_progress_uow_mock()
+        mocks.progress.find_by_media_id.return_value = self._in_progress_movie()
+        mocks.progress.save.side_effect = lambda p: p
+        event_bus = AsyncMock(spec=EventBus)
+
+        await _make_use_case(mocks, event_bus=event_bus).execute(_input(position_seconds=3600))
+
+        event_bus.publish.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_publishes_nothing_while_rewatching_a_finished_movie(self):
+        finished = self._in_progress_movie().update_position(6600)
+        finished.pull_events()
+        mocks = make_watch_progress_uow_mock()
+        mocks.progress.find_by_media_id.return_value = finished
+        mocks.progress.save.side_effect = lambda p: p
+        event_bus = AsyncMock(spec=EventBus)
+
+        await _make_use_case(mocks, event_bus=event_bus).execute(_input(position_seconds=6700))
+
+        event_bus.publish.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_publishes_nothing_when_an_episode_finishes(self):
+        mocks = make_watch_progress_uow_mock()
+        mocks.progress.find_by_media_id.return_value = None
+        mocks.progress.save.side_effect = lambda p: p
+        event_bus = AsyncMock(spec=EventBus)
+
+        await _make_use_case(mocks, visible={_SERIES_ID}, event_bus=event_bus).execute(
+            _input(
+                f"epi_{_SERIES_ID}_1_2",
+                media_type="episode",
+                position_seconds=2600,
+                duration_seconds=2700,
+            )
+        )
+
+        event_bus.publish.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_publishes_nothing_when_the_save_fails(self):
+        mocks = make_watch_progress_uow_mock()
+        mocks.progress.find_by_media_id.return_value = self._in_progress_movie()
+        mocks.progress.save.side_effect = RuntimeError("database is locked")
+        event_bus = AsyncMock(spec=EventBus)
+
+        with pytest.raises(RuntimeError):
+            await _make_use_case(mocks, event_bus=event_bus).execute(_input(position_seconds=6600))
+
+        event_bus.publish.assert_not_awaited()
