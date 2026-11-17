@@ -17,7 +17,10 @@ With context:
     logger.info("Processing request")  # Includes request_id automatically
 """
 
+import contextlib
+import json
 import logging
+import sys
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -26,6 +29,41 @@ from src.config.settings import get_settings
 
 if TYPE_CHECKING:
     from structlog.types import Processor
+
+
+class _ResilientPrintLogger(structlog.PrintLogger):
+    """``PrintLogger`` that drops a line it cannot write instead of raising.
+
+    stdlib logging isolates sink failures in ``Handler.handleError``;
+    ``PrintLogger`` prints straight to stdout, so a closed or broken stream
+    (``OSError``) or one that cannot encode the line (``ValueError``)
+    raised into the code that was logging, and a request whose work had
+    committed came back as an error. The drop is reported on stderr as a
+    JSON line, best effort. The notice names only the error type: the
+    exception can hold the line itself (a ``UnicodeEncodeError`` carries
+    the whole string), and the line can carry what the caller logged.
+    """
+
+    def msg(self, message: str) -> None:
+        """Print *message*, or report on stderr that it was dropped."""
+        try:
+            super().msg(message)
+        except (OSError, ValueError) as exc:
+            notice = {
+                "event": "Log line dropped",
+                "level": "warning",
+                "error_type": type(exc).__name__,
+            }
+            with contextlib.suppress(OSError, ValueError):
+                print(json.dumps(notice), file=sys.stderr, flush=True)
+
+    log = debug = info = warn = warning = msg
+    fatal = failure = err = error = critical = exception = msg
+
+
+def _resilient_print_logger(*_args: Any) -> _ResilientPrintLogger:
+    """Logger factory for structlog: print to stdout, never raise on a failed write."""
+    return _ResilientPrintLogger()
 
 
 def _setup_structlog(*, json_logs: bool, log_level: str) -> None:
@@ -68,7 +106,7 @@ def _setup_structlog(*, json_logs: bool, log_level: str) -> None:
         processors=processors,
         wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, log_level.upper())),
         context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=_resilient_print_logger,
         cache_logger_on_first_use=True,
     )
 

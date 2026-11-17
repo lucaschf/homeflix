@@ -2,11 +2,13 @@
 
 Production logs are JSON and leave the host, so a rendered traceback
 must never carry frame locals: request bodies and credentials live
-there. structlog prints through ``PrintLoggerFactory``, which ``caplog``
-does not see, so the rendered lines are read from ``capsys``.
+there. structlog prints straight to stdout, which ``caplog`` does not
+see, so the rendered lines are read from ``capsys``.
 """
 
+import io
 import json
+import sys
 from collections.abc import Iterator
 
 import pytest
@@ -77,3 +79,85 @@ class TestJsonTracebacks:
         assert _SECRET not in out
         assert "Unhandled exception" in out
         assert _ERROR_MESSAGE in out
+
+
+class _FailingStream(io.StringIO):
+    """A stdout whose writes fail, like a closed or broken pipe."""
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__()
+        self._error = error
+
+    def write(self, s: str) -> int:
+        raise self._error
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("json_logging")
+class TestSinkFailures:
+    """A line that cannot be written is dropped; the caller carries on.
+
+    structlog prints straight to stdout. Unlike stdlib logging, which
+    isolates sink errors in ``Handler.handleError``, a failed write raised
+    into the code that was logging, so a request whose work had committed
+    came back as a 500 because its log line could not be printed.
+    """
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            pytest.param(BrokenPipeError(32, "Broken pipe"), id="broken-pipe"),
+            pytest.param(ValueError("I/O operation on closed file."), id="closed-file"),
+            pytest.param(UnicodeEncodeError("ascii", "é", 0, 1, "no ascii"), id="encoding"),
+        ],
+    )
+    def test_should_not_raise_when_stdout_fails(
+        self, monkeypatch: pytest.MonkeyPatch, error: Exception
+    ) -> None:
+        monkeypatch.setattr(sys, "stdout", _FailingStream(error))
+
+        get_logger().info("Custom list share revoked", list_id="lst_abc123def456")
+
+    def test_should_report_the_dropped_line_on_stderr(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setattr(sys, "stdout", _FailingStream(BrokenPipeError(32, "Broken pipe")))
+
+        get_logger().info("Custom list share revoked", list_id="lst_abc123def456")
+
+        notice = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+        assert notice == {
+            "event": "Log line dropped",
+            "level": "warning",
+            "error_type": "BrokenPipeError",
+        }
+
+    def test_should_keep_the_dropped_line_out_of_the_notice(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The line can carry what the caller meant to log, credentials included.
+
+        A ``UnicodeEncodeError`` holds the whole string it failed to encode,
+        so rendering the exception would copy the line to stderr.
+        """
+
+        class _AsciiOnly(io.StringIO):
+            def write(self, s: str) -> int:
+                raise UnicodeEncodeError("ascii", s, 0, 1, "ordinal not in range(128)")
+
+        monkeypatch.setattr(sys, "stdout", _AsciiOnly())
+
+        get_logger().info("Password reset", token=_SECRET, note="é")
+
+        err = capsys.readouterr().err
+        assert _SECRET not in err
+        assert json.loads(err.strip().splitlines()[-1])["error_type"] == "UnicodeEncodeError"
+
+    def test_should_still_write_to_a_working_stdout(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        get_logger().info("Custom list share revoked", list_id="lst_abc123def456")
+
+        record = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+        assert record["event"] == "Custom list share revoked"
+        assert record["list_id"] == "lst_abc123def456"
