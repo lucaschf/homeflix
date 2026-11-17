@@ -1,8 +1,8 @@
 """GetWatchlistUseCase - List watchlist items with media metadata."""
 
-import logging
 from typing import TYPE_CHECKING
 
+from src.config.logging import get_logger
 from src.modules.collections.application.dtos import (
     GetWatchlistInput,
     WatchlistItemOutput,
@@ -22,8 +22,6 @@ from src.shared_kernel.value_objects.profile_id import ProfileId
 
 if TYPE_CHECKING:
     from src.modules.collections.domain.repositories import WatchlistCursor
-
-_logger = logging.getLogger(__name__)
 
 #: Minimum stored rows read per keyset page while filling the list. A small
 #: ``limit`` must not turn every hidden row into its own round trip, and the
@@ -72,6 +70,7 @@ class GetWatchlistUseCase:
         self._media_lookup = media_lookup
         self._progress_lookup = progress_lookup
         self._profile_viewing_policy = profile_viewing_policy
+        self._logger = get_logger(use_case="GetWatchlist")
 
     async def execute(self, input_dto: GetWatchlistInput) -> list[WatchlistItemOutput]:
         """Execute the use case.
@@ -88,7 +87,9 @@ class GetWatchlistUseCase:
             return []
 
         visible = await self._visible_items(profile_id, input_dto.limit, input_dto.lang, policy)
-        _logger.info("Found %d watchlist items", len(visible))
+        self._logger.info(
+            "Watchlist items found", profile_id=str(profile_id), item_count=len(visible)
+        )
 
         if not visible:
             return []
@@ -158,7 +159,9 @@ class GetWatchlistUseCase:
             for item in fresh:
                 summary = summaries.get((item.media_type, item.media_id.value))
                 if summary is None:
-                    _logger.warning("Could not find media for watchlist item: %s", item.media_id)
+                    self._logger.warning(
+                        "Watchlist item has no media", media_id=item.media_id.value
+                    )
                     continue
                 if not permits_summary(policy, summary):
                     continue
@@ -169,7 +172,7 @@ class GetWatchlistUseCase:
             if page.next_cursor is None:
                 break
             if page.next_cursor == cursor:
-                _logger.warning("Watchlist cursor did not advance for profile: %s", profile_id)
+                self._logger.warning("Watchlist cursor did not advance", profile_id=str(profile_id))
                 break
             cursor = page.next_cursor
 

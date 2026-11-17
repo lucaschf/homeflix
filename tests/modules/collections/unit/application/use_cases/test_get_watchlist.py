@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, Mock, call
 
 import pytest
+from structlog.testing import capture_logs
 from tests.modules.collections.unit.application.use_cases.conftest import (
     MOVIES_LIBRARY_ID,
     SERIES_LIBRARY_ID,
@@ -47,8 +47,6 @@ _MOVIE_C = "mov_cccccccccccc"
 _MOVIE_HIDDEN = "mov_hhhhhhhhhhhh"
 _MOVIE_MISSING = "mov_xxxxxxxxxxxx"
 _ADDED_AT = datetime(2026, 9, 13, tzinfo=UTC)
-
-_LOGGER = "src.modules.collections.application.use_cases.get_watchlist"
 
 
 def _item(media_id: str) -> WatchlistItem:
@@ -315,19 +313,31 @@ class TestGetWatchlistViewingPolicy:
 
     @pytest.mark.asyncio
     async def test_missing_media_does_not_use_up_the_limit_and_is_logged(
-        self, movie_summary: MediaSummaryFactory, caplog: pytest.LogCaptureFixture
+        self, movie_summary: MediaSummaryFactory
     ) -> None:
         mocks = make_collections_uow_mock()
         _single_page(mocks, [_item(_MOVIE_MISSING), _item(_MOVIE_A), _item(_MOVIE_B)])
         media_lookup = make_media_lookup_mock(movie_summary(_MOVIE_A), movie_summary(_MOVIE_B))
 
-        with caplog.at_level(logging.WARNING, logger=_LOGGER):
+        with capture_logs() as logs:
             result = await _use_case(mocks, media_lookup).execute(_input(limit=2))
 
         assert _ids(result) == [_MOVIE_A, _MOVIE_B]
-        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert len(warnings) == 1
-        assert _MOVIE_MISSING in warnings[0].getMessage()
+        assert logs == [
+            {
+                "event": "Watchlist item has no media",
+                "log_level": "warning",
+                "use_case": "GetWatchlist",
+                "media_id": _MOVIE_MISSING,
+            },
+            {
+                "event": "Watchlist items found",
+                "log_level": "info",
+                "use_case": "GetWatchlist",
+                "profile_id": _PROFILE_ID.value,
+                "item_count": 2,
+            },
+        ]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -340,7 +350,6 @@ class TestGetWatchlistViewingPolicy:
     async def test_denied_title_is_dropped_without_a_warning(
         self,
         movie_summary: MediaSummaryFactory,
-        caplog: pytest.LogCaptureFixture,
         library_id: str,
         minimum_age: AgeRating | None,
     ) -> None:
@@ -351,7 +360,7 @@ class TestGetWatchlistViewingPolicy:
             movie_summary(_MOVIE_A, minimum_age=AgeRating(10)),
         )
 
-        with caplog.at_level(logging.DEBUG, logger=_LOGGER):
+        with capture_logs() as logs:
             result = await _use_case(
                 mocks,
                 media_lookup,
@@ -361,7 +370,7 @@ class TestGetWatchlistViewingPolicy:
             ).execute(_input())
 
         assert _ids(result) == [_MOVIE_A]
-        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+        assert [e for e in logs if e["log_level"] not in {"debug", "info"}] == []
 
     @pytest.mark.asyncio
     async def test_missing_and_denied_titles_produce_the_same_list(
@@ -498,7 +507,7 @@ class TestGetWatchlistRefill:
 
     @pytest.mark.asyncio
     async def test_cursor_that_does_not_advance_stops_reading(
-        self, movie_summary: MediaSummaryFactory, caplog: pytest.LogCaptureFixture
+        self, movie_summary: MediaSummaryFactory
     ) -> None:
         """A hidden row that sorts below its own cursor must not be read forever."""
 
@@ -512,14 +521,19 @@ class TestGetWatchlistRefill:
             movie_summary(_MOVIE_HIDDEN, library_id=_OTHER_LIBRARY_ID)
         )
 
-        with caplog.at_level(logging.WARNING, logger=_LOGGER):
+        with capture_logs() as logs:
             result = await _use_case(mocks, media_lookup).execute(_input(limit=1))
 
         assert result == []
         assert mocks.watchlist.list_page.await_count == 2
-        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert len(warnings) == 1
-        assert _PROFILE_ID.value in warnings[0].getMessage()
+        assert [e for e in logs if e["log_level"] == "warning"] == [
+            {
+                "event": "Watchlist cursor did not advance",
+                "log_level": "warning",
+                "use_case": "GetWatchlist",
+                "profile_id": _PROFILE_ID.value,
+            }
+        ]
 
     @pytest.mark.asyncio
     async def test_item_repeated_across_pages_yields_one_item(

@@ -1,8 +1,7 @@
 """GetCustomListItemsUseCase - List items in a custom list with metadata."""
 
-import logging
-
 from src.building_blocks.application.errors import ResourceNotFoundException
+from src.config.logging import get_logger
 from src.modules.collections.application.dtos import (
     CustomListItemsOutput,
     GetCustomListItemsInput,
@@ -15,8 +14,6 @@ from src.modules.collections.application.ports import (
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
 from src.modules.collections.application.use_cases._item_projection import project_items
 from src.shared_kernel.value_objects.profile_id import ProfileId
-
-_logger = logging.getLogger(__name__)
 
 
 class GetCustomListItemsUseCase:
@@ -57,6 +54,7 @@ class GetCustomListItemsUseCase:
         self._media_lookup = media_lookup
         self._progress_lookup = progress_lookup
         self._profile_viewing_policy = profile_viewing_policy
+        self._logger = get_logger(use_case="GetCustomListItems")
 
     async def execute(self, input_dto: GetCustomListItemsInput) -> CustomListItemsOutput:
         """Execute the use case.
@@ -95,11 +93,11 @@ class GetCustomListItemsUseCase:
             profile_id=input_dto.profile_id,
             policy=policy,
         )
-        _logger.info(
-            "Custom list %s: %d visible item(s), %d hidden by access",
-            input_dto.list_id,
-            len(projected.items),
-            projected.hidden_count,
+        self._logger.info(
+            "Custom list items read",
+            list_id=input_dto.list_id,
+            visible_count=len(projected.items),
+            hidden_count=projected.hidden_count,
         )
         return CustomListItemsOutput(
             items=tuple(projected.items), hidden_count=projected.hidden_count

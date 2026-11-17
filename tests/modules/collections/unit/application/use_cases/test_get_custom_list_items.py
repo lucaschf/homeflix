@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, Mock, call
 
 import pytest
+from structlog.testing import capture_logs
 from tests.modules.collections.unit.application.use_cases.conftest import (
     MOVIES_LIBRARY_ID,
     SERIES_LIBRARY_ID,
@@ -288,6 +289,36 @@ class TestGetCustomListItemsUseCase:
             [],
             "pt-BR",
         )
+
+    @pytest.mark.asyncio
+    async def test_logs_the_read_as_a_structured_event(self) -> None:
+        custom_list = CustomList.create(profile_id=_PROFILE_ID, name="Empty List", existing_count=0)
+        mocks = make_collections_uow_mock()
+        mocks.custom_lists.find_by_id.return_value = custom_list
+        mocks.custom_lists.list_items.return_value = []
+
+        with capture_logs() as logs:
+            await GetCustomListItemsUseCase(
+                uow_factory=mocks.factory,
+                media_lookup=AsyncMock(spec=MediaLookupPort),
+                progress_lookup=make_progress_lookup_mock(),
+                profile_viewing_policy=make_profile_viewing_policy_mock(
+                    MOVIES_LIBRARY_ID, SERIES_LIBRARY_ID
+                ),
+            ).execute(
+                GetCustomListItemsInput(profile_id=_PROFILE_ID.value, list_id=str(custom_list.id))
+            )
+
+        assert logs == [
+            {
+                "event": "Custom list items read",
+                "log_level": "info",
+                "use_case": "GetCustomListItems",
+                "list_id": str(custom_list.id),
+                "visible_count": 0,
+                "hidden_count": 0,
+            }
+        ]
 
 
 @pytest.mark.unit

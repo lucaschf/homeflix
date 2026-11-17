@@ -1,13 +1,10 @@
 """RevokeCustomListShareUseCase - Stop sharing a list."""
 
-import logging
-
 from src.building_blocks.application.errors import ResourceNotFoundException
+from src.config.logging import get_logger
 from src.modules.collections.application.dtos import RevokeCustomListShareInput
 from src.modules.collections.application.unit_of_work import CollectionsUnitOfWorkFactory
 from src.shared_kernel.value_objects.profile_id import ProfileId
-
-_logger = logging.getLogger(__name__)
 
 
 class RevokeCustomListShareUseCase:
@@ -24,6 +21,7 @@ class RevokeCustomListShareUseCase:
 
     def __init__(self, uow_factory: CollectionsUnitOfWorkFactory) -> None:
         self._uow_factory = uow_factory
+        self._logger = get_logger(use_case="RevokeCustomListShare")
 
     async def execute(self, input_dto: RevokeCustomListShareInput) -> None:
         """Clear the token and drop all follows of the list.
@@ -44,10 +42,10 @@ class RevokeCustomListShareUseCase:
             removed = await uow.list_follows.remove_all_for_list(custom_list.id)
 
         if removed:
-            _logger.info(
-                "Revoked share of list %s and dropped %d follower(s)",
-                input_dto.list_id,
-                removed,
+            self._logger.info(
+                "Custom list share revoked",
+                list_id=input_dto.list_id,
+                followers_dropped=removed,
             )
 
 
