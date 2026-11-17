@@ -1,17 +1,14 @@
 """Cross-BC handler: migrate watchlist / custom-list refs on movie promotion."""
 
-import logging
-
 from src.building_blocks.application.event_bus import EventHandler
 from src.building_blocks.domain.events import DomainEvent
+from src.config.logging import get_logger
 from src.modules.collections.application.unit_of_work import (
     CollectionsUnitOfWorkFactory,
 )
 from src.modules.collections.domain.value_objects import CollectionMediaId
 from src.shared_kernel.integration_events import MoviePromotedToSeriesEvent
 from src.shared_kernel.value_objects import MediaType
-
-_logger = logging.getLogger(__name__)
 
 
 class OnMoviePromotedToSeriesHandler(EventHandler):
@@ -31,6 +28,7 @@ class OnMoviePromotedToSeriesHandler(EventHandler):
 
     def __init__(self, uow_factory: CollectionsUnitOfWorkFactory) -> None:
         self._uow_factory = uow_factory
+        self._logger = get_logger(handler="OnMoviePromotedToSeriesHandler")
 
     async def handle(self, event: DomainEvent) -> None:
         """Handle ``MoviePromotedToSeriesEvent``."""
@@ -52,12 +50,12 @@ class OnMoviePromotedToSeriesHandler(EventHandler):
             )
 
         if watchlist_updated or lists_updated:
-            _logger.info(
-                "Repointed %d watchlist + %d custom-list entries " "from movie %s to series %s",
-                watchlist_updated,
-                lists_updated,
-                event.movie_id,
-                event.series_id,
+            self._logger.info(
+                "Collection entries repointed to promoted series",
+                watchlist_updated=watchlist_updated,
+                lists_updated=lists_updated,
+                movie_id=str(event.movie_id),
+                series_id=str(event.series_id),
             )
 
 

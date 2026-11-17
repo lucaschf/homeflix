@@ -1,15 +1,12 @@
 """Cross-BC handler: drop watchlist + custom lists when a user is deleted."""
 
-import logging
-
 from src.building_blocks.application.event_bus import EventHandler
 from src.building_blocks.domain.events import DomainEvent
+from src.config.logging import get_logger
 from src.modules.collections.application.unit_of_work import (
     CollectionsUnitOfWorkFactory,
 )
 from src.shared_kernel.integration_events import UserDeletedEvent
-
-_logger = logging.getLogger(__name__)
 
 
 class OnUserDeletedHandler(EventHandler):
@@ -28,6 +25,7 @@ class OnUserDeletedHandler(EventHandler):
 
     def __init__(self, uow_factory: CollectionsUnitOfWorkFactory) -> None:
         self._uow_factory = uow_factory
+        self._logger = get_logger(handler="OnUserDeletedHandler")
 
     async def handle(self, event: DomainEvent) -> None:
         """Handle ``UserDeletedEvent``."""
@@ -48,14 +46,13 @@ class OnUserDeletedHandler(EventHandler):
             follows_deleted = await uow.list_follows.delete_all_for_followers(profile_ids)
 
         if watchlist_deleted or lists_deleted or follows_deleted:
-            _logger.info(
-                "Cleared %d watchlist + %d custom-list + %d follow row(s) for deleted "
-                "user %s (%d profile(s))",
-                watchlist_deleted,
-                lists_deleted,
-                follows_deleted,
-                event.user_id,
-                len(profile_ids),
+            self._logger.info(
+                "Collections cleared for deleted user",
+                watchlist_deleted=watchlist_deleted,
+                lists_deleted=lists_deleted,
+                follows_deleted=follows_deleted,
+                user_id=event.user_id,
+                profile_count=len(profile_ids),
             )
 
 
