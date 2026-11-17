@@ -1,6 +1,7 @@
 """Tests for RevokeCustomListShareUseCase."""
 
 import pytest
+from structlog.testing import capture_logs
 from tests.modules.collections.unit.conftest import make_collections_uow_mock
 
 from src.building_blocks.application.errors import ResourceNotFoundException
@@ -44,3 +45,25 @@ class TestRevokeCustomListShareUseCase:
             await use_case.execute(
                 RevokeCustomListShareInput(profile_id=_PROFILE_ID.value, list_id="lst_notmine00001")
             )
+
+    @pytest.mark.asyncio
+    async def test_logs_the_revoke_as_a_structured_event(self) -> None:
+        shared = CustomList.create(profile_id=_PROFILE_ID, name="Mine", existing_count=0).shared()
+        mocks = make_collections_uow_mock()
+        mocks.custom_lists.find_by_id.return_value = shared
+        mocks.list_follows.remove_all_for_list.return_value = 3
+
+        with capture_logs() as logs:
+            await RevokeCustomListShareUseCase(uow_factory=mocks.factory).execute(
+                RevokeCustomListShareInput(profile_id=_PROFILE_ID.value, list_id=str(shared.id))
+            )
+
+        assert logs == [
+            {
+                "event": "Custom list share revoked",
+                "log_level": "info",
+                "use_case": "RevokeCustomListShare",
+                "list_id": str(shared.id),
+                "followers_dropped": 3,
+            }
+        ]
