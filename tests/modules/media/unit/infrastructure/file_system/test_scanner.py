@@ -62,7 +62,7 @@ class TestScanDirectories:
         assert results == []
         assert "missing or unmounted" in caplog.text
 
-    def test_should_scan_a_title_with_an_ellipsis(
+    def test_should_find_movie_when_its_title_has_an_ellipsis(
         self, scanner: LocalFileSystemScanner, media_dir: Path
     ) -> None:
         """The ellipsis in this title once failed the whole library scan."""
@@ -73,7 +73,7 @@ class TestScanDirectories:
 
         assert [r.file_path.filename for r in results] == [name]
 
-    def test_should_skip_entry_with_an_invalid_path_without_aborting(
+    def test_should_skip_only_that_entry_when_its_path_is_invalid(
         self,
         scanner: LocalFileSystemScanner,
         tmp_path: Path,
