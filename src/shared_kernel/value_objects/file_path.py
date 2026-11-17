@@ -11,12 +11,24 @@ from src.building_blocks.domain.value_objects import StringValueObject
 _WINDOWS_PATH_PATTERN = re.compile(r"^(?:[a-zA-Z]:[\\/]|\\\\[^\\]+\\[^\\]+)")
 
 
+def _is_parent_reference(part: str) -> bool:
+    """Whether a path component is ``..``, or one Windows can trim to it.
+
+    Windows drops trailing dots and spaces from a component, so ``".. "``
+    or ``"..."`` can act as ``..`` there. Any component made only of dots
+    and spaces that holds ``..`` is refused.
+    """
+    return ".." in part and not part.strip(". ")
+
+
 class FilePath(StringValueObject):
     """Absolute file path for media content.
 
     Validates that the path is:
     - Absolute (starts with / on Unix or drive letter on Windows)
-    - Does not contain directory traversal (..)
+    - Free of directory traversal: no ``..`` component, nor one of only
+      dots and spaces that Windows trims to it (dots inside a name, as in
+      a title with an ellipsis, are fine)
     - Non-empty
 
     Example:
@@ -47,28 +59,25 @@ class FilePath(StringValueObject):
         if not value:
             raise ValueError("FilePath cannot be empty")
 
-        # Check for directory traversal BEFORE normalization
-        if ".." in value:
-            raise ValueError("FilePath cannot contain directory traversal (..)")
-
-        # Check for absolute path - use appropriate path class
-        # PurePath on Linux doesn't recognize Windows paths as absolute
+        # Use the path class that matches the path's style: PurePath on Linux
+        # doesn't recognize Windows paths as absolute
         if _WINDOWS_PATH_PATTERN.match(value):
             path: PurePath = PureWindowsPath(value)
         else:
             path = PurePosixPath(value)
 
+        # Only a parent reference climbs out of a directory. Dots inside a
+        # name ("Coming... It's the End (1970).mp4") are not traversal. Split
+        # the Windows way, on "/" and "\", so a backslash cannot carry a ".."
+        # past the check onto a Windows host.
+        if any(_is_parent_reference(part) for part in PureWindowsPath(value).parts):
+            raise ValueError("FilePath cannot contain directory traversal (..)")
+
         if not path.is_absolute():
             raise ValueError("FilePath must be an absolute path")
 
         # Normalize the path (resolve redundant separators)
-        normalized = str(path)
-
-        # Check again for traversal after normalization
-        if ".." in normalized:
-            raise ValueError("FilePath cannot contain directory traversal (..)")
-
-        return normalized
+        return str(path)
 
     def _get_path(self) -> PurePath:
         """Get the appropriate PurePath instance for this path."""

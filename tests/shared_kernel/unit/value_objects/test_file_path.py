@@ -221,3 +221,42 @@ class TestFilePathImmutability:
 
         with pytest.raises(DomainValidationException):
             file_path.root = "/movies/other.mkv"  # type: ignore[misc]
+
+
+class TestFilePathTraversal:
+    """Only a parent-directory component is traversal; dots inside a name are not.
+
+    A library scan crashed on "Django and Sartana Are Coming... It's the
+    End (1970).mp4": the ellipsis in the title read as directory traversal.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/media/Movies/Django and Sartana Are Coming... It's the End (1970).mp4",
+            "/media/Movies/Wait.. What (2020)/Wait.. What (2020).mkv",
+            "/media/Movies/..trailer.mkv",
+            "C:\\Movies\\Django and Sartana Are Coming... It's the End (1970).mp4",
+        ],
+    )
+    def test_should_accept_path_when_a_name_holds_dots(self, path: str) -> None:
+        assert FilePath(path).value == path
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/media/Movies/..",
+            "/media/Movies/../../etc/passwd",
+            "C:\\Movies\\..\\secret.mkv",
+            "\\\\server\\share\\..\\secret.mkv",
+            # A backslash separates on a Windows host, so this climbs out there.
+            "/media/Movies/..\\..\\etc\\passwd",
+            # Windows trims trailing dots and spaces from a component.
+            "C:\\Movies\\.. \\secret.mkv",
+            "C:\\Movies\\.. .\\secret.mkv",
+            "C:\\Movies\\...\\secret.mkv",
+        ],
+    )
+    def test_should_reject_path_when_a_component_is_a_parent_reference(self, path: str) -> None:
+        with pytest.raises(DomainValidationException, match="traversal"):
+            FilePath(path)
