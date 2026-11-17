@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from src.modules.media.application.ports import MediaType
+from src.modules.media.infrastructure.file_system import scanner as scanner_module
 from src.modules.media.infrastructure.file_system.scanner import LocalFileSystemScanner
 from src.shared_kernel.value_objects.file_path import FilePath
 
@@ -60,6 +61,45 @@ class TestScanDirectories:
 
         assert results == []
         assert "missing or unmounted" in caplog.text
+
+    def test_should_scan_a_title_with_an_ellipsis(
+        self, scanner: LocalFileSystemScanner, media_dir: Path
+    ) -> None:
+        """The ellipsis in this title once failed the whole library scan."""
+        name = "Django and Sartana Are Coming... It's the End (1970).mp4"
+        _create_file(media_dir, name)
+
+        results = scanner.scan_directories([FilePath(str(media_dir))])
+
+        assert [r.file_path.filename for r in results] == [name]
+
+    def test_should_skip_entry_with_an_invalid_path_without_aborting(
+        self,
+        scanner: LocalFileSystemScanner,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # A file whose path the catalog cannot model must not fail the scan of
+        # its whole library; the other files are still discovered, and the
+        # scan is flagged as incomplete so its absence is not read as deleted.
+        _create_file(tmp_path, "Good.2020.mkv")
+        _create_file(tmp_path, "Bad.2021.mkv")
+        real_file_path = scanner_module.FilePath
+
+        def picky_file_path(value: str) -> FilePath:
+            if value.endswith("Bad.2021.mkv"):
+                return real_file_path("relative/path.mkv")  # raises the real error
+            return real_file_path(value)
+
+        monkeypatch.setattr(scanner_module, "FilePath", picky_file_path)
+
+        with caplog.at_level(logging.WARNING):
+            results = scanner.scan_directories([FilePath(str(tmp_path))])
+
+        assert {r.title for r in results} == {"Good"}
+        assert "invalid path" in caplog.text
+        assert "may be incomplete" in caplog.text
 
     def test_should_skip_entry_that_errors_mid_scan_without_aborting(
         self,

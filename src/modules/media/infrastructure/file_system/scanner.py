@@ -4,6 +4,7 @@ import logging
 import re
 from pathlib import Path, PurePath
 
+from src.building_blocks.domain.errors import DomainValidationException
 from src.modules.media.application.ports import FileSystemScanner, MediaType, ScannedFile
 from src.shared_kernel.value_objects.file_path import FilePath
 
@@ -216,7 +217,7 @@ class LocalFileSystemScanner(FileSystemScanner):
             List of discovered media files with parsed metadata.
         """
         results: list[ScannedFile] = []
-        io_error_skips = 0
+        skipped_entries = 0
 
         for directory in directories:
             dir_path = Path(directory.value)
@@ -245,7 +246,7 @@ class LocalFileSystemScanner(FileSystemScanner):
                     # can't resume after raising, so the rest of THIS root is
                     # abandoned — but other roots still scan, instead of the
                     # whole multi-root scan aborting.
-                    io_error_skips += 1
+                    skipped_entries += 1
                     _logger.warning("Scan walk aborted under %s: %s", dir_path, exc)
                     break
 
@@ -257,23 +258,30 @@ class LocalFileSystemScanner(FileSystemScanner):
                     # the whole multi-root scan — skip just this one. (A plain
                     # ENOENT is absorbed by is_file() and skipped silently as a
                     # non-file, which is fine.)
-                    io_error_skips += 1
+                    skipped_entries += 1
                     _logger.warning("Skipping unreadable scan entry %s: %s", path, exc)
+                    continue
+                except DomainValidationException as exc:
+                    # A name the catalog cannot model (FilePath rejects it) is
+                    # skipped the same way: one file must not fail the scan of
+                    # its whole library.
+                    skipped_entries += 1
+                    _logger.warning("Skipping scan entry with an invalid path %s: %s", path, exc)
                     continue
 
                 if scanned is not None:
                     results.append(scanned)
 
-        if io_error_skips:
+        if skipped_entries:
             # One greppable line summarising a lossy scan, so a partially-flaky
             # mount (root readable but N entries failing) is distinguishable
             # from a genuinely empty/deleted catalog, not just N scattered
             # warnings. Downstream must not treat the absent files as deleted.
             _logger.error(
-                "Scan finished with %d entr%s skipped due to IO errors; results "
-                "may be incomplete — do not treat missing files as deleted.",
-                io_error_skips,
-                "y" if io_error_skips == 1 else "ies",
+                "Scan finished with %d entr%s skipped (IO errors or invalid paths); "
+                "results may be incomplete — do not treat missing files as deleted.",
+                skipped_entries,
+                "y" if skipped_entries == 1 else "ies",
             )
 
         return results
