@@ -125,7 +125,33 @@ class TestSinkFailures:
 
         get_logger().info("Custom list share revoked", list_id="lst_abc123def456")
 
-        assert "dropped a log line" in capsys.readouterr().err
+        notice = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+        assert notice == {
+            "event": "Log line dropped",
+            "level": "warning",
+            "error_type": "BrokenPipeError",
+        }
+
+    def test_should_keep_the_dropped_line_out_of_the_notice(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The line can carry what the caller meant to log, credentials included.
+
+        A ``UnicodeEncodeError`` holds the whole string it failed to encode,
+        so rendering the exception would copy the line to stderr.
+        """
+
+        class _AsciiOnly(io.StringIO):
+            def write(self, s: str) -> int:
+                raise UnicodeEncodeError("ascii", s, 0, 1, "ordinal not in range(128)")
+
+        monkeypatch.setattr(sys, "stdout", _AsciiOnly())
+
+        get_logger().info("Password reset", token=_SECRET, note="é")
+
+        err = capsys.readouterr().err
+        assert _SECRET not in err
+        assert json.loads(err.strip().splitlines()[-1])["error_type"] == "UnicodeEncodeError"
 
     def test_should_still_write_to_a_working_stdout(
         self, capsys: pytest.CaptureFixture[str]

@@ -18,6 +18,7 @@ With context:
 """
 
 import contextlib
+import json
 import logging
 import sys
 from typing import TYPE_CHECKING, Any
@@ -37,8 +38,10 @@ class _ResilientPrintLogger(structlog.PrintLogger):
     ``PrintLogger`` prints straight to stdout, so a closed or broken stream
     (``OSError``) or one that cannot encode the line (``ValueError``)
     raised into the code that was logging, and a request whose work had
-    committed came back as an error. The dropped line is reported on
-    stderr, best effort.
+    committed came back as an error. The drop is reported on stderr as a
+    JSON line, best effort. The notice names only the error type: the
+    exception can hold the line itself (a ``UnicodeEncodeError`` carries
+    the whole string), and the line can carry what the caller logged.
     """
 
     def msg(self, message: str) -> None:
@@ -46,8 +49,13 @@ class _ResilientPrintLogger(structlog.PrintLogger):
         try:
             super().msg(message)
         except (OSError, ValueError) as exc:
+            notice = {
+                "event": "Log line dropped",
+                "level": "warning",
+                "error_type": type(exc).__name__,
+            }
             with contextlib.suppress(OSError, ValueError):
-                print(f"structlog: dropped a log line: {exc!r}", file=sys.stderr, flush=True)
+                print(json.dumps(notice), file=sys.stderr, flush=True)
 
     log = debug = info = warn = warning = msg
     fatal = failure = err = error = critical = exception = msg

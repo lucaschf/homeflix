@@ -65,7 +65,7 @@ A configuração é baseada em:
 - `APP_ENV`: development vs production
 - `LOG_LEVEL`: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
-Uma linha que não pode ser escrita (stdout fechado, pipe quebrado, caractere que o terminal não codifica) é descartada e avisada no stderr: o log nunca derruba o código que o chamou.
+Uma linha que não pode ser escrita (stdout fechado, pipe quebrado, caractere que o terminal não codifica) é descartada e avisada no stderr com uma linha JSON que leva só o tipo do erro, nunca o conteúdo descartado: o log nunca derruba o código que o chamou.
 
 ## Uso Básico
 
